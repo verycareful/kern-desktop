@@ -1,0 +1,27 @@
+# Rust and Tauri
+/src-tauri/target/
+/src-tauri/gen/
+
+# Node and Vite
+node_modules/
+/dist/
+/test-results/
+/playwright-report/
+
+# Local only: never published
+# Claude working memory, loaded each session but not shipped.
+CLAUDE.md
+# dev-workflow working-memory file, cleared after every push.
+changes_version.md
+# Maintainer-local plans, audits, runs and scratch.
+/local/
+# Release scripts (set_version.py, stamp_release.py) are maintainer-local.
+/tools/
+# Local path override pointing kernkraft at ../kernkraft_rs.
+/src-tauri/.cargo/config.toml
+/.cargo/config.toml
+
+# Editor and OS
+.vscode/
+.idea/
+.DS_Store
