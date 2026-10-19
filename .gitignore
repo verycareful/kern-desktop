@@ -25,3 +25,6 @@ changes_version.md
 .vscode/
 .idea/
 .DS_Store
+
+# Python bytecode from scripts/ tests.
+__pycache__/

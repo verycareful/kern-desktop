@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+
+# Kern never touches the network: HTTP clients, other async runtimes and raw
+# socket crates are banned outright. tokio is banned except as a dependency of
+# the Tauri stack (tauri, its runtime and windowing crates) and of the crates
+# that wrap it (kern, kernkraft-tauri), which use it for the app runtime and
+# open no socket; tokio's `net` feature is denied outright, so no
+# dependency can enable it. `wrappers` names the only crates allowed to depend
+# on a banned crate.
+
+# Kern is a Linux app. tauri pulls reqwest (and through it hyper, socket2 and
+# tokio's `net`) only for its Android and iOS targets, so the graph is
+# checked for the Linux targets the packages are built for.
+[graph]
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+all-features = true
+
+[advisories]
+yanked = "deny"
+# The GTK 3 bindings that Tauri's Linux backend (wry, tao) is built on are
+# unmaintained and carry unmaintained transitive crates Kern cannot replace.
+# Only crates Kern depends on directly are held to this.
+unmaintained = "workspace"
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+    { name = "reqwest" },
+    { name = "hyper" },
+    { name = "ureq" },
+    { name = "curl" },
+    { name = "isahc" },
+    { name = "surf" },
+    { name = "attohttpc" },
+    { name = "tokio", wrappers = ["tauri", "tauri-runtime", "tauri-runtime-wry", "wry", "tao", "kern", "kernkraft-tauri"] },
+    { name = "async-std" },
+    { name = "socket2" },
+]
+
+[[bans.features]]
+crate = "tokio"
+deny = ["net"]
+
+[licenses]
+confidence-threshold = 0.9
+# The list covers licences Kern accepts, not only those in use today.
+unused-allowed-license = "allow"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "AGPL-3.0-only",
+    "AGPL-3.0-or-later",
+    "GPL-3.0-only",
+    "GPL-3.0-or-later",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
