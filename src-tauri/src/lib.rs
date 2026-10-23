@@ -8,6 +8,7 @@
 /// Panics if the Tauri runtime cannot start, which leaves nothing to recover.
 pub fn run() {
     tauri::Builder::default()
+        .plugin(kernkraft_tauri::init())
         .run(tauri::generate_context!())
         .expect("error while running Kern");
 }

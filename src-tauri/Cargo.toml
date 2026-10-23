@@ -3,9 +3,10 @@
 
 [package]
 name = "kern"
-version = "0.1.0+0.0"
+version = "0.1.0+0.1"
 description = "Kern for Linux: a file manager and document viewer"
 license = "AGPL-3.0-or-later"
+publish = false
 edition = "2021"
 
 [lib]
@@ -20,3 +21,4 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+kernkraft-tauri = { git = "https://github.com/verycareful/kernkraft", rev = "d4b0ef4c7bee929bdd188ea09b299d264165126b" }

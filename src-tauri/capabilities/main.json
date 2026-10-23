@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
   "description": "Capability for the main window",
-  "windows": ["main"],
-  "permissions": ["core:default"]
+  "windows": ["main", "doc-*"],
+  "permissions": ["core:default", "kernkraft-tauri:default"]
 }
