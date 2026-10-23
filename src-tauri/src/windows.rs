@@ -19,7 +19,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -87,8 +86,9 @@ struct Inner {
     ready: HashSet<String>,
     pending: HashMap<String, Vec<Queued>>,
     adopting: HashMap<String, Sender<()>>,
-    /// Labels reserved whose window is still being built.
-    creating: HashSet<String>,
+    /// Labels reserved whose window is still being built, with the latest
+    /// activation token of a launch that landed on them.
+    creating: HashMap<String, String>,
 }
 
 /// Managed state of the window layer.
@@ -105,8 +105,6 @@ pub struct WindowState {
     /// reservation (label, registry entry) only; the window is built after
     /// it is released, and the reservation is confirmed or rolled back.
     gate: Mutex<()>,
-    /// Launches forwarded to this instance so far.
-    forwarded: AtomicUsize,
     adopt_timeout: Duration,
     /// Whether focusing goes through GTK (startup id, present). Off only in
     /// tests, whose mock runtime has no GTK window.
@@ -124,7 +122,6 @@ impl WindowState {
     pub fn new(adopt_timeout: Duration) -> WindowState {
         WindowState {
             gate: Mutex::new(()),
-            forwarded: AtomicUsize::new(0),
             toolkit_focus: false,
             open: OpenRegistry::new(),
             inner: Mutex::new(Inner {
@@ -132,7 +129,7 @@ impl WindowState {
                 ready: HashSet::new(),
                 pending: HashMap::new(),
                 adopting: HashMap::new(),
-                creating: HashSet::new(),
+                creating: HashMap::new(),
             }),
             adopt_timeout,
         }
@@ -265,17 +262,20 @@ pub fn ensure_main<R: Runtime>(app: &AppHandle<R>) -> Result<bool, WireError> {
 }
 
 /// Reserves the next `doc-<n>` label. The label is marked as being built
-/// until [`built`] is called for it.
-fn reserve_doc_label<R: Runtime>(app: &AppHandle<R>, st: &WindowState) -> String {
+/// until [`built`] is called for it; `token` is the activation token of the
+/// launch that asked.
+fn reserve_doc_label<R: Runtime>(app: &AppHandle<R>, st: &WindowState, token: &str) -> String {
     let mut inner = st.lock();
     let label = next_doc_label(&mut inner.next_doc, |l| app.get_webview_window(l).is_some());
-    inner.creating.insert(label.clone());
+    inner.creating.insert(label.clone(), token.to_owned());
     label
 }
 
-/// The reserved window `label` is built or has failed to be.
-fn built(st: &WindowState, label: &str) {
-    st.lock().creating.remove(label);
+/// The reserved window `label` is built or has failed to be. Returns the
+/// activation token to present it with: the latest one of any launch that
+/// landed on it while it was being built.
+fn built(st: &WindowState, label: &str) -> String {
+    st.lock().creating.remove(label).unwrap_or_default()
 }
 
 /// Builds the window for a reserved label. Never call with the gate held.
@@ -453,7 +453,7 @@ fn place<R: Runtime>(
     token: &str,
 ) -> Result<Step, WireError> {
     let st = state(app)?;
-    let plan = decide(app, &st, path, resolved, origin, gesture)?;
+    let plan = decide(app, &st, path, resolved, origin, gesture, token)?;
     let wp = WirePath::from(path);
     let done = |action, location| {
         Step::Done(OpenOutcome {
@@ -521,9 +521,23 @@ fn place<R: Runtime>(
                     focus(app, MAIN, token)?;
                 }
                 Location::Window { label } => {
-                    // A window still being built is presented by whoever
-                    // builds it.
-                    if !st.lock().creating.contains(label) {
+                    // A window still being built is presented by its builder
+                    // when done; this launch's token is handed to it. Checked
+                    // and set under the lock `built` takes, so it is either
+                    // handed over or the window is presented here.
+                    let building = {
+                        let mut inner = st.lock();
+                        match inner.creating.get_mut(label) {
+                            Some(t) => {
+                                if !token.is_empty() {
+                                    *t = token.to_owned();
+                                }
+                                true
+                            }
+                            None => false,
+                        }
+                    };
+                    if !building {
                         focus(app, label, token)?;
                     }
                 }
@@ -543,6 +557,7 @@ fn decide<R: Runtime>(
     resolved: &Resolved,
     origin: Origin,
     gesture: Gesture,
+    token: &str,
 ) -> Result<Placement, WireError> {
     let _gate = st.lock_gate();
     let canonical = resolved.canonical.as_deref();
@@ -561,7 +576,7 @@ fn decide<R: Runtime>(
             Target::DocTab(p) => return Ok(Placement::DocTab(p)),
             Target::DefaultApp(p) => return Ok(Placement::DefaultApp(p)),
             Target::DocWindow(p) => {
-                let label = reserve_doc_label(app, st);
+                let label = reserve_doc_label(app, st, token);
                 st.open.insert(
                     &p,
                     resolved.canonical.clone(),
@@ -576,7 +591,7 @@ fn decide<R: Runtime>(
                     Location::Tab { .. } => app.get_webview_window(MAIN).is_none(),
                     Location::Window { label } => {
                         app.get_webview_window(label).is_none()
-                            && !st.lock().creating.contains(label)
+                            && !st.lock().creating.contains_key(label)
                     }
                 };
                 if gone {
@@ -606,34 +621,11 @@ fn arg_error(e: &ArgError) -> WireError {
     wire_error("BadArgument", e.to_string(), None)
 }
 
-/// Whether Kern's first launch is finished once its paths are handled: with
-/// no window left (every path went to its default app or failed) there is
-/// nothing to keep running, unless a launch was forwarded to this instance
-/// meanwhile (`forwarded`), which may still need a window. The status is 0
-/// when every launch succeeded. A forwarded launch never ends the running
-/// instance.
-pub fn first_launch_exit(
-    window_count: usize,
-    errors: &[WireError],
-    forwarded: usize,
-) -> Option<i32> {
-    if window_count > 0 || forwarded > 0 {
-        None
-    } else {
-        Some(i32::from(!errors.is_empty()))
-    }
-}
-
-/// Handles a launch from outside: this process's own first launch
-/// (`first`), or one forwarded by a second launch. Errors cannot be returned
-/// to anyone, so they are shown in `main` (created if need be) as
-/// [`EVENT_OPEN_ERROR`]. A first launch that ends with no window exits (see
-/// [`first_launch_exit`]) with the errors on stderr instead.
-pub async fn handle_launch<R: Runtime>(
-    app: &AppHandle<R>,
-    inv: crate::instance::Invocation,
-    first: bool,
-) {
+/// Handles a launch from outside: this process's own, or one forwarded by a
+/// second launch. Errors cannot be returned to anyone, so they are shown in
+/// `main` (created if need be) as [`EVENT_OPEN_ERROR`]. (A launch that needs
+/// no window never gets here: see `prelaunch`.)
+pub async fn handle_launch<R: Runtime>(app: &AppHandle<R>, inv: crate::instance::Invocation) {
     let token = inv.activation_token.as_str();
     let errors = match cli::plan(&inv.argv, &inv.cwd) {
         Plan::Home => open_home(app, token).err().into_iter().collect::<Vec<_>>(),
@@ -645,30 +637,6 @@ pub async fn handle_launch<R: Runtime>(
             errors
         }
     };
-    let windows = app.webview_windows().len();
-    if first && first_launch_exit(windows, &errors, 0).is_some() {
-        // Stop taking launches, then look again: one that arrived before
-        // the name went is not swallowed by the exit.
-        let st = state(app).ok();
-        let conn = app.try_state::<crate::instance::BusState>();
-        let conn = conn.as_ref().and_then(|b| b.0.as_ref());
-        if let Some(c) = conn {
-            crate::instance::release(c);
-        }
-        let forwarded = st.map_or(0, |s| s.forwarded.load(Ordering::SeqCst));
-        let windows = app.webview_windows().len();
-        if let Some(code) = first_launch_exit(windows, &errors, forwarded) {
-            for e in &errors {
-                eprintln!("kern: {}: {}", e.kind, e.message);
-            }
-            app.exit(code);
-            return;
-        }
-        if let Some(c) = conn {
-            // Staying: take the name back so a later launch forwards here.
-            crate::instance::reclaim(c);
-        }
-    }
     if errors.is_empty() {
         return;
     }
@@ -782,11 +750,11 @@ pub async fn detach_doc<R: Runtime>(
             }
             _ => {}
         }
-        let label = reserve_doc_label(&app, &st);
+        let label = reserve_doc_label(&app, &st, "");
         // The window takes the registration over from the tab now.
         st.open.insert(
             &p,
-            canonical,
+            canonical.clone(),
             Location::Window {
                 label: label.clone(),
             },
@@ -794,18 +762,19 @@ pub async fn detach_doc<R: Runtime>(
         (label, prior)
     };
     let result = build_doc_window(&app, &label);
-    built(&st, &label);
+    let token = built(&st, &label);
     if let Err(e) = result {
         let mine = Location::Window {
             label: label.clone(),
         };
         match prior {
-            Some(old) => st.open.insert(&p, std::fs::canonicalize(&p).ok(), old),
+            Some(old) => st.open.insert(&p, canonical, old),
             None => st.open.remove_if(&p, &mine),
         }
         return Err(e);
     }
     send_directive(&app, &label, &Directive::LoadDoc { path })?;
+    focus(&app, &label, &token)?;
     Ok(label)
 }
 
@@ -981,12 +950,9 @@ pub fn serve_launches<R: Runtime>(
 ) {
     std::thread::spawn(move || {
         for inv in launches {
-            if let Some(st) = app.try_state::<WindowState>() {
-                st.forwarded.fetch_add(1, Ordering::SeqCst);
-            }
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
-                handle_launch(&app, inv, false).await;
+                handle_launch(&app, inv).await;
             });
         }
     });

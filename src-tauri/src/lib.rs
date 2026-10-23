@@ -4,6 +4,7 @@
 pub mod cli;
 pub mod instance;
 pub mod open;
+pub mod prelaunch;
 pub mod store;
 pub mod store_cmds;
 pub mod windows;
@@ -18,6 +19,11 @@ use tauri::Manager;
 pub fn run() {
     // Before anything creates a window: a second launch forwards and exits.
     let own = instance::own_invocation();
+    // A launch that needs no window is finished here, before the bus name
+    // is claimed.
+    if let Some(code) = prelaunch::run(&own) {
+        std::process::exit(code);
+    }
     let role = instance::start(&own);
     tauri::Builder::default()
         // Document windows are not remembered: a new doc-1 is unrelated to
@@ -49,7 +55,7 @@ pub fn run() {
             // This process's own launch is handled like a forwarded one.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                windows::handle_launch(&handle, own, true).await;
+                windows::handle_launch(&handle, own).await;
             });
             Ok(())
         })

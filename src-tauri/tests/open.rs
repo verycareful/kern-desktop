@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use kern_lib::cli::{self, parse_args, parse_args_report, Plan};
 use kern_lib::instance::{pack_args, unpack};
 use kern_lib::open::{route, Gesture, Kind, Location, OpenRegistry, Origin, Target};
-use kern_lib::windows::{first_launch_exit, next_doc_label, wire_error};
+use kern_lib::prelaunch::{needs_window, status, Class};
+use kern_lib::windows::next_doc_label;
 
 /// `route` with the caller's part done: links resolved from the disk.
 fn go(path: &Path, origin: Origin, gesture: Gesture, kind: Kind, reg: &OpenRegistry) -> Target {
@@ -292,17 +293,22 @@ fn unknown_cwd_still_opens_absolute_paths() {
 }
 
 #[test]
-fn first_launch_without_a_window_exits() {
-    let err = wire_error("NotFound", "x", None);
-    // Windows exist: keep running, whatever failed.
-    assert_eq!(first_launch_exit(1, &[], 0), None);
-    assert_eq!(first_launch_exit(2, std::slice::from_ref(&err), 0), None);
-    // None left: 0 if every launch succeeded, else non-zero.
-    assert_eq!(first_launch_exit(0, &[], 0), Some(0));
-    assert_eq!(first_launch_exit(0, std::slice::from_ref(&err), 0), Some(1));
-    // A launch forwarded in the meantime may still need a window.
-    assert_eq!(first_launch_exit(0, &[], 1), None);
-    assert_eq!(first_launch_exit(0, &[err], 3), None);
+fn windowless_launches_are_decided_before_the_bus() {
+    let img = Class::DefaultApp(PathBuf::from("/p/a.png"));
+    let text = Class::Window;
+    let bad = Class::Failed("/p/gone: not found".to_owned());
+    // No arguments: the main window with a Home tab.
+    assert!(needs_window(0, &[]));
+    // Only files for their default applications: no window.
+    assert!(!needs_window(2, &[img.clone(), img.clone()]));
+    // One text file or folder among them needs one.
+    assert!(needs_window(2, &[img.clone(), text]));
+    // Only errors: no window, and the status says they failed.
+    assert!(!needs_window(1, std::slice::from_ref(&bad)));
+    assert_eq!(status(1), 1);
+    assert_eq!(status(0), 0);
+    // An error beside a default-app file still needs none.
+    assert!(!needs_window(2, &[img, bad]));
 }
 
 #[test]
@@ -365,4 +371,26 @@ fn doc_labels_never_reuse_an_open_one() {
     assert_eq!(next_doc_label(&mut n, |l| l == "doc-2"), "doc-3");
     // A closed label is not handed out again either, as the counter only grows.
     assert_eq!(next_doc_label(&mut n, |_| false), "doc-4");
+}
+
+#[test]
+fn prelaunch_runs_only_what_needs_no_window() {
+    use kern_lib::instance::Invocation;
+    let t = tempfile::tempdir().unwrap();
+    let inv = |argv: Vec<OsString>| Invocation {
+        argv,
+        cwd: t.path().to_path_buf(),
+        activation_token: String::new(),
+    };
+    // Nothing to open, a folder: the application starts.
+    assert_eq!(kern_lib::prelaunch::run(&inv(vec![])), None);
+    assert_eq!(
+        kern_lib::prelaunch::run(&inv(vec![t.path().as_os_str().to_owned()])),
+        None
+    );
+    // Only a missing path: finished here, failed.
+    assert_eq!(
+        kern_lib::prelaunch::run(&inv(vec![os("missing.png")])),
+        Some(1)
+    );
 }
