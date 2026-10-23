@@ -76,6 +76,14 @@ impl Env {
 }
 
 pub fn env(adopt_timeout: Duration) -> Env {
+    env_with(adopt_timeout, None)
+}
+
+/// [`env`] plus a plugin of the test's own, e.g. to hold a window's creation.
+pub fn env_with(
+    adopt_timeout: Duration,
+    extra: Option<tauri::plugin::TauriPlugin<MockRuntime>>,
+) -> Env {
     let tmp = tempfile::tempdir().unwrap();
     let files = tmp.path().canonicalize().unwrap().join("files");
     fs::create_dir(&files).unwrap();
@@ -89,7 +97,11 @@ pub fn env(adopt_timeout: Duration) -> Env {
         ctx.runtime_authority_mut()
             .__allow_command(cmd.to_owned(), ExecutionContext::Local);
     }
-    let app = mock_builder()
+    let mut builder = mock_builder();
+    if let Some(p) = extra {
+        builder = builder.plugin(p);
+    }
+    let app = builder
         .plugin(kernkraft_tauri::init())
         .manage(WindowState::new(adopt_timeout))
         .on_window_event(kern_lib::windows::on_window_event)

@@ -182,5 +182,22 @@ pub fn start(own: &Invocation) -> Role {
     }
 }
 
+/// Gives up the well-known name, so no further launch is forwarded here.
+pub fn release(conn: &Connection) {
+    if let Err(e) = conn.release_name(BUS_NAME) {
+        eprintln!("kern: could not release {BUS_NAME}: {e}");
+    }
+}
+
+/// Takes the name again after a [`release`] that did not end in exit.
+pub fn reclaim(conn: &Connection) {
+    match conn.request_name_with_flags(BUS_NAME, RequestNameFlags::DoNotQueue.into()) {
+        Ok(RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner) => {}
+        Ok(_) | Err(_) => {
+            eprintln!("kern: could not take {BUS_NAME} back; later launches will start their own instance");
+        }
+    }
+}
+
 /// The session-bus connection, in app state, for services that share it.
 pub struct BusState(pub Option<Connection>);

@@ -8,7 +8,7 @@ mod common;
 
 use std::time::Duration;
 
-use common::{env, invoke, wait_for, wp, QUIET};
+use common::{env, env_with, invoke, wait_for, wp, QUIET};
 use kern_lib::windows::{
     EVENT_ADOPT_CANCELLED, EVENT_ADOPT_DOC, EVENT_CLOSE_REQUESTED, EVENT_OPEN,
 };
@@ -336,4 +336,61 @@ fn adopt_timeout_gives_the_document_back_to_its_window() {
         out[0]["location"],
         json!({"kind": "window", "label": "doc-1"})
     );
+}
+
+#[test]
+fn a_window_is_built_outside_the_gate_so_a_second_open_focuses_it() {
+    use std::sync::mpsc;
+    // A plugin that holds the creation of doc-1 until told to go on.
+    let (started_tx, started_rx) = mpsc::channel::<()>();
+    let (go_tx, go_rx) = mpsc::channel::<()>();
+    let started_tx = std::sync::Mutex::new(started_tx);
+    let go_rx = std::sync::Mutex::new(go_rx);
+    let hold = tauri::plugin::Builder::<MockRuntime>::new("hold")
+        .on_window_ready(move |w| {
+            if w.label() == "doc-1" {
+                started_tx.lock().unwrap().send(()).unwrap();
+                go_rx
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(30))
+                    .unwrap();
+            }
+        })
+        .build();
+    let e = env_with(Duration::from_secs(5), Some(hold));
+    let f = e.text("a.txt");
+    let (first, second) = std::thread::scope(|s| {
+        let h = e.handle.clone();
+        let fp = f.clone();
+        let first = s.spawn(move || {
+            invoke(
+                &h,
+                "probe",
+                "open_paths",
+                json!({"paths": [wp(&fp)], "origin": "outside", "gesture": "default"}),
+            )
+            .unwrap()
+        });
+        started_rx.recv_timeout(Duration::from_secs(30)).unwrap();
+        // doc-1 is mid-creation. A second open has to finish now: with the
+        // gate held through creation it would wait for the first.
+        let h = e.handle.clone();
+        let second = invoke(
+            &h,
+            "probe",
+            "open_paths",
+            json!({"paths": [wp(&f)], "origin": "outside", "gesture": "default"}),
+        )
+        .unwrap();
+        go_tx.send(()).unwrap();
+        (first.join().unwrap(), second)
+    });
+    assert_eq!(second[0]["action"], json!("focus"));
+    assert_eq!(
+        second[0]["location"],
+        json!({"kind": "window", "label": "doc-1"})
+    );
+    assert_eq!(first[0]["action"], json!("doc_window"));
+    assert!(!e.exists("doc-2"));
 }

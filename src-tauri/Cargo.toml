@@ -3,7 +3,7 @@
 
 [package]
 name = "kern"
-version = "0.1.0+0.5"
+version = "0.1.0+0.6"
 description = "Kern for Linux: a file manager and document viewer"
 license = "AGPL-3.0-or-later"
 publish = false
@@ -29,7 +29,8 @@ kernkraft-bus = { git = "https://github.com/verycareful/kernkraft", rev = "d4b0e
 tauri-plugin-window-state = "2"
 # Only for the interface macro and message types; connections come from kernkraft-bus.
 zbus = "5"
-gtk = "0.18.2"
+# Must be the gtk that tauri-runtime-wry uses: one GTK binding per process.
+gtk = "=0.18.2"
 
 [dev-dependencies]
 tempfile = "3"

@@ -19,6 +19,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -86,15 +87,26 @@ struct Inner {
     ready: HashSet<String>,
     pending: HashMap<String, Vec<Queued>>,
     adopting: HashMap<String, Sender<()>>,
+    /// Labels reserved whose window is still being built.
+    creating: HashSet<String>,
 }
 
 /// Managed state of the window layer.
 pub struct WindowState {
     pub open: OpenRegistry,
     inner: Mutex<Inner>,
-    /// Held while a path is checked against the registry and then placed, so
+    /// Held while a path is checked against the registry and reserved, so
     /// two launches of one file cannot both make a window (D4.5).
+    ///
+    /// Rule: nothing under the gate creates a window or waits for the main
+    /// thread. Window creation blocks its caller until the main thread has
+    /// built the window, and a command running on the main thread may be
+    /// waiting for this gate. The gate covers the registry check and the
+    /// reservation (label, registry entry) only; the window is built after
+    /// it is released, and the reservation is confirmed or rolled back.
     gate: Mutex<()>,
+    /// Launches forwarded to this instance so far.
+    forwarded: AtomicUsize,
     adopt_timeout: Duration,
     /// Whether focusing goes through GTK (startup id, present). Off only in
     /// tests, whose mock runtime has no GTK window.
@@ -112,6 +124,7 @@ impl WindowState {
     pub fn new(adopt_timeout: Duration) -> WindowState {
         WindowState {
             gate: Mutex::new(()),
+            forwarded: AtomicUsize::new(0),
             toolkit_focus: false,
             open: OpenRegistry::new(),
             inner: Mutex::new(Inner {
@@ -119,6 +132,7 @@ impl WindowState {
                 ready: HashSet::new(),
                 pending: HashMap::new(),
                 adopting: HashMap::new(),
+                creating: HashSet::new(),
             }),
             adopt_timeout,
         }
@@ -250,19 +264,29 @@ pub fn ensure_main<R: Runtime>(app: &AppHandle<R>) -> Result<bool, WireError> {
     Ok(true)
 }
 
-fn new_doc_window<R: Runtime>(app: &AppHandle<R>) -> Result<String, WireError> {
-    let st = state(app)?;
-    let label = {
-        let mut inner = st.lock();
-        next_doc_label(&mut inner.next_doc, |l| app.get_webview_window(l).is_some())
-    };
-    WebviewWindowBuilder::new(app, &label, WebviewUrl::default())
+/// Reserves the next `doc-<n>` label. The label is marked as being built
+/// until [`built`] is called for it.
+fn reserve_doc_label<R: Runtime>(app: &AppHandle<R>, st: &WindowState) -> String {
+    let mut inner = st.lock();
+    let label = next_doc_label(&mut inner.next_doc, |l| app.get_webview_window(l).is_some());
+    inner.creating.insert(label.clone());
+    label
+}
+
+/// The reserved window `label` is built or has failed to be.
+fn built(st: &WindowState, label: &str) {
+    st.lock().creating.remove(label);
+}
+
+/// Builds the window for a reserved label. Never call with the gate held.
+fn build_doc_window<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), WireError> {
+    WebviewWindowBuilder::new(app, label, WebviewUrl::default())
         .title("Kern")
         .inner_size(DOC_SIZE.0, DOC_SIZE.1)
         .min_inner_size(DOC_MIN_SIZE.0, DOC_MIN_SIZE.1)
         .build()
-        .map_err(window_error)?;
-    Ok(label)
+        .map(|_| ())
+        .map_err(window_error)
 }
 
 /// What happened to one path.
@@ -376,7 +400,19 @@ async fn open_one<R: Runtime>(
     }
 }
 
-/// What the synchronous part decided.
+/// What a path is to be given, decided under the gate.
+enum Placement {
+    FolderTab(PathBuf),
+    DocTab(PathBuf),
+    /// A reserved label, already in the registry.
+    NewDoc {
+        path: PathBuf,
+        label: String,
+    },
+    Focus(Location),
+    DefaultApp(PathBuf),
+}
+
 enum Step {
     Done(OpenOutcome),
     DefaultApp(PathBuf),
@@ -389,8 +425,9 @@ async fn try_open<R: Runtime>(
     gesture: Gesture,
     token: &str,
 ) -> Result<OpenOutcome, WireError> {
-    // All file access happens before the registry is consulted; the check
-    // and the placement after it are one step with no await in between.
+    // All file access happens before the registry is consulted. The check
+    // and the reservation are one step under the gate; the window is built
+    // after it (see the gate's rule).
     let resolved = resolve(app, path).await;
     match place(app, path, &resolved, origin, gesture, token)? {
         Step::Done(o) => Ok(o),
@@ -406,7 +443,7 @@ async fn try_open<R: Runtime>(
     }
 }
 
-/// Registry check and placement, under the gate.
+/// Decides under the gate, then carries the decision out without it.
 fn place<R: Runtime>(
     app: &AppHandle<R>,
     path: &Path,
@@ -416,6 +453,97 @@ fn place<R: Runtime>(
     token: &str,
 ) -> Result<Step, WireError> {
     let st = state(app)?;
+    let plan = decide(app, &st, path, resolved, origin, gesture)?;
+    let wp = WirePath::from(path);
+    let done = |action, location| {
+        Step::Done(OpenOutcome {
+            path: wp.clone(),
+            action,
+            location,
+            error: None,
+        })
+    };
+    match plan {
+        Placement::FolderTab(p) => {
+            ensure_main(app)?;
+            send_directive(
+                app,
+                MAIN,
+                &Directive::FolderTab {
+                    path: WirePath::from(&p),
+                },
+            )?;
+            focus(app, MAIN, token)?;
+            Ok(done("folder_tab", None))
+        }
+        Placement::DocTab(p) => {
+            ensure_main(app)?;
+            send_directive(
+                app,
+                MAIN,
+                &Directive::DocTab {
+                    path: WirePath::from(&p),
+                },
+            )?;
+            focus(app, MAIN, token)?;
+            Ok(done("doc_tab", None))
+        }
+        Placement::NewDoc { path: p, label } => {
+            let loc = Location::Window {
+                label: label.clone(),
+            };
+            let result = build_doc_window(app, &label);
+            built(&st, &label);
+            if let Err(e) = result {
+                // The reservation was never a window.
+                st.open.remove_if(&p, &loc);
+                return Err(e);
+            }
+            send_directive(
+                app,
+                &label,
+                &Directive::LoadDoc {
+                    path: WirePath::from(&p),
+                },
+            )?;
+            Ok(done("doc_window", Some(loc)))
+        }
+        Placement::Focus(loc) => {
+            match &loc {
+                Location::Tab { tab_id } => {
+                    send_directive(
+                        app,
+                        MAIN,
+                        &Directive::FocusTab {
+                            tab_id: tab_id.clone(),
+                        },
+                    )?;
+                    focus(app, MAIN, token)?;
+                }
+                Location::Window { label } => {
+                    // A window still being built is presented by whoever
+                    // builds it.
+                    if !st.lock().creating.contains(label) {
+                        focus(app, label, token)?;
+                    }
+                }
+            }
+            Ok(done("focus", Some(loc)))
+        }
+        Placement::DefaultApp(p) => Ok(Step::DefaultApp(p)),
+    }
+}
+
+/// The registry check and the reservation, under the gate. Takes no step
+/// that waits for the main thread.
+fn decide<R: Runtime>(
+    app: &AppHandle<R>,
+    st: &WindowState,
+    path: &Path,
+    resolved: &Resolved,
+    origin: Origin,
+    gesture: Gesture,
+) -> Result<Placement, WireError> {
     let _gate = st.lock_gate();
     let canonical = resolved.canonical.as_deref();
     // Twice at most: a registry entry whose window is gone is dropped and
@@ -428,80 +556,35 @@ fn place<R: Runtime>(
             (Err(_), true) => Kind::Other,
             (Err(e), false) => return Err(e.clone()),
         };
-        let target = route(path, canonical, origin, gesture, kind, &st.open);
-        let wp = WirePath::from(path);
-        let outcome = |action, location| {
-            Step::Done(OpenOutcome {
-                path: wp.clone(),
-                action,
-                location,
-                error: None,
-            })
-        };
-        match target {
-            Target::FolderTab(p) => {
-                ensure_main(app)?;
-                send_directive(
-                    app,
-                    MAIN,
-                    &Directive::FolderTab {
-                        path: WirePath::from(&p),
-                    },
-                )?;
-                focus(app, MAIN, token)?;
-                return Ok(outcome("folder_tab", None));
-            }
-            Target::DocTab(p) => {
-                ensure_main(app)?;
-                send_directive(
-                    app,
-                    MAIN,
-                    &Directive::DocTab {
-                        path: WirePath::from(&p),
-                    },
-                )?;
-                focus(app, MAIN, token)?;
-                return Ok(outcome("doc_tab", None));
-            }
+        match route(path, canonical, origin, gesture, kind, &st.open) {
+            Target::FolderTab(p) => return Ok(Placement::FolderTab(p)),
+            Target::DocTab(p) => return Ok(Placement::DocTab(p)),
+            Target::DefaultApp(p) => return Ok(Placement::DefaultApp(p)),
             Target::DocWindow(p) => {
-                let label = new_doc_window(app)?;
-                let loc = Location::Window {
-                    label: label.clone(),
-                };
-                st.open.insert(&p, resolved.canonical.clone(), loc.clone());
-                send_directive(
-                    app,
-                    &label,
-                    &Directive::LoadDoc {
-                        path: WirePath::from(&p),
+                let label = reserve_doc_label(app, st);
+                st.open.insert(
+                    &p,
+                    resolved.canonical.clone(),
+                    Location::Window {
+                        label: label.clone(),
                     },
-                )?;
-                return Ok(outcome("doc_window", Some(loc)));
+                );
+                return Ok(Placement::NewDoc { path: p, label });
             }
             Target::Focus(loc) => {
-                let label = match &loc {
-                    Location::Tab { tab_id } => {
-                        if app.get_webview_window(MAIN).is_some() {
-                            send_directive(
-                                app,
-                                MAIN,
-                                &Directive::FocusTab {
-                                    tab_id: tab_id.clone(),
-                                },
-                            )?;
-                        }
-                        MAIN
+                let gone = match &loc {
+                    Location::Tab { .. } => app.get_webview_window(MAIN).is_none(),
+                    Location::Window { label } => {
+                        app.get_webview_window(label).is_none()
+                            && !st.lock().creating.contains(label)
                     }
-                    Location::Window { label } => label,
                 };
-                if app.get_webview_window(label).is_none() {
+                if gone {
                     st.open.remove(path);
                     continue;
                 }
-                focus(app, label, token)?;
-                return Ok(outcome("focus", Some(loc)));
+                return Ok(Placement::Focus(loc));
             }
-            Target::DefaultApp(p) => return Ok(Step::DefaultApp(p)),
         }
     }
     Err(wire_error(
@@ -525,10 +608,16 @@ fn arg_error(e: &ArgError) -> WireError {
 
 /// Whether Kern's first launch is finished once its paths are handled: with
 /// no window left (every path went to its default app or failed) there is
-/// nothing to keep running. The status is 0 when every launch succeeded.
-/// A forwarded launch never ends the running instance.
-pub fn first_launch_exit(window_count: usize, errors: &[WireError]) -> Option<i32> {
-    if window_count > 0 {
+/// nothing to keep running, unless a launch was forwarded to this instance
+/// meanwhile (`forwarded`), which may still need a window. The status is 0
+/// when every launch succeeded. A forwarded launch never ends the running
+/// instance.
+pub fn first_launch_exit(
+    window_count: usize,
+    errors: &[WireError],
+    forwarded: usize,
+) -> Option<i32> {
+    if window_count > 0 || forwarded > 0 {
         None
     } else {
         Some(i32::from(!errors.is_empty()))
@@ -557,13 +646,27 @@ pub async fn handle_launch<R: Runtime>(
         }
     };
     let windows = app.webview_windows().len();
-    if first {
-        if let Some(code) = first_launch_exit(windows, &errors) {
+    if first && first_launch_exit(windows, &errors, 0).is_some() {
+        // Stop taking launches, then look again: one that arrived before
+        // the name went is not swallowed by the exit.
+        let st = state(app).ok();
+        let conn = app.try_state::<crate::instance::BusState>();
+        let conn = conn.as_ref().and_then(|b| b.0.as_ref());
+        if let Some(c) = conn {
+            crate::instance::release(c);
+        }
+        let forwarded = st.map_or(0, |s| s.forwarded.load(Ordering::SeqCst));
+        let windows = app.webview_windows().len();
+        if let Some(code) = first_launch_exit(windows, &errors, forwarded) {
             for e in &errors {
                 eprintln!("kern: {}: {}", e.kind, e.message);
             }
             app.exit(code);
             return;
+        }
+        if let Some(c) = conn {
+            // Staying: take the name back so a later launch forwards here.
+            crate::instance::reclaim(c);
         }
     }
     if errors.is_empty() {
@@ -609,15 +712,15 @@ pub async fn open_paths<R: Runtime>(
 
 /// The frontend opened `path` at `location`.
 #[tauri::command]
-pub fn doc_opened<R: Runtime>(
+pub async fn doc_opened<R: Runtime>(
     app: AppHandle<R>,
     path: WirePath,
     location: Location,
 ) -> Result<(), WireError> {
     let p = path.to_path_buf()?;
-    state(&app)?
-        .open
-        .insert(&p, std::fs::canonicalize(&p).ok(), location);
+    let q = p.clone();
+    let canonical = blocking(move || Ok(std::fs::canonicalize(&q).ok())).await?;
+    state(&app)?.open.insert(&p, canonical, location);
     Ok(())
 }
 
@@ -649,41 +752,59 @@ pub fn open_pending_take<R: Runtime>(
 
 /// Detaches a document tab of `main` into its own window (D4.5).
 #[tauri::command]
-pub fn detach_doc<R: Runtime>(
+pub async fn detach_doc<R: Runtime>(
     app: AppHandle<R>,
     tab_id: String,
     path: WirePath,
 ) -> Result<String, WireError> {
     let p = path.to_path_buf()?;
     let st = state(&app)?;
-    let canonical = std::fs::canonicalize(&p).ok();
-    let _gate = st.lock_gate();
-    match st.open.get(&p, canonical.as_deref()) {
-        Some(Location::Window { label }) => {
-            return Err(wire_error(
-                "AlreadyOpen",
-                format!("the document is already open in window {label}"),
-                Some(&p),
-            ));
+    let q = p.clone();
+    let canonical = blocking(move || Ok(std::fs::canonicalize(&q).ok())).await?;
+    // Check and reserve under the gate; build the window after it.
+    let (label, prior) = {
+        let _gate = st.lock_gate();
+        let prior = st.open.get(&p, canonical.as_deref());
+        match &prior {
+            Some(Location::Window { label }) => {
+                return Err(wire_error(
+                    "AlreadyOpen",
+                    format!("the document is already open in window {label}"),
+                    Some(&p),
+                ));
+            }
+            Some(Location::Tab { tab_id: registered }) if registered != &tab_id => {
+                return Err(wire_error(
+                    "TabMismatch",
+                    format!("the document is open in tab {registered}, not {tab_id}"),
+                    Some(&p),
+                ));
+            }
+            _ => {}
         }
-        Some(Location::Tab { tab_id: registered }) if registered != tab_id => {
-            return Err(wire_error(
-                "TabMismatch",
-                format!("the document is open in tab {registered}, not {tab_id}"),
-                Some(&p),
-            ));
-        }
-        _ => {}
-    }
-    let label = new_doc_window(&app)?;
-    // The window takes the registration over from the tab now.
-    st.open.insert(
-        &p,
-        canonical,
-        Location::Window {
+        let label = reserve_doc_label(&app, &st);
+        // The window takes the registration over from the tab now.
+        st.open.insert(
+            &p,
+            canonical,
+            Location::Window {
+                label: label.clone(),
+            },
+        );
+        (label, prior)
+    };
+    let result = build_doc_window(&app, &label);
+    built(&st, &label);
+    if let Err(e) = result {
+        let mine = Location::Window {
             label: label.clone(),
-        },
-    );
+        };
+        match prior {
+            Some(old) => st.open.insert(&p, std::fs::canonicalize(&p).ok(), old),
+            None => st.open.remove_if(&p, &mine),
+        }
+        return Err(e);
+    }
     send_directive(&app, &label, &Directive::LoadDoc { path })?;
     Ok(label)
 }
@@ -750,7 +871,13 @@ pub async fn move_doc_to_main<R: Runtime>(
         ));
     }
     st.lock().adopting.remove(&label);
-    doc.destroy().map_err(window_error)
+    if let Err(e) = doc.destroy() {
+        // Main has the document; leaving the window too would make two
+        // copies, so main is told to drop its tab and the window keeps it.
+        cancel_adoption(&app, &st, &label, &path);
+        return Err(window_error(e));
+    }
+    Ok(())
 }
 
 /// Takes a move back: the document window keeps the path, and `main` is told
@@ -854,6 +981,9 @@ pub fn serve_launches<R: Runtime>(
 ) {
     std::thread::spawn(move || {
         for inv in launches {
+            if let Some(st) = app.try_state::<WindowState>() {
+                st.forwarded.fetch_add(1, Ordering::SeqCst);
+            }
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
                 handle_launch(&app, inv, false).await;

@@ -295,11 +295,14 @@ fn unknown_cwd_still_opens_absolute_paths() {
 fn first_launch_without_a_window_exits() {
     let err = wire_error("NotFound", "x", None);
     // Windows exist: keep running, whatever failed.
-    assert_eq!(first_launch_exit(1, &[]), None);
-    assert_eq!(first_launch_exit(2, std::slice::from_ref(&err)), None);
+    assert_eq!(first_launch_exit(1, &[], 0), None);
+    assert_eq!(first_launch_exit(2, std::slice::from_ref(&err), 0), None);
     // None left: 0 if every launch succeeded, else non-zero.
-    assert_eq!(first_launch_exit(0, &[]), Some(0));
-    assert_eq!(first_launch_exit(0, &[err]), Some(1));
+    assert_eq!(first_launch_exit(0, &[], 0), Some(0));
+    assert_eq!(first_launch_exit(0, std::slice::from_ref(&err), 0), Some(1));
+    // A launch forwarded in the meantime may still need a window.
+    assert_eq!(first_launch_exit(0, &[], 1), None);
+    assert_eq!(first_launch_exit(0, &[err], 3), None);
 }
 
 #[test]
