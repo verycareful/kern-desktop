@@ -163,7 +163,38 @@ fn file_uri(b: &[u8]) -> Result<Vec<u8>, String> {
     {
         return Err("file URI has an escaped slash inside a name".to_owned());
     }
-    Ok(percent_decode(path))
+    Ok(percent_decode(&remove_dot_segments(path)))
+}
+
+/// RFC 3986 section 5.2.4 on an absolute path: `.` segments go and `..`
+/// removes the segment before it (never the root).
+fn remove_dot_segments(path: &[u8]) -> Vec<u8> {
+    let mut out: Vec<&[u8]> = Vec::new();
+    let mut segs = path.split(|&c| c == b'/').skip(1).peekable();
+    let mut trailing = false;
+    while let Some(seg) = segs.next() {
+        let last = segs.peek().is_none();
+        match seg {
+            b"." => trailing = last,
+            b".." => {
+                out.pop();
+                trailing = last;
+            }
+            _ => {
+                out.push(seg);
+                trailing = false;
+            }
+        }
+    }
+    let mut r = Vec::with_capacity(path.len());
+    for s in &out {
+        r.push(b'/');
+        r.extend_from_slice(s);
+    }
+    if r.is_empty() || trailing {
+        r.push(b'/');
+    }
+    r
 }
 
 /// `%XX` becomes that byte; a `%` not followed by two hex digits stays as it

@@ -17,8 +17,9 @@
 //! `kernkraft-bus`, a Unix socket only). The name is requested with
 //! `DoNotQueue` (D-Bus Specification, "Message Bus Names"): another file
 //! manager that holds it is reported in [`Fm1Status`] and never displaced.
-//! `AllowReplacement` is set so that a file manager that insists may take
-//! the name over; the loss is seen as `NameLost` and the status follows.
+//! Kern does not allow replacement: once owned, the name is held until the
+//! process exits, so a choice of Kern as file manager is not undone by
+//! another application starting later.
 //!
 //! A call is a launch: it is counted in [`Launches`] before the method
 //! returns, so an exiting instance does not drop it, and an instance that
@@ -30,6 +31,7 @@
 //!   the folder `tab`, sent right after the directive that opens it.
 //! - `kern://properties { paths }`: show the Properties of `paths`.
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -37,7 +39,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use kernkraft_tauri::{WireError, WirePath};
 use serde::Serialize;
 use serde_json::json;
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 use zbus::blocking::fdo::DBusProxy;
 use zbus::blocking::Connection;
 use zbus::fdo::{RequestNameFlags, RequestNameReply};
@@ -107,25 +109,23 @@ pub struct Group {
 /// select.
 pub fn group_by_parent(paths: &[PathBuf]) -> Vec<Group> {
     let mut groups: Vec<Group> = Vec::new();
+    let mut index: HashMap<PathBuf, usize> = HashMap::new();
+    let mut seen: HashSet<&Path> = HashSet::new();
     for p in paths {
         let (folder, item) = match p.parent() {
             Some(parent) => (parent.to_path_buf(), Some(p.clone())),
             None => (p.clone(), None),
         };
-        let at = groups.iter().position(|g| g.folder == folder);
-        let group = match at {
-            Some(i) => &mut groups[i],
-            None => {
-                groups.push(Group {
-                    folder,
-                    items: Vec::new(),
-                });
-                groups.last_mut().expect("just pushed")
-            }
-        };
+        let i = *index.entry(folder.clone()).or_insert_with(|| {
+            groups.push(Group {
+                folder,
+                items: Vec::new(),
+            });
+            groups.len() - 1
+        });
         if let Some(item) = item {
-            if !group.items.contains(&item) {
-                group.items.push(item);
+            if seen.insert(p.as_path()) {
+                groups[i].items.push(item);
             }
         }
     }
@@ -143,7 +143,7 @@ pub struct Fm1Status {
     pub reason: Option<String>,
 }
 
-/// The status, shared with the thread that watches for the name being lost.
+/// The status of the service, shared with the commands that read it.
 #[derive(Clone, Debug)]
 pub struct Fm1State(Arc<Mutex<Fm1Status>>);
 
@@ -157,10 +157,6 @@ impl Fm1State {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
-    }
-
-    fn set(&self, status: Fm1Status) {
-        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = status;
     }
 
     /// The status when there is no session bus.
@@ -251,10 +247,8 @@ fn owner_of(conn: &Connection, name: &str) -> (Option<String>, Option<String>) {
 /// the status says who owns it.
 pub fn serve(conn: &Connection, name: &str, launches: Launches) -> Result<Service, InstanceError> {
     let (tx, requests) = mpsc::channel();
-    // Subscribed before the request, so a loss right after it is seen.
-    let lost = DBusProxy::new(conn)?.receive_name_lost()?;
     conn.object_server().at(OBJECT_PATH, Fm1 { tx, launches })?;
-    let flags = RequestNameFlags::DoNotQueue | RequestNameFlags::AllowReplacement;
+    let flags = RequestNameFlags::DoNotQueue.into();
     let owned = match conn.request_name_with_flags(name, flags) {
         Ok(RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner) => true,
         Ok(RequestNameReply::Exists | RequestNameReply::InQueue) | Err(zbus::Error::NameTaken) => {
@@ -284,41 +278,10 @@ pub fn serve(conn: &Connection, name: &str, launches: Launches) -> Result<Servic
             ),
         })
     };
-    if owned {
-        watch(conn.clone(), name.to_owned(), state.clone(), lost);
-    }
     Ok(Service {
         status: state,
         requests,
     })
-}
-
-/// Follows `NameLost` for `name` (D-Bus Specification, "org.freedesktop.DBus"
-/// signals): another file manager replaced this one, so the object is
-/// removed and the status says who has the name now.
-fn watch(
-    conn: Connection,
-    name: String,
-    state: Fm1State,
-    lost: zbus::blocking::fdo::NameLostIterator,
-) {
-    std::thread::spawn(move || {
-        for signal in lost {
-            let Ok(args) = signal.args() else { continue };
-            if args.name().as_str() != name {
-                continue;
-            }
-            let _ = conn.object_server().remove::<Fm1, _>(OBJECT_PATH);
-            let (owner, problem) = owner_of(&conn, &name);
-            state.set(Fm1Status {
-                owned: false,
-                owner,
-                reason: Some(problem.unwrap_or_else(|| {
-                    format!("another file manager replaced Kern as owner of {name}")
-                })),
-            });
-        }
-    });
 }
 
 fn push_unique(errors: &mut Vec<WireError>, e: WireError) {
@@ -338,7 +301,7 @@ pub async fn run<R: Runtime>(app: &AppHandle<R>, req: Request) -> Vec<WireError>
     match req.call {
         Call::ShowFolders => show_folders(app, &req.paths, token, &mut errors).await,
         Call::ShowItems => show_items(app, &req.paths, token, &mut errors).await,
-        Call::ShowItemProperties => show_properties(app, &req.paths, token, &mut errors),
+        Call::ShowItemProperties => show_properties(app, &req.paths, token, &mut errors).await,
     }
     errors
 }
@@ -415,21 +378,36 @@ async fn show_items<R: Runtime>(
     }
 }
 
-fn show_properties<R: Runtime>(
+async fn show_properties<R: Runtime>(
     app: &AppHandle<R>,
     paths: &[PathBuf],
     token: &str,
     errors: &mut Vec<WireError>,
 ) {
     let mut present = Vec::new();
+    let mut present_paths: Vec<&Path> = Vec::new();
     for p in paths {
         match std::fs::symlink_metadata(p) {
-            Ok(_) => present.push(WirePath::from(p.as_path())),
+            Ok(_) => {
+                present.push(WirePath::from(p.as_path()));
+                present_paths.push(p);
+            }
             Err(e) => push_unique(errors, io_error(p, &e)),
         }
     }
     if present.is_empty() {
         return;
+    }
+    // Never an empty main: with no main window yet, it opens on the folder
+    // of the first item (design ruling R42).
+    if app.get_webview_window(MAIN).is_none() {
+        let first = present_paths[0];
+        let folder = first.parent().unwrap_or(first).to_path_buf();
+        let opened =
+            open_paths_impl(app, vec![folder], Origin::Outside, Gesture::Default, token).await;
+        for e in opened.into_iter().filter_map(|o| o.error) {
+            push_unique(errors, e);
+        }
     }
     let shown = ensure_main(app)
         .and_then(|_| send(app, MAIN, EVENT_PROPERTIES, json!({ "paths": present })))

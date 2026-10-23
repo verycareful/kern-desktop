@@ -439,3 +439,11 @@ fn exit_waits_for_answered_launches() {
     assert!(!l.begin());
     assert_eq!(l.pending(), 0);
 }
+
+#[test]
+fn file_uri_dot_segments_are_removed_but_plain_paths_are_not() {
+    let cwd = Path::new("/w");
+    let got = parse_args(&[os("file:///a/../b"), os("/a/../c")], cwd);
+    // Only a URI path is normalised (RFC 3986 section 5.2.4).
+    assert_eq!(got, vec![PathBuf::from("/b"), PathBuf::from("/a/../c")]);
+}

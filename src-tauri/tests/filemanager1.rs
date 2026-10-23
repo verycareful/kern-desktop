@@ -14,11 +14,11 @@ use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use common::{env, wait_for, wp};
+use common::{env, wp};
 use kern_lib::cli::ArgError;
 use kern_lib::default_fm::{self, DEFAULT_FM_DESKTOP_ID};
 use kern_lib::filemanager1::{
-    group_by_parent, run, serve, uris_to_paths, Call, Fm1Status, Request, INTERFACE, OBJECT_PATH,
+    group_by_parent, run, serve, uris_to_paths, Call, Request, INTERFACE, OBJECT_PATH,
 };
 use kern_lib::instance::Launches;
 use kern_lib::windows::{EVENT_OPEN, EVENT_OPEN_ERROR, EVENT_PROPERTIES, EVENT_SELECT};
@@ -195,12 +195,15 @@ fn show_folders_opens_folders_and_reports_what_is_not_one() {
 fn show_item_properties_tells_main() {
     let e = env(Duration::from_secs(5));
     let f = e.text("f.txt");
+    // An open main window is not given another tab.
+    e.open(&[&e.files], "outside", "default");
     let errors = run_block(&e, request(Call::ShowItemProperties, vec![f.clone()]));
     assert!(errors.is_empty());
+    // The one folder tab of the first open, then the properties.
     let q = e.take("main");
-    assert_eq!(q.len(), 1);
-    assert_eq!(q[0]["event"], json!(EVENT_PROPERTIES));
-    assert_eq!(q[0]["payload"], json!({"paths": [wp(&f)]}));
+    assert_eq!(q.len(), 2);
+    assert_eq!(q[1]["event"], json!(EVENT_PROPERTIES));
+    assert_eq!(q[1]["payload"], json!({"paths": [wp(&f)]}));
 }
 
 #[test]
@@ -319,23 +322,78 @@ fn a_taken_name_is_reported_not_stolen() {
 }
 
 #[test]
-fn losing_the_name_later_updates_the_status() {
-    use zbus::fdo::RequestNameFlags;
+fn a_file_manager_asking_to_replace_kern_is_refused() {
+    use zbus::fdo::{RequestNameFlags, RequestNameReply};
     let Some((ours, other)) = two_buses() else {
         return;
     };
-    let name = format!("org.freedesktop.FileManager1Lost{}", std::process::id());
+    let name = format!("org.freedesktop.FileManager1Held{}", std::process::id());
     let svc = serve(&ours, &name, Launches::default()).unwrap();
     assert!(svc.status.get().owned);
-    // Another file manager asks to replace us, as the specification of
-    // name replacement allows.
-    other
-        .request_name_with_flags(name.as_str(), RequestNameFlags::ReplaceExisting.into())
-        .unwrap();
-    let other_name = other.unique_name().unwrap().to_string();
-    wait_for("the status to change", || !svc.status.get().owned);
-    let st: Fm1Status = svc.status.get();
-    assert_eq!(st.owner.as_deref(), Some(other_name.as_str()));
+    let flags = RequestNameFlags::ReplaceExisting | RequestNameFlags::DoNotQueue;
+    let reply = other.request_name_with_flags(name.as_str(), flags);
+    assert!(
+        matches!(reply, Ok(RequestNameReply::Exists)) || reply.is_err(),
+        "{reply:?}"
+    );
+    let st = svc.status.get();
+    assert!(st.owned);
+    assert_eq!(
+        st.owner.as_deref(),
+        Some(ours.unique_name().unwrap().as_str())
+    );
+    // Still served: a call reaches the handler.
+    call(&other, &name, "ShowFolders", &["file:///tmp"]).unwrap();
+    assert!(svc.requests.recv_timeout(Duration::from_secs(30)).is_ok());
+}
+
+#[test]
+fn group_by_parent_is_linear_enough_for_many_items() {
+    let paths: Vec<PathBuf> = (0..50_000)
+        .map(|i| PathBuf::from(format!("/d/{i}")))
+        .collect();
+    let start = std::time::Instant::now();
+    let g = group_by_parent(&paths);
+    assert_eq!(g.len(), 1);
+    assert_eq!(g[0].items.len(), 50_000);
+    // Quadratic grouping of 50 000 items takes minutes; this takes
+    // milliseconds, so a generous bound separates them.
+    assert!(start.elapsed() < Duration::from_secs(5));
+}
+
+#[test]
+fn dot_segments_in_a_uri_are_removed() {
+    let b = uris_to_paths(&uris(&[
+        "file:///a/../b",
+        "file:///a/./b/",
+        "file:///../../x",
+        "file:///a/b/..",
+    ]));
+    assert_eq!(
+        b.paths,
+        vec![
+            PathBuf::from("/b"),
+            PathBuf::from("/a/b"),
+            PathBuf::from("/x"),
+            PathBuf::from("/a"),
+        ]
+    );
+}
+
+#[test]
+fn properties_with_no_main_window_open_the_items_folder_first() {
+    let e = env(Duration::from_secs(5));
+    let f = e.text("f.txt");
+    assert!(!e.exists("main"));
+    let errors = run_block(&e, request(Call::ShowItemProperties, vec![f.clone()]));
+    assert!(errors.is_empty());
+    let q = e.take("main");
+    assert_eq!(q.len(), 2);
+    assert_eq!(
+        q[0]["payload"],
+        json!({"kind": "folder_tab", "path": wp(&e.files)})
+    );
+    assert_eq!(q[1]["event"], json!(EVENT_PROPERTIES));
 }
 
 // ---- default file manager ----
