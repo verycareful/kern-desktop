@@ -995,12 +995,16 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
 /// or this process's own) the exit is deferred, and [`launch_finished`]
 /// decides again once the launches are handled.
 pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: tauri::RunEvent) {
-    if let tauri::RunEvent::ExitRequested { api, .. } = event {
-        if let Some(l) = app.try_state::<Launches>() {
-            if !l.exit_requested() {
-                api.prevent_exit();
+    match event {
+        tauri::RunEvent::ExitRequested { api, .. } => {
+            if let Some(l) = app.try_state::<Launches>() {
+                if !l.exit_requested() {
+                    api.prevent_exit();
+                }
             }
         }
+        tauri::RunEvent::Exit => crate::clipboard::store_on_exit(),
+        _ => {}
     }
 }
 

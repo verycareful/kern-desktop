@@ -12,7 +12,8 @@ use std::path::PathBuf;
 
 use kern_lib::clipboard::{
     decode_gnome_copied, decode_uri_list, encode_gnome_copied, encode_uri_list, encode_utf8_text,
-    try_decode_gnome_copied, try_decode_uri_list, ClipOp,
+    kde_cut_data, offered_targets, refuse_dot_segments, require_focus, try_decode_gnome_copied,
+    try_decode_uri_list, uri_list_op, ClipOp, TARGET_GNOME, TARGET_KDE_CUT, TARGET_URI_LIST,
 };
 
 fn raw(bytes: &[u8]) -> PathBuf {
@@ -174,4 +175,59 @@ fn drop_payload_carries_paths_losslessly_and_the_position() {
     let json = serde_json::to_value(&p).unwrap();
     assert_eq!(json["position"]["x"], 12.5);
     assert_eq!(json["position"]["y"], 7.0);
+}
+
+#[test]
+fn kde_cut_target_is_offered_on_cut_only() {
+    // KIO's setClipboardDataCut writes "1" under application/x-kde-cutselection
+    // for a cut and "0" (or nothing) for a copy; Kern offers it for a cut only.
+    assert_eq!(kde_cut_data(ClipOp::Cut), Some(&b"1"[..]));
+    assert_eq!(kde_cut_data(ClipOp::Copy), None);
+    assert!(offered_targets(ClipOp::Cut).contains(&TARGET_KDE_CUT));
+    assert!(!offered_targets(ClipOp::Copy).contains(&TARGET_KDE_CUT));
+    for op in [ClipOp::Copy, ClipOp::Cut] {
+        let t = offered_targets(op);
+        assert!(t.contains(&TARGET_GNOME) && t.contains(&TARGET_URI_LIST));
+        // Every text variant an X11 client may ask for (GTK's text targets).
+        for name in ["STRING", "TEXT", "text/plain", "UTF8_STRING"] {
+            assert!(t.contains(&name), "{name}");
+        }
+    }
+}
+
+#[test]
+fn uri_list_is_a_cut_only_with_the_kde_marker() {
+    assert_eq!(uri_list_op(Some(b"1")), ClipOp::Cut);
+    assert_eq!(uri_list_op(Some(b"0")), ClipOp::Copy);
+    assert_eq!(uri_list_op(Some(b"")), ClipOp::Copy);
+    assert_eq!(uri_list_op(None), ClipOp::Copy);
+}
+
+#[test]
+fn clipboard_use_needs_a_focused_window() {
+    assert!(require_focus(true).is_ok());
+    let e = require_focus(false).unwrap_err();
+    assert_eq!(e.kind, "NoFocus");
+    assert!(e.message.contains("focus"), "{}", e.message);
+}
+
+#[test]
+fn dot_segments_are_refused_with_the_path_named() {
+    assert!(refuse_dot_segments(&awkward()).is_ok());
+    for bad in ["/a/./b", "/a/../b", "/a/..", "/./a", "/a/b/."] {
+        let e = refuse_dot_segments(&[PathBuf::from("/ok"), PathBuf::from(bad)]).unwrap_err();
+        assert_eq!(e.kind, "BadPath", "{bad}");
+        assert!(e.message.contains(bad), "{}", e.message);
+    }
+    // A name that merely contains dots is fine.
+    assert!(refuse_dot_segments(&[PathBuf::from("/a/.hidden/..x/y..")]).is_ok());
+}
+
+#[test]
+fn kde_marker_with_a_uri_list_round_trips_as_cut() {
+    let paths = awkward();
+    let list = encode_uri_list(&paths);
+    assert_eq!(decode_uri_list(&list), Some(paths));
+    assert_eq!(uri_list_op(kde_cut_data(ClipOp::Cut)), ClipOp::Cut);
+    assert_eq!(uri_list_op(kde_cut_data(ClipOp::Copy)), ClipOp::Copy);
 }

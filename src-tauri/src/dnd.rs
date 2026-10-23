@@ -31,7 +31,7 @@ use kernkraft_tauri::{WireError, WirePath};
 use serde::Serialize;
 use tauri::{DragDropEvent, Emitter, Manager, Runtime, WebviewWindow, Window};
 
-use crate::clipboard::{encode_uri_list, on_main, TARGET_URI_LIST};
+use crate::clipboard::{encode_uri_list, on_main, refuse_dot_segments, TARGET_URI_LIST};
 use crate::windows::wire_error;
 
 /// A drop from another application: `{ paths, position }`, sent to the
@@ -67,7 +67,13 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &tauri::WindowEven
     if let tauri::WindowEvent::DragDrop(DragDropEvent::Drop { paths, position }) = event {
         let payload = drop_payload(paths, position.x, position.y);
         if let Err(e) = window.emit_to(window.label(), EVENT_DROP, payload) {
-            eprintln!("kern: could not forward a drop to {}: {e}", window.label());
+            // The drop is lost; say so in the user's window.
+            let err = wire_error(
+                "Drop",
+                format!("a dropped file could not be passed to the window: {e}"),
+                None,
+            );
+            crate::windows::show_errors(window.app_handle(), &[err], "");
         }
     }
 }
@@ -146,6 +152,7 @@ pub async fn drag_out<R: Runtime>(
     if list.is_empty() {
         return Err(wire_error("InvalidArgument", "no files to drag", None));
     }
+    refuse_dot_segments(&list)?;
     let uris = encode_uri_list(&list);
     let app = window.app_handle().clone();
     on_main(&app, move |tx| {
