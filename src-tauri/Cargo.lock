@@ -2032,11 +2032,12 @@ dependencies = [
 
 [[package]]
 name = "kern"
-version = "0.1.0+0.2"
+version = "0.1.0+0.3"
 dependencies = [
  "kernkraft-fs",
  "kernkraft-tauri",
  "kernkraft-theme",
+ "rustix",
  "serde",
  "serde_json",
  "tauri",

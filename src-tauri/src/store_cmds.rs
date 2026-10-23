@@ -35,6 +35,14 @@ pub struct StoreState {
 }
 
 impl StoreState {
+    /// State over a given store.
+    pub fn new(store: Store) -> StoreState {
+        StoreState {
+            store: Ok(Arc::new(store)),
+            pending: Mutex::new(Vec::new()),
+        }
+    }
+
     /// The store under the user's XDG directories.
     pub fn from_env() -> StoreState {
         let store = match base_dirs() {
@@ -103,10 +111,10 @@ fn finish<R: Runtime, T: serde::Serialize + Clone>(
     loaded: Loaded<T>,
     event: &str,
 ) -> T {
-    let reset = loaded.corrupt.is_some();
-    if let Some(report) = &loaded.corrupt {
-        announce_corrupt(app, std::slice::from_ref(report));
-    }
+    // A file moved aside leaves defaults in its place; a field that could
+    // not be read leaves the file as it is.
+    let reset = loaded.corrupt.iter().any(|r| r.moved_to.is_some());
+    announce_corrupt(app, &loaded.corrupt);
     if loaded.changed || reset {
         let _ = app.emit(event, &loaded.value);
     }
@@ -210,15 +218,12 @@ pub async fn prune<R: Runtime>(app: AppHandle<R>) -> Result<PruneReport, WireErr
     let store = app.state::<StoreState>().store()?;
     let report = blocking(move || store.prune()).await?;
     announce_corrupt(&app, &report.corrupt);
-    if !report.pins_removed.is_empty() || !report.corrupt.is_empty() {
-        if let Ok(pins) = app.state::<StoreState>().store()?.pins_get() {
-            let _ = app.emit(EVENT_PINS_CHANGED, &pins.value);
-        }
+    let reset = report.corrupt.iter().any(|r| r.moved_to.is_some());
+    if reset || !report.pins_removed.is_empty() {
+        let _ = app.emit(EVENT_PINS_CHANGED, &report.pins);
     }
-    if !report.recents_removed.is_empty() || !report.corrupt.is_empty() {
-        if let Ok(recents) = app.state::<StoreState>().store()?.recents_get() {
-            let _ = app.emit(EVENT_RECENTS_CHANGED, &recents.value);
-        }
+    if reset || !report.recents_removed.is_empty() {
+        let _ = app.emit(EVENT_RECENTS_CHANGED, &report.recents);
     }
     Ok(report)
 }
