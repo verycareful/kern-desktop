@@ -17,6 +17,7 @@ use std::ffi::OsString;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use kernkraft_bus::BusError;
 use zbus::blocking::Connection;
@@ -60,18 +61,101 @@ pub fn unpack(argv: Vec<Vec<u8>>, cwd: Vec<u8>, activation_token: String) -> Inv
     }
 }
 
+/// Launches this instance has accepted and not yet finished handling: each
+/// `Open` answered on the bus, and the process's own. The application does
+/// not exit while one is pending, since the launcher was told it is taken.
+#[derive(Clone, Debug, Default)]
+pub struct Launches(Arc<Mutex<LaunchCount>>);
+
+#[derive(Debug, Default)]
+struct LaunchCount {
+    pending: usize,
+    /// The application agreed to exit; no launch is accepted after that.
+    closing: bool,
+}
+
+impl Launches {
+    fn lock(&self) -> std::sync::MutexGuard<'_, LaunchCount> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Counts a launch in. False once the application has agreed to exit:
+    /// the launch must then be refused, not accepted and dropped.
+    pub fn begin(&self) -> bool {
+        let mut c = self.lock();
+        if c.closing {
+            return false;
+        }
+        c.pending += 1;
+        true
+    }
+
+    /// Counts a handled launch out and returns how many remain.
+    pub fn finish(&self) -> usize {
+        let mut c = self.lock();
+        c.pending = c.pending.saturating_sub(1);
+        c.pending
+    }
+
+    pub fn pending(&self) -> usize {
+        self.lock().pending
+    }
+
+    /// The application is asked to exit. True allows it, and from then on
+    /// every launch is refused; false defers it until the pending launches
+    /// are handled.
+    pub fn exit_requested(&self) -> bool {
+        let mut c = self.lock();
+        if may_exit(c.pending) {
+            c.closing = true;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Whether a request to exit may go ahead: only with no launch pending.
+pub fn may_exit(pending: usize) -> bool {
+    pending == 0
+}
+
+/// Whether the application should exit now that a launch is handled: no
+/// launch is left and none of them left a window.
+pub fn exit_when_drained(pending: usize, windows: usize) -> bool {
+    pending == 0 && windows == 0
+}
+
 struct Kern1 {
     tx: Sender<Invocation>,
+    launches: Launches,
 }
 
 #[zbus::interface(name = "io.github.verycareful.Kern1")]
 impl Kern1 {
-    /// Hands a launch to the running instance. The receiver is gone only
-    /// when the application is exiting, so a failed send is not an error to
-    /// report to the caller.
-    fn open(&self, argv: Vec<Vec<u8>>, cwd: Vec<u8>, activation_token: String) {
-        let _ = self.tx.send(unpack(argv, cwd, activation_token));
+    /// Hands a launch to the running instance. It is counted as pending
+    /// before the caller gets its answer, so the instance does not exit
+    /// under it. An instance that is exiting refuses it, and the caller
+    /// reports that instead of taking the launch for handled.
+    fn open(
+        &self,
+        argv: Vec<Vec<u8>>,
+        cwd: Vec<u8>,
+        activation_token: String,
+    ) -> zbus::fdo::Result<()> {
+        if !self.launches.begin() {
+            return Err(exiting());
+        }
+        if self.tx.send(unpack(argv, cwd, activation_token)).is_err() {
+            self.launches.finish();
+            return Err(exiting());
+        }
+        Ok(())
     }
+}
+
+fn exiting() -> zbus::fdo::Error {
+    zbus::fdo::Error::Failed("Kern is exiting; launch it again".to_owned())
 }
 
 /// The outcome of asking for the name.
@@ -84,9 +168,10 @@ pub enum Claim {
 
 /// Serves [`INTERFACE`] on `conn`, then requests `name` without queueing.
 /// The object is served first so that a caller that sees the name finds it.
-pub fn claim(conn: &Connection, name: &str) -> Result<Claim, InstanceError> {
+pub fn claim(conn: &Connection, name: &str, launches: Launches) -> Result<Claim, InstanceError> {
     let (tx, rx) = mpsc::channel();
-    conn.object_server().at(OBJECT_PATH, Kern1 { tx })?;
+    conn.object_server()
+        .at(OBJECT_PATH, Kern1 { tx, launches })?;
     match conn.request_name_with_flags(name, RequestNameFlags::DoNotQueue.into()) {
         Ok(RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner) => Ok(Claim::Owner(rx)),
         Ok(RequestNameReply::Exists | RequestNameReply::InQueue) | Err(zbus::Error::NameTaken) => {
@@ -150,7 +235,7 @@ pub enum Role {
 ///
 /// A failed forward exits non-zero with the reason on stderr; no bus prints
 /// the reason and returns [`Role::Standalone`].
-pub fn start(own: &Invocation) -> Role {
+pub fn start(own: &Invocation, launches: Launches) -> Role {
     let conn = match kernkraft_bus::session() {
         Ok(c) => c,
         Err(e) => {
@@ -158,7 +243,7 @@ pub fn start(own: &Invocation) -> Role {
             return Role::Standalone;
         }
     };
-    match claim(&conn, BUS_NAME) {
+    match claim(&conn, BUS_NAME, launches) {
         Ok(Claim::Owner(launches)) => Role::Owner {
             connection: conn,
             launches,

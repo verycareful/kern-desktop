@@ -41,18 +41,22 @@ pub struct ParsedArgs {
 /// What a launch asks for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Plan {
-    /// No arguments: the main window, with a Home folder tab.
+    /// No arguments (a lone `--` included): the main window, with a Home
+    /// folder tab.
     Home,
     /// Open these.
     Open(ParsedArgs),
 }
 
-/// Decides what a command line asks for.
+/// Decides what a command line asks for. Every argument but the first `--`
+/// gives a path or an error, so a command line that gives neither had no
+/// arguments.
 pub fn plan(argv: &[OsString], cwd: &Path) -> Plan {
-    if argv.is_empty() {
+    let parsed = parse_args_report(argv, cwd);
+    if parsed.paths.is_empty() && parsed.errors.is_empty() {
         Plan::Home
     } else {
-        Plan::Open(parse_args_report(argv, cwd))
+        Plan::Open(parsed)
     }
 }
 

@@ -11,11 +11,11 @@ use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use common::{env, wp};
-use kern_lib::instance::Invocation;
+use common::{env, wait_for, wp};
+use kern_lib::instance::{Invocation, Launches};
 use kern_lib::windows::{handle_launch, page_reloading, EVENT_OPEN, EVENT_OPEN_ERROR};
 use serde_json::json;
-use tauri::Manager;
+use tauri::{Manager, WebviewWindowBuilder};
 
 #[test]
 fn forwarded_launch_with_unknown_cwd_opens_absolute_and_reports_relative() {
@@ -65,4 +65,56 @@ fn a_reloaded_page_gets_its_directives_queued_again() {
     let q = e.take("main");
     assert_eq!(q.len(), 1);
     assert_eq!(q[0]["event"], json!(EVENT_OPEN));
+}
+
+#[test]
+fn a_bare_double_dash_is_a_launch_without_arguments() {
+    let e = env(Duration::from_secs(5));
+    let inv = Invocation {
+        argv: vec![OsString::from("--")],
+        cwd: e.files.clone(),
+        activation_token: String::new(),
+    };
+    tauri::async_runtime::block_on(handle_launch(&e.handle, inv));
+    let q = e.take("main");
+    assert_eq!(q.len(), 1);
+    assert_eq!(q[0]["payload"], json!({"kind": "home_tab"}));
+}
+
+#[test]
+fn an_answered_launch_keeps_the_app_through_its_last_window_closing() {
+    let e = env(Duration::from_secs(5));
+    let launches = e.handle.state::<Launches>().inner().clone();
+    // A launch the bus already answered, not yet handled.
+    assert!(launches.begin());
+    let log = e.run_log.clone();
+    let seen = log.clone();
+    e.run(move |ctx| {
+        // The probe is the only window: destroying it asks the app to exit.
+        ctx.handle
+            .get_webview_window("probe")
+            .unwrap()
+            .destroy()
+            .unwrap();
+        let after_request = || {
+            let l = seen.lock().unwrap();
+            l.iter()
+                .position(|n| *n == "exit_requested")
+                .and_then(|i| l.get(i + 1).copied())
+        };
+        wait_for("the event after the exit request", || {
+            after_request().is_some()
+        });
+        // The loop went on to another turn: the exit was prevented.
+        assert_eq!(after_request(), Some("cleared"));
+        assert_eq!(launches.finish(), 0);
+        // A window for the run to end on once the test is done with it.
+        WebviewWindowBuilder::new(&ctx.handle, "last", Default::default())
+            .build()
+            .unwrap();
+    });
+    // With nothing pending, closing the last window ends the app.
+    let l = log.lock().unwrap();
+    assert_eq!(l.iter().filter(|n| **n == "exit_requested").count(), 2);
+    assert_eq!(l.last(), Some(&"exit"));
 }

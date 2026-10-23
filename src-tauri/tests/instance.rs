@@ -9,7 +9,7 @@ use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use kern_lib::instance::{claim, forward, Claim, Invocation};
+use kern_lib::instance::{claim, forward, Claim, Invocation, Launches};
 
 #[test]
 fn second_open_reaches_the_owner() {
@@ -22,10 +22,13 @@ fn second_open_reaches_the_owner() {
     };
     // A name of its own, so a running Kern is not disturbed.
     let name = format!("io.github.verycareful.kern.Test{}", std::process::id());
-    let Claim::Owner(launches) = claim(&owner_conn, &name).unwrap() else {
+    let Claim::Owner(launches) = claim(&owner_conn, &name, Launches::default()).unwrap() else {
         panic!("a fresh name must be free");
     };
-    assert!(matches!(claim(&second_conn, &name).unwrap(), Claim::Taken));
+    assert!(matches!(
+        claim(&second_conn, &name, Launches::default()).unwrap(),
+        Claim::Taken
+    ));
 
     let inv = Invocation {
         argv: vec![
@@ -53,4 +56,37 @@ fn forward_to_nobody_is_an_error() {
     };
     let name = format!("io.github.verycareful.kern.Nobody{}", std::process::id());
     assert!(forward(&conn, &name, &inv).is_err());
+}
+
+#[test]
+fn an_answered_open_is_counted_before_the_caller_returns() {
+    let (owner_conn, second_conn) = match (kernkraft_bus::session(), kernkraft_bus::session()) {
+        (Ok(a), Ok(b)) => (a, b),
+        (Err(e), _) | (_, Err(e)) => {
+            eprintln!("skipped: no session bus: {e}");
+            return;
+        }
+    };
+    let name = format!("io.github.verycareful.kern.Count{}", std::process::id());
+    let counted = Launches::default();
+    let Claim::Owner(launches) = claim(&owner_conn, &name, counted.clone()).unwrap() else {
+        panic!("a fresh name must be free");
+    };
+    let inv = Invocation {
+        argv: vec![OsString::from("a.txt")],
+        cwd: PathBuf::from("/w"),
+        activation_token: String::new(),
+    };
+    forward(&second_conn, &name, &inv).unwrap();
+    // The caller has its answer, and nothing has handled the launch yet:
+    // it is pending, so the owner will not exit under it.
+    assert_eq!(counted.pending(), 1);
+    assert_eq!(launches.recv_timeout(Duration::from_secs(30)).unwrap(), inv);
+
+    // Once the owner agreed to exit, a launch is refused, so the caller
+    // fails instead of being told it was taken.
+    assert_eq!(counted.finish(), 0);
+    assert!(counted.exit_requested());
+    assert!(forward(&second_conn, &name, &inv).is_err());
+    assert!(launches.try_recv().is_err());
 }

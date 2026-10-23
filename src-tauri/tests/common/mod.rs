@@ -6,8 +6,10 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use kern_lib::instance::Launches;
 use kern_lib::windows::WindowState;
 use kernkraft_tauri::WirePath;
 use serde_json::{json, Value};
@@ -18,7 +20,7 @@ use tauri::test::{
 use tauri::utils::acl::ExecutionContext;
 use tauri::utils::config::WindowConfig;
 use tauri::webview::InvokeRequest;
-use tauri::{App, AppHandle, Manager, WebviewWindowBuilder};
+use tauri::{App, AppHandle, Manager, RunEvent, WebviewWindowBuilder};
 
 /// How long a test waits to be sure something does not happen.
 pub const QUIET: Duration = Duration::from_millis(300);
@@ -45,6 +47,9 @@ pub struct Env {
     _tmp: tempfile::TempDir,
     pub app: App<MockRuntime>,
     pub ctx: Ctx,
+    /// The run events seen by [`Env::run`], in order: `exit_requested`,
+    /// `cleared` (one turn of the loop done) and `exit`.
+    pub run_log: Arc<Mutex<Vec<&'static str>>>,
 }
 
 impl std::ops::Deref for Env {
@@ -68,7 +73,19 @@ impl Env {
             }
             r
         });
-        self.app.run_return(|_, _| {});
+        let log = self.run_log.clone();
+        self.app.run_return(move |app, event| {
+            let name = match &event {
+                RunEvent::ExitRequested { .. } => Some("exit_requested"),
+                RunEvent::MainEventsCleared => Some("cleared"),
+                RunEvent::Exit => Some("exit"),
+                _ => None,
+            };
+            kern_lib::windows::on_run_event(app, event);
+            if let Some(n) = name {
+                log.lock().unwrap().push(n);
+            }
+        });
         if let Err(p) = t.join().unwrap() {
             std::panic::resume_unwind(p);
         }
@@ -104,6 +121,7 @@ pub fn env_with(
     let app = builder
         .plugin(kernkraft_tauri::init())
         .manage(WindowState::new(adopt_timeout))
+        .manage(Launches::default())
         .on_window_event(kern_lib::windows::on_window_event)
         .invoke_handler(tauri::generate_handler![
             kern_lib::windows::open_paths,
@@ -126,6 +144,7 @@ pub fn env_with(
         _tmp: tmp,
         app,
         ctx: Ctx { files, handle },
+        run_log: Arc::default(),
     }
 }
 

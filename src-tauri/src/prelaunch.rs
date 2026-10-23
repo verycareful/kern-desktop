@@ -31,9 +31,10 @@ pub enum Class {
     Failed(String),
 }
 
-/// Whether the launch needs a Kern window. No arguments means the main
-/// window with a Home tab; arguments that only fail or go to default
-/// applications need none.
+/// Whether the launch needs a Kern window. `arg_count` counts the
+/// arguments that give a path or an error; none means the main window with
+/// a Home tab. Arguments that only fail or go to default applications need
+/// none.
 pub fn needs_window(arg_count: usize, classes: &[Class]) -> bool {
     arg_count == 0 || classes.iter().any(|c| matches!(c, Class::Window))
 }
@@ -74,7 +75,7 @@ pub fn run(inv: &Invocation) -> Option<i32> {
         None => Err("HOME is not set to an absolute path".to_owned()),
     };
     let classes: Vec<Class> = parsed.paths.iter().map(|p| classify(p, &db)).collect();
-    if needs_window(inv.argv.len(), &classes) {
+    if needs_window(parsed.paths.len() + parsed.errors.len(), &classes) {
         return None;
     }
     let mut failures: Vec<String> = parsed.errors.iter().map(ToString::to_string).collect();

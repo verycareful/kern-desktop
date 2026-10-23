@@ -394,3 +394,48 @@ fn prelaunch_runs_only_what_needs_no_window() {
         Some(1)
     );
 }
+
+#[test]
+fn double_dash_alone_opens_home() {
+    // `--` only ends the options; with nothing after it the launch has no
+    // arguments, so it is Home, as with none at all.
+    assert_eq!(cli::plan(&[os("--")], Path::new("/w")), Plan::Home);
+    let t = tempfile::tempdir().unwrap();
+    let inv = kern_lib::instance::Invocation {
+        argv: vec![os("--")],
+        cwd: t.path().to_path_buf(),
+        activation_token: String::new(),
+    };
+    // It needs a window, so the application starts.
+    assert_eq!(kern_lib::prelaunch::run(&inv), None);
+    // `--` followed by a name is that name.
+    assert!(matches!(
+        cli::plan(&[os("--"), os("a")], Path::new("/w")),
+        Plan::Open(p) if p.paths == vec![PathBuf::from("/w/a")]
+    ));
+}
+
+#[test]
+fn exit_waits_for_answered_launches() {
+    use kern_lib::instance::{exit_when_drained, may_exit, Launches};
+    assert!(may_exit(0));
+    assert!(!may_exit(1));
+    // Drained with no window left: exit. A window or a launch left: stay.
+    assert!(exit_when_drained(0, 0));
+    assert!(!exit_when_drained(0, 1));
+    assert!(!exit_when_drained(1, 0));
+
+    let l = Launches::default();
+    assert!(l.begin());
+    assert!(l.begin());
+    // Two answered launches pending: the exit is deferred.
+    assert!(!l.exit_requested());
+    assert_eq!(l.finish(), 1);
+    assert!(!l.exit_requested());
+    assert_eq!(l.finish(), 0);
+    // Drained: the exit goes ahead, and a launch after it is refused
+    // rather than accepted and lost.
+    assert!(l.exit_requested());
+    assert!(!l.begin());
+    assert_eq!(l.pending(), 0);
+}

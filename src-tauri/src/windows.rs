@@ -33,6 +33,7 @@ use tauri::{
 };
 
 use crate::cli::{self, ArgError, Plan};
+use crate::instance::{exit_when_drained, Launches};
 use crate::open::{route, Gesture, Kind, Location, OpenRegistry, Origin, Target};
 use crate::store_cmds::StoreState;
 
@@ -337,7 +338,15 @@ async fn is_text<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Result<bool, Wi
     Ok(blocking(move || kk.mime_of(wp)).await?.is_text)
 }
 
-async fn open_default_app<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Result<(), WireError> {
+/// Opens `files` with their default applications in one kernkraft
+/// `open_default` call: one launch per application with all of its files,
+/// and nothing opened when any file has no default application. `prelaunch`
+/// follows the same rules for a launch that needs no window, so the same
+/// arguments start the same launches with or without a running Kern.
+async fn open_default_apps<R: Runtime>(
+    app: &AppHandle<R>,
+    files: Vec<PathBuf>,
+) -> Result<(), WireError> {
     let terminal = match app.try_state::<StoreState>() {
         Some(s) => {
             let store = s.store()?;
@@ -346,8 +355,8 @@ async fn open_default_app<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Result
         None => None,
     };
     let kk = app.kernkraft();
-    let wp = WirePath::from(path);
-    blocking(move || kk.open_default(vec![wp], terminal)).await
+    let wps = files.iter().map(|f| WirePath::from(f.as_path())).collect();
+    blocking(move || kk.open_default(wps, terminal)).await
 }
 
 /// What a path is and which file it resolves to, or why that is unknown.
@@ -371,8 +380,11 @@ async fn resolve<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Resolved {
     Resolved { canonical, kind }
 }
 
-/// Applies the rules to `paths` and does what they say. `token` is the
-/// activation token of the launch, empty for a click inside Kern.
+/// Applies the rules to `paths` and does what they say, one outcome per
+/// path in order. `token` is the activation token of the launch, empty for
+/// a click inside Kern. The files for default applications are opened
+/// together at the end (see [`open_default_apps`]); if that fails, each of
+/// them carries the error.
 pub async fn open_paths_impl<R: Runtime>(
     app: &AppHandle<R>,
     paths: Vec<PathBuf>,
@@ -381,23 +393,34 @@ pub async fn open_paths_impl<R: Runtime>(
     token: &str,
 ) -> Vec<OpenOutcome> {
     let mut out = Vec::with_capacity(paths.len());
+    // Index in `out`, and the file to open.
+    let mut defaults: Vec<(usize, PathBuf)> = Vec::new();
     for path in paths {
-        out.push(open_one(app, &path, origin, gesture, token).await);
+        match try_open(app, &path, origin, gesture, token).await {
+            Ok(Step::Done(o)) => out.push(o),
+            Ok(Step::DefaultApp(p)) => {
+                defaults.push((out.len(), p));
+                out.push(OpenOutcome {
+                    path: WirePath::from(path.as_path()),
+                    action: "default_app",
+                    location: None,
+                    error: None,
+                });
+            }
+            Err(e) => out.push(OpenOutcome::failed(&path, e)),
+        }
+    }
+    if defaults.is_empty() {
+        return out;
+    }
+    let files = defaults.iter().map(|(_, p)| p.clone()).collect();
+    if let Err(e) = open_default_apps(app, files).await {
+        for (i, _) in &defaults {
+            out[*i].action = "failed";
+            out[*i].error = Some(e.clone());
+        }
     }
     out
-}
-
-async fn open_one<R: Runtime>(
-    app: &AppHandle<R>,
-    path: &Path,
-    origin: Origin,
-    gesture: Gesture,
-    token: &str,
-) -> OpenOutcome {
-    match try_open(app, path, origin, gesture, token).await {
-        Ok(o) => o,
-        Err(e) => OpenOutcome::failed(path, e),
-    }
 }
 
 /// What a path is to be given, decided under the gate.
@@ -424,23 +447,12 @@ async fn try_open<R: Runtime>(
     origin: Origin,
     gesture: Gesture,
     token: &str,
-) -> Result<OpenOutcome, WireError> {
+) -> Result<Step, WireError> {
     // All file access happens before the registry is consulted. The check
     // and the reservation are one step under the gate; the window is built
     // after it (see the gate's rule).
     let resolved = resolve(app, path).await;
-    match place(app, path, &resolved, origin, gesture, token)? {
-        Step::Done(o) => Ok(o),
-        Step::DefaultApp(p) => {
-            open_default_app(app, &p).await?;
-            Ok(OpenOutcome {
-                path: WirePath::from(path),
-                action: "default_app",
-                location: None,
-                error: None,
-            })
-        }
-    }
+    place(app, path, &resolved, origin, gesture, token)
 }
 
 /// Decides under the gate, then carries the decision out without it.
@@ -493,7 +505,9 @@ fn place<R: Runtime>(
                 label: label.clone(),
             };
             let result = build_doc_window(app, &label);
-            built(&st, &label);
+            // This launch's token, or a later one that landed on the window
+            // while it was being built.
+            let token = built(&st, &label);
             if let Err(e) = result {
                 // The reservation was never a window.
                 st.open.remove_if(&p, &loc);
@@ -506,6 +520,7 @@ fn place<R: Runtime>(
                     path: WirePath::from(&p),
                 },
             )?;
+            focus(app, &label, &token)?;
             Ok(done("doc_window", Some(loc)))
         }
         Placement::Focus(loc) => {
@@ -521,10 +536,11 @@ fn place<R: Runtime>(
                     focus(app, MAIN, token)?;
                 }
                 Location::Window { label } => {
-                    // A window still being built is presented by its builder
-                    // when done; this launch's token is handed to it. Checked
-                    // and set under the lock `built` takes, so it is either
-                    // handed over or the window is presented here.
+                    // A window still being built is presented by the launch
+                    // building it, once built, with the latest token handed
+                    // to it; this launch's token is handed over. Checked and
+                    // set under the lock `built` takes, so the token is
+                    // either handed over or the window is presented here.
                     let building = {
                         let mut inner = st.lock();
                         match inner.creating.get_mut(label) {
@@ -633,7 +649,12 @@ pub async fn handle_launch<R: Runtime>(app: &AppHandle<R>, inv: crate::instance:
             let mut errors: Vec<WireError> = parsed.errors.iter().map(arg_error).collect();
             let outcomes =
                 open_paths_impl(app, parsed.paths, Origin::Outside, Gesture::Default, token).await;
-            errors.extend(outcomes.into_iter().filter_map(|o| o.error));
+            for e in outcomes.into_iter().filter_map(|o| o.error) {
+                // Files opened together share one error; it is shown once.
+                if !errors.contains(&e) {
+                    errors.push(e);
+                }
+            }
             errors
         }
     };
@@ -663,19 +684,31 @@ pub async fn open_paths<R: Runtime>(
     origin: Origin,
     gesture: Gesture,
 ) -> Result<Vec<OpenOutcome>, WireError> {
-    let mut out = Vec::with_capacity(paths.len());
+    // A path that does not decode keeps its place among the outcomes.
+    let mut out: Vec<Option<OpenOutcome>> = Vec::with_capacity(paths.len());
+    let mut good = Vec::new();
     for wp in paths {
         match wp.to_path_buf() {
-            Ok(p) => out.push(open_one(&app, &p, origin, gesture, "").await),
-            Err(e) => out.push(OpenOutcome {
+            Ok(p) => {
+                good.push(p);
+                out.push(None);
+            }
+            Err(e) => out.push(Some(OpenOutcome {
                 path: wp,
                 action: "failed",
                 location: None,
                 error: Some(WireError::from(e)),
-            }),
+            })),
         }
     }
-    Ok(out)
+    let mut opened = open_paths_impl(&app, good, origin, gesture, "")
+        .await
+        .into_iter();
+    // `open_paths_impl` gives one outcome per path, so none is missing.
+    out.into_iter()
+        .map(|o| o.or_else(|| opened.next()))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| wire_error("Internal", "an open outcome is missing", None))
 }
 
 /// The frontend opened `path` at `location`.
@@ -943,7 +976,42 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
     }
 }
 
-/// Starts the thread that applies launches forwarded to this instance.
+/// Application events. Closing the last window asks the application to
+/// exit; while a launch it accepted is still pending (answered on the bus,
+/// or this process's own) the exit is deferred, and [`launch_finished`]
+/// decides again once the launches are handled.
+pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: tauri::RunEvent) {
+    if let tauri::RunEvent::ExitRequested { api, .. } = event {
+        if let Some(l) = app.try_state::<Launches>() {
+            if !l.exit_requested() {
+                api.prevent_exit();
+            }
+        }
+    }
+}
+
+/// A launch counted in [`Launches`] is handled. When it was the last one
+/// and no window is open, nothing is left for the application to show, so
+/// it exits (an exit deferred by [`on_run_event`] ends here, as does a
+/// launch that opened no window).
+pub fn launch_finished<R: Runtime>(app: &AppHandle<R>) {
+    let Some(l) = app.try_state::<Launches>() else {
+        return;
+    };
+    let remaining = l.finish();
+    if exit_when_drained(remaining, app.webview_windows().len()) {
+        app.exit(0);
+    }
+}
+
+/// Handles a launch counted in [`Launches`], then counts it out.
+pub async fn run_launch<R: Runtime>(app: &AppHandle<R>, inv: crate::instance::Invocation) {
+    handle_launch(app, inv).await;
+    launch_finished(app);
+}
+
+/// Starts the thread that applies launches forwarded to this instance. Each
+/// was counted in when the bus call was answered.
 pub fn serve_launches<R: Runtime>(
     app: AppHandle<R>,
     launches: std::sync::mpsc::Receiver<crate::instance::Invocation>,
@@ -952,7 +1020,7 @@ pub fn serve_launches<R: Runtime>(
         for inv in launches {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
-                handle_launch(&app, inv).await;
+                run_launch(&app, inv).await;
             });
         }
     });

@@ -24,7 +24,11 @@ pub fn run() {
     if let Some(code) = prelaunch::run(&own) {
         std::process::exit(code);
     }
-    let role = instance::start(&own);
+    let launches = instance::Launches::default();
+    // This process's own launch is pending from the start, like one
+    // answered on the bus; nothing can have closed the application yet.
+    launches.begin();
+    let role = instance::start(&own, launches.clone());
     tauri::Builder::default()
         // Document windows are not remembered: a new doc-1 is unrelated to
         // an earlier one. The main window keeps its place.
@@ -39,6 +43,7 @@ pub fn run() {
         .setup(move |app| {
             app.manage(store_cmds::StoreState::from_env());
             app.manage(windows::WindowState::default());
+            app.manage(launches);
             store_cmds::apply_at_startup(app.handle());
             match role {
                 instance::Role::Owner {
@@ -55,7 +60,7 @@ pub fn run() {
             // This process's own launch is handled like a forwarded one.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                windows::handle_launch(&handle, own).await;
+                windows::run_launch(&handle, own).await;
             });
             Ok(())
         })
@@ -79,6 +84,7 @@ pub fn run() {
             windows::adopted,
             windows::confirm_close,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Kern");
+        .build(tauri::generate_context!())
+        .expect("error while building Kern")
+        .run(windows::on_run_event);
 }
