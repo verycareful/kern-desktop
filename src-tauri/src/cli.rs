@@ -105,6 +105,26 @@ pub fn file_uri_path(uri: &OsStr) -> Result<PathBuf, String> {
     Ok(path.components().collect())
 }
 
+/// The `file://` URI of an absolute path: every byte outside the unreserved
+/// set (RFC 3986, section 2.3: letters, digits, `-`, `.`, `_`, `~`) and the
+/// separator `/` is written `%XX` with upper-case hex (section 2.1). It works
+/// on bytes, so a name that is not UTF-8 is exact, and
+/// [`file_uri_path`] reads it back.
+pub fn file_uri_encode(path: &Path) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut out = String::from("file://");
+    for &b in path.as_os_str().as_bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'/') {
+            out.push(char::from(b));
+        } else {
+            out.push('%');
+            out.push(char::from(HEX[usize::from(b >> 4)]));
+            out.push(char::from(HEX[usize::from(b & 0xF)]));
+        }
+    }
+    out
+}
+
 fn one(arg: &OsStr, cwd: &Path) -> Result<PathBuf, String> {
     let bytes = arg.as_bytes();
     if bytes.is_empty() {

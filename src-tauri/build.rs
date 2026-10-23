@@ -26,6 +26,10 @@ const COMMANDS: &[&str] = &[
     "fm1_status",
     "default_fm_status",
     "make_default_fm",
+    "clip_set",
+    "clip_get",
+    "clip_text",
+    "drag_out",
 ];
 
 fn main() {

@@ -26,6 +26,10 @@
     "allow-confirm-close",
     "allow-fm1-status",
     "allow-default-fm-status",
-    "allow-make-default-fm"
+    "allow-make-default-fm",
+    "allow-clip-set",
+    "allow-clip-get",
+    "allow-clip-text",
+    "allow-drag-out"
   ]
 }

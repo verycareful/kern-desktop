@@ -969,6 +969,7 @@ pub fn page_reloading<R: Runtime>(app: &AppHandle<R>, label: &str) {
 /// that is gone is forgotten.
 pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
     match event {
+        WindowEvent::DragDrop(_) => crate::dnd::on_window_event(window, event),
         WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             ask_to_close(window);

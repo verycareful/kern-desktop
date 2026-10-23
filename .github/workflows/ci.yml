@@ -46,6 +46,9 @@ jobs:
       - name: Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --all-features
 
+      - name: Timing budgets (release build)
+        run: cargo test --release --manifest-path src-tauri/Cargo.toml --all-features -- --ignored
+
       - name: cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
         with:

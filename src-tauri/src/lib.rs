@@ -2,7 +2,9 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
 pub mod cli;
+pub mod clipboard;
 pub mod default_fm;
+pub mod dnd;
 pub mod filemanager1;
 pub mod instance;
 pub mod open;
@@ -103,6 +105,10 @@ pub fn run() {
             filemanager1::fm1_status,
             default_fm::default_fm_status,
             default_fm::make_default_fm,
+            clipboard::clip_set,
+            clipboard::clip_get,
+            clipboard::clip_text,
+            dnd::drag_out,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Kern")
