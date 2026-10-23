@@ -166,6 +166,23 @@ fn file_uri(b: &[u8]) -> Result<Vec<u8>, String> {
     Ok(percent_decode(&remove_dot_segments(path)))
 }
 
+/// The segment with each `%2E` or `%2e` as ".".
+fn decode_dots(seg: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(seg.len());
+    let mut i = 0;
+    while i < seg.len() {
+        if seg[i..].len() >= 3 && seg[i] == b'%' && seg[i + 1] == b'2' && seg[i + 2] | 0x20 == b'e'
+        {
+            out.push(b'.');
+            i += 3;
+        } else {
+            out.push(seg[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
 /// RFC 3986 section 5.2.4 on an absolute path: `.` segments go and `..`
 /// removes the segment before it (never the root).
 fn remove_dot_segments(path: &[u8]) -> Vec<u8> {
@@ -174,7 +191,9 @@ fn remove_dot_segments(path: &[u8]) -> Vec<u8> {
     let mut trailing = false;
     while let Some(seg) = segs.next() {
         let last = segs.peek().is_none();
-        match seg {
+        // `%2E` is the unreserved "." (RFC 3986 section 6.2.2.2).
+        let plain = decode_dots(seg);
+        match plain.as_slice() {
             b"." => trailing = last,
             b".." => {
                 out.pop();

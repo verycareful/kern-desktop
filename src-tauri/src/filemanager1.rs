@@ -241,6 +241,19 @@ fn owner_of(conn: &Connection, name: &str) -> (Option<String>, Option<String>) {
     }
 }
 
+/// What to add to the status when taking the unused object off the bus
+/// failed (`Err`) or found nothing to take off (`Ok(false)`); `None` when
+/// it was removed.
+pub fn removal_note(removed: zbus::Result<bool>) -> Option<String> {
+    match removed {
+        Ok(true) => None,
+        Ok(false) => {
+            Some("the unused object was not registered, which should not happen".to_owned())
+        }
+        Err(e) => Some(format!("could not remove the unused object: {e}")),
+    }
+}
+
 /// Serves [`INTERFACE`] on `conn` and requests `name` without queueing. The
 /// object is served first so that a caller that sees the name finds it.
 /// When another connection owns the name the object is removed again and
@@ -268,14 +281,18 @@ pub fn serve(conn: &Connection, name: &str, launches: Launches) -> Result<Servic
         })
     } else {
         // Nothing will be called on this connection.
-        let _ = conn.object_server().remove::<Fm1, _>(OBJECT_PATH);
+        let removed = conn.object_server().remove::<Fm1, _>(OBJECT_PATH);
         let (owner, problem) = owner_of(conn, name);
+        let mut reason =
+            problem.unwrap_or_else(|| format!("another file manager already owns {name}"));
+        if let Some(note) = removal_note(removed) {
+            reason.push_str("; ");
+            reason.push_str(&note);
+        }
         Fm1State::new(Fm1Status {
             owned: false,
             owner,
-            reason: Some(
-                problem.unwrap_or_else(|| format!("another file manager already owns {name}")),
-            ),
+            reason: Some(reason),
         })
     };
     Ok(Service {

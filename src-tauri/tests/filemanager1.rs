@@ -348,17 +348,64 @@ fn a_file_manager_asking_to_replace_kern_is_refused() {
 }
 
 #[test]
-fn group_by_parent_is_linear_enough_for_many_items() {
+fn group_by_parent_keeps_order_over_many_items() {
+    // Items alternate between two folders and every item appears twice.
+    let paths: Vec<PathBuf> = (0..2000)
+        .chain(0..2000)
+        .map(|i| PathBuf::from(format!("/d{}/{i}", i % 2)))
+        .collect();
+    let g = group_by_parent(&paths);
+    assert_eq!(g.len(), 2);
+    assert_eq!(g[0].folder, PathBuf::from("/d0"));
+    let want: Vec<PathBuf> = (0..2000)
+        .step_by(2)
+        .map(|i| PathBuf::from(format!("/d0/{i}")))
+        .collect();
+    assert_eq!(g[0].items, want);
+    assert_eq!(g[1].items.len(), 1000);
+}
+
+/// Timing, so it runs only on request: `cargo test --release -- --ignored`.
+/// Quadratic grouping of 50 000 items takes minutes; linear takes
+/// milliseconds.
+#[test]
+#[ignore = "timing; run with --release"]
+fn group_by_parent_is_fast_for_50_000_items() {
     let paths: Vec<PathBuf> = (0..50_000)
         .map(|i| PathBuf::from(format!("/d/{i}")))
         .collect();
     let start = std::time::Instant::now();
     let g = group_by_parent(&paths);
-    assert_eq!(g.len(), 1);
     assert_eq!(g[0].items.len(), 50_000);
-    // Quadratic grouping of 50 000 items takes minutes; this takes
-    // milliseconds, so a generous bound separates them.
     assert!(start.elapsed() < Duration::from_secs(5));
+}
+
+#[test]
+fn a_failed_object_removal_is_worded_for_the_status() {
+    use kern_lib::filemanager1::removal_note;
+    assert_eq!(removal_note(Ok(true)), None);
+    let none = removal_note(Ok(false)).unwrap();
+    assert!(none.contains("was not registered"), "{none}");
+    let err = removal_note(Err(zbus::Error::Failure("boom".to_owned()))).unwrap();
+    assert!(err.contains("boom"), "{err}");
+}
+
+#[test]
+fn encoded_dot_segments_in_a_uri_are_removed() {
+    // RFC 3986 section 6.2.2.2: %2E is the unreserved ".".
+    let b = uris_to_paths(&uris(&[
+        "file:///a/%2E%2e/b",
+        "file:///a/%2e/b",
+        "file:///a/.%2E/b",
+    ]));
+    assert_eq!(
+        b.paths,
+        vec![
+            PathBuf::from("/b"),
+            PathBuf::from("/a/b"),
+            PathBuf::from("/b")
+        ]
+    );
 }
 
 #[test]
