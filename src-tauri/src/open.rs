@@ -2,8 +2,9 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
 //! Where an opened path goes: the rules of design D4.3 to D4.5 and 6.1
-//! (kern-desktop 0.1.0.0 design), as a pure function over what the registry
-//! knows.
+//! (kern-desktop 0.1.0.0 design), as a pure function. The caller does the
+//! file-system work (what the path is, which file it resolves to) and passes
+//! the answers in; nothing here touches the disk.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -49,10 +50,20 @@ pub enum Target {
     DefaultApp(PathBuf),
 }
 
+/// What a path is, resolved through links by the caller.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Folder,
+    /// A file the editor opens (D6.1).
+    Text,
+    /// Any other file.
+    Other,
+}
+
 struct Entry {
     location: Location,
-    /// The resolved path at registration, so a second route to one file
-    /// (a symlink) is found too.
+    /// The resolved path given at registration, so a second route to one
+    /// file (a symlink) is found too.
     canonical: Option<PathBuf>,
 }
 
@@ -72,8 +83,8 @@ impl OpenRegistry {
     }
 
     /// Records `path` as open at `location`, replacing an earlier place.
-    pub fn insert(&self, path: &Path, location: Location) {
-        let canonical = std::fs::canonicalize(path).ok();
+    /// `canonical` is the path with links resolved, when it can be.
+    pub fn insert(&self, path: &Path, canonical: Option<PathBuf>, location: Location) {
         self.lock().insert(
             path.to_path_buf(),
             Entry {
@@ -83,20 +94,31 @@ impl OpenRegistry {
         );
     }
 
+    /// Forgets `path`, whatever place it has.
     pub fn remove(&self, path: &Path) {
         self.lock().remove(path);
     }
 
+    /// Forgets `path` only if it is registered at `location`: a tab closing
+    /// after its document moved to a window must not erase the window.
+    pub fn remove_if(&self, path: &Path, location: &Location) {
+        let mut map = self.lock();
+        if map.get(path).is_some_and(|e| &e.location == location) {
+            map.remove(path);
+        }
+    }
+
     /// Where `path` is open: under the same name, or through a link to the
-    /// same file (a rule that stops two dirty copies of one file).
-    pub fn get(&self, path: &Path) -> Option<Location> {
+    /// same file (`canonical` is the caller's resolution of `path`), which
+    /// stops two dirty copies of one file.
+    pub fn get(&self, path: &Path, canonical: Option<&Path>) -> Option<Location> {
         let map = self.lock();
         if let Some(e) = map.get(path) {
             return Some(e.location.clone());
         }
-        let canon = std::fs::canonicalize(path).ok()?;
+        let canon = canonical?;
         map.values()
-            .find(|e| e.canonical.as_deref() == Some(canon.as_path()))
+            .find(|e| e.canonical.as_deref() == Some(canon))
             .map(|e| e.location.clone())
     }
 
@@ -122,38 +144,28 @@ impl OpenRegistry {
     }
 }
 
-/// The rules. `is_text` is whether the editor can open the file (D6.1);
-/// `path_is_dir` follows links, so a link to a folder is a folder.
+/// The rules, with no file access. `canonical` is `path` with links
+/// resolved (when it can be) and `kind` what it is, resolved through links:
+/// a link to a folder is a folder (Review Focus 4). The target keeps `path`
+/// as given.
 pub fn route(
     path: &Path,
+    canonical: Option<&Path>,
     origin: Origin,
     gesture: Gesture,
-    is_text: bool,
+    kind: Kind,
     open: &OpenRegistry,
 ) -> Target {
-    route_kind(path, path.is_dir(), origin, gesture, is_text, open)
-}
-
-/// [`route`] with the folder test given.
-pub fn route_kind(
-    path: &Path,
-    is_dir: bool,
-    origin: Origin,
-    gesture: Gesture,
-    is_text: bool,
-    open: &OpenRegistry,
-) -> Target {
-    if let Some(loc) = open.get(path) {
+    if let Some(loc) = open.get(path, canonical) {
         return Target::Focus(loc);
     }
     let p = path.to_path_buf();
-    if is_dir {
-        Target::FolderTab(p)
-    } else if !is_text {
-        Target::DefaultApp(p)
-    } else if origin == Origin::Outside || gesture == Gesture::NewWindow {
-        Target::DocWindow(p)
-    } else {
-        Target::DocTab(p)
+    match kind {
+        Kind::Folder => Target::FolderTab(p),
+        Kind::Other => Target::DefaultApp(p),
+        Kind::Text if origin == Origin::Outside || gesture == Gesture::NewWindow => {
+            Target::DocWindow(p)
+        }
+        Kind::Text => Target::DocTab(p),
     }
 }

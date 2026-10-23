@@ -66,8 +66,11 @@ pub fn parse_args(argv: &[OsString], cwd: &Path) -> Vec<PathBuf> {
 /// Like [`parse_args`], keeping the refused arguments.
 pub fn parse_args_report(argv: &[OsString], cwd: &Path) -> ParsedArgs {
     let mut out = ParsedArgs::default();
+    let mut options_ended = false;
     for arg in argv {
-        if arg.as_bytes() == b"--" {
+        // The first `--` ends the options; a later one is a path.
+        if !options_ended && arg.as_bytes() == b"--" {
+            options_ended = true;
             continue;
         }
         match one(arg, cwd) {
@@ -88,8 +91,12 @@ fn one(arg: &OsStr, cwd: &Path) -> Result<PathBuf, String> {
     }
     let path = if has_file_scheme(bytes) {
         PathBuf::from(OsString::from_vec(file_uri(bytes)?))
-    } else {
+    } else if Path::new(arg).is_absolute() {
+        PathBuf::from(arg)
+    } else if cwd.is_absolute() {
         cwd.join(arg)
+    } else {
+        return Err("relative path, and the launching directory is unknown".to_owned());
     };
     if path.as_os_str().as_bytes().contains(&0) {
         return Err("path contains a NUL byte".to_owned());
@@ -126,7 +133,16 @@ fn file_uri(b: &[u8]) -> Result<Vec<u8>, String> {
         .iter()
         .position(|&c| c == b'?' || c == b'#')
         .unwrap_or(rest.len());
-    Ok(percent_decode(&rest[..end]))
+    let path = &rest[..end];
+    // An escaped `/` is data inside a segment, not a separator (RFC 3986,
+    // sections 2.2 and 3.3), and a file name cannot hold one.
+    if path
+        .split(|&c| c == b'/')
+        .any(|seg| percent_decode(seg).contains(&b'/'))
+    {
+        return Err("file URI has an escaped slash inside a name".to_owned());
+    }
+    Ok(percent_decode(path))
 }
 
 /// `%XX` becomes that byte; a `%` not followed by two hex digits stays as it

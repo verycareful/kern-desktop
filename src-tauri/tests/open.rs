@@ -10,8 +10,19 @@ use std::path::{Path, PathBuf};
 
 use kern_lib::cli::{self, parse_args, parse_args_report, Plan};
 use kern_lib::instance::{pack_args, unpack};
-use kern_lib::open::{route, Gesture, Location, OpenRegistry, Origin, Target};
-use kern_lib::windows::next_doc_label;
+use kern_lib::open::{route, Gesture, Kind, Location, OpenRegistry, Origin, Target};
+use kern_lib::windows::{first_launch_exit, next_doc_label, wire_error};
+
+/// `route` with the caller's part done: links resolved from the disk.
+fn go(path: &Path, origin: Origin, gesture: Gesture, kind: Kind, reg: &OpenRegistry) -> Target {
+    let canonical = fs::canonicalize(path).ok();
+    route(path, canonical.as_deref(), origin, gesture, kind, reg)
+}
+
+/// Registers `path` the way the commands do.
+fn register(reg: &OpenRegistry, path: &Path, loc: Location) {
+    reg.insert(path, fs::canonicalize(path).ok(), loc);
+}
 
 fn os(s: &str) -> OsString {
     OsString::from(s)
@@ -30,7 +41,7 @@ fn dir_opens_folder_tab() {
     for origin in [Origin::Inside, Origin::Outside] {
         // Whatever the type flag says, a folder is a folder.
         assert_eq!(
-            route(t.path(), origin, Gesture::Default, true, &reg),
+            go(t.path(), origin, Gesture::Default, Kind::Folder, &reg),
             Target::FolderTab(t.path().to_path_buf())
         );
     }
@@ -45,7 +56,7 @@ fn symlink_to_folder_opens_as_folder_with_path_as_given() {
     std::os::unix::fs::symlink(&real, &link).unwrap();
     let reg = OpenRegistry::new();
     assert_eq!(
-        route(&link, Origin::Outside, Gesture::Default, false, &reg),
+        go(&link, Origin::Outside, Gesture::Default, Kind::Folder, &reg),
         Target::FolderTab(link)
     );
 }
@@ -56,7 +67,7 @@ fn outside_text_gets_window() {
     let f = file(t.path(), "a.txt");
     let reg = OpenRegistry::new();
     assert_eq!(
-        route(&f, Origin::Outside, Gesture::Default, true, &reg),
+        go(&f, Origin::Outside, Gesture::Default, Kind::Text, &reg),
         Target::DocWindow(f)
     );
 }
@@ -67,7 +78,7 @@ fn inside_text_gets_tab() {
     let f = file(t.path(), "a.txt");
     let reg = OpenRegistry::new();
     assert_eq!(
-        route(&f, Origin::Inside, Gesture::Default, true, &reg),
+        go(&f, Origin::Inside, Gesture::Default, Kind::Text, &reg),
         Target::DocTab(f)
     );
 }
@@ -78,7 +89,7 @@ fn ctrl_double_click_gets_window() {
     let f = file(t.path(), "a.txt");
     let reg = OpenRegistry::new();
     assert_eq!(
-        route(&f, Origin::Inside, Gesture::NewWindow, true, &reg),
+        go(&f, Origin::Inside, Gesture::NewWindow, Kind::Text, &reg),
         Target::DocWindow(f)
     );
 }
@@ -94,7 +105,7 @@ fn non_text_goes_default_app() {
         (Origin::Outside, Gesture::Default),
     ] {
         assert_eq!(
-            route(&f, origin, gesture, false, &reg),
+            go(&f, origin, gesture, Kind::Other, &reg),
             Target::DefaultApp(f.clone())
         );
     }
@@ -108,15 +119,15 @@ fn already_open_focuses() {
     let loc = Location::Tab {
         tab_id: "t1".to_owned(),
     };
-    reg.insert(&f, loc.clone());
+    register(&reg, &f, loc.clone());
     assert_eq!(
-        route(&f, Origin::Outside, Gesture::Default, true, &reg),
+        go(&f, Origin::Outside, Gesture::Default, Kind::Text, &reg),
         Target::Focus(loc)
     );
     // Closing it makes it routable again.
     reg.remove(&f);
     assert_eq!(
-        route(&f, Origin::Outside, Gesture::Default, true, &reg),
+        go(&f, Origin::Outside, Gesture::Default, Kind::Text, &reg),
         Target::DocWindow(f)
     );
 }
@@ -131,9 +142,9 @@ fn already_open_through_a_link_focuses() {
     let loc = Location::Window {
         label: "doc-1".to_owned(),
     };
-    reg.insert(&f, loc.clone());
+    register(&reg, &f, loc.clone());
     assert_eq!(
-        route(&link, Origin::Inside, Gesture::Default, true, &reg),
+        go(&link, Origin::Inside, Gesture::Default, Kind::Text, &reg),
         Target::Focus(loc)
     );
 }
@@ -143,7 +154,8 @@ fn removing_a_deleted_file_still_forgets_it() {
     let t = tempfile::tempdir().unwrap();
     let f = file(t.path(), "a.txt");
     let reg = OpenRegistry::new();
-    reg.insert(
+    register(
+        &reg,
         &f,
         Location::Tab {
             tab_id: "t".to_owned(),
@@ -151,19 +163,21 @@ fn removing_a_deleted_file_still_forgets_it() {
     );
     fs::remove_file(&f).unwrap();
     reg.remove(&f);
-    assert_eq!(reg.get(&f), None);
+    assert_eq!(reg.get(&f, None), None);
 }
 
 #[test]
 fn window_and_tab_cleanup() {
     let reg = OpenRegistry::new();
-    reg.insert(
+    register(
+        &reg,
         Path::new("/a"),
         Location::Window {
             label: "doc-1".to_owned(),
         },
     );
-    reg.insert(
+    register(
+        &reg,
         Path::new("/b"),
         Location::Tab {
             tab_id: "t".to_owned(),
@@ -171,10 +185,10 @@ fn window_and_tab_cleanup() {
     );
     assert_eq!(reg.path_of_window("doc-1"), Some(PathBuf::from("/a")));
     reg.remove_window("doc-1");
-    assert_eq!(reg.get(Path::new("/a")), None);
-    assert!(reg.get(Path::new("/b")).is_some());
+    assert_eq!(reg.get(Path::new("/a"), None), None);
+    assert!(reg.get(Path::new("/b"), None).is_some());
     reg.remove_tabs();
-    assert_eq!(reg.get(Path::new("/b")), None);
+    assert_eq!(reg.get(Path::new("/b"), None), None);
 }
 
 #[test]
@@ -199,7 +213,7 @@ fn file_uri_args_decoded() {
         &[
             os("file:///home/u/a%20b.txt"),
             os("file://localhost/x/y"),
-            os("FILE:/z%2Fq"),
+            os("FILE:/z/q%25r"),
             os("file:///p/q%3Fr?query#frag"),
         ],
         cwd,
@@ -209,7 +223,7 @@ fn file_uri_args_decoded() {
         vec![
             PathBuf::from("/home/u/a b.txt"),
             PathBuf::from("/x/y"),
-            PathBuf::from("/z/q"),
+            PathBuf::from("/z/q%r"),
             PathBuf::from("/p/q?r"),
         ]
     );
@@ -248,11 +262,62 @@ fn remote_file_uri_is_refused_and_reported() {
 }
 
 #[test]
-fn double_dash_is_skipped() {
+fn only_the_first_double_dash_ends_options() {
     assert_eq!(
-        parse_args(&[os("--"), os("-x")], Path::new("/w")),
-        vec![PathBuf::from("/w/-x")]
+        parse_args(&[os("--"), os("--"), os("-x")], Path::new("/w")),
+        vec![PathBuf::from("/w/--"), PathBuf::from("/w/-x")]
     );
+}
+
+#[test]
+fn escaped_slash_in_a_file_uri_is_refused() {
+    // RFC 3986 2.2 and 3.3: %2F is data inside a segment, not a separator.
+    for uri in ["file:///z%2Fq", "file:///z/a%2fb/c"] {
+        let parsed = parse_args_report(&[os(uri)], Path::new("/w"));
+        assert!(parsed.paths.is_empty(), "{uri}");
+        assert!(parsed.errors[0].reason.contains("slash"), "{uri}");
+    }
+}
+
+#[test]
+fn unknown_cwd_still_opens_absolute_paths() {
+    let parsed = parse_args_report(&[os("/abs/a"), os("rel"), os("file:///f")], Path::new(""));
+    assert_eq!(
+        parsed.paths,
+        vec![PathBuf::from("/abs/a"), PathBuf::from("/f")]
+    );
+    assert_eq!(parsed.errors.len(), 1);
+    assert_eq!(parsed.errors[0].arg, os("rel"));
+    assert!(parsed.errors[0].reason.contains("unknown"));
+}
+
+#[test]
+fn first_launch_without_a_window_exits() {
+    let err = wire_error("NotFound", "x", None);
+    // Windows exist: keep running, whatever failed.
+    assert_eq!(first_launch_exit(1, &[]), None);
+    assert_eq!(first_launch_exit(2, std::slice::from_ref(&err)), None);
+    // None left: 0 if every launch succeeded, else non-zero.
+    assert_eq!(first_launch_exit(0, &[]), Some(0));
+    assert_eq!(first_launch_exit(0, &[err]), Some(1));
+}
+
+#[test]
+fn remove_if_keeps_a_registration_that_moved() {
+    let reg = OpenRegistry::new();
+    let p = Path::new("/a");
+    let tab = Location::Tab {
+        tab_id: "t1".to_owned(),
+    };
+    let win = Location::Window {
+        label: "doc-1".to_owned(),
+    };
+    register(&reg, p, win.clone());
+    // The old tab closing must not erase the window's claim.
+    reg.remove_if(p, &tab);
+    assert_eq!(reg.get(p, None), Some(win.clone()));
+    reg.remove_if(p, &win);
+    assert_eq!(reg.get(p, None), None);
 }
 
 #[test]

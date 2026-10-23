@@ -17,11 +17,19 @@ use tauri::Manager;
 /// Panics if the Tauri runtime cannot start, which leaves nothing to recover.
 pub fn run() {
     // Before anything creates a window: a second launch forwards and exits.
-    let role = instance::start();
+    let own = instance::own_invocation();
+    let role = instance::start(&own);
     tauri::Builder::default()
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // Document windows are not remembered: a new doc-1 is unrelated to
+        // an earlier one. The main window keeps its place.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_filter(|label| !label.starts_with("doc-"))
+                .build(),
+        )
         .plugin(kernkraft_tauri::init())
         .on_window_event(windows::on_window_event)
+        .on_page_load(windows::on_page_load)
         .setup(move |app| {
             app.manage(store_cmds::StoreState::from_env());
             app.manage(windows::WindowState::default());
@@ -39,11 +47,9 @@ pub fn run() {
                 }
             }
             // This process's own launch is handled like a forwarded one.
-            let argv: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
-            let cwd = std::env::current_dir()?;
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                windows::handle_launch(&handle, argv, cwd).await;
+                windows::handle_launch(&handle, own, true).await;
             });
             Ok(())
         })

@@ -18,7 +18,6 @@
 //! can still end the process.
 
 use std::collections::{HashMap, HashSet};
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -28,12 +27,13 @@ use kernkraft_tauri::{KernkraftExt, WireError, WirePath};
 use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{
-    AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Window,
-    WindowEvent,
+    webview::{PageLoadEvent, PageLoadPayload},
+    AppHandle, Emitter, Manager, Runtime, Webview, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    Window, WindowEvent,
 };
 
 use crate::cli::{self, ArgError, Plan};
-use crate::open::{route_kind, Gesture, Location, OpenRegistry, Origin, Target};
+use crate::open::{route, Gesture, Kind, Location, OpenRegistry, Origin, Target};
 use crate::store_cmds::StoreState;
 
 pub const EVENT_OPEN: &str = "kern://open";
@@ -92,18 +92,27 @@ struct Inner {
 pub struct WindowState {
     pub open: OpenRegistry,
     inner: Mutex<Inner>,
+    /// Held while a path is checked against the registry and then placed, so
+    /// two launches of one file cannot both make a window (D4.5).
+    gate: Mutex<()>,
     adopt_timeout: Duration,
+    /// Whether focusing goes through GTK (startup id, present). Off only in
+    /// tests, whose mock runtime has no GTK window.
+    toolkit_focus: bool,
 }
 
 impl Default for WindowState {
     fn default() -> Self {
-        WindowState::new(ADOPT_TIMEOUT)
+        WindowState::new(ADOPT_TIMEOUT).with_toolkit_focus()
     }
 }
 
 impl WindowState {
+    /// State that focuses windows with Tauri's own calls only.
     pub fn new(adopt_timeout: Duration) -> WindowState {
         WindowState {
+            gate: Mutex::new(()),
+            toolkit_focus: false,
             open: OpenRegistry::new(),
             inner: Mutex::new(Inner {
                 next_doc: 1,
@@ -113,6 +122,16 @@ impl WindowState {
             }),
             adopt_timeout,
         }
+    }
+
+    /// Focus through GTK, so an activation token is honoured.
+    pub fn with_toolkit_focus(mut self) -> WindowState {
+        self.toolkit_focus = true;
+        self
+    }
+
+    fn lock_gate(&self) -> MutexGuard<'_, ()> {
+        self.gate.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -183,14 +202,34 @@ fn send_directive<R: Runtime>(
     send(app, label, EVENT_OPEN, json!(d))
 }
 
-/// Brings window `label` to the front.
-pub fn focus<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), WireError> {
+/// Brings window `label` to the front. `token` is the xdg-activation token
+/// the launcher passed (empty if none): GTK is given it as the startup id
+/// before the window is presented, so the compositor allows the focus.
+pub fn focus<R: Runtime>(app: &AppHandle<R>, label: &str, token: &str) -> Result<(), WireError> {
     let w = app
         .get_webview_window(label)
         .ok_or_else(|| wire_error("NoWindow", format!("window {label} does not exist"), None))?;
     w.show().map_err(window_error)?;
     w.unminimize().map_err(window_error)?;
-    w.set_focus().map_err(window_error)
+    w.set_focus().map_err(window_error)?;
+    if !state(app)?.toolkit_focus {
+        return Ok(());
+    }
+    let token = token.to_owned();
+    let target = w.clone();
+    app.run_on_main_thread(move || {
+        use gtk::prelude::GtkWindowExt;
+        match target.gtk_window() {
+            Ok(g) => {
+                if !token.is_empty() {
+                    g.set_startup_id(&token);
+                }
+                g.present();
+            }
+            Err(e) => eprintln!("kern: could not present {}: {e}", target.label()),
+        }
+    })
+    .map_err(window_error)
 }
 
 /// Makes sure `main` exists. True when it was created now.
@@ -287,16 +326,39 @@ async fn open_default_app<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Result
     blocking(move || kk.open_default(vec![wp], terminal)).await
 }
 
-/// Applies the rules to `paths` and does what they say.
+/// What a path is and which file it resolves to, or why that is unknown.
+struct Resolved {
+    canonical: Option<PathBuf>,
+    kind: Result<Kind, WireError>,
+}
+
+async fn resolve<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Resolved {
+    let canonical = std::fs::canonicalize(path).ok();
+    // Follows links: a link to a folder is a folder.
+    let kind = match std::fs::metadata(path) {
+        Err(e) => Err(io_error(path, &e)),
+        Ok(m) if m.is_dir() => Ok(Kind::Folder),
+        Ok(_) => match is_text(app, path).await {
+            Ok(true) => Ok(Kind::Text),
+            Ok(false) => Ok(Kind::Other),
+            Err(e) => Err(e),
+        },
+    };
+    Resolved { canonical, kind }
+}
+
+/// Applies the rules to `paths` and does what they say. `token` is the
+/// activation token of the launch, empty for a click inside Kern.
 pub async fn open_paths_impl<R: Runtime>(
     app: &AppHandle<R>,
     paths: Vec<PathBuf>,
     origin: Origin,
     gesture: Gesture,
+    token: &str,
 ) -> Vec<OpenOutcome> {
     let mut out = Vec::with_capacity(paths.len());
     for path in paths {
-        out.push(open_one(app, &path, origin, gesture).await);
+        out.push(open_one(app, &path, origin, gesture, token).await);
     }
     out
 }
@@ -306,11 +368,18 @@ async fn open_one<R: Runtime>(
     path: &Path,
     origin: Origin,
     gesture: Gesture,
+    token: &str,
 ) -> OpenOutcome {
-    match try_open(app, path, origin, gesture).await {
+    match try_open(app, path, origin, gesture, token).await {
         Ok(o) => o,
         Err(e) => OpenOutcome::failed(path, e),
     }
+}
+
+/// What the synchronous part decided.
+enum Step {
+    Done(OpenOutcome),
+    DefaultApp(PathBuf),
 }
 
 async fn try_open<R: Runtime>(
@@ -318,27 +387,56 @@ async fn try_open<R: Runtime>(
     path: &Path,
     origin: Origin,
     gesture: Gesture,
+    token: &str,
 ) -> Result<OpenOutcome, WireError> {
+    // All file access happens before the registry is consulted; the check
+    // and the placement after it are one step with no await in between.
+    let resolved = resolve(app, path).await;
+    match place(app, path, &resolved, origin, gesture, token)? {
+        Step::Done(o) => Ok(o),
+        Step::DefaultApp(p) => {
+            open_default_app(app, &p).await?;
+            Ok(OpenOutcome {
+                path: WirePath::from(path),
+                action: "default_app",
+                location: None,
+                error: None,
+            })
+        }
+    }
+}
+
+/// Registry check and placement, under the gate.
+fn place<R: Runtime>(
+    app: &AppHandle<R>,
+    path: &Path,
+    resolved: &Resolved,
+    origin: Origin,
+    gesture: Gesture,
+    token: &str,
+) -> Result<Step, WireError> {
     let st = state(app)?;
+    let _gate = st.lock_gate();
+    let canonical = resolved.canonical.as_deref();
     // Twice at most: a registry entry whose window is gone is dropped and
     // the path routed afresh.
     for _ in 0..2 {
-        let known = st.open.get(path).is_some();
-        let (is_dir, text) = if known {
-            (false, false)
-        } else {
-            // Follows links: a link to a folder is a folder.
-            let meta = std::fs::metadata(path).map_err(|e| io_error(path, &e))?;
-            let text = !meta.is_dir() && is_text(app, path).await?;
-            (meta.is_dir(), text)
+        let known = st.open.get(path, canonical).is_some();
+        let kind = match (&resolved.kind, known) {
+            (Ok(k), _) => *k,
+            // A document already open stays focusable after its file is gone.
+            (Err(_), true) => Kind::Other,
+            (Err(e), false) => return Err(e.clone()),
         };
-        let target = route_kind(path, is_dir, origin, gesture, text, &st.open);
+        let target = route(path, canonical, origin, gesture, kind, &st.open);
         let wp = WirePath::from(path);
-        let outcome = |action, location| OpenOutcome {
-            path: wp.clone(),
-            action,
-            location,
-            error: None,
+        let outcome = |action, location| {
+            Step::Done(OpenOutcome {
+                path: wp.clone(),
+                action,
+                location,
+                error: None,
+            })
         };
         match target {
             Target::FolderTab(p) => {
@@ -350,7 +448,7 @@ async fn try_open<R: Runtime>(
                         path: WirePath::from(&p),
                     },
                 )?;
-                focus(app, MAIN)?;
+                focus(app, MAIN, token)?;
                 return Ok(outcome("folder_tab", None));
             }
             Target::DocTab(p) => {
@@ -362,7 +460,7 @@ async fn try_open<R: Runtime>(
                         path: WirePath::from(&p),
                     },
                 )?;
-                focus(app, MAIN)?;
+                focus(app, MAIN, token)?;
                 return Ok(outcome("doc_tab", None));
             }
             Target::DocWindow(p) => {
@@ -370,9 +468,7 @@ async fn try_open<R: Runtime>(
                 let loc = Location::Window {
                     label: label.clone(),
                 };
-                // Registered at once so a second open of the file, before
-                // the window has loaded, focuses this one.
-                st.open.insert(&p, loc.clone());
+                st.open.insert(&p, resolved.canonical.clone(), loc.clone());
                 send_directive(
                     app,
                     &label,
@@ -402,13 +498,10 @@ async fn try_open<R: Runtime>(
                     st.open.remove(path);
                     continue;
                 }
-                focus(app, label)?;
+                focus(app, label, token)?;
                 return Ok(outcome("focus", Some(loc)));
             }
-            Target::DefaultApp(p) => {
-                open_default_app(app, &p).await?;
-                return Ok(outcome("default_app", None));
-            }
+            Target::DefaultApp(p) => return Ok(Step::DefaultApp(p)),
         }
     }
     Err(wire_error(
@@ -419,31 +512,60 @@ async fn try_open<R: Runtime>(
 }
 
 /// `main` with a Home folder tab, or just raised when it exists.
-pub fn open_home<R: Runtime>(app: &AppHandle<R>) -> Result<(), WireError> {
+pub fn open_home<R: Runtime>(app: &AppHandle<R>, token: &str) -> Result<(), WireError> {
     if ensure_main(app)? {
         send_directive(app, MAIN, &Directive::HomeTab)?;
     }
-    focus(app, MAIN)
+    focus(app, MAIN, token)
 }
 
 fn arg_error(e: &ArgError) -> WireError {
     wire_error("BadArgument", e.to_string(), None)
 }
 
-/// Handles a launch from outside: this process's own first launch, or one
-/// forwarded by a second launch. Errors cannot be returned to anyone, so
-/// they are shown in `main` (created if need be) as [`EVENT_OPEN_ERROR`].
-pub async fn handle_launch<R: Runtime>(app: &AppHandle<R>, argv: Vec<OsString>, cwd: PathBuf) {
-    let errors = match cli::plan(&argv, &cwd) {
-        Plan::Home => open_home(app).err().into_iter().collect::<Vec<_>>(),
+/// Whether Kern's first launch is finished once its paths are handled: with
+/// no window left (every path went to its default app or failed) there is
+/// nothing to keep running. The status is 0 when every launch succeeded.
+/// A forwarded launch never ends the running instance.
+pub fn first_launch_exit(window_count: usize, errors: &[WireError]) -> Option<i32> {
+    if window_count > 0 {
+        None
+    } else {
+        Some(i32::from(!errors.is_empty()))
+    }
+}
+
+/// Handles a launch from outside: this process's own first launch
+/// (`first`), or one forwarded by a second launch. Errors cannot be returned
+/// to anyone, so they are shown in `main` (created if need be) as
+/// [`EVENT_OPEN_ERROR`]. A first launch that ends with no window exits (see
+/// [`first_launch_exit`]) with the errors on stderr instead.
+pub async fn handle_launch<R: Runtime>(
+    app: &AppHandle<R>,
+    inv: crate::instance::Invocation,
+    first: bool,
+) {
+    let token = inv.activation_token.as_str();
+    let errors = match cli::plan(&inv.argv, &inv.cwd) {
+        Plan::Home => open_home(app, token).err().into_iter().collect::<Vec<_>>(),
         Plan::Open(parsed) => {
             let mut errors: Vec<WireError> = parsed.errors.iter().map(arg_error).collect();
             let outcomes =
-                open_paths_impl(app, parsed.paths, Origin::Outside, Gesture::Default).await;
+                open_paths_impl(app, parsed.paths, Origin::Outside, Gesture::Default, token).await;
             errors.extend(outcomes.into_iter().filter_map(|o| o.error));
             errors
         }
     };
+    let windows = app.webview_windows().len();
+    if first {
+        if let Some(code) = first_launch_exit(windows, &errors) {
+            for e in &errors {
+                eprintln!("kern: {}: {}", e.kind, e.message);
+            }
+            app.exit(code);
+            return;
+        }
+    }
     if errors.is_empty() {
         return;
     }
@@ -451,7 +573,7 @@ pub async fn handle_launch<R: Runtime>(app: &AppHandle<R>, argv: Vec<OsString>, 
         for e in &errors {
             send(app, MAIN, EVENT_OPEN_ERROR, json!(e))?;
         }
-        focus(app, MAIN)
+        focus(app, MAIN, token)
     });
     if let Err(e) = shown {
         eprintln!("kern: could not show open errors ({e:?}); they were:");
@@ -473,7 +595,7 @@ pub async fn open_paths<R: Runtime>(
     let mut out = Vec::with_capacity(paths.len());
     for wp in paths {
         match wp.to_path_buf() {
-            Ok(p) => out.push(open_one(&app, &p, origin, gesture).await),
+            Ok(p) => out.push(open_one(&app, &p, origin, gesture, "").await),
             Err(e) => out.push(OpenOutcome {
                 path: wp,
                 action: "failed",
@@ -493,14 +615,22 @@ pub fn doc_opened<R: Runtime>(
     location: Location,
 ) -> Result<(), WireError> {
     let p = path.to_path_buf()?;
-    state(&app)?.open.insert(&p, location);
+    state(&app)?
+        .open
+        .insert(&p, std::fs::canonicalize(&p).ok(), location);
     Ok(())
 }
 
+/// The frontend closed `path` at `location`. Only that registration goes: a
+/// tab closing after its document moved to a window leaves the window's.
 #[tauri::command]
-pub fn doc_closed<R: Runtime>(app: AppHandle<R>, path: WirePath) -> Result<(), WireError> {
+pub fn doc_closed<R: Runtime>(
+    app: AppHandle<R>,
+    path: WirePath,
+    location: Location,
+) -> Result<(), WireError> {
     let p = path.to_path_buf()?;
-    state(&app)?.open.remove(&p);
+    state(&app)?.open.remove_if(&p, &location);
     Ok(())
 }
 
@@ -526,7 +656,9 @@ pub fn detach_doc<R: Runtime>(
 ) -> Result<String, WireError> {
     let p = path.to_path_buf()?;
     let st = state(&app)?;
-    match st.open.get(&p) {
+    let canonical = std::fs::canonicalize(&p).ok();
+    let _gate = st.lock_gate();
+    match st.open.get(&p, canonical.as_deref()) {
         Some(Location::Window { label }) => {
             return Err(wire_error(
                 "AlreadyOpen",
@@ -547,6 +679,7 @@ pub fn detach_doc<R: Runtime>(
     // The window takes the registration over from the tab now.
     st.open.insert(
         &p,
+        canonical,
         Location::Window {
             label: label.clone(),
         },
@@ -590,22 +723,50 @@ pub async fn move_doc_to_main<R: Runtime>(
         json!({ "path": WirePath::from(path.as_path()), "text_state": text_state, "from": label }),
     );
     if let Err(e) = sent {
+        // Nothing reached main, so there is nothing to cancel there.
         st.lock().adopting.remove(&label);
         return Err(e);
     }
-    focus(&app, MAIN)?;
+    // Main has the document from here on: every way out below that does not
+    // end in the window closing takes the adoption back.
+    if let Err(e) = focus(&app, MAIN, "") {
+        // Raising main is a courtesy; the adoption goes on.
+        eprintln!("kern: could not raise the main window: {e:?}");
+    }
     let timeout = st.adopt_timeout;
-    let acked = blocking(move || Ok(rx.recv_timeout(timeout).is_ok())).await?;
-    st.lock().adopting.remove(&label);
+    let acked = match blocking(move || Ok(rx.recv_timeout(timeout).is_ok())).await {
+        Ok(a) => a,
+        Err(e) => {
+            cancel_adoption(&app, &st, &label, &path);
+            return Err(e);
+        }
+    };
     if !acked {
-        let _ = send(&app, MAIN, EVENT_ADOPT_CANCELLED, json!({ "label": label }));
+        cancel_adoption(&app, &st, &label, &path);
         return Err(wire_error(
             "AdoptTimeout",
             "the main window did not take the document; it stays open here",
             Some(&path),
         ));
     }
+    st.lock().adopting.remove(&label);
     doc.destroy().map_err(window_error)
+}
+
+/// Takes a move back: the document window keeps the path, and `main` is told
+/// to drop the tab it may have made.
+fn cancel_adoption<R: Runtime>(app: &AppHandle<R>, st: &WindowState, label: &str, path: &Path) {
+    st.lock().adopting.remove(label);
+    st.open.insert(
+        path,
+        std::fs::canonicalize(path).ok(),
+        Location::Window {
+            label: label.to_owned(),
+        },
+    );
+    if let Err(e) = send(app, MAIN, EVENT_ADOPT_CANCELLED, json!({ "label": label })) {
+        eprintln!("kern: could not tell main to drop the moved tab: {e:?}");
+    }
 }
 
 /// `main` took the document of window `label` (see `move_doc_to_main`). It
@@ -633,20 +794,32 @@ pub fn adopted<R: Runtime>(
     }
 }
 
-/// The frontend finished its save / discard / cancel prompt and the window
-/// should go.
+/// The calling window's frontend finished its save / discard / cancel
+/// prompt and the window should go.
 #[tauri::command]
-pub fn confirm_close<R: Runtime>(app: AppHandle<R>, label: String) -> Result<(), WireError> {
-    let w = app
-        .get_webview_window(&label)
-        .ok_or_else(|| wire_error("NoWindow", format!("window {label} does not exist"), None))?;
-    w.destroy().map_err(window_error)
+pub fn confirm_close<R: Runtime>(window: WebviewWindow<R>) -> Result<(), WireError> {
+    window.destroy().map_err(window_error)
 }
 
 /// Tells the window's frontend that the user asked to close it.
 pub fn ask_to_close<R: Runtime>(window: &Window<R>) {
     if let Err(e) = window.emit_to(window.label(), EVENT_CLOSE_REQUESTED, ()) {
         eprintln!("kern: could not ask {} to close: {e}", window.label());
+    }
+}
+
+/// A page (re)load in a window: whatever it had registered as ready is gone
+/// with the page, so directives queue again until it asks.
+pub fn on_page_load<R: Runtime>(webview: &Webview<R>, payload: &PageLoadPayload<'_>) {
+    if payload.event() == PageLoadEvent::Started {
+        page_reloading(webview.app_handle(), webview.label());
+    }
+}
+
+/// The page of window `label` is loading.
+pub fn page_reloading<R: Runtime>(app: &AppHandle<R>, label: &str) {
+    if let Some(st) = app.try_state::<WindowState>() {
+        st.lock().ready.remove(label);
     }
 }
 
@@ -683,7 +856,7 @@ pub fn serve_launches<R: Runtime>(
         for inv in launches {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
-                handle_launch(&app, inv.argv, inv.cwd).await;
+                handle_launch(&app, inv, false).await;
             });
         }
     });

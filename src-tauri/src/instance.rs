@@ -44,8 +44,6 @@ pub enum InstanceError {
     Bus(#[from] BusError),
     #[error("D-Bus: {0}")]
     Zbus(#[from] zbus::Error),
-    #[error("the working directory is unknown: {0}")]
-    Cwd(std::io::Error),
 }
 
 /// Raw bytes of each argument, for the wire.
@@ -119,12 +117,19 @@ pub fn forward(conn: &Connection, name: &str, inv: &Invocation) -> Result<(), In
 
 /// This process's own launch: its arguments after the program name, its
 /// working directory and its activation token.
-pub fn own_invocation() -> Result<Invocation, InstanceError> {
-    Ok(Invocation {
+///
+/// The token is taken out of the environment, as xdg-activation asks of the
+/// process it was meant for, so a program Kern starts does not inherit it.
+/// A working directory that no longer exists is sent empty: the receiver
+/// then reports each relative argument and still opens the absolute ones.
+pub fn own_invocation() -> Invocation {
+    let activation_token = std::env::var("XDG_ACTIVATION_TOKEN").unwrap_or_default();
+    std::env::remove_var("XDG_ACTIVATION_TOKEN");
+    Invocation {
         argv: std::env::args_os().skip(1).collect(),
-        cwd: std::env::current_dir().map_err(InstanceError::Cwd)?,
-        activation_token: std::env::var("XDG_ACTIVATION_TOKEN").unwrap_or_default(),
-    })
+        cwd: std::env::current_dir().unwrap_or_default(),
+        activation_token,
+    }
 }
 
 /// What startup found.
@@ -145,7 +150,7 @@ pub enum Role {
 ///
 /// A failed forward exits non-zero with the reason on stderr; no bus prints
 /// the reason and returns [`Role::Standalone`].
-pub fn start() -> Role {
+pub fn start(own: &Invocation) -> Role {
     let conn = match kernkraft_bus::session() {
         Ok(c) => c,
         Err(e) => {
@@ -159,7 +164,7 @@ pub fn start() -> Role {
             launches,
         },
         Ok(Claim::Taken) => {
-            let result = own_invocation().and_then(|inv| forward(&conn, BUS_NAME, &inv));
+            let result = forward(&conn, BUS_NAME, own);
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
