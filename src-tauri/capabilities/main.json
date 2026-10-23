@@ -23,6 +23,9 @@
     "allow-detach-doc",
     "allow-move-doc-to-main",
     "allow-adopted",
-    "allow-confirm-close"
+    "allow-confirm-close",
+    "allow-fm1-status",
+    "allow-default-fm-status",
+    "allow-make-default-fm"
   ]
 }

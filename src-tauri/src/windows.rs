@@ -42,6 +42,13 @@ pub const EVENT_ADOPT_DOC: &str = "kern://adopt-doc";
 pub const EVENT_ADOPT_CANCELLED: &str = "kern://adopt-cancelled";
 pub const EVENT_OPEN_ERROR: &str = "kern://open-error";
 pub const EVENT_CLOSE_REQUESTED: &str = "kern://close-requested";
+/// Select items in the folder tab of a folder: `{ tab, paths }`, with `tab`
+/// the folder's path and `paths` the items in it. Sent to `main` after the
+/// directive that opens the folder, so a window still loading receives them
+/// in that order.
+pub const EVENT_SELECT: &str = "kern://select";
+/// Show the Properties of items: `{ paths }`, sent to `main`.
+pub const EVENT_PROPERTIES: &str = "kern://properties";
 
 pub const MAIN: &str = "main";
 const DOC_PREFIX: &str = "doc-";
@@ -183,7 +190,7 @@ fn state<R: Runtime>(app: &AppHandle<R>) -> Result<tauri::State<'_, WindowState>
 
 /// Sends an event to window `label`, or queues it until that window has
 /// asked for its backlog.
-fn send<R: Runtime>(
+pub(crate) fn send<R: Runtime>(
     app: &AppHandle<R>,
     label: &str,
     event: &str,
@@ -312,7 +319,7 @@ impl OpenOutcome {
     }
 }
 
-fn io_error(path: &Path, e: &std::io::Error) -> WireError {
+pub(crate) fn io_error(path: &Path, e: &std::io::Error) -> WireError {
     let kind = match e.kind() {
         std::io::ErrorKind::NotFound => "NotFound",
         std::io::ErrorKind::PermissionDenied => "PermissionDenied",
@@ -321,7 +328,7 @@ fn io_error(path: &Path, e: &std::io::Error) -> WireError {
     wire_error(kind, e.to_string(), Some(path))
 }
 
-async fn blocking<T, F>(f: F) -> Result<T, WireError>
+pub(crate) async fn blocking<T, F>(f: F) -> Result<T, WireError>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T, WireError> + Send + 'static,
@@ -633,7 +640,7 @@ pub fn open_home<R: Runtime>(app: &AppHandle<R>, token: &str) -> Result<(), Wire
     focus(app, MAIN, token)
 }
 
-fn arg_error(e: &ArgError) -> WireError {
+pub(crate) fn arg_error(e: &ArgError) -> WireError {
     wire_error("BadArgument", e.to_string(), None)
 }
 
@@ -658,18 +665,24 @@ pub async fn handle_launch<R: Runtime>(app: &AppHandle<R>, inv: crate::instance:
             errors
         }
     };
+    show_errors(app, &errors, token);
+}
+
+/// Shows `errors` in `main` (created if need be) as [`EVENT_OPEN_ERROR`],
+/// and raises it. When even that fails they go to standard error.
+pub(crate) fn show_errors<R: Runtime>(app: &AppHandle<R>, errors: &[WireError], token: &str) {
     if errors.is_empty() {
         return;
     }
     let shown = ensure_main(app).and_then(|_| {
-        for e in &errors {
+        for e in errors {
             send(app, MAIN, EVENT_OPEN_ERROR, json!(e))?;
         }
         focus(app, MAIN, token)
     });
     if let Err(e) = shown {
         eprintln!("kern: could not show open errors ({e:?}); they were:");
-        for err in &errors {
+        for err in errors {
             eprintln!("kern: {}: {}", err.kind, err.message);
         }
     }

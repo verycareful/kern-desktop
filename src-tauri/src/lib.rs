@@ -2,6 +2,8 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
 pub mod cli;
+pub mod default_fm;
+pub mod filemanager1;
 pub mod instance;
 pub mod open;
 pub mod prelaunch;
@@ -28,6 +30,7 @@ pub fn run() {
     // This process's own launch is pending from the start, like one
     // answered on the bus; nothing can have closed the application yet.
     launches.begin();
+    let fm1_launches = launches.clone();
     let role = instance::start(&own, launches.clone());
     tauri::Builder::default()
         // Document windows are not remembered: a new doc-1 is unrelated to
@@ -50,10 +53,24 @@ pub fn run() {
                     connection,
                     launches,
                 } => {
+                    match filemanager1::serve(&connection, filemanager1::BUS_NAME, fm1_launches) {
+                        Ok(svc) => {
+                            app.manage(svc.status);
+                            filemanager1::serve_requests(app.handle().clone(), svc.requests);
+                        }
+                        Err(e) => {
+                            let why = format!("could not serve {}: {e}", filemanager1::BUS_NAME);
+                            eprintln!("kern: {why}");
+                            app.manage(filemanager1::Fm1State::unavailable(&why));
+                        }
+                    };
                     app.manage(instance::BusState(Some(connection)));
                     windows::serve_launches(app.handle().clone(), launches);
                 }
                 instance::Role::Standalone => {
+                    app.manage(filemanager1::Fm1State::unavailable(
+                        "no session bus connection",
+                    ));
                     app.manage(instance::BusState(None));
                 }
             }
@@ -83,6 +100,9 @@ pub fn run() {
             windows::move_doc_to_main,
             windows::adopted,
             windows::confirm_close,
+            filemanager1::fm1_status,
+            default_fm::default_fm_status,
+            default_fm::make_default_fm,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Kern")

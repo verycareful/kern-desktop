@@ -88,6 +88,23 @@ pub fn parse_args_report(argv: &[OsString], cwd: &Path) -> ParsedArgs {
     out
 }
 
+/// The path of a `file://` URI, decoded as for a command-line argument.
+/// Only the `file` scheme with an authority part is taken (RFC 8089,
+/// section 2): the host must be empty or `localhost`. Anything else, such
+/// as `file:/x`, another scheme or a plain path, is refused with the
+/// reason.
+pub fn file_uri_path(uri: &OsStr) -> Result<PathBuf, String> {
+    let bytes = uri.as_bytes();
+    if bytes.len() < 7 || !bytes[..7].eq_ignore_ascii_case(b"file://") {
+        return Err("not a file:// URI".to_owned());
+    }
+    let path = PathBuf::from(OsString::from_vec(file_uri(bytes)?));
+    if path.as_os_str().as_bytes().contains(&0) {
+        return Err("path contains a NUL byte".to_owned());
+    }
+    Ok(path.components().collect())
+}
+
 fn one(arg: &OsStr, cwd: &Path) -> Result<PathBuf, String> {
     let bytes = arg.as_bytes();
     if bytes.is_empty() {

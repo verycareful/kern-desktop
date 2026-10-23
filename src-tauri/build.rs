@@ -23,6 +23,9 @@ const COMMANDS: &[&str] = &[
     "move_doc_to_main",
     "adopted",
     "confirm_close",
+    "fm1_status",
+    "default_fm_status",
+    "make_default_fm",
 ];
 
 fn main() {

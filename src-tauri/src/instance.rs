@@ -154,7 +154,7 @@ impl Kern1 {
     }
 }
 
-fn exiting() -> zbus::fdo::Error {
+pub(crate) fn exiting() -> zbus::fdo::Error {
     zbus::fdo::Error::Failed("Kern is exiting; launch it again".to_owned())
 }
 
