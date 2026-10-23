@@ -15,6 +15,14 @@ const COMMANDS: &[&str] = &[
     "recent_touch",
     "prune",
     "store_errors_take",
+    "open_paths",
+    "doc_opened",
+    "doc_closed",
+    "open_pending_take",
+    "detach_doc",
+    "move_doc_to_main",
+    "adopted",
+    "confirm_close",
 ];
 
 fn main() {

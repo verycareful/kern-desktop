@@ -1,0 +1,300 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+
+//! The open rules (design D4.3 to D4.5, D6.1) and command-line parsing.
+
+use std::ffi::OsString;
+use std::fs;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::path::{Path, PathBuf};
+
+use kern_lib::cli::{self, parse_args, parse_args_report, Plan};
+use kern_lib::instance::{pack_args, unpack};
+use kern_lib::open::{route, Gesture, Location, OpenRegistry, Origin, Target};
+use kern_lib::windows::next_doc_label;
+
+fn os(s: &str) -> OsString {
+    OsString::from(s)
+}
+
+fn file(dir: &Path, name: &str) -> PathBuf {
+    let p = dir.join(name);
+    fs::write(&p, "x").unwrap();
+    p
+}
+
+#[test]
+fn dir_opens_folder_tab() {
+    let t = tempfile::tempdir().unwrap();
+    let reg = OpenRegistry::new();
+    for origin in [Origin::Inside, Origin::Outside] {
+        // Whatever the type flag says, a folder is a folder.
+        assert_eq!(
+            route(t.path(), origin, Gesture::Default, true, &reg),
+            Target::FolderTab(t.path().to_path_buf())
+        );
+    }
+}
+
+#[test]
+fn symlink_to_folder_opens_as_folder_with_path_as_given() {
+    let t = tempfile::tempdir().unwrap();
+    let real = t.path().join("real");
+    fs::create_dir(&real).unwrap();
+    let link = t.path().join("link");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let reg = OpenRegistry::new();
+    assert_eq!(
+        route(&link, Origin::Outside, Gesture::Default, false, &reg),
+        Target::FolderTab(link)
+    );
+}
+
+#[test]
+fn outside_text_gets_window() {
+    let t = tempfile::tempdir().unwrap();
+    let f = file(t.path(), "a.txt");
+    let reg = OpenRegistry::new();
+    assert_eq!(
+        route(&f, Origin::Outside, Gesture::Default, true, &reg),
+        Target::DocWindow(f)
+    );
+}
+
+#[test]
+fn inside_text_gets_tab() {
+    let t = tempfile::tempdir().unwrap();
+    let f = file(t.path(), "a.txt");
+    let reg = OpenRegistry::new();
+    assert_eq!(
+        route(&f, Origin::Inside, Gesture::Default, true, &reg),
+        Target::DocTab(f)
+    );
+}
+
+#[test]
+fn ctrl_double_click_gets_window() {
+    let t = tempfile::tempdir().unwrap();
+    let f = file(t.path(), "a.txt");
+    let reg = OpenRegistry::new();
+    assert_eq!(
+        route(&f, Origin::Inside, Gesture::NewWindow, true, &reg),
+        Target::DocWindow(f)
+    );
+}
+
+#[test]
+fn non_text_goes_default_app() {
+    let t = tempfile::tempdir().unwrap();
+    let f = file(t.path(), "a.pdf");
+    let reg = OpenRegistry::new();
+    for (origin, gesture) in [
+        (Origin::Inside, Gesture::Default),
+        (Origin::Inside, Gesture::NewWindow),
+        (Origin::Outside, Gesture::Default),
+    ] {
+        assert_eq!(
+            route(&f, origin, gesture, false, &reg),
+            Target::DefaultApp(f.clone())
+        );
+    }
+}
+
+#[test]
+fn already_open_focuses() {
+    let t = tempfile::tempdir().unwrap();
+    let f = file(t.path(), "a.txt");
+    let reg = OpenRegistry::new();
+    let loc = Location::Tab {
+        tab_id: "t1".to_owned(),
+    };
+    reg.insert(&f, loc.clone());
+    assert_eq!(
+        route(&f, Origin::Outside, Gesture::Default, true, &reg),
+        Target::Focus(loc)
+    );
+    // Closing it makes it routable again.
+    reg.remove(&f);
+    assert_eq!(
+        route(&f, Origin::Outside, Gesture::Default, true, &reg),
+        Target::DocWindow(f)
+    );
+}
+
+#[test]
+fn already_open_through_a_link_focuses() {
+    let t = tempfile::tempdir().unwrap();
+    let f = file(t.path(), "a.txt");
+    let link = t.path().join("l.txt");
+    std::os::unix::fs::symlink(&f, &link).unwrap();
+    let reg = OpenRegistry::new();
+    let loc = Location::Window {
+        label: "doc-1".to_owned(),
+    };
+    reg.insert(&f, loc.clone());
+    assert_eq!(
+        route(&link, Origin::Inside, Gesture::Default, true, &reg),
+        Target::Focus(loc)
+    );
+}
+
+#[test]
+fn removing_a_deleted_file_still_forgets_it() {
+    let t = tempfile::tempdir().unwrap();
+    let f = file(t.path(), "a.txt");
+    let reg = OpenRegistry::new();
+    reg.insert(
+        &f,
+        Location::Tab {
+            tab_id: "t".to_owned(),
+        },
+    );
+    fs::remove_file(&f).unwrap();
+    reg.remove(&f);
+    assert_eq!(reg.get(&f), None);
+}
+
+#[test]
+fn window_and_tab_cleanup() {
+    let reg = OpenRegistry::new();
+    reg.insert(
+        Path::new("/a"),
+        Location::Window {
+            label: "doc-1".to_owned(),
+        },
+    );
+    reg.insert(
+        Path::new("/b"),
+        Location::Tab {
+            tab_id: "t".to_owned(),
+        },
+    );
+    assert_eq!(reg.path_of_window("doc-1"), Some(PathBuf::from("/a")));
+    reg.remove_window("doc-1");
+    assert_eq!(reg.get(Path::new("/a")), None);
+    assert!(reg.get(Path::new("/b")).is_some());
+    reg.remove_tabs();
+    assert_eq!(reg.get(Path::new("/b")), None);
+}
+
+#[test]
+fn relative_args_use_launch_cwd() {
+    let cwd = Path::new("/home/u/work");
+    let got = parse_args(&[os("a.txt"), os("sub/b.md"), os("."), os("/abs/c")], cwd);
+    assert_eq!(
+        got,
+        vec![
+            cwd.join("a.txt"),
+            cwd.join("sub/b.md"),
+            cwd.to_path_buf(),
+            PathBuf::from("/abs/c")
+        ]
+    );
+}
+
+#[test]
+fn file_uri_args_decoded() {
+    let cwd = Path::new("/w");
+    let got = parse_args(
+        &[
+            os("file:///home/u/a%20b.txt"),
+            os("file://localhost/x/y"),
+            os("FILE:/z%2Fq"),
+            os("file:///p/q%3Fr?query#frag"),
+        ],
+        cwd,
+    );
+    assert_eq!(
+        got,
+        vec![
+            PathBuf::from("/home/u/a b.txt"),
+            PathBuf::from("/x/y"),
+            PathBuf::from("/z/q"),
+            PathBuf::from("/p/q?r"),
+        ]
+    );
+}
+
+#[test]
+fn non_utf8_arg_kept() {
+    let cwd = Path::new("/w");
+    let name = OsString::from_vec(b"caf\xe9.txt".to_vec());
+    let got = parse_args(std::slice::from_ref(&name), cwd);
+    assert_eq!(got[0].as_os_str().as_bytes(), b"/w/caf\xe9.txt");
+    // A URI with a percent-escaped invalid byte keeps it too.
+    let uri = OsString::from_vec(b"file:///d/caf%E9".to_vec());
+    assert_eq!(
+        parse_args(&[uri], cwd)[0].as_os_str().as_bytes(),
+        b"/d/caf\xe9"
+    );
+}
+
+#[test]
+fn nonexistent_path_is_kept() {
+    let got = parse_args(&[os("/no/such/file")], Path::new("/w"));
+    assert_eq!(got, vec![PathBuf::from("/no/such/file")]);
+}
+
+#[test]
+fn remote_file_uri_is_refused_and_reported() {
+    let parsed = parse_args_report(
+        &[os("file://other.host/x"), os("ok"), os(""), os("file:rel")],
+        Path::new("/w"),
+    );
+    assert_eq!(parsed.paths, vec![PathBuf::from("/w/ok")]);
+    assert_eq!(parsed.errors.len(), 3);
+    assert_eq!(parsed.errors[0].arg, os("file://other.host/x"));
+    assert!(parsed.errors[0].reason.contains("other.host"));
+}
+
+#[test]
+fn double_dash_is_skipped() {
+    assert_eq!(
+        parse_args(&[os("--"), os("-x")], Path::new("/w")),
+        vec![PathBuf::from("/w/-x")]
+    );
+}
+
+#[test]
+fn forward_args_keep_non_utf8() {
+    let argv = vec![
+        OsString::from_vec(b"a\xff\xfe".to_vec()),
+        os("file:///d/caf%E9"),
+        os(""),
+    ];
+    let cwd = PathBuf::from(OsString::from_vec(b"/w\xc3".to_vec()));
+    let packed = pack_args(&argv);
+    assert_eq!(packed[0], b"a\xff\xfe".to_vec());
+    let inv = unpack(
+        packed,
+        cwd.as_os_str().as_bytes().to_vec(),
+        "tok".to_owned(),
+    );
+    assert_eq!(inv.argv, argv);
+    assert_eq!(inv.cwd, cwd);
+    assert_eq!(inv.activation_token, "tok");
+    // And what the router makes of the unpacked bytes is what it makes of the originals.
+    assert_eq!(parse_args(&inv.argv, &inv.cwd), parse_args(&argv, &cwd));
+}
+
+#[test]
+fn empty_argv_opens_home() {
+    assert_eq!(cli::plan(&[], Path::new("/w")), Plan::Home);
+    assert!(matches!(
+        cli::plan(&[os("a")], Path::new("/w")),
+        Plan::Open(_)
+    ));
+    // Arguments that are all refused are still a request to open, so the
+    // refusals get reported instead of silently showing Home.
+    assert!(matches!(cli::plan(&[os("")], Path::new("/w")), Plan::Open(p) if p.paths.is_empty()));
+}
+
+#[test]
+fn doc_labels_never_reuse_an_open_one() {
+    let mut n = 1;
+    assert_eq!(next_doc_label(&mut n, |_| false), "doc-1");
+    // doc-2 is still open: skipped.
+    assert_eq!(next_doc_label(&mut n, |l| l == "doc-2"), "doc-3");
+    // A closed label is not handed out again either, as the counter only grows.
+    assert_eq!(next_doc_label(&mut n, |_| false), "doc-4");
+}

@@ -62,7 +62,7 @@ impl StoreState {
         }
     }
 
-    fn store(&self) -> Result<Arc<Store>, WireError> {
+    pub(crate) fn store(&self) -> Result<Arc<Store>, WireError> {
         self.store.clone()
     }
 

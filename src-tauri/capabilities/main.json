@@ -15,6 +15,14 @@
     "allow-recents-get",
     "allow-recent-touch",
     "allow-prune",
-    "allow-store-errors-take"
+    "allow-store-errors-take",
+    "allow-open-paths",
+    "allow-doc-opened",
+    "allow-doc-closed",
+    "allow-open-pending-take",
+    "allow-detach-doc",
+    "allow-move-doc-to-main",
+    "allow-adopted",
+    "allow-confirm-close"
   ]
 }

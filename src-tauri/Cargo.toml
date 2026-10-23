@@ -3,7 +3,7 @@
 
 [package]
 name = "kern"
-version = "0.1.0+0.3"
+version = "0.1.0+0.4"
 description = "Kern for Linux: a file manager and document viewer"
 license = "AGPL-3.0-or-later"
 publish = false
@@ -25,6 +25,10 @@ rustix = { version = "1", features = ["fs"] }
 kernkraft-tauri = { git = "https://github.com/verycareful/kernkraft", rev = "d4b0ef4c7bee929bdd188ea09b299d264165126b" }
 kernkraft-fs = { git = "https://github.com/verycareful/kernkraft", rev = "d4b0ef4c7bee929bdd188ea09b299d264165126b" }
 kernkraft-theme = { git = "https://github.com/verycareful/kernkraft", rev = "d4b0ef4c7bee929bdd188ea09b299d264165126b" }
+kernkraft-bus = { git = "https://github.com/verycareful/kernkraft", rev = "d4b0ef4c7bee929bdd188ea09b299d264165126b" }
+tauri-plugin-window-state = "2"
+# Only for the interface macro and message types; connections come from kernkraft-bus.
+zbus = "5"
 
 [dev-dependencies]
 tempfile = "3"

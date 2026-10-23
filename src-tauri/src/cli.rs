@@ -1,0 +1,154 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+
+//! Command-line arguments as paths.
+//!
+//! The arguments are the ones after the program name, as raw bytes: a file
+//! name need not be UTF-8 and must reach the router unchanged. The desktop
+//! entry's `%F` (Desktop Entry Specification 1.5, "The Exec key") arrives
+//! as plain paths or, from some file managers, as `file:` URIs (RFC 8089,
+//! sections 2 and 3: an authority that is empty or `localhost`, a path, and
+//! `%XX` escapes decoded as bytes per RFC 3986, section 2.1). A relative
+//! path is taken against the working directory of the process that was
+//! launched, not the running instance's.
+
+use std::ffi::{OsStr, OsString};
+use std::fmt;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::path::{Path, PathBuf};
+
+/// An argument that names no usable path. It is reported to the user, never
+/// dropped.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArgError {
+    pub arg: OsString,
+    pub reason: String,
+}
+
+impl fmt::Display for ArgError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {:?}", self.reason, self.arg)
+    }
+}
+
+/// The paths of a command line, and the arguments that were refused.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ParsedArgs {
+    pub paths: Vec<PathBuf>,
+    pub errors: Vec<ArgError>,
+}
+
+/// What a launch asks for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Plan {
+    /// No arguments: the main window, with a Home folder tab.
+    Home,
+    /// Open these.
+    Open(ParsedArgs),
+}
+
+/// Decides what a command line asks for.
+pub fn plan(argv: &[OsString], cwd: &Path) -> Plan {
+    if argv.is_empty() {
+        Plan::Home
+    } else {
+        Plan::Open(parse_args_report(argv, cwd))
+    }
+}
+
+/// The paths of `argv` (the arguments without the program name). Arguments
+/// that cannot be paths are left out; [`parse_args_report`] returns them
+/// too, and is what the application uses. A lone `--` is skipped.
+pub fn parse_args(argv: &[OsString], cwd: &Path) -> Vec<PathBuf> {
+    parse_args_report(argv, cwd).paths
+}
+
+/// Like [`parse_args`], keeping the refused arguments.
+pub fn parse_args_report(argv: &[OsString], cwd: &Path) -> ParsedArgs {
+    let mut out = ParsedArgs::default();
+    for arg in argv {
+        if arg.as_bytes() == b"--" {
+            continue;
+        }
+        match one(arg, cwd) {
+            Ok(p) => out.paths.push(p),
+            Err(reason) => out.errors.push(ArgError {
+                arg: arg.clone(),
+                reason,
+            }),
+        }
+    }
+    out
+}
+
+fn one(arg: &OsStr, cwd: &Path) -> Result<PathBuf, String> {
+    let bytes = arg.as_bytes();
+    if bytes.is_empty() {
+        return Err("empty path".to_owned());
+    }
+    let path = if has_file_scheme(bytes) {
+        PathBuf::from(OsString::from_vec(file_uri(bytes)?))
+    } else {
+        cwd.join(arg)
+    };
+    if path.as_os_str().as_bytes().contains(&0) {
+        return Err("path contains a NUL byte".to_owned());
+    }
+    // `.` components go; `..` stays, as resolving it textually would be
+    // wrong across a symlink.
+    Ok(path.components().collect())
+}
+
+fn has_file_scheme(b: &[u8]) -> bool {
+    b.len() >= 5 && b[..5].eq_ignore_ascii_case(b"file:")
+}
+
+fn file_uri(b: &[u8]) -> Result<Vec<u8>, String> {
+    let mut rest = &b[5..];
+    if rest.starts_with(b"//") {
+        let after = &rest[2..];
+        let end = after.iter().position(|&c| c == b'/').unwrap_or(after.len());
+        let host = &after[..end];
+        if !(host.is_empty() || host.eq_ignore_ascii_case(b"localhost")) {
+            return Err(format!(
+                "file URI names another host ({}), which cannot be opened",
+                String::from_utf8_lossy(host)
+            ));
+        }
+        rest = &after[end..];
+    }
+    if !rest.starts_with(b"/") {
+        return Err("file URI has no absolute path".to_owned());
+    }
+    // `?` and `#` begin a query and a fragment; a file name holding them
+    // has them escaped.
+    let end = rest
+        .iter()
+        .position(|&c| c == b'?' || c == b'#')
+        .unwrap_or(rest.len());
+    Ok(percent_decode(&rest[..end]))
+}
+
+/// `%XX` becomes that byte; a `%` not followed by two hex digits stays as it
+/// is.
+fn percent_decode(b: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        let hex = |c: u8| char::from(c).to_digit(16);
+        if b[i] == b'%' {
+            if let (Some(h), Some(l)) = (
+                b.get(i + 1).copied().and_then(hex),
+                b.get(i + 2).copied().and_then(hex),
+            ) {
+                // Both digits are below 16, so the byte fits.
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    out
+}

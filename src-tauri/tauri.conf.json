@@ -12,6 +12,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "Kern",
         "width": 1200,
         "height": 800,
