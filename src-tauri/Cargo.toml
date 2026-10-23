@@ -3,7 +3,7 @@
 
 [package]
 name = "kern"
-version = "0.1.0+0.1"
+version = "0.1.0+0.2"
 description = "Kern for Linux: a file manager and document viewer"
 license = "AGPL-3.0-or-later"
 publish = false
@@ -22,3 +22,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 kernkraft-tauri = { git = "https://github.com/verycareful/kernkraft", rev = "d4b0ef4c7bee929bdd188ea09b299d264165126b" }
+kernkraft-fs = { git = "https://github.com/verycareful/kernkraft", rev = "d4b0ef4c7bee929bdd188ea09b299d264165126b" }
+kernkraft-theme = { git = "https://github.com/verycareful/kernkraft", rev = "d4b0ef4c7bee929bdd188ea09b299d264165126b" }
+
+[dev-dependencies]
+tempfile = "3"

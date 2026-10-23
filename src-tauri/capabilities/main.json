@@ -3,5 +3,18 @@
   "identifier": "main",
   "description": "Capability for the main window",
   "windows": ["main", "doc-*"],
-  "permissions": ["core:default", "kernkraft-tauri:default"]
+  "permissions": [
+    "core:default",
+    "kernkraft-tauri:default",
+    "allow-settings-get",
+    "allow-settings-set",
+    "allow-pins-get",
+    "allow-pin",
+    "allow-unpin",
+    "allow-pins-reorder",
+    "allow-recents-get",
+    "allow-recent-touch",
+    "allow-prune",
+    "allow-store-errors-take"
+  ]
 }
