@@ -10,7 +10,8 @@ const themeGet = vi.hoisted(() =>
   )
 );
 
-vi.mock("./ipc", () => ({
+vi.mock("./ipc", async () => ({
+  ...(await import("./ipc/wire-path")),
   EVENT_THEME_CHANGED: "kernkraft://theme-changed",
   on: () => Promise.resolve(() => undefined),
   settingsGet: () =>
@@ -21,6 +22,7 @@ vi.mock("./ipc", () => ({
       density: "cozy",
     }),
   themeGet,
+  userDirs: () => Promise.resolve({ home: { k: "Utf8", v: "/home/t" }, dirs: [] }),
   toWireError: (e: unknown) => e,
 }));
 
@@ -30,5 +32,7 @@ test("renders_shell_root", async () => {
   // The hook has settled once it has written the theme the mocked themeGet gave.
   await waitFor(() => expect(document.head.querySelector("style#kern-tokens")).not.toBeNull());
   expect(screen.queryByRole("alert")).toBeNull();
-  expect(screen.getByTestId("shell")).toBeEmptyDOMElement();
+  // The Home folder tab opens once user_dirs answers.
+  expect(await screen.findByRole("tab", { name: /t/ })).toBeInTheDocument();
+  expect(screen.getByTestId("status-bar")).toHaveTextContent("/home/t");
 });

@@ -1,0 +1,145 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { create } from "zustand";
+import { pathKey, type WirePath } from "../ipc";
+
+// Design 4.1 (tabs above the panels), 4.3 (a file opens as a document tab),
+// 4.5 (a file already open is focused, never opened twice).
+export type FolderTab = {
+  id: string;
+  kind: "folder";
+  /** Always history[cursor]. */
+  path: WirePath;
+  history: WirePath[];
+  cursor: number;
+};
+export type DocTab = { id: string; kind: "doc"; path: WirePath; dirty: boolean };
+export type Tab = FolderTab | DocTab;
+
+export interface TabsState {
+  tabs: Tab[];
+  activeId: string | null;
+  /** Navigate the active folder tab, or open a folder tab when asked to or when the active tab is not a folder. */
+  openFolder(path: WirePath, inNewTab: boolean): void;
+  /** Open a document tab, or focus the one already open on this path. */
+  openDoc(path: WirePath): void;
+  /** Close a tab; the active tab becomes its right neighbour, else its left. */
+  close(id: string): void;
+  activate(id: string): void;
+  /** Wraps around. */
+  next(): void;
+  prev(): void;
+  back(): void;
+  forward(): void;
+  up(): void;
+}
+
+/**
+ * The parent of a path, or null at the root. Only a Utf8 path has one: the
+ * bytes of a Bytes path cannot be split here without decoding them, which
+ * would change the path (see join in wire-path.ts).
+ */
+export function parentOf(p: WirePath): WirePath | null {
+  if (p.k !== "Utf8") return null;
+  const trimmed = p.v.replace(/\/+$/, "");
+  const cut = trimmed.lastIndexOf("/");
+  if (cut < 0) return null;
+  if (cut === 0) return trimmed === "" ? null : { k: "Utf8", v: "/" };
+  return { k: "Utf8", v: trimmed.slice(0, cut) };
+}
+
+/** The tab's label: the last path component, or "/" for the root. */
+export function tabTitle(tab: Tab): string {
+  if (tab.path.k === "Bytes") return "(unreadable name)";
+  const trimmed = tab.path.v.replace(/\/+$/, "");
+  return trimmed.slice(trimmed.lastIndexOf("/") + 1) || "/";
+}
+
+export function activeTab(s: Pick<TabsState, "tabs" | "activeId">): Tab | null {
+  return s.tabs.find((t) => t.id === s.activeId) ?? null;
+}
+
+type Set = (fn: (s: TabsState) => Partial<TabsState>) => void;
+
+function updateActiveFolder(set: Set, step: (t: FolderTab) => FolderTab | null) {
+  set((s) => {
+    const cur = activeTab(s);
+    if (!cur || cur.kind !== "folder") return {};
+    const nextTab = step(cur);
+    if (!nextTab) return {};
+    return { tabs: s.tabs.map((t) => (t.id === cur.id ? nextTab : t)) };
+  });
+}
+
+function visit(t: FolderTab, path: WirePath): FolderTab | null {
+  if (pathKey(path) === pathKey(t.path)) return null;
+  const history = [...t.history.slice(0, t.cursor + 1), path];
+  return { ...t, history, cursor: history.length - 1, path };
+}
+
+function step(t: FolderTab, cursor: number): FolderTab | null {
+  const path = t.history[cursor];
+  if (path === undefined || cursor === t.cursor) return null;
+  return { ...t, cursor, path };
+}
+
+function cycle(set: Set, delta: 1 | -1) {
+  set((s) => {
+    if (s.tabs.length === 0) return {};
+    const i = s.tabs.findIndex((t) => t.id === s.activeId);
+    const target = s.tabs[(i + delta + s.tabs.length) % s.tabs.length];
+    return target ? { activeId: target.id } : {};
+  });
+}
+
+export const useTabs = create<TabsState>()((set) => ({
+  tabs: [],
+  activeId: null,
+  openFolder(path, inNewTab) {
+    set((s) => {
+      const cur = activeTab(s);
+      if (inNewTab || !cur || cur.kind !== "folder") {
+        const tab: FolderTab = {
+          id: crypto.randomUUID(),
+          kind: "folder",
+          path,
+          history: [path],
+          cursor: 0,
+        };
+        return { tabs: [...s.tabs, tab], activeId: tab.id };
+      }
+      const moved = visit(cur, path);
+      return moved ? { tabs: s.tabs.map((t) => (t.id === cur.id ? moved : t)) } : {};
+    });
+  },
+  openDoc(path) {
+    set((s) => {
+      const key = pathKey(path);
+      const open = s.tabs.find((t) => t.kind === "doc" && pathKey(t.path) === key);
+      if (open) return { activeId: open.id };
+      const tab: DocTab = { id: crypto.randomUUID(), kind: "doc", path, dirty: false };
+      return { tabs: [...s.tabs, tab], activeId: tab.id };
+    });
+  },
+  close(id) {
+    set((s) => {
+      const i = s.tabs.findIndex((t) => t.id === id);
+      if (i < 0) return {};
+      const tabs = s.tabs.filter((t) => t.id !== id);
+      if (id !== s.activeId) return { tabs };
+      return { tabs, activeId: (tabs[i] ?? tabs[i - 1])?.id ?? null };
+    });
+  },
+  activate(id) {
+    set((s) => (s.tabs.some((t) => t.id === id) ? { activeId: id } : {}));
+  },
+  next: () => cycle(set, 1),
+  prev: () => cycle(set, -1),
+  back: () => updateActiveFolder(set, (t) => step(t, t.cursor - 1)),
+  forward: () => updateActiveFolder(set, (t) => step(t, t.cursor + 1)),
+  up: () =>
+    updateActiveFolder(set, (t) => {
+      const parent = parentOf(t.path);
+      return parent ? visit(t, parent) : null;
+    }),
+}));

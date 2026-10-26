@@ -1,0 +1,290 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (c) 2026 Sricharan Suresh (github.com/verycareful) */
+
+/*
+ * Main window frame. Layout: design 4.1 and 4.3. Look: design_handoff_kern_ui
+ * README (tokens, 6px soft radius, mono section labels, 2px line icons).
+ */
+.kern-window {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  background: var(--kern-bg);
+  color: var(--kern-text);
+}
+
+.kern-tabbar {
+  display: flex;
+  align-items: center;
+  gap: var(--kern-density-gap);
+  padding: 6px var(--kern-density-gap) 0;
+  background: var(--kern-sunken);
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-tabs {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+  overflow-x: auto;
+}
+
+.kern-tab {
+  display: flex;
+  min-width: 0;
+  max-width: 220px;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  color: var(--kern-text-dim);
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--kern-radius-small) var(--kern-radius-small) 0 0;
+  cursor: pointer;
+  transition:
+    background 0.13s,
+    color 0.13s;
+}
+
+.kern-tab:hover {
+  color: var(--kern-text);
+}
+
+.kern-tab-active {
+  color: var(--kern-text);
+  background: var(--kern-bg);
+  border-color: var(--kern-border);
+  margin-bottom: -1px;
+  font-weight: 600;
+}
+
+.kern-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kern-dirty {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  background: var(--kern-accent);
+  border-radius: 50%;
+}
+
+.kern-tab-close,
+.kern-icon-button,
+.kern-stub button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  transition:
+    background 0.13s,
+    color 0.13s;
+}
+
+.kern-tab-close {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-tab-close:hover,
+.kern-icon-button:hover:not(:disabled),
+.kern-stub button:hover {
+  background: var(--kern-accent-soft);
+  color: var(--kern-accent);
+}
+
+.kern-nav {
+  display: flex;
+  gap: 2px;
+  padding-bottom: 4px;
+}
+
+.kern-icon-button {
+  width: 32px;
+  height: 32px;
+  color: var(--kern-text);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-icon-button:disabled {
+  color: var(--kern-text-dim);
+  cursor: default;
+}
+
+.kern-body {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  flex: 1;
+}
+
+/* Left two thirds, right third (design 4.1). */
+.kern-body-folder {
+  grid-template-columns: 2fr 1fr;
+}
+
+/* A stub column on each edge around the document (design 4.3). */
+.kern-body-doc {
+  grid-template-columns: auto 1fr auto;
+}
+
+.kern-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  background: var(--kern-surface);
+}
+
+.kern-panel-left {
+  border-right: 1px solid var(--kern-border);
+}
+
+.kern-panel-right {
+  flex-direction: column;
+}
+
+.kern-places {
+  width: 180px;
+  flex: none;
+  padding: var(--kern-density-gap);
+  background: var(--kern-sunken);
+  border-right: 1px solid var(--kern-border);
+}
+
+.kern-folder-area {
+  min-width: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.kern-side-section {
+  min-height: 0;
+  flex: 1;
+  padding: var(--kern-density-gap) var(--kern-density-pad);
+  overflow: auto;
+}
+
+.kern-side-section + .kern-side-section {
+  border-top: 1px solid var(--kern-border);
+}
+
+/* Section label: mono, uppercase, dim (handoff README, Typography). */
+.kern-label {
+  margin: 0;
+  font-family: var(--kern-font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kern-text-dim);
+}
+
+.kern-stub {
+  display: flex;
+  align-items: flex-start;
+  padding: var(--kern-density-gap) 6px;
+  background: var(--kern-sunken);
+}
+
+.kern-stub-left {
+  border-right: 1px solid var(--kern-border);
+}
+
+.kern-stub-right {
+  border-left: 1px solid var(--kern-border);
+}
+
+.kern-stub button {
+  width: 36px;
+  height: 36px;
+  color: var(--kern-text);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-stub button[aria-expanded="true"] {
+  background: var(--kern-accent-soft);
+  color: var(--kern-accent);
+}
+
+.kern-doc-area {
+  min-width: 0;
+  overflow: auto;
+}
+
+/* A panel slid over the document, beside the stub that opened it. */
+.kern-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 10;
+  width: min(560px, 66%);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--kern-text) 12%, transparent);
+}
+
+.kern-panel-left.kern-overlay {
+  left: 49px;
+  animation: kern-slide-left 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.kern-panel-right.kern-overlay {
+  right: 49px;
+  width: min(360px, 34%);
+  animation: kern-slide-right 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes kern-slide-left {
+  from {
+    transform: translateX(-24px);
+    opacity: 0;
+  }
+}
+
+@keyframes kern-slide-right {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kern-overlay {
+    animation: none !important;
+  }
+}
+
+.kern-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  color: var(--kern-text-dim);
+}
+
+.kern-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kern-density-gap);
+  padding: 4px var(--kern-density-gap);
+  font-family: var(--kern-font-mono);
+  font-size: 11.5px;
+  color: var(--kern-text-dim);
+  background: var(--kern-sunken);
+  border-top: 1px solid var(--kern-border);
+}
+
+.kern-status-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
