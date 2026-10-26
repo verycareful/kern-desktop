@@ -107,6 +107,17 @@ jobs:
         timeout-minutes: 30
         run: npx tauri build --bundles deb
 
+      # The runner forbids unprivileged user namespaces, so the empty network
+      # namespace is made as root; setpriv then drops back to the runner user
+      # before anything else runs, so Kern itself is unprivileged.
+      - name: Network namespace for the smoke run
+        timeout-minutes: 2
+        run: |
+          if ! sudo unshare -n setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups true; then
+            echo "::error::cannot create a network namespace on this runner"
+            exit 1
+          fi
+
       # The built binary runs in a network namespace with no interfaces, under
       # a virtual display. It must still be running when timeout stops it
       # (exit 124); any other status is a crash.
@@ -114,7 +125,8 @@ jobs:
         timeout-minutes: 5
         run: |
           set +e
-          timeout 5 unshare -rn xvfb-run -a src-tauri/target/release/kern
+          timeout 5 sudo unshare -n setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups \
+            env HOME="$HOME" PATH="$PATH" xvfb-run -a src-tauri/target/release/kern
           status=$?
           set -e
           if [ "$status" -ne 124 ]; then
