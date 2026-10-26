@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import type { WirePath } from "../ipc";
-import { activeTab, parentOf, tabTitle, useTabs, type FolderTab } from "./tabs";
+import { activeTab, tabTitle, useTabs, type FolderTab } from "./tabs";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 const s = () => useTabs.getState();
@@ -37,14 +37,27 @@ test("back_forward_up", () => {
   expect(folder().path).toEqual(p("/home/a/b"));
 });
 
-test("up_stops_at_root_and_bytes_paths", () => {
-  expect(parentOf(p("/"))).toBeNull();
-  expect(parentOf(p("/home"))).toEqual(p("/"));
-  expect(parentOf(p("/home/a/"))).toEqual(p("/home"));
-  expect(parentOf({ k: "Bytes", v: "L2hvbWU=" })).toBeNull();
+test("up_stops_at_root", () => {
   s().openFolder(p("/"), false);
   s().up();
   expect(folder().history).toHaveLength(1);
+});
+
+test("up_from_a_bytes_path", () => {
+  // "/<0xFF>/b": the parent "/<0xFF>" is not UTF-8, so it stays Bytes.
+  const bytes = (...b: number[]): WirePath => ({ k: "Bytes", v: btoa(String.fromCharCode(...b)) });
+  s().openFolder(bytes(0x2f, 0xff, 0x2f, 0x62), false);
+  s().up();
+  expect(folder().path).toEqual(bytes(0x2f, 0xff));
+  s().up();
+  expect(folder().path).toEqual(p("/"));
+  expect(tabTitle(s().tabs[0]!)).toBe("/");
+});
+
+test("bytes_title_is_the_last_component", () => {
+  const b: WirePath = { k: "Bytes", v: btoa("/x/a\xf6b") };
+  s().openFolder(b, false);
+  expect(tabTitle(s().tabs[0]!)).toBe("a\ufffdb");
 });
 
 test("reopening_the_current_folder_adds_no_history", () => {

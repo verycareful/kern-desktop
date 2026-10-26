@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { create } from "zustand";
-import { pathKey, type WirePath } from "../ipc";
+import { displayPath, parent, pathKey, type WirePath } from "../ipc";
 
 // Design 4.1 (tabs above the panels), 4.3 (a file opens as a document tab),
 // 4.5 (a file already open is focused, never opened twice).
@@ -34,24 +34,10 @@ export interface TabsState {
   up(): void;
 }
 
-/**
- * The parent of a path, or null at the root. Only a Utf8 path has one: the
- * bytes of a Bytes path cannot be split here without decoding them, which
- * would change the path (see join in wire-path.ts).
- */
-export function parentOf(p: WirePath): WirePath | null {
-  if (p.k !== "Utf8") return null;
-  const trimmed = p.v.replace(/\/+$/, "");
-  const cut = trimmed.lastIndexOf("/");
-  if (cut < 0) return null;
-  if (cut === 0) return trimmed === "" ? null : { k: "Utf8", v: "/" };
-  return { k: "Utf8", v: trimmed.slice(0, cut) };
-}
-
 /** The tab's label: the last path component, or "/" for the root. */
 export function tabTitle(tab: Tab): string {
-  if (tab.path.k === "Bytes") return "(unreadable name)";
-  const trimmed = tab.path.v.replace(/\/+$/, "");
+  // A Bytes path shows with U+FFFD for the bytes that are not UTF-8.
+  const trimmed = displayPath(tab.path).replace(/\/+$/, "");
   return trimmed.slice(trimmed.lastIndexOf("/") + 1) || "/";
 }
 
@@ -59,9 +45,9 @@ export function activeTab(s: Pick<TabsState, "tabs" | "activeId">): Tab | null {
   return s.tabs.find((t) => t.id === s.activeId) ?? null;
 }
 
-type Set = (fn: (s: TabsState) => Partial<TabsState>) => void;
+type SetTabs = (fn: (s: TabsState) => Partial<TabsState>) => void;
 
-function updateActiveFolder(set: Set, step: (t: FolderTab) => FolderTab | null) {
+function updateActiveFolder(set: SetTabs, step: (t: FolderTab) => FolderTab | null) {
   set((s) => {
     const cur = activeTab(s);
     if (!cur || cur.kind !== "folder") return {};
@@ -83,7 +69,7 @@ function step(t: FolderTab, cursor: number): FolderTab | null {
   return { ...t, cursor, path };
 }
 
-function cycle(set: Set, delta: 1 | -1) {
+function cycle(set: SetTabs, delta: 1 | -1) {
   set((s) => {
     if (s.tabs.length === 0) return {};
     const i = s.tabs.findIndex((t) => t.id === s.activeId);
@@ -139,7 +125,7 @@ export const useTabs = create<TabsState>()((set) => ({
   forward: () => updateActiveFolder(set, (t) => step(t, t.cursor + 1)),
   up: () =>
     updateActiveFolder(set, (t) => {
-      const parent = parentOf(t.path);
-      return parent ? visit(t, parent) : null;
+      const up = parent(t.path);
+      return up ? visit(t, up) : null;
     }),
 }));

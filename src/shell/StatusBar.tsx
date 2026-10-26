@@ -3,8 +3,10 @@
 import { displayPath } from "../ipc";
 import { activeTab, useTabs } from "../store/tabs";
 
-// Design 4.1: along the bottom. Item count and selection size for a folder tab
-// are added with the folder area (Task 21).
+// Design 4.1: along the bottom, the whole window wide. Item count and
+// selection size for a folder tab are added with the folder area (Task 21);
+// a document's saved state is shown once the editor has loaded content, so
+// only a dirty document is flagged here.
 export function StatusBar() {
   const tab = useTabs((s) => activeTab(s));
   return (
@@ -12,9 +14,7 @@ export function StatusBar() {
       <span className="kern-status-path" title={tab ? displayPath(tab.path) : undefined}>
         {tab ? displayPath(tab.path) : ""}
       </span>
-      {tab?.kind === "doc" && (
-        <span data-testid="status-dirty">{tab.dirty ? "Unsaved changes" : "Saved"}</span>
-      )}
+      {tab?.kind === "doc" && tab.dirty && <span data-testid="status-dirty">Unsaved changes</span>}
     </footer>
   );
 }

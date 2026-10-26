@@ -10,33 +10,39 @@ import { StatusBar } from "./StatusBar";
 import { TabBar } from "./TabBar";
 import "./shell.css";
 
-// Design 4.1 (folder tab: file manager left, Pinned and Recent right) and 4.3
-// (document tab: both folded to stubs that slide the panels over the document).
+// Design 4.1: the tab row and the file manager fill the left two thirds, and
+// Pinned and Recent run the full height of the window on the right third. In
+// a document tab (4.3) the tab row spans the window and both panels are folded
+// to stubs that slide them over the document. The status bar spans the bottom.
 export default function MainWindow() {
   useShortcuts();
   const tab = useTabs((s) => activeTab(s));
-  const { leftOpen, rightOpen, toggleLeft, toggleRight } = usePanels();
+  const { leftOpen, rightOpen } = usePanels();
 
+  let layout: "folder" | "doc" | "none";
   let body;
   if (!tab) {
+    layout = "none";
     body = (
       <main className="kern-empty" data-testid="no-tab">
-        <p>No tab is open.</p>
+        <p>Opening the Home folder…</p>
       </main>
     );
   } else if (tab.kind === "folder") {
+    layout = "folder";
     body = (
-      <div className="kern-body kern-body-folder" data-testid="folder-body">
+      <>
         <PlacesPanel />
         <SidePanel />
-      </div>
+      </>
     );
   } else {
+    layout = "doc";
     body = (
-      <div className="kern-body kern-body-doc" data-testid="doc-body">
-        <PanelStub side="left" expanded={leftOpen} onToggle={toggleLeft} />
+      <div className="kern-body-doc" data-testid="doc-body">
+        <PanelStub side="left" expanded={leftOpen} />
         <main className="kern-doc-area" data-testid="doc-area" />
-        <PanelStub side="right" expanded={rightOpen} onToggle={toggleRight} />
+        <PanelStub side="right" expanded={rightOpen} />
         {leftOpen && <PlacesPanel overlay />}
         {rightOpen && <SidePanel overlay />}
       </div>
@@ -45,8 +51,10 @@ export default function MainWindow() {
 
   return (
     <div className="kern-window" data-testid="main-window">
-      <TabBar />
-      {body}
+      <div className="kern-main" data-layout={layout} data-testid="main-grid">
+        <TabBar />
+        {body}
+      </div>
       <StatusBar />
     </div>
   );

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect } from "react";
-import { actions, appliesTo, currentContext, eventToKey, runAction, isEnabled } from "./actions";
+import { actions, appliesTo, currentContext, candidateKeys, runAction, isEnabled } from "./actions";
 
 /** True when keystrokes in `el` are text input: input, textarea, select or contenteditable. */
 export function isEditable(el: EventTarget | null): boolean {
@@ -20,11 +20,14 @@ export function useShortcuts(): void {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      const key = eventToKey(e);
+      const keys = candidateKeys(e);
       const ctx = currentContext();
       const editable = isEditable(e.target);
       const hit = actions.find(
-        (a) => a.keys.includes(key) && appliesTo(a, ctx.active) && (!editable || a.inEditable)
+        (a) =>
+          a.keys.some((k) => keys.includes(k)) &&
+          appliesTo(a, ctx.active) &&
+          (!editable || a.inEditable)
       );
       if (!hit) return;
       e.preventDefault();

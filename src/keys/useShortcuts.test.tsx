@@ -3,7 +3,7 @@
 import { fireEvent, render } from "@testing-library/react";
 import type { WirePath } from "../ipc";
 import { activeTab, useTabs } from "../store/tabs";
-import { actions, eventToKey, findDuplicateBindings } from "./actions";
+import { actions, candidateKeys, eventToKey, findDuplicateBindings } from "./actions";
 import { useShortcuts } from "./useShortcuts";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
@@ -36,6 +36,7 @@ test("no_duplicate_bindings_per_context", () => {
   const mk = (id: string, when: "folder" | "doc" | "any", keys: string[]) => ({
     id,
     label: id,
+    area: "Tabs" as const,
     keys,
     when,
     run: () => undefined,
@@ -52,6 +53,27 @@ test("event_key_format", () => {
   expect(eventToKey({ ...base, key: "w", ctrlKey: true })).toBe("Ctrl+W");
   expect(eventToKey({ ...base, key: "Tab", ctrlKey: true, shiftKey: true })).toBe("Ctrl+Shift+Tab");
   expect(eventToKey({ ...base, key: "ArrowLeft", altKey: true })).toBe("Alt+ArrowLeft");
+  // The plus key is written Plus; = and - are themselves; space is Space.
+  expect(eventToKey({ ...base, key: "=", ctrlKey: true })).toBe("Ctrl+=");
+  expect(eventToKey({ ...base, key: "-", ctrlKey: true })).toBe("Ctrl+-");
+  expect(eventToKey({ ...base, key: "+", ctrlKey: true, shiftKey: true })).toBe("Ctrl+Shift+Plus");
+  expect(eventToKey({ ...base, key: " " })).toBe("Space");
+});
+
+test("keys_fall_back_to_the_physical_key_on_non_latin_layouts", () => {
+  const base = { ctrlKey: true, altKey: false, shiftKey: false, metaKey: false };
+  // Cyrillic layout: the W position types "ц".
+  expect(candidateKeys({ ...base, key: "ц", code: "KeyW" })).toEqual(["Ctrl+Ц", "Ctrl+W"]);
+  expect(candidateKeys({ ...base, key: "1", code: "Digit1" })).toEqual(["Ctrl+1"]);
+  // A Latin layout that moved the letter (Dvorak) keeps the typed key only.
+  expect(candidateKeys({ ...base, key: ",", code: "KeyW" })).toEqual(["Ctrl+,"]);
+});
+
+test("ctrl_w_works_on_a_cyrillic_layout", () => {
+  render(<Host />);
+  useTabs.getState().openFolder(p("/a"), false);
+  fireEvent.keyDown(window, { key: "ц", code: "KeyW", ctrlKey: true });
+  expect(useTabs.getState().tabs).toHaveLength(0);
 });
 
 test("ctrl_w_closes_the_active_tab_and_ctrl_tab_cycles", () => {
@@ -76,8 +98,13 @@ test("navigation_keys_only_in_folder_tabs", () => {
   expect((activeTab(useTabs.getState()) as { path: WirePath }).path).toEqual(p("/a/b"));
   useTabs.getState().openDoc(p("/a/n.md"));
   const before = useTabs.getState().tabs;
-  fireEvent.keyDown(window, { key: "ArrowUp", altKey: true });
+  // Not claimed: no folder-only action applies in a document tab.
+  const claimed = !fireEvent.keyDown(window, { key: "ArrowUp", altKey: true });
+  expect(claimed).toBe(false);
   expect(useTabs.getState().tabs).toBe(before);
+  // The same event in a folder tab is claimed.
+  useTabs.getState().activate(before[0]!.id);
+  expect(fireEvent.keyDown(window, { key: "ArrowUp", altKey: true })).toBe(false);
 });
 
 test("shortcuts_skip_editable_fields_unless_the_action_allows_it", () => {

@@ -6,11 +6,62 @@
  * README (tokens, 6px soft radius, mono section labels, 2px line icons).
  */
 .kern-window {
+  /*
+   * Sizes of this frame. Icon buttons are 36px: the handoff's 42px is a touch
+   * target (README, Shape & spacing), reduced for a pointer window. The stub
+   * column is one button plus its padding and its 1px border.
+   */
+  --shell-button: 36px;
+  --shell-stub-pad: 6px;
+  --shell-stub-width: calc(var(--shell-button) + 2 * var(--shell-stub-pad) + 1px);
+  /* Wide enough for "Documents" in the UI face plus padding; the places strip is not resizable yet. */
+  --shell-places-width: 180px;
+  /* A tab title is ellipsised beyond this; about 24 characters of UI text. */
+  --shell-tab-max: 220px;
   display: flex;
   height: 100%;
   flex-direction: column;
   background: var(--kern-bg);
   color: var(--kern-text);
+}
+
+/*
+ * Design 4.1: columns two to one. In a folder tab the tab row and the places
+ * panel stack in the left column and the side panel spans both rows of the
+ * right; in a document tab the tab row spans both columns.
+ */
+.kern-main {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.kern-main > .kern-tabbar {
+  grid-row: 1;
+  grid-column: 1 / -1;
+}
+
+.kern-main[data-layout="folder"] > .kern-tabbar {
+  grid-column: 1;
+}
+
+.kern-main[data-layout="folder"] > .kern-panel-left {
+  grid-row: 2;
+  grid-column: 1;
+}
+
+.kern-main[data-layout="folder"] > .kern-panel-right {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  border-left: 1px solid var(--kern-border);
+}
+
+.kern-main > .kern-empty,
+.kern-main > .kern-body-doc {
+  grid-row: 2;
+  grid-column: 1 / -1;
 }
 
 .kern-tabbar {
@@ -33,11 +84,11 @@
 .kern-tab {
   display: flex;
   min-width: 0;
-  max-width: 220px;
+  max-width: var(--shell-tab-max);
   flex: 0 1 auto;
   align-items: center;
-  gap: 8px;
-  padding: 8px 8px 8px 12px;
+  gap: 4px;
+  padding: 0 4px 0 0;
   color: var(--kern-text-dim);
   border: 1px solid transparent;
   border-bottom: 0;
@@ -58,6 +109,20 @@
   border-color: var(--kern-border);
   margin-bottom: -1px;
   font-weight: 600;
+}
+
+.kern-tab-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px 8px 12px;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
 }
 
 .kern-tab-title {
@@ -110,8 +175,8 @@
 }
 
 .kern-icon-button {
-  width: 32px;
-  height: 32px;
+  width: var(--shell-button);
+  height: var(--shell-button);
   color: var(--kern-text);
   border-radius: var(--kern-radius-small);
 }
@@ -121,20 +186,11 @@
   cursor: default;
 }
 
-.kern-body {
+/* A stub column on each edge around the document (design 4.3). */
+.kern-body-doc {
   position: relative;
   display: grid;
   min-height: 0;
-  flex: 1;
-}
-
-/* Left two thirds, right third (design 4.1). */
-.kern-body-folder {
-  grid-template-columns: 2fr 1fr;
-}
-
-/* A stub column on each edge around the document (design 4.3). */
-.kern-body-doc {
   grid-template-columns: auto 1fr auto;
 }
 
@@ -154,7 +210,7 @@
 }
 
 .kern-places {
-  width: 180px;
+  width: var(--shell-places-width);
   flex: none;
   padding: var(--kern-density-gap);
   background: var(--kern-sunken);
@@ -192,7 +248,7 @@
 .kern-stub {
   display: flex;
   align-items: flex-start;
-  padding: var(--kern-density-gap) 6px;
+  padding: var(--kern-density-gap) var(--shell-stub-pad);
   background: var(--kern-sunken);
 }
 
@@ -205,8 +261,8 @@
 }
 
 .kern-stub button {
-  width: 36px;
-  height: 36px;
+  width: var(--shell-button);
+  height: var(--shell-button);
   color: var(--kern-text);
   border-radius: var(--kern-radius-small);
 }
@@ -227,18 +283,19 @@
   top: 0;
   bottom: 0;
   z-index: 10;
-  width: min(560px, 66%);
+  /* Design 4.1's proportions: the file manager two thirds, Pinned and Recent one third. */
+  width: calc(200% / 3);
   box-shadow: 0 10px 30px color-mix(in srgb, var(--kern-text) 12%, transparent);
 }
 
 .kern-panel-left.kern-overlay {
-  left: 49px;
+  left: var(--shell-stub-width);
   animation: kern-slide-left 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .kern-panel-right.kern-overlay {
-  right: 49px;
-  width: min(360px, 34%);
+  right: var(--shell-stub-width);
+  width: calc(100% / 3);
   animation: kern-slide-right 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 

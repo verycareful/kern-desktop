@@ -43,3 +43,32 @@ export function join(parent: WirePath, name: string): WirePath {
   const base = parent.v.endsWith("/") ? parent.v : `${parent.v}/`;
   return { k: "Utf8", v: `${base}${name}` };
 }
+
+// The parent folder of an absolute path, or null at the root (or for a Bytes
+// payload that is not valid base64). A Bytes path is split on its raw bytes:
+// atob gives one character per byte, and '/' (0x2F) never occurs inside a
+// multi-byte UTF-8 sequence, so cutting at it is exact. The parent comes back
+// as Utf8 when its bytes are valid UTF-8, so its pathKey equals the one the
+// backend sends for the same folder, and as Bytes otherwise.
+export function parent(p: WirePath): WirePath | null {
+  let bin: string;
+  if (p.k === "Utf8") {
+    bin = String.fromCharCode(...new TextEncoder().encode(p.v));
+  } else {
+    try {
+      bin = atob(p.v);
+    } catch {
+      return null;
+    }
+  }
+  const trimmed = bin.replace(/\/+$/, "");
+  const cut = trimmed.lastIndexOf("/");
+  if (cut < 0) return null;
+  const head = cut === 0 ? "/" : trimmed.slice(0, cut);
+  const bytes = Uint8Array.from(head, (c) => c.charCodeAt(0));
+  try {
+    return { k: "Utf8", v: new TextDecoder("utf-8", { fatal: true }).decode(bytes) };
+  } catch {
+    return { k: "Bytes", v: btoa(head) };
+  }
+}

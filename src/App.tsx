@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toWireError, userDirs, type WireError } from "./ipc";
 import MainWindow from "./shell/MainWindow";
 import { useTabs } from "./store/tabs";
@@ -9,23 +9,34 @@ import { useTheme } from "./theme/useTheme";
 export default function App() {
   const { error, problems } = useTheme();
   const [homeError, setHomeError] = useState<WireError | null>(null);
+  const tabCount = useTabs((s) => s.tabs.length);
+  const mounted = useRef(true);
 
-  // A new main window starts on the Home folder (design 4.4 names a Home
-  // folder tab for the main window). Only when nothing else opened a tab first.
   useEffect(() => {
-    let live = true;
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  // Design 4.4 names a Home folder tab for the main window, and the window
+  // never sits without a tab: a new window, and closing the last tab, both
+  // open Home. Opened only if nothing else opened a tab while the lookup ran.
+  const openHome = useCallback(() => {
+    setHomeError(null);
     userDirs().then(
       (dirs) => {
-        if (live && useTabs.getState().tabs.length === 0) {
+        if (mounted.current && useTabs.getState().tabs.length === 0) {
           useTabs.getState().openFolder(dirs.home, false);
         }
       },
-      (e: unknown) => live && setHomeError(toWireError(e))
+      (e: unknown) => mounted.current && setHomeError(toWireError(e))
     );
-    return () => {
-      live = false;
-    };
   }, []);
+
+  useEffect(() => {
+    if (tabCount === 0 && homeError === null) openHome();
+  }, [tabCount, homeError, openHome]);
 
   return (
     <div data-testid="shell" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -37,7 +48,10 @@ export default function App() {
       )}
       {homeError && (
         <p role="alert">
-          The Home folder could not be located: {homeError.kind}: {homeError.message}
+          The Home folder could not be located: {homeError.kind}: {homeError.message}{" "}
+          <button type="button" onClick={openHome}>
+            Retry
+          </button>
         </p>
       )}
       {problems.length > 0 && (
