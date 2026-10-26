@@ -7,10 +7,16 @@ const ok = (v: string) => ({ ok: true, path: { k: "Utf8", v } });
 
 test("absolute_paths_are_normalised", () => {
   expect(parseLocation("/usr/share", home)).toEqual(ok("/usr/share"));
-  expect(parseLocation("  /usr//share/ ", home)).toEqual(ok("/usr/share"));
+  expect(parseLocation("/usr//share/", home)).toEqual(ok("/usr/share"));
   expect(parseLocation("/", home)).toEqual(ok("/"));
   expect(parseLocation("/a/./b/../c", home)).toEqual(ok("/a/c"));
   expect(parseLocation("/..", home)).toEqual(ok("/"));
+});
+
+test("names_keep_their_leading_and_trailing_spaces", () => {
+  expect(parseLocation("/a/ b /c ", home)).toEqual(ok("/a/ b /c "));
+  // A space before the first slash makes the path relative: it is not trimmed away.
+  expect(parseLocation(" /a", home)).toMatchObject({ ok: false });
 });
 
 test("tilde_expands_to_home", () => {
@@ -22,6 +28,10 @@ test("tilde_expands_to_home", () => {
 test("errors_are_reported_not_guessed", () => {
   expect(parseLocation("", home)).toMatchObject({ ok: false });
   expect(parseLocation("   ", home)).toMatchObject({ ok: false });
+  // Not valid UTF-8 as shown: U+FFFD stands for bytes that cannot be typed back.
+  const bad = parseLocation("/home/\ufffdx", home);
+  expect(bad).toMatchObject({ ok: false });
+  expect(bad.ok === false && bad.message).toMatch(/not valid UTF-8/);
   const rel = parseLocation("docs/x", home);
   expect(rel).toMatchObject({ ok: false });
   expect(rel.ok === false && rel.message).toMatch(/absolute/);

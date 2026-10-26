@@ -391,24 +391,54 @@ test("ctrl_l_opens_the_location_bar_and_enter_navigates", async () => {
   await waitFor(() => expect(screen.queryByRole("textbox", { name: /location/i })).toBeNull());
 });
 
-test("a_location_that_cannot_be_listed_stays_open_with_the_error", async () => {
+test("a_missing_location_is_navigated_to_and_shown_as_gone_by_the_view", async () => {
   await mount([], "/d");
   fireEvent.keyDown(window, { key: "l", ctrlKey: true });
   const input = await screen.findByRole("textbox", { name: /location/i });
-  ipc.listDir.mockRejectedValue({
-    kind: "NotFound",
-    message: "no such folder: /nope",
-    path: null,
-    details: null,
-  });
+  ipc.listDir.mockClear();
+  ipc.listDir.mockImplementation((path: WirePath) =>
+    path.v === "/"
+      ? Promise.resolve([])
+      : Promise.reject({ kind: "NotFound", message: "nope", path: null, details: null })
+  );
   fireEvent.change(input, { target: { value: "/nope" } });
   fireEvent.keyDown(input, { key: "Enter" });
-  expect(await screen.findByRole("alert")).toHaveTextContent("no such folder: /nope");
-  expect(input).toBeInTheDocument();
+  expect(await screen.findByTestId("gone-banner")).toHaveTextContent("/nope");
+  expect((activeTab(useTabs.getState()) as FolderTab).path).toEqual(p("/nope"));
+  // The bar did not list the folder to check it: the view's own listing is the only one.
+  expect(ipc.listDir.mock.calls.filter((c) => (c[0] as WirePath).v === "/nope")).toHaveLength(1);
+});
+
+test("an_unchanged_location_keeps_the_original_path", async () => {
+  // "/home/<0xF6>" is not UTF-8, so the tab holds it as Bytes and the bar shows U+FFFD.
+  const bytes: WirePath = { k: "Bytes", v: btoa("/home/\xf6") };
+  ipc.listDir.mockResolvedValue([]);
+  useTabs.setState({ tabs: [], activeId: null });
+  useTabs.getState().openFolder(bytes, false);
+  const tab = activeTab(useTabs.getState()) as FolderTab;
+  render(<Host tab={tab} />);
+  await screen.findByTestId("folder-empty");
+  fireEvent.keyDown(window, { key: "l", ctrlKey: true });
+  const input = await screen.findByRole("textbox", { name: /location/i });
+  expect(input).toHaveValue("/home/\ufffd");
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(screen.queryByRole("textbox", { name: /location/i })).toBeNull());
+  expect(screen.queryByRole("alert")).toBeNull();
+  const now = activeTab(useTabs.getState()) as FolderTab;
+  expect(now.path).toEqual(bytes);
+  expect(now.history).toHaveLength(1);
+});
+
+test("an_edited_location_with_a_replacement_character_is_refused", async () => {
+  await mount([], "/d");
+  fireEvent.keyDown(window, { key: "l", ctrlKey: true });
+  const input = await screen.findByRole("textbox", { name: /location/i });
+  fireEvent.change(input, { target: { value: "/home/\ufffd/x" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent(/not valid UTF-8/);
+  expect(alert).toHaveTextContent(/breadcrumb/i);
   expect((activeTab(useTabs.getState()) as FolderTab).path).toEqual(p("/d"));
-  // Escape closes without navigating.
-  fireEvent.keyDown(input, { key: "Escape" });
-  expect(screen.queryByRole("textbox", { name: /location/i })).toBeNull();
 });
 
 test("a_relative_location_is_refused_inline", async () => {
@@ -436,7 +466,163 @@ test("settings_that_cannot_be_read_are_shown_with_a_retry", async () => {
 });
 
 test("unmount_stops_the_watch_and_the_thumbnails", async () => {
-  const { tab, unmount } = await mount([entry("a")]);
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, view_mode: "grid" });
+  ipc.listDir.mockResolvedValue([entry("a.png", { mime: "image/png" })]);
+  const tab = openTab();
+  const { unmount } = render(<Host tab={tab} />);
+  await screen.findByTestId("folder-grid");
+  await waitFor(() => expect(ipc.thumbRequest).toHaveBeenCalled());
+  const key = ipc.thumbRequest.mock.calls[0]![0];
   unmount();
-  expect(ipc.unwatchDir).toHaveBeenCalledWith(tab.id);
+  await waitFor(() => expect(ipc.unwatchDir).toHaveBeenCalledWith(tab.id));
+  expect(ipc.thumbCancel).toHaveBeenCalledWith(key);
+});
+
+test("every_grid_mount_has_its_own_thumbnail_key", async () => {
+  // A cancel of the old view must never land on the new view's queue.
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, view_mode: "grid" });
+  ipc.listDir.mockResolvedValue([entry("a.png", { mime: "image/png" })]);
+  const tab = openTab("/d/x");
+  render(<Host tab={tab} />);
+  await waitFor(() => expect(ipc.thumbRequest).toHaveBeenCalledTimes(1));
+  fireEvent.click(
+    within(screen.getByRole("navigation", { name: /path/i })).getByRole("button", { name: "d" })
+  );
+  await waitFor(() => expect(ipc.thumbRequest).toHaveBeenCalledTimes(2));
+  const [first, second] = ipc.thumbRequest.mock.calls.map((c) => c[0]);
+  expect(first).not.toBe(second);
+  expect(ipc.thumbCancel).toHaveBeenCalledWith(first);
+  expect(ipc.thumbCancel).not.toHaveBeenCalledWith(second);
+});
+
+test("a_folder_tab_outcome_navigates_the_tab", async () => {
+  const { tab } = await mount([entry("link-to-dir")]);
+  ipc.openPaths.mockResolvedValue([
+    { path: p("/d/link-to-dir"), action: "folder_tab", location: null, error: null },
+  ]);
+  fireEvent.doubleClick(screen.getAllByTestId("file-row")[0]!);
+  await waitFor(() =>
+    expect((activeTab(useTabs.getState()) as FolderTab).path).toEqual(p("/d/link-to-dir"))
+  );
+  expect(activeTab(useTabs.getState())?.id).toBe(tab.id);
+});
+
+const many = (n: number) =>
+  Array.from({ length: n }, (_, i) => entry(`f${String(i).padStart(2, "0")}.txt`));
+
+test("opening_more_than_ten_items_asks_first", async () => {
+  await mount(many(12));
+  ipc.openPaths.mockResolvedValue([]);
+  fireEvent.click(screen.getAllByTestId("file-row")[0]!);
+  fireEvent.keyDown(window, { key: "a", ctrlKey: true });
+  fireEvent.keyDown(window, { key: "Enter" });
+  const ask = await screen.findByRole("alertdialog");
+  expect(ask).toHaveTextContent("12");
+  expect(ipc.openPaths).not.toHaveBeenCalled();
+  fireEvent.click(within(ask).getByRole("button", { name: /cancel/i }));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(ipc.openPaths).not.toHaveBeenCalled();
+  fireEvent.keyDown(window, { key: "Enter" });
+  fireEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", { name: /open 12/i })
+  );
+  await waitFor(() => expect(ipc.openPaths).toHaveBeenCalledTimes(1));
+  expect(ipc.openPaths.mock.calls[0]![0]).toHaveLength(12);
+});
+
+test("opening_ten_items_does_not_ask", async () => {
+  await mount(many(10));
+  ipc.openPaths.mockResolvedValue([]);
+  fireEvent.click(screen.getAllByTestId("file-row")[0]!);
+  fireEvent.keyDown(window, { key: "a", ctrlKey: true });
+  fireEvent.keyDown(window, { key: "Enter" });
+  await waitFor(() => expect(ipc.openPaths).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+});
+
+test("focus_returns_to_the_list_after_header_breadcrumb_and_view_buttons", async () => {
+  await mount([entry("a"), entry("b")], "/d/x");
+  const list = () => screen.getByTestId("folder-list");
+  const header = screen.getByRole("columnheader", { name: "Size" });
+  within(header).getByRole("button").focus();
+  fireEvent.click(within(header).getByRole("button"));
+  expect(list()).toHaveFocus();
+  const crumb = within(screen.getByRole("navigation", { name: /path/i })).getByRole("button", {
+    name: "d",
+  });
+  crumb.focus();
+  fireEvent.click(crumb);
+  await waitFor(() => expect(list()).toHaveFocus());
+  const grid = screen.getByRole("button", { name: /grid view/i });
+  grid.focus();
+  fireEvent.click(grid);
+  await screen.findByTestId("folder-grid");
+  await waitFor(() => expect(screen.getByTestId("folder-grid")).toHaveFocus());
+});
+
+test("the_view_scrolls_to_the_cursor_on_keyboard_moves_only", async () => {
+  const scrollTo = vi.fn();
+  Element.prototype.scrollTo = scrollTo as unknown as typeof Element.prototype.scrollTo;
+  try {
+    await mount(many(100));
+    scrollTo.mockClear();
+    fireEvent.keyDown(window, { key: "End" });
+    await waitFor(() => expect(scrollTo).toHaveBeenCalled());
+    // A relist that puts five new rows above the cursor moves its index; the view stays.
+    scrollTo.mockClear();
+    ipc.listDir.mockResolvedValue([
+      ...many(100),
+      ...[0, 1, 2, 3, 4].map((i) => entry(`a${i}.txt`)),
+    ]);
+    fireEvent.keyDown(window, { key: "F5" });
+    await waitFor(() =>
+      expect(screen.getByTestId("folder-list")).toHaveAttribute("aria-rowcount", "105")
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    expect(scrollTo).not.toHaveBeenCalled();
+  } finally {
+    delete (Element.prototype as unknown as Record<string, unknown>).scrollTo;
+  }
+});
+
+test("a_vanished_folder_says_it_is_still_looking_while_it_walks_up", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let removed = false;
+  ipc.listDir.mockImplementation(async (path: WirePath) => {
+    if (path.v === "/a/b" && !removed) return [entry("x")];
+    if (path.v === "/a") {
+      await gate;
+      return [];
+    }
+    throw { kind: "NotFound", message: "nope", path: null, details: null };
+  });
+  const tab = openTab("/a/b");
+  render(<Host tab={tab} />);
+  await screen.findByTestId("folder-list");
+  removed = true;
+  act(() => {
+    void handlers["kernkraft://dir-gone"]!({ key: tab.id });
+  });
+  const banner = await screen.findByTestId("gone-banner");
+  expect(banner).toHaveTextContent(/looking/i);
+  expect(within(banner).queryByRole("button")).toBeNull();
+  await act(async () => release());
+  await within(banner).findByRole("button", { name: "/a" });
+});
+
+test("enter_on_a_focused_breadcrumb_navigates_once_and_does_not_open_the_selection", async () => {
+  await mount([entry("a.txt")], "/d/x");
+  fireEvent.click(screen.getAllByTestId("file-row")[0]!);
+  const crumb = within(screen.getByRole("navigation", { name: /path/i })).getByRole("button", {
+    name: "d",
+  });
+  crumb.focus();
+  // The key is the button's: no folder shortcut claims it.
+  expect(fireEvent.keyDown(crumb, { key: "Enter" })).toBe(true);
+  fireEvent.click(crumb);
+  expect(ipc.openPaths).not.toHaveBeenCalled();
+  const tab = activeTab(useTabs.getState()) as FolderTab;
+  expect(tab.path).toEqual(p("/d"));
+  expect(tab.history).toHaveLength(2);
 });

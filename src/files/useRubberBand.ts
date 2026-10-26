@@ -48,11 +48,14 @@ export function useRubberBand(props: {
       const r = box.getBoundingClientRect();
       return { x: x - r.left, y: y - r.top };
     };
+    // In content coordinates from the start: the content may scroll under a
+    // held pointer, and the corner where the press began scrolls with it.
+    const origin = local(start.x, start.y);
     const onMove = (m: PointerEvent) => {
       if (!dragging && Math.hypot(m.clientX - start.x, m.clientY - start.y) < DRAG_THRESHOLD)
         return;
       dragging = true;
-      const a = local(start.x, start.y);
+      const a = origin;
       const b = local(m.clientX, m.clientY);
       const rect = {
         left: Math.min(a.x, b.x),

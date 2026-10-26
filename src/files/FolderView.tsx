@@ -15,7 +15,7 @@ import { registerFolder, type MoveTo } from "./folder-controller";
 import { useFolderStatus } from "./folder-status";
 import { GoneBanner } from "./GoneBanner";
 import { LocationBar } from "./LocationBar";
-import { openEntries } from "./open-entries";
+import { OPEN_CONFIRM_ABOVE, openEntries } from "./open-entries";
 import {
   click,
   ctrlClick,
@@ -97,7 +97,19 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   }, []);
 
   const rowHeight = ROW_HEIGHT[density];
-  const navigate = useCallback((p: WirePath) => useTabs.getState().openFolder(p, false), []);
+  // After a click on the header, the breadcrumb or a view button the keyboard
+  // belongs to the list again, once there is a list to take it.
+  const focusSoon = useRef(false);
+  const [revealTick, setRevealTick] = useState(0);
+  const [asking, setAsking] = useState<{ list: typeof entries; newWindow: boolean } | null>(null);
+  // Navigates this view's own tab, which is not the active one when the panel is slid in over a document.
+  const navigate = useCallback(
+    (p: WirePath) => {
+      focusSoon.current = true;
+      useTabs.getState().navigateTab(tab.id, p);
+    },
+    [tab.id]
+  );
 
   // The controller reads the latest view state without being re-registered.
   const latest = useRef({ entries, sel, viewMode, columns });
@@ -105,10 +117,22 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     latest.current = { entries, sel, viewMode, columns };
   });
 
-  const open = useCallback(async (list: typeof entries, newWindow: boolean) => {
-    const errors = await openEntries(list, newWindow).catch((e: unknown) => [toWireError(e)]);
-    if (alive.current) setOpenErrors(errors);
-  }, []);
+  const open = useCallback(
+    async (list: typeof entries, newWindow: boolean) => {
+      const errors = await openEntries(list, newWindow, tab.id).catch((e: unknown) => [
+        toWireError(e),
+      ]);
+      if (alive.current) setOpenErrors(errors);
+    },
+    [tab.id]
+  );
+  const openOrAsk = useCallback(
+    (list: typeof entries, newWindow: boolean) => {
+      if (list.length > OPEN_CONFIRM_ABOVE) setAsking({ list, newWindow });
+      else void open(list, newWindow);
+    },
+    [open]
+  );
 
   useEffect(() => {
     const selected = () => {
@@ -127,12 +151,15 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       canMove: (to) =>
         latest.current.entries.length > 0 &&
         (latest.current.viewMode === "grid" || (to !== "left" && to !== "right")),
-      move: (to, extend) => dispatch((s, n) => move(s, step(to), extend, n)),
-      open: (newWindow) => void open(selected(), newWindow),
+      move: (to, extend) => {
+        dispatch((s, n) => move(s, step(to), extend, n));
+        setRevealTick((t) => t + 1);
+      },
+      open: (newWindow) => openOrAsk(selected(), newWindow),
       refresh,
       editLocation: () => setEditing(true),
     });
-  }, [tab.id, dispatch, open, refresh]);
+  }, [tab.id, dispatch, openOrAsk, refresh]);
 
   // The status bar's counts (design 4.1).
   useEffect(() => {
@@ -165,14 +192,21 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     },
     [dispatch]
   );
+  // The keyboard goes back to the list once it has been navigated or re-sorted.
+  useEffect(() => {
+    if (!focusSoon.current || folder.phase === "loading") return;
+    focusSoon.current = false;
+    root.current?.focus();
+  });
+
   const onItemDoubleClick = useCallback(
     (i: number, e: React.MouseEvent) => {
       const entry = latest.current.entries[i];
       if (!entry) return;
       dispatch((s) => click(s, i));
-      void open([entry], e.ctrlKey || e.metaKey);
+      openOrAsk([entry], e.ctrlKey || e.metaKey);
     },
-    [dispatch, open]
+    [dispatch, openOrAsk]
   );
   const onContextMenu = useCallback(
     (i: number | null, e: React.MouseEvent) => {
@@ -226,7 +260,12 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       break;
     case "gone":
       body = (
-        <GoneBanner path={tab.path} ancestor={folder.gone?.ancestor ?? null} onGo={navigate} />
+        <GoneBanner
+          path={tab.path}
+          ancestor={folder.gone?.ancestor ?? null}
+          searching={folder.gone?.searching ?? false}
+          onGo={navigate}
+        />
       );
       break;
     default:
@@ -246,6 +285,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
             thumbKey={`thumbs:${tab.id}`}
             onColumns={setColumns}
             rootRef={root}
+            revealTick={revealTick}
           />
         ) : (
           <FileList
@@ -254,8 +294,12 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
             rowHeight={rowHeight}
             sortBy={sort.by}
             sortDir={sort.dir}
-            onSort={(by) => useFolderUi.getState().chooseSort(tab.id, by)}
+            onSort={(by) => {
+              focusSoon.current = true;
+              useFolderUi.getState().chooseSort(tab.id, by);
+            }}
             rootRef={root}
+            revealTick={revealTick}
           />
         );
   }
@@ -269,7 +313,10 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         aria-label={action.label}
         aria-pressed={pressed}
         title={`${action.label} (${action.keys[0]})`}
-        onClick={() => runAction(action, currentContext(tab.id))}
+        onClick={() => {
+          focusSoon.current = true;
+          runAction(action, currentContext(tab.id));
+        }}
       >
         <Icon size={20} strokeWidth={2} aria-hidden />
       </button>
@@ -328,6 +375,29 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
           >
             <X size={16} strokeWidth={2} aria-hidden />
           </button>
+        </div>
+      )}
+      {asking && (
+        <div role="alertdialog" aria-label="Open many items" className="kern-banner">
+          <span>
+            Open {asking.list.length} items at once? Each opens a tab, a window or an application.
+          </span>
+          <span>
+            <button
+              type="button"
+              className="kern-button"
+              onClick={() => {
+                const { list, newWindow } = asking;
+                setAsking(null);
+                void open(list, newWindow);
+              }}
+            >
+              Open {asking.list.length} items
+            </button>{" "}
+            <button type="button" className="kern-button" onClick={() => setAsking(null)}>
+              Cancel
+            </button>
+          </span>
         </div>
       )}
       <div className="kern-files-body">{body}</div>

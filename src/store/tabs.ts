@@ -21,6 +21,8 @@ export interface TabsState {
   activeId: string | null;
   /** Navigate the active folder tab, or open a folder tab when asked to or when the active tab is not a folder. */
   openFolder(path: WirePath, inNewTab: boolean): void;
+  /** Navigate the folder tab `id` (not necessarily the active one) to `path`. */
+  navigateTab(id: string, path: WirePath): void;
   /** Open a document tab, or focus the one already open on this path. */
   openDoc(path: WirePath): void;
   /** Close a tab; the active tab becomes its right neighbour, else its left. */
@@ -98,6 +100,14 @@ export const useTabs = create<TabsState>()((set) => ({
       return moved ? { tabs: s.tabs.map((t) => (t.id === cur.id ? moved : t)) } : {};
     });
   },
+  navigateTab(id, path) {
+    set((s) => {
+      const t = s.tabs.find((x) => x.id === id);
+      if (!t || t.kind !== "folder") return {};
+      const moved = visit(t, path);
+      return moved ? { tabs: s.tabs.map((x) => (x.id === id ? moved : x)) } : {};
+    });
+  },
   openDoc(path) {
     set((s) => {
       const key = pathKey(path);
@@ -129,3 +139,17 @@ export const useTabs = create<TabsState>()((set) => ({
       return up ? visit(t, up) : null;
     }),
 }));
+
+// The folder tab that was active most recently. A document tab folds the file
+// manager panel away; slid back in over the document, the panel shows this
+// tab's folder (design 4.3).
+let lastFolderId: string | null = null;
+useTabs.subscribe((s) => {
+  const a = activeTab(s);
+  if (a?.kind === "folder") lastFolderId = a.id;
+});
+
+export function recentFolderTab(s: Pick<TabsState, "tabs" | "activeId">): FolderTab | null {
+  const folders = s.tabs.filter((t): t is FolderTab => t.kind === "folder");
+  return folders.find((t) => t.id === lastFolderId) ?? folders[folders.length - 1] ?? null;
+}

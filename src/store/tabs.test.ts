@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import type { WirePath } from "../ipc";
-import { activeTab, tabTitle, useTabs, type FolderTab } from "./tabs";
+import { activeTab, recentFolderTab, tabTitle, useTabs, type FolderTab } from "./tabs";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 const s = () => useTabs.getState();
@@ -119,4 +119,39 @@ test("tab_titles", () => {
   expect(tabTitle(s().tabs[0]!)).toBe("/");
   s().openDoc(p("/home/a/notes.md"));
   expect(tabTitle(s().tabs[1]!)).toBe("notes.md");
+});
+
+test("navigate_tab_moves_that_tab_whatever_is_active", () => {
+  s().openFolder(p("/a"), false);
+  const first = s().activeId!;
+  s().openDoc(p("/a/n.md"));
+  expect(s().activeId).not.toBe(first);
+  s().navigateTab(first, p("/a/sub"));
+  const t = s().tabs.find((x) => x.id === first) as FolderTab;
+  expect(t.path).toEqual(p("/a/sub"));
+  expect(t.history).toEqual([p("/a"), p("/a/sub")]);
+  // The active tab is untouched, and no tab was added.
+  expect(activeTab(s())?.kind).toBe("doc");
+  expect(s().tabs).toHaveLength(2);
+  // A tab that is gone, or a document tab, is left alone.
+  s().navigateTab("nope", p("/x"));
+  s().navigateTab(s().activeId!, p("/x"));
+  expect(s().tabs).toHaveLength(2);
+});
+
+test("recent_folder_tab_is_the_folder_tab_last_active", () => {
+  expect(recentFolderTab(s())).toBeNull();
+  s().openFolder(p("/a"), false);
+  s().openFolder(p("/b"), true);
+  const [a, b] = ids() as [string, string];
+  s().openDoc(p("/b/n.md"));
+  expect(recentFolderTab(s())?.id).toBe(b);
+  s().activate(a);
+  s().openDoc(p("/b/n.md"));
+  expect(recentFolderTab(s())?.id).toBe(a);
+  // When that tab closes, another folder tab stands in.
+  s().close(a);
+  expect(recentFolderTab(s())?.id).toBe(b);
+  s().close(b);
+  expect(recentFolderTab(s())).toBeNull();
 });

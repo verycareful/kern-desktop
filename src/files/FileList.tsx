@@ -63,6 +63,8 @@ export function FileList(
     sortDir: SortDir;
     onSort(by: SortBy): void;
     rootRef: React.RefObject<HTMLDivElement | null>;
+    /** Counts keyboard moves of the cursor; each one scrolls the cursor into view. */
+    revealTick: number;
   }
 ) {
   const { entries, sel, rowHeight } = props;
@@ -78,10 +80,15 @@ export function FileList(
     initialRect: { width: 600, height: 400 },
   });
 
-  // Keep the keyboard cursor on screen.
+  // A keyboard move brings the cursor into view; a click or a relist does not.
+  const cursor = useRef(sel.cursor);
   useEffect(() => {
-    if (sel.cursor !== null) virtual.scrollToIndex(sel.cursor);
-  }, [sel.cursor, virtual]);
+    cursor.current = sel.cursor;
+  });
+  const { revealTick } = props;
+  useEffect(() => {
+    if (revealTick > 0 && cursor.current !== null) virtual.scrollToIndex(cursor.current);
+  }, [revealTick, virtual]);
 
   const layout: Layout = { kind: "list", rowHeight, count: entries.length };
   const { onPointerDown, band } = useRubberBand({

@@ -5,6 +5,14 @@ import { useTabs } from "../store/tabs";
 import { isFolder } from "./file-type";
 
 /**
+ * Opening more items than this asks first. Each one becomes a tab, a window or
+ * an application; ten is as many as a person picks out by hand (a handful of
+ * documents), so a larger selection is far more often Select all than a wish
+ * to open them all, and a mistake costs dozens of windows to close.
+ */
+export const OPEN_CONFIRM_ABOVE = 10;
+
+/**
  * Opens entries from the folder view (design 4.3). A single folder navigates
  * the current tab; with several entries, or with the new-window gesture
  * (Ctrl), each folder opens in a tab of its own, since folders live only in
@@ -15,13 +23,18 @@ import { isFolder } from "./file-type";
  */
 export async function openEntries(
   list: readonly WireEntry[],
-  newWindow: boolean
+  newWindow: boolean,
+  /** The folder tab the view belongs to: a single folder navigates it. */
+  tabId: string
 ): Promise<WireError[]> {
   const tabs = useTabs.getState();
   const folders = list.filter(isFolder);
   const files = list.filter((e) => !isFolder(e));
   const separate = newWindow || list.length > 1;
-  folders.forEach((f) => tabs.openFolder(f.path, separate));
+  for (const f of folders) {
+    if (separate) tabs.openFolder(f.path, true);
+    else tabs.navigateTab(tabId, f.path);
+  }
   if (files.length === 0) return [];
 
   const errors: WireError[] = [];
@@ -40,7 +53,8 @@ export async function openEntries(
           path: o.path,
           details: null,
         });
-      } else if (o.action === "doc_tab") useTabs.getState().openDoc(o.path);
+      } else if (o.action === "folder_tab") useTabs.getState().navigateTab(tabId, o.path);
+      else if (o.action === "doc_tab") useTabs.getState().openDoc(o.path);
       else if (o.action === "focus" && o.location?.kind === "tab") {
         useTabs.getState().activate(o.location.tab_id);
       }

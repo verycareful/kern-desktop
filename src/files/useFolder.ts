@@ -33,6 +33,8 @@ export interface FolderOptions {
 }
 
 interface Core {
+  /** Which folder (tab and path) this state is the listing of. */
+  key: string;
   phase: Phase;
   /** The listing as sent. */
   raw: WireEntry[];
@@ -43,11 +45,15 @@ interface Core {
   error: WireError | null;
   /** Why live updates are not running, if they are not; the listing still shows. */
   watchError: WireError | null;
-  /** In phase "gone": the nearest ancestor that still lists, or null if none does. */
-  gone: { ancestor: WirePath | null } | null;
+  /**
+   * In phase "gone": the nearest ancestor that still lists, or null if none
+   * does (yet, while `searching`).
+   */
+  gone: { ancestor: WirePath | null; searching: boolean } | null;
 }
 
-const INITIAL: Core = {
+const initial = (key: string): Core => ({
+  key,
   phase: "loading",
   raw: [],
   entries: [],
@@ -55,7 +61,7 @@ const INITIAL: Core = {
   error: null,
   watchError: null,
   gone: null,
-};
+});
 
 export interface FolderApi extends Core {
   /** Applies a selection function (from selection.ts) to the current selection. */
@@ -102,8 +108,9 @@ async function nearestAncestor(path: WirePath): Promise<WirePath | null> {
 }
 
 export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): FolderApi {
-  const [core, setCore] = useState<Core>(INITIAL);
+  const [core, setCore] = useState<Core>(() => initial(`${tabId}\n${pathKey(path)}`));
   const pathK = pathKey(path);
+  const folderKey = `${tabId}\n${pathK}`;
 
   // The effects below read these without restarting when they change.
   const hidden = useRef(opts.hidden);
@@ -112,26 +119,65 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
     hidden.current = opts.hidden;
     sort.current = { by: opts.sortBy, dir: opts.sortDir };
   });
+  // The listing as sent, for re-sorting outside a state updater (React may run an updater twice).
+  const rawRef = useRef<WireEntry[]>([]);
   const reload = useRef<() => void>(() => undefined);
-  // The unwatch of the previous folder, so the next watch is placed only after
-  // it: both use the tab's key, and the backend must not see them swapped.
+  // The last unwatch sent for this tab's key. Every watch and unwatch of the
+  // key is chained after it, so the backend sees them in the order they were
+  // meant (a late unwatch of the old folder must not remove the new watch).
   const unwatching = useRef<Promise<WireError | null>>(Promise.resolve(null));
 
   useEffect(() => {
     const target = path;
     let alive = true;
     let seq = 0;
+    let watching = false;
+    let watchFailed = false;
     const unlisten: UnlistenFn[] = [];
 
     const order = (raw: WireEntry[]) => sortEntries(raw, sort.current.by, sort.current.dir);
 
+    const chainUnwatch = (): Promise<WireError | null> => {
+      const next = unwatching.current.then(() =>
+        unwatchDir(tabId).then(
+          () => null,
+          (e: unknown) => {
+            console.error("unwatch_dir failed", e);
+            return toWireError(e);
+          }
+        )
+      );
+      unwatching.current = next;
+      return next;
+    };
+    // Only a watch that is running is stopped: the backend has nothing to stop otherwise.
+    const stopWatch = () => {
+      if (!watching) return;
+      watching = false;
+      void chainUnwatch().then((err) => {
+        if (err && alive) setCore((c) => ({ ...c, watchError: err }));
+      });
+    };
+
     const startWatch = async () => {
+      const previous = await unwatching.current;
+      if (!alive) return;
       try {
         await watchDir(tabId, target);
-        if (alive) setCore((c) => ({ ...c, watchError: null }));
+        watching = true;
+        watchFailed = false;
+        // This effect was cleaned up while the watch was being placed: end it.
+        if (!alive) stopWatch();
+        else setCore((c) => ({ ...c, watchError: previous }));
       } catch (e) {
+        watchFailed = true;
         if (alive) setCore((c) => ({ ...c, watchError: toWireError(e) }));
       }
+    };
+
+    const showNone = (patch: Partial<Core>) => {
+      rawRef.current = [];
+      setCore((c) => ({ ...c, raw: [], entries: [], sel: empty, ...patch }));
     };
 
     // True when the folder listed. A list that is no longer the latest asked
@@ -141,54 +187,41 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
       try {
         const raw = await listDir(target, hidden.current);
         if (!alive || mine !== seq) return false;
-        setCore((c) => {
-          const entries = order(raw);
-          return {
-            ...c,
-            phase: "ready",
-            raw,
-            entries,
-            sel: remap(c.sel, c.entries, entries),
-            error: null,
-            gone: null,
-          };
-        });
+        const entries = order(raw);
+        rawRef.current = raw;
+        setCore((c) => ({
+          ...c,
+          phase: "ready",
+          raw,
+          entries,
+          sel: remap(c.sel, c.entries, entries),
+          error: null,
+          gone: null,
+        }));
         return true;
       } catch (e) {
         if (!alive || mine !== seq) return false;
         const error = toWireError(e);
         if (error.kind === "NotFound") {
-          unwatchDir(tabId).catch((u: unknown) => {
-            if (alive) setCore((c) => ({ ...c, watchError: toWireError(u) }));
-          });
+          // Known to be missing now; the search for a folder to offer follows.
+          stopWatch();
+          showNone({ phase: "gone", error: null, gone: { ancestor: null, searching: true } });
           const ancestor = await nearestAncestor(target);
           if (!alive || mine !== seq) return false;
-          setCore((c) => ({
-            ...c,
-            phase: "gone",
-            raw: [],
-            entries: [],
-            sel: empty,
-            error: null,
-            gone: { ancestor },
-          }));
+          setCore((c) => (c.phase === "gone" ? { ...c, gone: { ancestor, searching: false } } : c));
         } else {
-          setCore((c) => ({
-            ...c,
-            phase: "error",
-            raw: [],
-            entries: [],
-            sel: empty,
-            error,
-            gone: null,
-          }));
+          showNone({ phase: "error", error, gone: null });
         }
         return false;
       }
     };
-    reload.current = () => void load();
+    reload.current = () => {
+      if (watchFailed) void startWatch();
+      void load();
+    };
 
-    setCore(INITIAL);
+    setCore(initial(folderKey));
+    rawRef.current = [];
     (async () => {
       // Subscribe first, so a change between the listing and the watch is not missed.
       try {
@@ -198,9 +231,11 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
           }),
           on(EVENT_DIR_GONE, async (ev) => {
             if (ev.key !== tabId) return;
+            // The old listing is not shown for another moment.
+            showNone({ phase: "loading", error: null, gone: null });
+            if (ev.error) setCore((c) => ({ ...c, watchError: ev.error ?? null }));
             // The folder may be back (replaced in place), or the watch alone may
             // have failed: list again to find out, and watch again if it is there.
-            if (ev.error) setCore((c) => ({ ...c, watchError: ev.error ?? null }));
             const listed = await load();
             if (listed && !ev.error && alive) await startWatch();
           }),
@@ -213,9 +248,6 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
       } catch (e) {
         if (alive) setCore((c) => ({ ...c, watchError: toWireError(e) }));
       }
-      const previous = await unwatching.current;
-      if (!alive) return;
-      if (previous) setCore((c) => ({ ...c, watchError: previous }));
       await startWatch();
       if (alive) await load();
     })();
@@ -224,35 +256,26 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
       alive = false;
       unlisten.forEach((u) => u());
       reload.current = () => undefined;
-      unwatching.current = unwatchDir(tabId).then(
-        () => null,
-        (e: unknown) => {
-          console.error("unwatch_dir failed", e);
-          return toWireError(e);
-        }
-      );
+      stopWatch();
     };
     // The folder is identified by its path key, not the identity of the path object.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabId, pathK]);
 
   // Showing or hiding hidden files lists the same folder again; the watch is unchanged.
-  const firstHidden = useRef(true);
+  const shownHidden = useRef(opts.hidden);
   useEffect(() => {
-    if (firstHidden.current) {
-      firstHidden.current = false;
-      return;
-    }
+    if (shownHidden.current === opts.hidden) return;
+    shownHidden.current = opts.hidden;
     reload.current();
   }, [opts.hidden]);
 
   // A new sort order re-sorts what is already listed.
   useEffect(() => {
-    setCore((c) => {
-      if (c.raw.length === 0) return c;
-      const entries = sortEntries(c.raw, opts.sortBy, opts.sortDir);
-      return { ...c, entries, sel: remap(c.sel, c.entries, entries) };
-    });
+    const raw = rawRef.current;
+    if (raw.length === 0) return;
+    const entries = sortEntries(raw, opts.sortBy, opts.sortDir);
+    setCore((c) => (c.raw === raw ? { ...c, entries, sel: remap(c.sel, c.entries, entries) } : c));
   }, [opts.sortBy, opts.sortDir]);
 
   const dispatch = useCallback(
@@ -262,5 +285,8 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
   );
   const refresh = useCallback(() => reload.current(), []);
 
-  return { ...core, dispatch, refresh };
+  // For the render in which the path has changed but its effect has not yet
+  // run, the state is still the previous folder's: show nothing of it.
+  const shown = core.key === folderKey ? core : initial(folderKey);
+  return { ...shown, dispatch, refresh };
 }

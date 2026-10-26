@@ -67,20 +67,94 @@ test("input_is_not_mutated", () => {
 });
 
 test("sort_100k_under_budget", () => {
-  // Budget 1000 ms. A 100 000-entry folder is re-sorted on every refresh the
-  // watcher triggers (one per burst of changes) and on each sort change; one
-  // second is the limit Nielsen gives for a delay the user notices without
-  // losing their flow (Usability Engineering, 1993, ch. 5), so a sort that
-  // fits is never experienced as the app stalling. The input is shuffled
-  // names with digits, the collator's slowest realistic case (numeric).
+  // Budget 200 ms (the plan's Review Focus 2). A 100 000-entry folder is
+  // re-sorted on every refresh the watcher triggers (one per burst of changes)
+  // and on each sort change; 0.1 s is the limit for a response to feel
+  // instantaneous and 1 s the limit for keeping the user's flow (Nielsen,
+  // Usability Engineering, 1993, ch. 5), so 200 ms keeps a refresh inside
+  // "no noticeable pause" with the rest of the frame's work around it. The
+  // input is shuffled names with digits, the collator's slowest realistic case.
   let seed = 12345;
   const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
   const list = Array.from({ length: 100_000 }, (_, i) =>
     next() % 11 === 0 ? dir(`dir${next() % 5000}`) : entry(`file${next() % 100000}-${i}.txt`)
   );
-  const start = performance.now();
-  const sorted = sortEntries(list, "name", "asc");
-  const elapsed = performance.now() - start;
-  expect(sorted).toHaveLength(100_000);
-  expect(elapsed).toBeLessThan(1000);
+  sortEntries(list.slice(0, 2000), "name", "asc"); // warm-up: JIT and collator set-up
+  // The best of three runs: the budget is about what the sort costs, not about
+  // a test runner that has other files running beside it.
+  let best = Infinity;
+  for (let run = 0; run < 3; run++) {
+    const start = performance.now();
+    const sorted = sortEntries(list, "name", "asc");
+    best = Math.min(best, performance.now() - start);
+    expect(sorted).toHaveLength(100_000);
+  }
+  expect(best).toBeLessThan(200);
+});
+
+// The reference: what the sort must equal, written as plainly as possible.
+const collator = new Intl.Collator(undefined, { numeric: true });
+const reference = (a: string, b: string) => collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+
+test("name_order_equals_the_collator_on_mixed_input", () => {
+  // Names from an alphabet that mixes what the fast path handles (ASCII
+  // letters of both cases, digits, . - _ and space), leading zeros, and what
+  // it must leave to the collator (accents, ligatures, CJK, emoji, other punctuation).
+  const alphabet = [
+    ..."abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789....--__  ",
+    ..."0001",
+    ..."\u00e9\u00c9\u00fc\u00df\u00e5\u0131\u65e5\u672c\ud83d\ude00(),;!#@~+",
+  ];
+  let seed = 7;
+  const rnd = (n: number) => (seed = (seed * 1664525 + 1013904223) % 4294967296) % n;
+  const names = Array.from({ length: 4000 }, () =>
+    Array.from({ length: 1 + rnd(8) }, () => alphabet[rnd(alphabet.length)]).join("")
+  );
+  const unique = [...new Set(names)];
+  const got = sortEntries(
+    unique.map((n) => entry(n)),
+    "name",
+    "asc"
+  ).map((e) => e.name);
+  const want = [...unique].sort(reference);
+  expect(got).toEqual(want);
+  const desc = sortEntries(
+    unique.map((n) => entry(n)),
+    "name",
+    "desc"
+  ).map((e) => e.name);
+  expect(desc).toEqual([...want].reverse());
+});
+
+test("ascii_names_that_differ_only_by_case_or_digits_follow_the_collator", () => {
+  const names = [
+    "a",
+    "A",
+    "b",
+    "B",
+    "a1",
+    "a01",
+    "a2",
+    "a10",
+    "A1",
+    "ab",
+    "aB",
+    "a-b",
+    "a_b",
+    "a b",
+    "a.b",
+    "1",
+    "01",
+    "10",
+    "9",
+    "file",
+    "File",
+    "FILE",
+  ];
+  const got = sortEntries(
+    names.map((n) => entry(n)),
+    "name",
+    "asc"
+  ).map((e) => e.name);
+  expect(got).toEqual([...names].sort(reference));
 });

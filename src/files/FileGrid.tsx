@@ -15,6 +15,7 @@ import { useRubberBand } from "./useRubberBand";
 
 const ROW_PITCH = CARD.height + CARD.gap;
 const OVERSCAN = 3;
+let mounts = 0;
 
 export function FileGrid(
   props: ItemsProps & {
@@ -22,6 +23,8 @@ export function FileGrid(
     thumbKey: string;
     onColumns(n: number): void;
     rootRef: React.RefObject<HTMLDivElement | null>;
+    /** Counts keyboard moves of the cursor; each one scrolls the cursor into view. */
+    revealTick: number;
   }
 ) {
   const { entries, sel } = props;
@@ -54,18 +57,38 @@ export function FileGrid(
   });
   const items = virtual.getVirtualItems();
 
+  // A keyboard move brings the cursor into view; a click or a relist does not.
+  const cursor = useRef(sel.cursor);
+  const wide = useRef(columns);
   useEffect(() => {
-    if (sel.cursor !== null) virtual.scrollToIndex(Math.floor(sel.cursor / columns));
-  }, [sel.cursor, columns, virtual]);
+    cursor.current = sel.cursor;
+    wide.current = columns;
+  });
+  const { revealTick } = props;
+  useEffect(() => {
+    if (revealTick > 0 && cursor.current !== null) {
+      virtual.scrollToIndex(Math.floor(cursor.current / wide.current));
+    }
+  }, [revealTick, virtual]);
 
-  // Thumbnails are requested for the cards in the drawn rows only.
-  const first = items[0]?.index ?? 0;
-  const last = items[items.length - 1]?.index ?? -1;
+  // Thumbnails are requested for the rows on screen. The rows drawn beyond
+  // them (overscan) only keep a fast scroll from showing blanks; a thumbnail
+  // for them would be work for images the user may never reach.
+  const first = virtual.range?.startIndex ?? 0;
+  const last = virtual.range?.endIndex ?? -1;
   const visible = useMemo(
     () => entries.slice(first * columns, (last + 1) * columns),
     [entries, first, last, columns]
   );
-  const thumbs = useThumbnails(props.thumbKey, visible, thumbSizeFor(window.devicePixelRatio || 1));
+  // One key per mount: the cancel of a view that has gone must not reach the
+  // queue of the view that replaced it.
+  const mount = useRef(0);
+  if (mount.current === 0) mount.current = ++mounts;
+  const thumbs = useThumbnails(
+    `${props.thumbKey}:${mount.current}`,
+    visible,
+    thumbSizeFor(window.devicePixelRatio || 1)
+  );
 
   const layout: Layout = {
     kind: "grid",

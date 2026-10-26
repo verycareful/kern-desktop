@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { StrictMode } from "react";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DirEvent, WireEntry, WireError, WirePath } from "../ipc";
@@ -25,6 +26,18 @@ vi.mock("../ipc", async () => {
     toWireError: (e: unknown) => e,
     EVENT_DIR_CHANGED: "kernkraft://dir-changed",
     EVENT_DIR_GONE: "kernkraft://dir-gone",
+  };
+});
+
+const sortSpy = vi.hoisted(() => vi.fn());
+vi.mock("./sort", async (orig) => {
+  const real = await orig<typeof import("./sort")>();
+  return {
+    ...real,
+    sortEntries: (...args: Parameters<typeof real.sortEntries>) => {
+      sortSpy();
+      return real.sortEntries(...args);
+    },
   };
 });
 
@@ -88,7 +101,7 @@ test("unwatches_on_unmount_and_on_folder_change", async () => {
   await waitFor(() => expect(result.current.phase).toBe("ready"));
   ipc.unwatchDir.mockClear();
   unmount();
-  expect(ipc.unwatchDir).toHaveBeenCalledWith("tab-1");
+  await waitFor(() => expect(ipc.unwatchDir).toHaveBeenCalledWith("tab-1"));
   expect(unlisten).toHaveBeenCalled();
 });
 
@@ -99,12 +112,13 @@ test("refresh_keeps_selection", async () => {
   act(() => result.current.dispatch((s) => ctrlClick(click(s, 1), 2)));
   expect([...result.current.sel.selected].sort()).toEqual([1, 2]);
 
-  // A folder appears first and "a" is removed: b and c move to new positions.
-  ipc.listDir.mockResolvedValue([dir("0dir"), entry("b"), entry("c"), entry("d")]);
+  // Two folders appear first and "a" is removed: b and c move from indices 1 and 2 to 2 and 3.
+  ipc.listDir.mockResolvedValue([dir("0dir"), dir("1dir"), entry("b"), entry("c"), entry("d")]);
   act(() => {
     void handlers["kernkraft://dir-changed"]!({ key: "tab-1" });
   });
   await waitFor(() => expect(names(result.current.entries)).toContain("0dir"));
+  expect([...result.current.sel.selected].sort()).toEqual([2, 3]);
   const picked = [...result.current.sel.selected].map((i) => result.current.entries[i]!.name);
   expect(picked.sort()).toEqual(["b", "c"]);
   expect(result.current.entries[result.current.sel.cursor!]!.name).toBe("c");
@@ -165,21 +179,34 @@ test("hidden_toggle_relists_without_rewatching", async () => {
 
 test("vanished_folder_offers_parent", async () => {
   let removed = false;
-  ipc.listDir.mockImplementation((path: WirePath) => {
-    if (path.v === "/a/b/c" && !removed) return Promise.resolve([entry("x")]);
-    if (path.v === "/a") return Promise.resolve([entry("y")]);
-    return Promise.reject(notFound(path.v));
+  let release!: () => void;
+  const walking = new Promise<void>((r) => (release = r));
+  ipc.listDir.mockImplementation(async (path: WirePath) => {
+    if (path.v === "/a/b/c" && !removed) return [entry("x")];
+    if (path.v === "/a") {
+      await walking;
+      return [entry("y")];
+    }
+    throw notFound(path.v);
   });
   const { result } = renderHook(() => useFolder("tab-1", p("/a/b/c"), OPTS));
   await waitFor(() => expect(result.current.phase).toBe("ready"));
+  expect(names(result.current.entries)).toEqual(["x"]);
   removed = true;
   act(() => {
     void handlers["kernkraft://dir-gone"]!({ key: "tab-1" });
   });
+  // At once the stale list is gone, before anything has been listed again.
+  expect(result.current.entries).toEqual([]);
+  expect(result.current.phase).toBe("loading");
+  // The folder is known to be missing while the ancestor is still being looked for.
   await waitFor(() => expect(result.current.phase).toBe("gone"));
+  expect(result.current.entries).toEqual([]);
+  expect(result.current.gone).toEqual({ ancestor: null, searching: true });
+  await act(async () => release());
+  await waitFor(() => expect(result.current.gone?.searching).toBe(false));
   // /a/b/c, then /a/b fail; /a is the nearest ancestor that lists.
-  expect(result.current.gone).toEqual({ ancestor: p("/a") });
-  // The stale list is not shown.
+  expect(result.current.gone).toEqual({ ancestor: p("/a"), searching: false });
   expect(result.current.entries).toEqual([]);
   expect(ipc.listDir.mock.calls.map((c) => (c[0] as WirePath).v)).toEqual([
     "/a/b/c",
@@ -207,14 +234,14 @@ test("a_folder_missing_on_first_listing_is_gone", async () => {
   );
   const { result } = renderHook(() => useFolder("tab-1", p("/a/b"), OPTS));
   await waitFor(() => expect(result.current.phase).toBe("gone"));
-  expect(result.current.gone).toEqual({ ancestor: p("/") });
+  expect(result.current.gone).toEqual({ ancestor: p("/"), searching: false });
 });
 
 test("no_ancestor_lists", async () => {
   ipc.listDir.mockRejectedValue(notFound("/a"));
   const { result } = renderHook(() => useFolder("tab-1", p("/a"), OPTS));
   await waitFor(() => expect(result.current.phase).toBe("gone"));
-  expect(result.current.gone).toEqual({ ancestor: null });
+  expect(result.current.gone).toEqual({ ancestor: null, searching: false });
 });
 
 test("other_listing_errors_are_shown_with_no_list", async () => {
@@ -272,4 +299,90 @@ test("a_slow_old_listing_never_overwrites_a_newer_one", async () => {
   await waitFor(() => expect(names(result.current.entries)).toEqual(["new"]));
   await act(async () => release([entry("old")]));
   expect(names(result.current.entries)).toEqual(["new"]);
+});
+
+test("sorting_runs_once_per_listing_even_under_strict_mode", async () => {
+  // StrictMode runs a state updater twice, so a sort inside one would run twice.
+  sortSpy.mockClear();
+  ipc.listDir.mockResolvedValue([entry("b"), entry("a")]);
+  const { result } = renderHook(() => useFolder("tab-1", p("/d"), OPTS), {
+    wrapper: StrictMode,
+  });
+  await waitFor(() => expect(result.current.phase).toBe("ready"));
+  expect(sortSpy).toHaveBeenCalledTimes(1);
+});
+
+test("a_vanished_folder_does_not_unwatch_a_watch_that_never_started", async () => {
+  ipc.watchDir.mockRejectedValue(denied);
+  let removed = false;
+  ipc.listDir.mockImplementation((path: WirePath) =>
+    removed ? Promise.reject(notFound(path.v)) : Promise.resolve([entry("x")])
+  );
+  const { result } = renderHook(() => useFolder("tab-1", p("/d"), OPTS));
+  await waitFor(() => expect(result.current.watchError).toEqual(denied));
+  ipc.unwatchDir.mockClear();
+  removed = true;
+  act(() => {
+    void handlers["kernkraft://dir-changed"]!({ key: "tab-1" });
+  });
+  await waitFor(() => expect(result.current.phase).toBe("gone"));
+  expect(ipc.unwatchDir).not.toHaveBeenCalled();
+});
+
+test("refresh_retries_a_failed_watch", async () => {
+  ipc.listDir.mockResolvedValue([entry("a")]);
+  ipc.watchDir.mockRejectedValueOnce(denied);
+  const { result } = renderHook(() => useFolder("tab-1", p("/d"), OPTS));
+  await waitFor(() => expect(result.current.watchError).toEqual(denied));
+  act(() => result.current.refresh());
+  await waitFor(() => expect(ipc.watchDir).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(result.current.watchError).toBeNull());
+});
+
+test("the_unwatch_of_a_vanished_folder_comes_before_any_later_watch", async () => {
+  // Both use the tab's key, so they must reach the backend in this order.
+  const order: string[] = [];
+  ipc.unwatchDir.mockImplementation(async () => {
+    await Promise.resolve();
+    order.push("unwatch");
+  });
+  ipc.watchDir.mockImplementation(async () => {
+    order.push("watch");
+  });
+  let removed = false;
+  ipc.listDir.mockImplementation((path: WirePath) =>
+    removed && path.v === "/d" ? Promise.reject(notFound(path.v)) : Promise.resolve([])
+  );
+  const { result, rerender } = renderHook(({ path }) => useFolder("tab-1", p(path), OPTS), {
+    initialProps: { path: "/d" },
+  });
+  await waitFor(() => expect(result.current.phase).toBe("ready"));
+  removed = true;
+  act(() => {
+    void handlers["kernkraft://dir-changed"]!({ key: "tab-1" });
+  });
+  await waitFor(() => expect(result.current.phase).toBe("gone"));
+  rerender({ path: "/" });
+  await waitFor(() => expect(order.filter((o) => o === "watch")).toHaveLength(2));
+  expect(order).toEqual(["watch", "unwatch", "watch"]);
+});
+
+test("the_previous_folders_entries_are_never_returned_for_the_new_path", async () => {
+  ipc.listDir.mockImplementation((path: WirePath) =>
+    Promise.resolve(path.v === "/d" ? [entry("old")] : [entry("new", {}, "/e")])
+  );
+  const seen: { path: string; names: string[] }[] = [];
+  const { result, rerender } = renderHook(
+    ({ path }) => {
+      const api = useFolder("tab-1", p(path), OPTS);
+      seen.push({ path, names: names(api.entries) });
+      return api;
+    },
+    { initialProps: { path: "/d" } }
+  );
+  await waitFor(() => expect(names(result.current.entries)).toEqual(["old"]));
+  rerender({ path: "/e" });
+  await waitFor(() => expect(names(result.current.entries)).toEqual(["new"]));
+  // Not even in the render that first has the new path.
+  expect(seen.filter((s) => s.path === "/e").every((s) => !s.names.includes("old"))).toBe(true);
 });

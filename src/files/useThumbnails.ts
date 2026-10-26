@@ -35,15 +35,27 @@ export function thumbSizeFor(devicePixelRatio: number): ThumbSize {
   return devicePixelRatio > 1 ? "large" : "normal";
 }
 
+// A thumbnail is only as current as the file it was made from, so what has
+// been asked for and answered is remembered with the file's stamp (modified
+// time and length): a rewritten or half-written image gets asked for again.
 interface Book {
-  /** Asked for, no answer yet. */
-  pending: Set<string>;
-  /** Answered, one way or the other. */
-  settled: Set<string>;
+  /** Asked for, no answer yet: path key to stamp. */
+  pending: Map<string, string>;
+  /** Answered, one way or the other: path key to the stamp asked about. */
+  settled: Map<string, string>;
+  /** The stamp last asked about, per path key. */
+  asked: Map<string, string>;
   states: Map<string, ThumbState>;
 }
 
-const newBook = (): Book => ({ pending: new Set(), settled: new Set(), states: new Map() });
+const newBook = (): Book => ({
+  pending: new Map(),
+  settled: new Map(),
+  asked: new Map(),
+  states: new Map(),
+});
+
+const stampOf = (e: WireEntry) => `${e.modified_ms ?? ""}|${e.len}`;
 
 /**
  * The thumbnail state per path key of the images in `visible`. `key` names the
@@ -67,7 +79,7 @@ export function useThumbnails(
       if (!alive || ev.key !== key) return;
       const k = pathKey(ev.path);
       mine.pending.delete(k);
-      mine.settled.add(k);
+      mine.settled.set(k, mine.asked.get(k) ?? "");
       if (ev.error) mine.states.set(k, { state: "error", error: ev.error });
       else if (ev.file) {
         try {
@@ -82,7 +94,9 @@ export function useThumbnails(
       (e: unknown) => {
         // Without the event nothing can arrive: every image waits would be silent.
         if (!alive) return;
-        for (const k of mine.pending) mine.states.set(k, { state: "error", error: toWireError(e) });
+        for (const k of mine.pending.keys()) {
+          mine.states.set(k, { state: "error", error: toWireError(e) });
+        }
         mine.pending.clear();
         bump();
       }
@@ -98,11 +112,11 @@ export function useThumbnails(
     const mine = book.current;
     const want = visible
       .filter((e) => !isFolder(e) && e.mime.startsWith("image/"))
-      .map((e) => ({ k: pathKey(e.path), path: e.path }))
-      .filter((w) => !mine.settled.has(w.k));
-    const wanted = new Set(want.map((w) => w.k));
-    const stale = [...mine.pending].some((k) => !wanted.has(k));
-    let toAsk = want.filter((w) => !mine.pending.has(w.k));
+      .map((e) => ({ k: pathKey(e.path), path: e.path, stamp: stampOf(e) }))
+      .filter((w) => mine.settled.get(w.k) !== w.stamp);
+    const wanted = new Map(want.map((w) => [w.k, w.stamp]));
+    const stale = [...mine.pending].some(([k, stamp]) => wanted.get(k) !== stamp);
+    let toAsk = want.filter((w) => mine.pending.get(w.k) !== w.stamp);
     if (!stale && toAsk.length === 0) return;
 
     (async () => {
@@ -112,7 +126,10 @@ export function useThumbnails(
         toAsk = want;
       }
       if (book.current !== mine || toAsk.length === 0) return;
-      toAsk.forEach((w) => mine.pending.add(w.k));
+      toAsk.forEach((w) => {
+        mine.pending.set(w.k, w.stamp);
+        mine.asked.set(w.k, w.stamp);
+      });
       try {
         await thumbRequest(
           key,
@@ -123,7 +140,7 @@ export function useThumbnails(
         if (book.current !== mine) throw e;
         for (const w of toAsk) {
           mine.pending.delete(w.k);
-          mine.settled.add(w.k);
+          mine.settled.set(w.k, w.stamp);
           mine.states.set(w.k, { state: "error", error: toWireError(e) });
         }
         bump();
@@ -132,7 +149,7 @@ export function useThumbnails(
       if (book.current !== mine) return;
       for (const w of want) {
         mine.pending.delete(w.k);
-        mine.settled.add(w.k);
+        mine.settled.set(w.k, w.stamp);
         mine.states.set(w.k, { state: "error", error: toWireError(e) });
       }
       bump();

@@ -153,3 +153,27 @@ test("a_failed_request_is_reported_per_item", async () => {
     expect(result.current.get("Utf8:/d/a.png")).toEqual({ state: "error", error: err })
   );
 });
+
+test("a_changed_file_is_asked_for_again", async () => {
+  const before = img("a.png");
+  const { result, rerender } = renderHook(({ v }) => useThumbnails("t1", v, "normal"), {
+    initialProps: { v: [before] },
+  });
+  await waitFor(() => expect(handler).toBeDefined());
+  act(() => handler!({ key: "t1", path: p("/d/a.png"), file: p("/c/x.png"), error: null }));
+  expect(result.current.get("Utf8:/d/a.png")).toMatchObject({ state: "ready" });
+  ipc.thumbRequest.mockClear();
+  // Same path, rewritten: a new modification time and length.
+  rerender({ v: [{ ...before, modified_ms: 5000, len: 99 }] });
+  await waitFor(() => expect(ipc.thumbRequest).toHaveBeenCalledTimes(1));
+  expect(requested()).toEqual([["/d/a.png"]]);
+  // Until the new one arrives the old picture stays, rather than a blank.
+  expect(result.current.get("Utf8:/d/a.png")).toMatchObject({ state: "ready" });
+  // Unchanged entries are not asked for again.
+  ipc.thumbRequest.mockClear();
+  act(() => handler!({ key: "t1", path: p("/d/a.png"), file: p("/c/y.png"), error: null }));
+  rerender({ v: [{ ...before, modified_ms: 5000, len: 99 }] });
+  await Promise.resolve();
+  expect(ipc.thumbRequest).not.toHaveBeenCalled();
+  expect(result.current.get("Utf8:/d/a.png")).toEqual({ state: "ready", url: "asset:///c/y.png" });
+});

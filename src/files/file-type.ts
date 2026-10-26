@@ -27,7 +27,7 @@ export function isFolder(e: Pick<WireEntry, "kind" | "target_is_dir">): boolean 
 
 // Handoff README, "Color - File-format identity": monogram per format. Legacy
 // .doc, .ppt and .xls get the same badge as their successors; the badge only
-// names the family, and Kern's MIME list does not claim them (CLAUDE.md).
+// names the family; whether Kern can open one is decided when it is opened.
 const FORMATS: Record<string, FileType> = {
   pdf: { id: "pdf", mono: "PDF", hue: "--kern-fmt-pdf", label: "PDF" },
   doc: { id: "word", mono: "DOC", hue: "--kern-fmt-doc", label: "Word" },

@@ -10,12 +10,18 @@ const fail = (message: string): ParsedLocation => ({ ok: false, message });
  * Turns what was typed in the location bar into an absolute path. `~` and
  * `~/...` mean `home`; `~user` is refused (the user database is not read).
  * "." and ".." are resolved in the text, as a shell's `cd` does by default,
- * and repeated or trailing slashes are dropped. A relative path is refused
+ * and repeated or trailing slashes are dropped. The text is not trimmed. A relative path is refused
  * rather than guessed at, since the bar has no working directory of its own.
  */
 export function parseLocation(text: string, home: WirePath | null): ParsedLocation {
-  let t = text.trim();
+  // Not trimmed: a folder's name may begin or end with a space.
+  let t = text;
   if (t === "") return fail("Enter a path.");
+  if (t.includes("\ufffd")) {
+    return fail(
+      "The name contains a character that is not valid UTF-8 and cannot be typed back. Use the breadcrumb or the parent folder to get there."
+    );
+  }
   if (t.includes("\0")) return fail("A path cannot contain a NUL character.");
   if (t === "~" || t.startsWith("~/")) {
     if (home === null) return fail("The Home folder is not known, so ~ cannot be expanded.");

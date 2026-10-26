@@ -4,10 +4,13 @@
 // Trash) and folder area are filled by Tasks 21 and 22; these are their
 // stable boundaries. The folder area shows the active folder tab (Task 21).
 import { FolderView } from "../files/FolderView";
-import { activeTab, useTabs } from "../store/tabs";
+import { activeTab, recentFolderTab, useTabs } from "../store/tabs";
 
 export function PlacesPanel(props: { overlay?: boolean }) {
-  const tab = useTabs((s) => activeTab(s));
+  const active = useTabs((s) => activeTab(s));
+  // Slid in over a document, the panel shows the folder tab used last (design 4.3).
+  const recent = useTabs((s) => recentFolderTab(s));
+  const tab = active?.kind === "folder" ? active : recent;
   return (
     <section
       className={
@@ -18,7 +21,7 @@ export function PlacesPanel(props: { overlay?: boolean }) {
     >
       <nav className="kern-places" aria-label="Places" data-testid="places-strip" />
       <div className="kern-folder-area" data-testid="folder-area">
-        {tab?.kind === "folder" && <FolderView key={tab.id} tab={tab} />}
+        {tab && <FolderView key={tab.id} tab={tab} />}
       </div>
     </section>
   );
