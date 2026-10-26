@@ -12,7 +12,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  CI: "1"
+  # The Tauri CLI reads CI as its --ci flag, which takes true or false.
+  CI: "true"
 
 jobs:
   check:
