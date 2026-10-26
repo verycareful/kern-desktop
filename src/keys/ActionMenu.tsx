@@ -23,7 +23,9 @@ export function ActionMenu(props: {
   const { sections, targetId } = props;
   // The caller may pass a new callback on every render; the listeners below must not re-run for that.
   const onClose = useRef(props.onClose);
-  onClose.current = props.onClose;
+  useLayoutEffect(() => {
+    onClose.current = props.onClose;
+  });
   const ref = useRef<HTMLUListElement>(null);
   const opener = useRef(document.activeElement);
   const [pos, setPos] = useState({ x: props.x, y: props.y });
