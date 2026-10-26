@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toWireError, userDirs, type WireError } from "./ipc";
 import MainWindow from "./shell/MainWindow";
 import { useTabs } from "./store/tabs";
@@ -21,9 +21,10 @@ export default function App() {
 
   // Design 4.4 names a Home folder tab for the main window, and the window
   // never sits without a tab: a new window, and closing the last tab, both
-  // open Home. Opened only if nothing else opened a tab while the lookup ran.
-  const openHome = useCallback(() => {
-    setHomeError(null);
+  // open Home. Retry only clears the error; this effect then looks Home up
+  // again. A tab opened while the lookup ran wins.
+  useEffect(() => {
+    if (tabCount !== 0 || homeError !== null) return;
     userDirs().then(
       (dirs) => {
         if (mounted.current && useTabs.getState().tabs.length === 0) {
@@ -32,11 +33,7 @@ export default function App() {
       },
       (e: unknown) => mounted.current && setHomeError(toWireError(e))
     );
-  }, []);
-
-  useEffect(() => {
-    if (tabCount === 0 && homeError === null) openHome();
-  }, [tabCount, homeError, openHome]);
+  }, [tabCount, homeError]);
 
   return (
     <div data-testid="shell" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -49,7 +46,7 @@ export default function App() {
       {homeError && (
         <p role="alert">
           The Home folder could not be located: {homeError.kind}: {homeError.message}{" "}
-          <button type="button" onClick={openHome}>
+          <button type="button" onClick={() => setHomeError(null)}>
             Retry
           </button>
         </p>
@@ -64,7 +61,7 @@ export default function App() {
         </ul>
       )}
       <div style={{ flex: 1, minHeight: 0 }}>
-        <MainWindow />
+        <MainWindow openingHome={tabCount === 0 && homeError === null} />
       </div>
     </div>
   );

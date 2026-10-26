@@ -152,7 +152,7 @@ export function appliesTo(a: Action, tab: Tab | null): boolean {
 }
 
 export function isEnabled(a: Action, ctx: ActionContext): boolean {
-  return appliesTo(a, ctx.active) && (a.enabled ? a.enabled(ctx) : true);
+  return appliesTo(a, ctx.target) && (a.enabled ? a.enabled(ctx) : true);
 }
 
 /** Runs the action if it applies and is enabled. Returns whether it ran. */

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { WirePath } from "../ipc";
 import { actions, appliesTo } from "../keys/actions";
@@ -169,4 +171,22 @@ test("every_action_appears_in_a_menu", () => {
     fireEvent.keyDown(menu, { key: "Escape" });
   }
   expect([...seen].sort()).toEqual(actions.map((a) => a.id).sort());
+});
+
+test("modified_arrows_on_a_focused_tab_are_not_tab_navigation", () => {
+  useTabs.getState().openFolder(p("/home/a"), false);
+  useTabs.getState().openFolder(p("/home/a/b"), false);
+  useTabs.getState().openFolder(p("/home/c"), true);
+  useTabs.getState().activate(useTabs.getState().tabs[0]!.id);
+  render(<MainWindow />);
+  const tab = screen.getByRole("tab", { name: "b" });
+  tab.focus();
+  const active = useTabs.getState().activeId;
+  // Alt+Left is the Back shortcut: history goes back, the tab stays active.
+  fireEvent.keyDown(tab, { key: "ArrowLeft", altKey: true });
+  expect(useTabs.getState().activeId).toBe(active);
+  expect(screen.getByTestId("status-bar")).toHaveTextContent("/home/a");
+  // The close button is not a tab: arrows there do nothing to the tabs.
+  fireEvent.keyDown(screen.getByRole("button", { name: "Close a" }), { key: "ArrowRight" });
+  expect(useTabs.getState().activeId).toBe(active);
 });

@@ -14,7 +14,7 @@ import "./shell.css";
 // Pinned and Recent run the full height of the window on the right third. In
 // a document tab (4.3) the tab row spans the window and both panels are folded
 // to stubs that slide them over the document. The status bar spans the bottom.
-export default function MainWindow() {
+export default function MainWindow(props: { openingHome?: boolean }) {
   useShortcuts();
   const tab = useTabs((s) => activeTab(s));
   const { leftOpen, rightOpen } = usePanels();
@@ -25,7 +25,7 @@ export default function MainWindow() {
     layout = "none";
     body = (
       <main className="kern-empty" data-testid="no-tab">
-        <p>Opening the Home folder…</p>
+        {props.openingHome && <p>Opening the Home folder…</p>}
       </main>
     );
   } else if (tab.kind === "folder") {

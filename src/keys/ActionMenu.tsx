@@ -20,7 +20,10 @@ export function ActionMenu(props: {
   targetId?: string;
   onClose(): void;
 }) {
-  const { sections, targetId, onClose } = props;
+  const { sections, targetId } = props;
+  // The caller may pass a new callback on every render; the listeners below must not re-run for that.
+  const onClose = useRef(props.onClose);
+  onClose.current = props.onClose;
   const ref = useRef<HTMLUListElement>(null);
   const opener = useRef(document.activeElement);
   const [pos, setPos] = useState({ x: props.x, y: props.y });
@@ -42,9 +45,9 @@ export function ActionMenu(props: {
   useEffect(() => {
     const returnTo = opener.current;
     ref.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose.current();
     const onDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
+      if (!ref.current?.contains(e.target as Node)) onClose.current();
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onDown);
@@ -53,7 +56,7 @@ export function ActionMenu(props: {
       window.removeEventListener("pointerdown", onDown);
       if (returnTo instanceof HTMLElement) returnTo.focus();
     };
-  }, [onClose]);
+  }, []);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     const items = [...(ref.current?.querySelectorAll<HTMLElement>("button:not(:disabled)") ?? [])];
@@ -95,7 +98,7 @@ export function ActionMenu(props: {
                   disabled={!isEnabled(a, ctx)}
                   onClick={() => {
                     runAction(a, currentContext(targetId));
-                    onClose();
+                    onClose.current();
                   }}
                 >
                   <span>{a.label}</span>

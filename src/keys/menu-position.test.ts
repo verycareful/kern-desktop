@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { clampToViewport } from "./menu-position";
 
 test("clamp_keeps_the_menu_inside_the_viewport", () => {

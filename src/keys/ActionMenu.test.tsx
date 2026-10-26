@@ -1,4 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { ActionMenu } from "./ActionMenu";
 import { actions } from "./actions";
@@ -6,6 +8,8 @@ import { useTabs } from "../store/tabs";
 
 function Host() {
   const [open, setOpen] = useState(false);
+  // Re-renders on every store change, handing the menu a new onClose each time.
+  useTabs();
   return (
     <>
       <button onClick={() => setOpen(true)}>opener</button>
@@ -54,4 +58,12 @@ test("escape_closes_and_returns_focus", () => {
   fireEvent.keyDown(screen.getAllByRole("menuitem")[0]!, { key: "Escape" });
   expect(screen.queryByRole("menu")).toBeNull();
   expect(screen.getByText("opener")).toHaveFocus();
+});
+
+test("a_store_change_does_not_move_focus", () => {
+  openMenu();
+  const items = screen.getAllByRole("menuitem");
+  items[1]!.focus();
+  act(() => useTabs.getState().openFolder({ k: "Utf8", v: "/c" }, true));
+  expect(screen.getAllByRole("menuitem")[1]).toHaveFocus();
 });

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { WireTheme } from "./ipc/kernkraft";
 import App from "./App";
@@ -58,7 +60,12 @@ test("home_lookup_failure_shows_the_error_with_retry", async () => {
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent("no home");
   expect(screen.queryByRole("tab")).toBeNull();
+  // Neither the "opening" note nor an empty-state claim sits beside the failure.
+  expect(screen.queryByText(/Opening the Home folder/)).toBeNull();
+  expect(userDirs).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   expect(await screen.findByRole("tab", { name: "t" })).toBeInTheDocument();
   expect(screen.queryByRole("alert")).toBeNull();
+  // Retry made one lookup, not two.
+  expect(userDirs).toHaveBeenCalledTimes(2);
 });

@@ -57,7 +57,10 @@ export function TabBar() {
   const close = (id: string) => runAction(getAction("tab.close"), currentContext(id));
 
   // WAI-ARIA tabs: arrows move focus and select, Home and End jump.
+  // Only plain arrows on a tab itself: Alt+Left is Back, and the close button is not a tab.
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    if ((e.target as HTMLElement).getAttribute("role") !== "tab") return;
     const i = tabs.findIndex((t) => t.id === activeId);
     const to = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: tabs.length - 1 }[e.key];
     if (to === undefined || tabs.length === 0) return;

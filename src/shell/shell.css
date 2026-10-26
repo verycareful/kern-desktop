@@ -283,8 +283,8 @@
   top: 0;
   bottom: 0;
   z-index: 10;
-  /* Design 4.1's proportions: the file manager two thirds, Pinned and Recent one third. */
-  width: calc(200% / 3);
+  /* Design 4.1's proportions measured from the window edges: the file manager spans the left two thirds, Pinned and Recent the right third, so slid in together they meet. */
+  width: calc(200% / 3 - var(--shell-stub-width));
   box-shadow: 0 10px 30px color-mix(in srgb, var(--kern-text) 12%, transparent);
 }
 
@@ -295,7 +295,7 @@
 
 .kern-panel-right.kern-overlay {
   right: var(--shell-stub-width);
-  width: calc(100% / 3);
+  width: calc(100% / 3 - var(--shell-stub-width));
   animation: kern-slide-right 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 

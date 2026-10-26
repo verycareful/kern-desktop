@@ -99,6 +99,10 @@ jobs:
         timeout-minutes: 5
         run: scripts/check-no-network.sh
 
+      - name: Source file headers
+        timeout-minutes: 5
+        run: scripts/check-headers.sh
+
       - name: Release-notes script tests
         timeout-minutes: 5
         run: python3 -I scripts/test_changelog_section.py
