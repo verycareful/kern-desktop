@@ -34,8 +34,18 @@ export async function installTauriMocks(page: Page, handlers: MockResponses = {}
       const calls: Array<{ cmd: string; args: Record<string, unknown> }> = [];
       (window as unknown as { __tauriCalls: typeof calls }).__tauriCalls = calls;
 
+      // Event subscriptions: the API calls plugin:event|listen and, to
+      // unsubscribe, unregisterListener on this object. No event is ever
+      // delivered, so a listener only needs an id.
+      let nextEventId = 1;
+      (
+        window as unknown as { __TAURI_EVENT_PLUGIN_INTERNALS__: unknown }
+      ).__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => undefined };
+
       const invoke = (cmd: string, args: Record<string, unknown> = {}) => {
         calls.push({ cmd, args });
+        if (cmd === "plugin:event|listen") return Promise.resolve(nextEventId++);
+        if (cmd === "plugin:event|unlisten") return Promise.resolve(null);
         const handler = compiled[cmd];
         if (handler) return Promise.resolve(handler(args));
         if (cmd in literals) return Promise.resolve(literals[cmd]);

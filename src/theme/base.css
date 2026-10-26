@@ -1,0 +1,104 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (c) 2026 Sricharan Suresh (github.com/verycareful) */
+
+/*
+ * Kern's fonts, bundled (the CSP allows no remote origin) and limited to the
+ * weights the design tokens use (design handoff README, Typography):
+ * Outfit 400 to 700 for the UI, Quicksand 700 for the wordmark only, IBM Plex
+ * Mono 400 to 600 for metadata, Sora 400 for the EPUB reading body only.
+ */
+@import "@fontsource/outfit/400.css";
+@import "@fontsource/outfit/500.css";
+@import "@fontsource/outfit/600.css";
+@import "@fontsource/outfit/700.css";
+@import "@fontsource/quicksand/700.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+@import "@fontsource/sora/400.css";
+
+/*
+ * Kern's own tokens: the visible fallback while the system theme has not
+ * arrived, and when theme_get fails (useTheme returns that error). The
+ * <style id="kern-tokens"> that useTheme appends to <head> redefines these
+ * after this sheet, so the system theme wins when there is one. Values and
+ * their source are kernkraft-theme's kern_tokens.rs, which ports the design
+ * handoff (kern-theme.jsx buildTheme): the Slate accent, cozy density, Soft
+ * radius 6 and the rounded step 12. The names are those of kernkraft-theme's
+ * to_css.
+ */
+:root {
+  --kern-scheme: light;
+  --kern-bg: #ffffffff;
+  --kern-surface: #ffffffff;
+  --kern-sunken: #f1f2f4ff;
+  --kern-text: #17181cff;
+  --kern-text-dim: #9ca0a8ff;
+  --kern-border: #e3e5e9ff;
+  --kern-link: #3f5b8bff;
+  --kern-accent: #3f5b8bff;
+  --kern-accent-soft: #3f5b8b1f;
+  --kern-on-accent: #ffffffff;
+  --kern-accent-secondary: #5f636bff;
+  --kern-font-ui: "Outfit", system-ui, sans-serif;
+  --kern-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --kern-radius-small: 6px;
+  --kern-radius-large: 12px;
+  --kern-density-row: 70px;
+  --kern-density-pad: 18px;
+  --kern-density-gap: 12px;
+  --kern-density-tile: 44px;
+  /* Faces for the wordmark and the EPUB reading body only; theming leaves them. */
+  --kern-font-wordmark: "Quicksand", system-ui, sans-serif;
+  --kern-font-reading: "Sora", system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --kern-scheme: dark;
+    --kern-bg: #000000ff;
+    --kern-surface: #0e0e0fff;
+    --kern-sunken: #161617ff;
+    --kern-text: #ededf0ff;
+    --kern-text-dim: #67676eff;
+    --kern-border: #2a2a2dff;
+    --kern-accent-soft: #3f5b8b33;
+    --kern-accent-secondary: #a1a1a8ff;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--kern-bg);
+  color: var(--kern-text);
+  font-family: var(--kern-font-ui);
+  font-size: 14.5px;
+  color-scheme: var(--kern-scheme);
+}
+
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--kern-font-mono);
+}
+
+a {
+  color: var(--kern-link);
+}
+
+::selection {
+  background: var(--kern-accent-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--kern-accent);
+  outline-offset: 1px;
+  border-radius: var(--kern-radius-small);
+}

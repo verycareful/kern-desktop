@@ -7,6 +7,9 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   clearScreen: false,
+  // The CSP's font-src is 'self', which excludes data: URIs, so no font file
+  // may be inlined into the CSS however small it is.
+  build: { assetsInlineLimit: 0 },
   server: {
     port: 1420,
     strictPort: true,
