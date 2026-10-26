@@ -118,3 +118,49 @@ fn an_answered_launch_keeps_the_app_through_its_last_window_closing() {
     assert_eq!(l.iter().filter(|n| **n == "exit_requested").count(), 2);
     assert_eq!(l.last(), Some(&"exit"));
 }
+
+#[test]
+fn a_driver_failing_while_a_launch_holds_the_app_fails_the_run() {
+    const FAILURE: &str = "the driver fails on purpose";
+    // The run happens on a thread of its own so that a run that never ends
+    // fails this test at the bound instead of holding the binary.
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let e = env(Duration::from_secs(5));
+        assert!(e.handle.state::<Launches>().begin());
+        let seen = e.run_log.clone();
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            e.run(move |ctx| {
+                // The last window goes while the launch is pending, so the
+                // exit is prevented and nothing is left to close.
+                ctx.handle
+                    .get_webview_window("probe")
+                    .unwrap()
+                    .destroy()
+                    .unwrap();
+                wait_for("the exit request", || {
+                    seen.lock().unwrap().contains(&"exit_requested")
+                });
+                panic!("{FAILURE}");
+            })
+        }));
+        let _ = tx.send(r.map_err(|p| panic_message(p.as_ref())));
+    });
+    let r = rx
+        .recv_timeout(RUN_BOUND)
+        .expect("the run ends once its driver fails");
+    assert_eq!(r, Err(Some(FAILURE.to_owned())));
+}
+
+/// How long a run whose driver failed may take to end. Ending takes one
+/// loop turn per window the harness destroys, at most the probe and its own
+/// here, and the mock runtime sleeps 1 s per turn (tauri 2.12.4
+/// `MockRuntime::run`). The bound is [`wait_for`]'s 30 s, the longest these
+/// tests let anything take.
+const RUN_BOUND: Duration = Duration::from_secs(30);
+
+fn panic_message(p: &(dyn std::any::Any + Send)) -> Option<String> {
+    p.downcast_ref::<String>()
+        .cloned()
+        .or_else(|| p.downcast_ref::<&str>().map(|s| (*s).to_owned()))
+}

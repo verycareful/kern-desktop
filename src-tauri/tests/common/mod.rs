@@ -6,7 +6,8 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use kern_lib::instance::Launches;
@@ -24,6 +25,9 @@ use tauri::{App, AppHandle, Manager, RunEvent, WebviewWindowBuilder};
 
 /// How long a test waits to be sure something does not happen.
 pub const QUIET: Duration = Duration::from_millis(300);
+
+/// The window [`Env::run`] makes after a driver panics; no test uses it.
+const TEARDOWN: &str = "harness-teardown";
 
 pub const COMMANDS: [&str; 8] = [
     "open_paths",
@@ -62,16 +66,43 @@ impl std::ops::Deref for Env {
 impl Env {
     /// Runs the mock event loop on this thread, which is the only way a
     /// close or destroy takes effect, while `driver` plays the frontend on
-    /// another. The loop ends when every window is gone, so the driver's
-    /// windows are destroyed after it returns, panic or not.
+    /// another. The driver starts once the loop delivers `Ready`: before
+    /// that the mock runtime applies a destroy on the calling thread without
+    /// any exit request, and the app's setup has not run. The loop ends when
+    /// every window is gone, so the driver's windows are destroyed after it
+    /// returns, panic or not.
+    ///
+    /// A driver that panics may leave the app in a state the loop never
+    /// leaves: a pending launch prevents the exit, and with no window left
+    /// there is nothing more to destroy. So after a panic the harness lets
+    /// the next exit request through and destroys a window of its own as
+    /// well as the driver's; the loop ends and the panic is raised here.
     pub fn run(self, driver: impl FnOnce(Ctx) + Send + 'static) {
         let ctx = self.ctx.clone();
-        let t = std::thread::spawn(move || {
-            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| driver(ctx.clone())));
-            for w in ctx.handle.webview_windows().values() {
-                let _ = w.destroy();
+        let failed = Arc::new(AtomicBool::new(false));
+        let (ready_tx, ready_rx) = mpsc::channel::<()>();
+        let t = std::thread::spawn({
+            let failed = failed.clone();
+            move || {
+                // An Err means the loop ended without Ready; destroying the
+                // windows below is then harmless.
+                let started = ready_rx.recv().is_ok();
+                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    assert!(started, "the event loop ended before Ready");
+                    driver(ctx.clone())
+                }));
+                if r.is_err() {
+                    failed.store(true, Ordering::SeqCst);
+                    // A runtime window the loop removes, whatever the
+                    // driver already destroyed.
+                    let _ = WebviewWindowBuilder::new(&ctx.handle, TEARDOWN, Default::default())
+                        .build();
+                }
+                for w in ctx.handle.webview_windows().values() {
+                    let _ = w.destroy();
+                }
+                r
             }
-            r
         });
         let log = self.run_log.clone();
         self.app.run_return(move |app, event| {
@@ -81,9 +112,16 @@ impl Env {
                 RunEvent::Exit => Some("exit"),
                 _ => None,
             };
-            kern_lib::windows::on_run_event(app, event);
+            let ready = matches!(event, RunEvent::Ready);
+            let abandon = name == Some("exit_requested") && failed.load(Ordering::SeqCst);
+            if !abandon {
+                kern_lib::windows::on_run_event(app, event);
+            }
             if let Some(n) = name {
                 log.lock().unwrap().push(n);
+            }
+            if ready {
+                let _ = ready_tx.send(());
             }
         });
         if let Err(p) = t.join().unwrap() {

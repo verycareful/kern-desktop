@@ -18,75 +18,100 @@ env:
 jobs:
   check:
     runs-on: ubuntu-24.04
+    # Each step limit is at least four times that step's time in the last run
+    # that reached it, and at least 5 minutes, so a hang costs minutes. The
+    # deb build has not finished on CI yet; its limit is four times the
+    # release test build's time plus the frontend build. The job limit is
+    # about three times the measured steps and the deb build together.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        timeout-minutes: 5
 
       - name: System libraries for Tauri
+        timeout-minutes: 10
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
             libayatana-appindicator3-dev librsvg2-dev xvfb
 
       - uses: dtolnay/rust-toolchain@stable
+        timeout-minutes: 5
         with:
           components: rustfmt, clippy
 
       - uses: actions/setup-node@v4
+        timeout-minutes: 5
         with:
           node-version: 22
           cache: npm
 
       - run: npm ci
+        timeout-minutes: 10
 
       - name: Format
+        timeout-minutes: 5
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all --check
 
       - name: Clippy
+        timeout-minutes: 15
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Rust tests
+        timeout-minutes: 15
         run: cargo test --manifest-path src-tauri/Cargo.toml --all-features
 
       - name: Timing budgets (release build)
+        timeout-minutes: 30
         run: cargo test --release --manifest-path src-tauri/Cargo.toml --all-features -- --ignored
 
       - name: cargo-deny
+        timeout-minutes: 10
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           manifest-path: src-tauri/Cargo.toml
 
       - name: Typecheck
+        timeout-minutes: 5
         run: |
           npx tsc --noEmit
           npx tsc -p tsconfig.node.json
 
       - name: ESLint
+        timeout-minutes: 5
         run: npx eslint .
 
       - name: Prettier
+        timeout-minutes: 5
         run: npx prettier --check .
 
       - name: Vitest
+        timeout-minutes: 5
         run: npx vitest run
 
       - name: Playwright
+        timeout-minutes: 15
         run: |
           npx playwright install --with-deps chromium
           npx playwright test
 
       - name: No network APIs in source
+        timeout-minutes: 5
         run: scripts/check-no-network.sh
 
       - name: Release-notes script tests
+        timeout-minutes: 5
         run: python3 -I scripts/test_changelog_section.py
 
       - name: Build the deb
+        timeout-minutes: 30
         run: npx tauri build --bundles deb
 
       # The built binary runs in a network namespace with no interfaces, under
       # a virtual display. It must still be running when timeout stops it
       # (exit 124); any other status is a crash.
       - name: Smoke run without network
+        timeout-minutes: 5
         run: |
           set +e
           timeout 5 unshare -rn xvfb-run -a src-tauri/target/release/kern
