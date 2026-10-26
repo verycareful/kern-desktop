@@ -11,6 +11,32 @@ export function isEditable(el: EventTarget | null): boolean {
   return ce !== null && ce.getAttribute("contenteditable") !== "false";
 }
 
+// Keys that a focused control uses itself: Enter and Space press a button,
+// arrows move inside a menu or a tab list. Without Ctrl, Alt or Meta they are
+// left to such a control instead of being claimed as shortcuts.
+const CONTROL_KEYS = new Set([
+  "Enter",
+  " ",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "Home",
+  "End",
+]);
+const CONTROLS = "button, a[href], summary, [role=menuitem], [role=tab], [role=button]";
+
+function ownedByControl(e: KeyboardEvent): boolean {
+  return (
+    !e.ctrlKey &&
+    !e.altKey &&
+    !e.metaKey &&
+    CONTROL_KEYS.has(e.key) &&
+    e.target instanceof Element &&
+    e.target.closest(CONTROLS) !== null
+  );
+}
+
 /**
  * One window-level keydown listener that looks the key up in the action
  * table. A matched key is claimed (default prevented) even when the action is
@@ -19,9 +45,9 @@ export function isEditable(el: EventTarget | null): boolean {
 export function useShortcuts(): void {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
+      if (e.defaultPrevented || ownedByControl(e)) return;
       const keys = candidateKeys(e);
-      const ctx = currentContext();
+      const ctx = currentContext(undefined, e.shiftKey);
       const editable = isEditable(e.target);
       const hit = actions.find(
         (a) =>

@@ -56,6 +56,7 @@ export async function installTauriMocks(page: Page, handlers: MockResponses = {}
       (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
         invoke,
         transformCallback: (callback: unknown) => callback,
+        convertFileSrc: (path: string) => `asset://localhost/${encodeURIComponent(path)}`,
         metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
       };
     },

@@ -3,10 +3,11 @@
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/)
 [![Rust](https://img.shields.io/badge/Rust-2021%20edition-000000?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-<!-- Frontend (swap the Zustand badge for a logo badge if shields.io adds one) -->
+<!-- Frontend (swap the Zustand and TanStack Virtual badges for logo badges if shields.io adds them) -->
 [![React](https://img.shields.io/badge/React-19.1-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-8-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vite.dev/)
 [![Zustand](https://img.shields.io/badge/Zustand-5-453F39?style=flat-square)](https://zustand.docs.pmnd.rs/)
+[![TanStack Virtual](https://img.shields.io/badge/TanStack%20Virtual-3.14-FF4154?style=flat-square)](https://tanstack.com/virtual)
 [![Lucide](https://img.shields.io/badge/Lucide-1.61-F56565?style=flat-square&logo=lucide&logoColor=white)](https://lucide.dev/)
 <!-- Fonts (bundled; swap each for a logo badge if shields.io adds one) -->
 [![Outfit](https://img.shields.io/badge/Outfit-5.3-lightgrey?style=flat-square)](https://fontsource.org/fonts/outfit)
@@ -17,7 +18,7 @@
 [![Vitest](https://img.shields.io/badge/Vitest-3-6E9F18?style=flat-square&logo=vitest&logoColor=white)](https://vitest.dev/)
 [![Playwright](https://img.shields.io/badge/Playwright-1.49-2EAD33?style=flat-square&logo=playwright&logoColor=white)](https://playwright.dev/)
 <!-- Release -->
-[![Version](https://img.shields.io/badge/Version-0.1.0.0.24-informational?style=flat-square)](VERSION)
+[![Version](https://img.shields.io/badge/Version-0.1.0.0.25-informational?style=flat-square)](VERSION)
 <!-- Licence and status -->
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Early%20Development-orange?style=flat-square)](#)
@@ -28,8 +29,9 @@ read and write files in place, it never touches the network, and it follows
 the system theme.
 
 Kern Desktop is in alpha. At this stage the window opens on your Home folder
-with its tab row, the two side panels and a status bar, all still empty; the
-folder listing, Pinned and Recent, and the editor come in later versions.
+with its tab row, the two side panels and a status bar. The folder list works
+(list and grid, sorting, selection, breadcrumb and location bar, live refresh);
+Pinned and Recent and the editor come in later versions.
 
 ## Building
 

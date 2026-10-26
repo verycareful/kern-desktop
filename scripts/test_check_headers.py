@@ -90,11 +90,17 @@ class CheckHeaders(unittest.TestCase):
         self.expect_fail("src/x.test.ts")
 
     def test_other_kinds_without_header(self) -> None:
-        for name in [".gitignore", ".prettierignore", "a.jsx", "a.cjs", "a.mts", "a.cts", "a.svg", "a.xml", "a.desktop"]:
+        # Every kind the script claims to check, as check-headers.sh lists them.
+        extensions = (
+            "ts tsx js jsx mjs cjs mts cts rs css html svg xml sh py yml yaml toml desktop"
+        ).split()
+        names = [f"a.{ext}" for ext in extensions]
+        names += [".gitignore", ".prettierignore", "sub/.gitignore", "sub/.prettierignore"]
+        for name in names:
             with self.subTest(name=name):
-                shutil_root = tempfile.TemporaryDirectory(dir=SCRATCH)
-                self.addCleanup(shutil_root.cleanup)
-                self.root = shutil_root.name
+                case_dir = tempfile.TemporaryDirectory(dir=SCRATCH)
+                self.addCleanup(case_dir.cleanup)
+                self.root = case_dir.name
                 self.git_init()
                 self.write(name, "x\n")
                 self.expect_fail(name)

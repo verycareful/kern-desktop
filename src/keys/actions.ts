@@ -3,6 +3,10 @@
 import { parent } from "../ipc";
 import { activeTab, useTabs, type Tab, type TabsState } from "../store/tabs";
 import { usePanelsStore } from "../store/panels";
+import { folderController, type MoveTo } from "../files/folder-controller";
+import { useFolderUi } from "../files/folder-ui";
+import type { SortBy } from "../files/sort";
+import { setViewMode, toggleHidden, useViewSettings } from "../files/view-settings";
 
 // The single table of user-visible actions. Shortcuts (useShortcuts), the
 // main menu and the tab context menu (ActionMenu) all read it, so keyboard and
@@ -28,6 +32,8 @@ export type ActionContext = {
   /** The tab the action is aimed at: the one a menu or button was opened on, else the active tab. */
   target: Tab | null;
   togglePanel(side: "left" | "right"): void;
+  /** True when the shortcut had Shift held: movement actions extend the selection. */
+  extend: boolean;
 };
 
 export type Action = {
@@ -35,7 +41,7 @@ export type Action = {
   /** The menu label. */
   label: string;
   /** The menu group heading. */
-  area: "Tabs" | "Navigation" | "Panels";
+  area: "Tabs" | "Navigation" | "Panels" | "Open" | "Selection" | "View";
   keys: string[];
   /** The tab kind the action applies to. */
   when: ActionContextKind | "any";
@@ -46,7 +52,7 @@ export type Action = {
   run(ctx: ActionContext): void;
 };
 
-export function currentContext(targetId?: string): ActionContext {
+export function currentContext(targetId?: string, extend = false): ActionContext {
   const tabs = useTabs.getState();
   const panels = usePanelsStore.getState();
   const active = activeTab(tabs);
@@ -54,6 +60,7 @@ export function currentContext(targetId?: string): ActionContext {
     tabs,
     active,
     target: tabs.tabs.find((t) => t.id === targetId) ?? active,
+    extend,
     togglePanel: (side) => (side === "left" ? panels.toggleLeft() : panels.toggleRight()),
   };
 }
@@ -140,6 +147,135 @@ export const actions: Action[] = [
     run: (c) => c.togglePanel("right"),
   },
 ];
+
+// ---- the folder view (design 4.1, 4.3, 5.1) ----
+
+function controllerOf(c: ActionContext) {
+  return c.target?.kind === "folder" ? folderController(c.target.id) : undefined;
+}
+
+function move(id: string, label: string, keys: string[], to: MoveTo): Action {
+  return {
+    id,
+    label,
+    area: "Selection",
+    keys,
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.canMove(to) ?? false,
+    run: (c) => controllerOf(c)?.move(to, c.extend),
+  };
+}
+
+function sortBy(by: SortBy, label: string): Action {
+  return {
+    id: `folder.sort.${by}`,
+    label,
+    area: "View",
+    keys: [],
+    when: "folder",
+    run: (c) => c.target && useFolderUi.getState().chooseSort(c.target.id, by),
+  };
+}
+
+const folderActions: Action[] = [
+  // Enter and Ctrl+double-click: design 4.3. Ctrl+Enter is the keyboard form of
+  // the new-window gesture.
+  {
+    id: "folder.open",
+    label: "Open",
+    area: "Open",
+    keys: ["Enter"],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.hasSelection() ?? false,
+    run: (c) => controllerOf(c)?.open(false),
+  },
+  {
+    id: "folder.openNewWindow",
+    label: "Open in new window",
+    area: "Open",
+    keys: ["Ctrl+Enter"],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.hasSelection() ?? false,
+    run: (c) => controllerOf(c)?.open(true),
+  },
+  {
+    id: "folder.select.all",
+    label: "Select all",
+    area: "Selection",
+    keys: ["Ctrl+A"],
+    when: "folder",
+    enabled: (c) => controllerOf(c) !== undefined,
+    run: (c) => controllerOf(c)?.selectAll(),
+  },
+  {
+    id: "folder.select.none",
+    label: "Select none",
+    area: "Selection",
+    keys: ["Ctrl+Shift+A"],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.hasSelection() ?? false,
+    run: (c) => controllerOf(c)?.selectNone(),
+  },
+  // Each movement key also has its Shift form, which extends the selection.
+  move("folder.move.down", "Select next row", ["ArrowDown", "Shift+ArrowDown"], "down"),
+  move("folder.move.up", "Select previous row", ["ArrowUp", "Shift+ArrowUp"], "up"),
+  move("folder.move.right", "Select next item (grid)", ["ArrowRight", "Shift+ArrowRight"], "right"),
+  move("folder.move.left", "Select previous item (grid)", ["ArrowLeft", "Shift+ArrowLeft"], "left"),
+  move("folder.move.first", "Select first item", ["Home", "Shift+Home"], "first"),
+  move("folder.move.last", "Select last item", ["End", "Shift+End"], "last"),
+  {
+    id: "folder.location",
+    label: "Edit location",
+    area: "Navigation",
+    keys: ["Ctrl+L"],
+    when: "folder",
+    inEditable: true,
+    enabled: (c) => controllerOf(c) !== undefined,
+    run: (c) => controllerOf(c)?.editLocation(),
+  },
+  {
+    id: "folder.refresh",
+    label: "Refresh",
+    area: "View",
+    keys: ["F5"],
+    when: "folder",
+    enabled: (c) => controllerOf(c) !== undefined,
+    run: (c) => controllerOf(c)?.refresh(),
+  },
+  {
+    id: "folder.hidden.toggle",
+    label: "Show or hide hidden files",
+    area: "View",
+    keys: ["Ctrl+H"],
+    when: "folder",
+    run: () => void toggleHidden(),
+  },
+  // Ctrl+1 and Ctrl+2 are Dolphin's keys for its view modes.
+  {
+    id: "folder.view.list",
+    label: "List view",
+    area: "View",
+    keys: ["Ctrl+1"],
+    when: "folder",
+    enabled: () => useViewSettings.getState().viewMode !== "list",
+    run: () => void setViewMode("list"),
+  },
+  {
+    id: "folder.view.grid",
+    label: "Grid view",
+    area: "View",
+    keys: ["Ctrl+2"],
+    when: "folder",
+    enabled: () => useViewSettings.getState().viewMode !== "grid",
+    run: () => void setViewMode("grid"),
+  },
+  sortBy("name", "Sort by name"),
+  sortBy("size", "Sort by size"),
+  sortBy("modified", "Sort by date modified"),
+  sortBy("type", "Sort by type"),
+];
+
+actions.push(...folderActions);
 
 export function getAction(id: string): Action {
   const a = actions.find((x) => x.id === id);

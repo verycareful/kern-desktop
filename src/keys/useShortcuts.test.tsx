@@ -118,3 +118,35 @@ test("shortcuts_skip_editable_fields_unless_the_action_allows_it", () => {
   fireEvent.keyDown(getByLabelText("field"), { key: "w", ctrlKey: true });
   expect(useTabs.getState().tabs).toHaveLength(0);
 });
+
+test("plain_navigation_keys_on_buttons_belong_to_the_button", () => {
+  const { getByText } = render(<Host />);
+  useTabs.getState().openFolder(p("/a/b"), false);
+  // Enter on a focused button activates it; a folder action must not claim it.
+  const button = getByText("plain");
+  const enter = fireEvent.keyDown(button, { key: "Enter" });
+  expect(enter).toBe(true);
+  // The same key elsewhere is claimed by the folder's Open action.
+  expect(fireEvent.keyDown(window, { key: "Enter" })).toBe(false);
+  // A modified key is still a shortcut, whatever has focus.
+  expect(fireEvent.keyDown(button, { key: "ArrowUp", altKey: true })).toBe(false);
+});
+
+test("shift_is_passed_to_the_action_as_extend", () => {
+  render(<Host />);
+  useTabs.getState().openFolder(p("/a/b"), false);
+  const seen: boolean[] = [];
+  const action = actions.find((a) => a.id === "folder.move.down")!;
+  const run = action.run;
+  action.run = (c) => seen.push(c.extend);
+  const enabled = action.enabled;
+  action.enabled = undefined;
+  try {
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.keyDown(window, { key: "ArrowDown", shiftKey: true });
+  } finally {
+    action.run = run;
+    action.enabled = enabled;
+  }
+  expect(seen).toEqual([false, true]);
+});

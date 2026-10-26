@@ -2,8 +2,12 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 // Design 4.1: the file manager, left two thirds. Its strip (Places, Volumes,
 // Trash) and folder area are filled by Tasks 21 and 22; these are their
-// stable boundaries.
+// stable boundaries. The folder area shows the active folder tab (Task 21).
+import { FolderView } from "../files/FolderView";
+import { activeTab, useTabs } from "../store/tabs";
+
 export function PlacesPanel(props: { overlay?: boolean }) {
+  const tab = useTabs((s) => activeTab(s));
   return (
     <section
       className={
@@ -13,7 +17,9 @@ export function PlacesPanel(props: { overlay?: boolean }) {
       data-testid="places-panel"
     >
       <nav className="kern-places" aria-label="Places" data-testid="places-strip" />
-      <div className="kern-folder-area" data-testid="folder-area" />
+      <div className="kern-folder-area" data-testid="folder-area">
+        {tab?.kind === "folder" && <FolderView key={tab.id} tab={tab} />}
+      </div>
     </section>
   );
 }

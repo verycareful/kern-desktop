@@ -17,6 +17,13 @@ const userDirs = vi.hoisted(() =>
 vi.mock("./ipc", async () => ({
   ...(await import("./ipc/wire-path")),
   EVENT_THEME_CHANGED: "kernkraft://theme-changed",
+  EVENT_SETTINGS_CHANGED: "kern://settings-changed",
+  EVENT_DIR_CHANGED: "kernkraft://dir-changed",
+  EVENT_DIR_GONE: "kernkraft://dir-gone",
+  // The folder view of the Home tab: an empty folder.
+  listDir: () => Promise.resolve([]),
+  watchDir: () => Promise.resolve(),
+  unwatchDir: () => Promise.resolve(),
   on: () => Promise.resolve(() => undefined),
   settingsGet: () =>
     Promise.resolve({
@@ -24,6 +31,8 @@ vi.mock("./ipc", async () => ({
       theme_mode: "system",
       accent: "slate",
       density: "cozy",
+      show_hidden: false,
+      view_mode: "list",
     }),
   themeGet,
   userDirs,

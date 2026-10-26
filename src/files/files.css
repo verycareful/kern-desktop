@@ -1,0 +1,430 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (c) 2026 Sricharan Suresh (github.com/verycareful) */
+
+/*
+ * The folder view. Rows, badges and cards follow design_handoff_kern_ui
+ * (file row, file card, outlined badge, mono metadata); colours are the
+ * --kern-* tokens, except the six document-format hues, which the design
+ * says are never themed.
+ */
+.kern-files {
+  /* Handoff README, Color - File-format identity: light / dark. */
+  --kern-fmt-pdf: light-dark(#c8453b, #f08177);
+  --kern-fmt-doc: light-dark(#2e68c4, #7fa8f0);
+  --kern-fmt-ppt: light-dark(#d06a2c, #f0a06a);
+  --kern-fmt-xls: light-dark(#1f8454, #5fc893);
+  --kern-fmt-csv: light-dark(#0e8e9a, #54c9d4);
+  --kern-fmt-epb: light-dark(#8657c6, #bb97ec);
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.kern-files-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 6px var(--kern-density-gap);
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-crumbs,
+.kern-location {
+  min-width: 0;
+  flex: 1;
+}
+
+.kern-crumbs {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  overflow-x: auto;
+  white-space: nowrap;
+  cursor: text;
+}
+
+.kern-crumb {
+  display: inline-flex;
+  align-items: center;
+  color: var(--kern-text-dim);
+}
+
+.kern-crumb button {
+  padding: 4px 6px;
+  font: inherit;
+  color: var(--kern-text);
+  background: none;
+  border: 0;
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-crumb button:hover {
+  background: var(--kern-accent-soft);
+  color: var(--kern-accent);
+}
+
+.kern-crumb button[aria-current="location"] {
+  font-weight: 600;
+}
+
+.kern-location input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  font-family: var(--kern-font-mono);
+  font-size: 13px;
+  color: var(--kern-text);
+  background: var(--kern-sunken);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-location input:focus {
+  outline: 2px solid var(--kern-accent);
+  outline-offset: -1px;
+}
+
+.kern-location input[aria-invalid="true"] {
+  border-color: var(--kern-accent-secondary);
+}
+
+.kern-location-error {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--kern-text);
+}
+
+.kern-view-toggle {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.kern-view-toggle .kern-icon-button[aria-pressed="true"] {
+  background: var(--kern-accent-soft);
+  color: var(--kern-accent);
+}
+
+.kern-files-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.kern-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kern-density-gap);
+  padding: 8px var(--kern-density-gap);
+  font-size: 13px;
+  background: var(--kern-accent-soft);
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-banner ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.kern-button {
+  flex: none;
+  padding: 6px 12px;
+  font: inherit;
+  color: var(--kern-text);
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-button:hover {
+  color: var(--kern-accent);
+  border-color: var(--kern-accent);
+}
+
+/* Empty folder, vanished folder: handoff "Empty state". */
+.kern-note {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--kern-text-dim);
+}
+
+.kern-note-title {
+  margin: 8px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--kern-text);
+}
+
+.kern-note-body {
+  margin: 0;
+  padding: 12px var(--kern-density-gap);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--kern-text-dim);
+}
+
+.kern-list,
+.kern-grid {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.kern-list:focus-visible,
+.kern-grid:focus-visible {
+  outline: 2px solid var(--kern-accent);
+  outline-offset: -2px;
+}
+
+.kern-scroll {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.kern-list-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  padding: 0 var(--kern-density-gap);
+  font-family: var(--kern-font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kern-text-dim);
+  background: var(--kern-sunken);
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-list-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.kern-list-head [aria-sort]:not([aria-sort="none"]) button {
+  color: var(--kern-accent);
+}
+
+.kern-list-body {
+  position: relative;
+}
+
+.kern-row {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--kern-density-gap);
+  cursor: default;
+  user-select: none;
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-row:hover {
+  background: color-mix(in srgb, var(--kern-text) 4%, transparent);
+}
+
+.kern-selected,
+.kern-selected:hover {
+  background: var(--kern-accent-soft);
+}
+
+.kern-cursor {
+  outline: 2px solid var(--kern-accent);
+  outline-offset: -2px;
+}
+
+.kern-col {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kern-col-name {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+}
+
+.kern-col-type {
+  flex: none;
+  width: 84px;
+  font-family: var(--kern-font-mono);
+  font-size: 11.5px;
+  color: var(--kern-text-dim);
+}
+
+.kern-col-size,
+.kern-col-modified {
+  flex: none;
+  font-family: var(--kern-font-mono);
+  font-size: 11.5px;
+  color: var(--kern-text-dim);
+}
+
+.kern-col-size {
+  width: 76px;
+  text-align: right;
+}
+
+.kern-col-modified {
+  width: 104px;
+  padding-left: 16px;
+}
+
+.kern-list-head .kern-col-size {
+  text-align: right;
+}
+
+.kern-name {
+  overflow: hidden;
+  font-size: 14.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The outlined badge: 1.5px border in the format hue, mono monogram, transparent fill. */
+.kern-badge {
+  display: inline-flex;
+  flex: none;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--kern-font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--kern-text-dim);
+  border: 1.5px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-badge-folder {
+  color: var(--kern-accent);
+  border-color: transparent;
+  background: var(--kern-accent-soft);
+}
+
+.kern-grid-body {
+  position: relative;
+}
+
+.kern-grid-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 12px;
+  padding: 0 12px;
+}
+
+.kern-card {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  overflow: hidden;
+  cursor: default;
+  user-select: none;
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-card.kern-selected {
+  background: var(--kern-accent-soft);
+  border-color: var(--kern-accent);
+}
+
+.kern-card-pic {
+  display: flex;
+  height: 96px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-card-pic img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* Handoff: the picture area is washed in the format hue at 10% (light) or 16% (dark). */
+.kern-card-wash {
+  background: color-mix(in srgb, currentcolor 10%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  .kern-card-wash {
+    background: color-mix(in srgb, currentcolor 16%, transparent);
+  }
+}
+
+.kern-card-mono {
+  font-family: var(--kern-font-mono);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.kern-card-text {
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.kern-card-text .kern-name {
+  font-size: 13px;
+}
+
+.kern-card-meta {
+  margin-top: 3px;
+  overflow: hidden;
+  font-family: var(--kern-font-mono);
+  font-size: 10.5px;
+  color: var(--kern-text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kern-band {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  background: var(--kern-accent-soft);
+  border: 1px solid var(--kern-accent);
+}
