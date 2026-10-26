@@ -34,6 +34,12 @@ export interface ThemeState {
   theme: WireTheme | null;
   /** Why no theme was applied (or its updates stopped), or null. */
   error: WireError | null;
+  /**
+   * Every problem any payload has reported, each once, in arrival order. The
+   * backend reports a watcher or session bus failure in one payload only, so
+   * they are kept here instead of following the latest theme.
+   */
+  problems: WireError[];
 }
 
 const STYLE_ID = "kern-tokens";
@@ -53,18 +59,36 @@ function writeTokens(css: string): void {
  * settings, which is what the app wants at startup: theme_get makes its
  * arguments the preferences later events are resolved with, so the defaults
  * must never stand in for the user's choice.
+ *
+ * theme_get sets the backend's preferences without sending an event, so a
+ * preference change (Settings) goes through themeSetPrefs, which does send
+ * one; changing \`prefs\` here only asks again.
  */
 export function useTheme(prefs?: ThemePrefs): ThemeState {
-  const [state, setState] = useState<ThemeState>({ theme: null, error: null });
+  const [state, setState] = useState<ThemeState>({ theme: null, error: null, problems: [] });
   const key = prefs ? JSON.stringify(prefs) : "";
 
   useEffect(() => {
     let alive = true;
     let unlisten: UnlistenFn | undefined;
-    const apply = (theme: WireTheme) => {
+    // Events seen so far. A theme_get reply computed before a watcher change
+    // can arrive after that change's event; it is stale then, so its theme is
+    // dropped (its problems are still kept).
+    let events = 0;
+
+    const addProblems = (found: WireError[], s: ThemeState): WireError[] => {
+      const known = new Set(s.problems.map((p) => JSON.stringify(p)));
+      const fresh = found.filter((p) => !known.has(JSON.stringify(p)));
+      return fresh.length === 0 ? s.problems : [...s.problems, ...fresh];
+    };
+    const apply = (theme: WireTheme, current: boolean) => {
       if (!alive) return;
-      writeTokens(theme.css);
-      setState({ theme, error: null });
+      if (current) writeTokens(theme.css);
+      setState((s) => ({
+        theme: current ? theme : s.theme,
+        error: current ? null : s.error,
+        problems: addProblems(theme.problems, s),
+      }));
     };
     const fail = (e: unknown) => {
       if (alive) setState((s) => ({ ...s, error: toWireError(e) }));
@@ -74,7 +98,10 @@ export function useTheme(prefs?: ThemePrefs): ThemeState {
       try {
         // Subscribed before the first request, so a change between the two
         // is not lost.
-        const off = await on(EVENT_THEME_CHANGED, apply);
+        const off = await on(EVENT_THEME_CHANGED, (theme) => {
+          events += 1;
+          apply(theme, true);
+        });
         if (alive) unlisten = off;
         else off();
 
@@ -88,7 +115,9 @@ export function useTheme(prefs?: ThemePrefs): ThemeState {
             user: { mode: s.theme_mode, accent: s.accent, density: s.density },
           };
         }
-        apply(await themeGet(resolved.follow, resolved.user));
+        const seen = events;
+        const theme = await themeGet(resolved.follow, resolved.user);
+        apply(theme, events === seen);
       } catch (e) {
         fail(e);
       }

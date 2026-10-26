@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import type { WireTheme } from "./ipc/kernkraft";
 import App from "./App";
+
+const themeGet = vi.hoisted(() =>
+  vi.fn(() =>
+    Promise.resolve({ css: ":root{}", fallbacks: [], problems: [] } as unknown as WireTheme)
+  )
+);
 
 vi.mock("./ipc", () => ({
   EVENT_THEME_CHANGED: "kernkraft://theme-changed",
@@ -14,13 +20,15 @@ vi.mock("./ipc", () => ({
       accent: "slate",
       density: "cozy",
     }),
-  themeGet: () =>
-    Promise.resolve({ css: ":root{}", fallbacks: [], problems: [] } as unknown as WireTheme),
+  themeGet,
   toWireError: (e: unknown) => e,
 }));
 
 test("renders_shell_root", async () => {
   render(<App />);
   expect(screen.getByTestId("shell")).toBeInTheDocument();
-  expect(await screen.findByTestId("shell")).toBeEmptyDOMElement();
+  // The hook has settled once it has written the theme the mocked themeGet gave.
+  await waitFor(() => expect(document.head.querySelector("style#kern-tokens")).not.toBeNull());
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByTestId("shell")).toBeEmptyDOMElement();
 });

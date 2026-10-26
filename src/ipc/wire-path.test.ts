@@ -27,7 +27,7 @@ describe("wire path", () => {
 
   test("join_rejects_names_that_are_not_one_component", () => {
     const parent: WirePath = { k: "Utf8", v: "/home/a" };
-    for (const name of ["", "x/y", "a\0b"]) {
+    for (const name of ["", ".", "..", "x/y", "a\0b"]) {
       expect(() => join(parent, name)).toThrow();
     }
   });

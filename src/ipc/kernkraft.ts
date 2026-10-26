@@ -125,7 +125,7 @@ export interface OpDoneEvent {
   op: OpId;
   report: WireReport | null;
   properties: WireProperties | null;
-  scan?: WireScanDone | null;
+  scan: WireScanDone | null;
   error: WireError | null;
 }
 
@@ -207,16 +207,26 @@ export interface WireText {
 
 export const textOpen = (path: WirePath) => invoke<WireText>(cmd("text_open"), { path });
 
+/**
+ * Saves `text`. `stamp` is the stamp of the text as opened or last saved: the
+ * save is refused with ExternalModification when the file on disk no longer
+ * matches it. `null` skips that check and overwrites whatever is on disk, so
+ * pass it only for a deliberate overwrite (Save As to a new file, or the
+ * user's confirmed "overwrite"), never because no stamp is at hand.
+ */
 export const textSave = (
   path: WirePath,
   text: string,
   ending: LineEnding,
   bom: boolean,
-  stamp?: WireStamp
-) => invoke<WireStamp>(cmd("text_save"), { path, text, ending, bom, stamp: stamp ?? null });
+  stamp: WireStamp | null
+) => invoke<WireStamp>(cmd("text_save"), { path, text, ending, bom, stamp });
+
+/** "deleted" when nothing is at `path` any more. */
+export type TextCheck = "same" | "changed" | "deleted";
 
 export const textCheck = (path: WirePath, stamp: WireStamp) =>
-  invoke<string>(cmd("text_check"), { path, stamp });
+  invoke<TextCheck>(cmd("text_check"), { path, stamp });
 
 // ---- thumbnails ----
 
@@ -291,7 +301,7 @@ export interface ThemeTokens {
   density: Density;
   origins: Record<string, ThemeOrigin>;
   wcag_fallbacks: string[];
-  scheme_mismatch?: boolean;
+  scheme_mismatch: boolean;
 }
 
 export interface WireTheme {

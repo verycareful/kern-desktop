@@ -9,8 +9,9 @@ import type { WirePath } from "./wire-path";
 export interface WireError {
   kind: string;
   message: string;
-  path?: WirePath | null;
-  details?: WireDetails | null;
+  /** Always present on the wire, null when the error has none. */
+  path: WirePath | null;
+  details: WireDetails | null;
 }
 
 export interface WireItemError {
@@ -52,9 +53,8 @@ export function isWireError(e: unknown): e is WireError {
 // Normalises whatever a rejected invoke carries into a WireError.
 export function toWireError(e: unknown): WireError {
   if (isWireError(e)) return e;
-  if (typeof e === "string") return { kind: "Ipc", message: e };
-  if (e instanceof Error) return { kind: "Ipc", message: e.message };
-  return { kind: "Ipc", message: String(e) };
+  const message = typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
+  return { kind: "Ipc", message, path: null, details: null };
 }
 
 // The one place a command is invoked. Arguments are camelCase, as Tauri maps

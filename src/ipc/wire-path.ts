@@ -32,12 +32,12 @@ export function displayPath(p: WirePath): string {
 // The child `name` of a Utf8 parent. A Bytes parent cannot be joined here
 // without decoding the bytes into text, which would change the path, so it
 // goes through the backend (the commands that take a parent and a name).
-// `name` is one path component: no separator, no NUL, not empty.
+// `name` is one path component: no separator, no NUL, not empty, "." or "..".
 export function join(parent: WirePath, name: string): WirePath {
   if (parent.k !== "Utf8") {
     throw new TypeError("cannot join onto a Bytes path; use a command that takes parent and name");
   }
-  if (name === "" || name.includes("/") || name.includes("\0")) {
+  if (name === "" || name === "." || name === ".." || name.includes("/") || name.includes("\0")) {
     throw new RangeError(`not a single path component: ${JSON.stringify(name)}`);
   }
   const base = parent.v.endsWith("/") ? parent.v : `${parent.v}/`;

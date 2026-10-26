@@ -79,6 +79,37 @@ describe("useTheme", () => {
     expect(result.current.theme?.css).toBe(next);
   });
 
+  test("problems_from_an_earlier_payload_survive_a_later_one", async () => {
+    const problem = { kind: "Portal", message: "watcher did not start", path: null, details: null };
+    ipc.themeGet.mockResolvedValue(theme(":root{}", { problems: [problem] }));
+    const { result } = renderHook(() => useTheme(PREFS));
+    await waitFor(() => expect(result.current.problems).toEqual([problem]));
+
+    act(() => handler?.(theme(":root{--kern-bg:#fff;}")));
+    expect(result.current.theme?.css).toBe(":root{--kern-bg:#fff;}");
+    expect(result.current.problems).toEqual([problem]);
+
+    // The same problem repeated in a later payload is not listed twice.
+    act(() => handler?.(theme(":root{}", { problems: [problem] })));
+    expect(result.current.problems).toEqual([problem]);
+  });
+
+  test("a_reply_requested_before_an_event_does_not_overwrite_it", async () => {
+    let reply: (t: WireTheme) => void = () => undefined;
+    ipc.themeGet.mockReturnValue(new Promise<WireTheme>((r) => (reply = r)));
+    const { result } = renderHook(() => useTheme(PREFS));
+    await waitFor(() => expect(ipc.themeGet).toHaveBeenCalled());
+
+    const fresh = ":root{--kern-bg:#222222ff;}";
+    act(() => handler?.(theme(fresh)));
+    const problem = { kind: "Portal", message: "once", path: null, details: null };
+    await act(async () => reply(theme(":root{--kern-bg:#111111ff;}", { problems: [problem] })));
+
+    expect(styles()[0]?.textContent).toBe(fresh);
+    expect(result.current.theme?.css).toBe(fresh);
+    expect(result.current.problems).toEqual([problem]);
+  });
+
   test("unlistens_on_unmount", async () => {
     ipc.themeGet.mockResolvedValue(theme(":root{}"));
     const { unmount } = renderHook(() => useTheme(PREFS));

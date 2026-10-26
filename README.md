@@ -6,11 +6,16 @@
 <!-- Frontend -->
 [![React](https://img.shields.io/badge/React-19.1-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-8-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vite.dev/)
+<!-- Fonts (bundled; swap each for a logo badge if shields.io adds one) -->
+[![Outfit](https://img.shields.io/badge/Outfit-5.3-lightgrey?style=flat-square)](https://fontsource.org/fonts/outfit)
+[![Quicksand](https://img.shields.io/badge/Quicksand-5.3-lightgrey?style=flat-square)](https://fontsource.org/fonts/quicksand)
+[![IBM Plex Mono](https://img.shields.io/badge/IBM%20Plex%20Mono-5.3-lightgrey?style=flat-square)](https://fontsource.org/fonts/ibm-plex-mono)
+[![Sora](https://img.shields.io/badge/Sora-5.3-lightgrey?style=flat-square)](https://fontsource.org/fonts/sora)
 <!-- Tests -->
 [![Vitest](https://img.shields.io/badge/Vitest-3-6E9F18?style=flat-square&logo=vitest&logoColor=white)](https://vitest.dev/)
 [![Playwright](https://img.shields.io/badge/Playwright-1.49-2EAD33?style=flat-square&logo=playwright&logoColor=white)](https://playwright.dev/)
 <!-- Release -->
-[![Version](https://img.shields.io/badge/Version-0.1.0.0.18-informational?style=flat-square)](VERSION)
+[![Version](https://img.shields.io/badge/Version-0.1.0.0.19-informational?style=flat-square)](VERSION)
 <!-- Licence and status -->
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Early%20Development-orange?style=flat-square)](#)
