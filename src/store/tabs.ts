@@ -17,7 +17,7 @@ export type DocTab = { id: string; kind: "doc"; path: WirePath; dirty: boolean }
 export type Tab = FolderTab | DocTab;
 
 /**
- * What a folder tab's view keeps while another tab is shown the scroll
+ * What a folder tab's view keeps while another tab is shown: the scroll
  * offset, the selection and the location bar. Items are named by pathKey, so
  * they are found again whatever order the listing comes back in. `pathKey` is
  * the folder it was taken in; it is applied to that folder only.

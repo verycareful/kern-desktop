@@ -11,9 +11,10 @@ export default function App() {
   const { error, problems } = useTheme();
   const [homeError, setHomeError] = useState<WireError | null>(null);
   const tabCount = useTabs((s) => s.tabs.length);
-  // Only the main window browses until document windows have their own shell.
+  // Only the main window browses until document windows have their own shell;
+  // a document window can only be closed for now.
   const [isMain] = useState(isMainWindow);
-  const directives = useOpenDirectives(isMain);
+  const directives = useOpenDirectives(isMain ? "main" : "doc");
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -83,12 +84,19 @@ export default function App() {
           ))}
         </ul>
       )}
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <MainWindow
-          starting={isMain && !directives.ready}
-          openingHome={isMain && directives.ready && tabCount === 0 && homeError === null}
-        />
-      </div>
+      {!isMain && (
+        <p role="status">
+          This window will show its document in a later version of Kern. It can be closed.
+        </p>
+      )}
+      {isMain && (
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <MainWindow
+            starting={!directives.ready}
+            openingHome={directives.ready && tabCount === 0 && homeError === null}
+          />
+        </div>
+      )}
     </div>
   );
 }

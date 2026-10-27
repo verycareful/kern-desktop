@@ -324,18 +324,47 @@ test("close_requested_with_a_dirty_tab_does_not_close_and_says_so", async () => 
   );
   await emit("kern://close-requested", null);
   expect(ipc.confirmClose).not.toHaveBeenCalled();
-  expect(await screen.findByRole("alert")).toHaveTextContent("kern://close-requested");
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent(/unsaved changes/);
+  expect(alert).toHaveTextContent(/save/i);
+  expect(alert).not.toHaveTextContent("kern://");
 });
 
-test("a_window_other_than_main_does_not_take_the_queue_or_open_home", async () => {
+function asDocWindow() {
   (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {
     metadata: { currentWindow: { label: "doc-1" } },
   };
+}
+
+test("a_document_window_listens_only_for_close_and_takes_nothing", async () => {
+  asDocWindow();
   render(<App />);
+  await waitFor(() => expect(handlers["kern://close-requested"]).toBeDefined());
   await act(async () => {});
+  expect(calls.filter((c) => c.startsWith("on kern://"))).toEqual(["on kern://close-requested"]);
   expect(ipc.openPendingTake).not.toHaveBeenCalled();
   expect(ipc.userDirs).not.toHaveBeenCalled();
   expect(tabNames()).toEqual([]);
+  expect(screen.getByText(/later version of Kern/)).toBeInTheDocument();
+  expect(screen.queryByText(/kern:\/\//)).toBeNull();
+});
+
+test("a_document_window_can_be_closed", async () => {
+  asDocWindow();
+  render(<App />);
+  await waitFor(() => expect(handlers["kern://close-requested"]).toBeDefined());
+  await emit("kern://close-requested", null);
+  expect(ipc.confirmClose).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("a_document_window_that_cannot_close_says_why", async () => {
+  asDocWindow();
+  ipc.confirmClose.mockRejectedValue({ kind: "Io", message: "cannot close", path: null });
+  render(<App />);
+  await waitFor(() => expect(handlers["kern://close-requested"]).toBeDefined());
+  await emit("kern://close-requested", null);
+  expect(await screen.findByRole("alert")).toHaveTextContent("cannot close");
 });
 
 test("a_loading_line_shows_until_the_queue_is_applied", async () => {

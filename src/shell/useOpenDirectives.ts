@@ -65,8 +65,12 @@ export interface OpenDirectives {
 const unhandled = (name: string, detail = ""): string =>
   `Kern received "${name}"${detail} but this version cannot act on it yet.`;
 
-/** `enabled` is false in a window that is not the main one: it neither subscribes nor takes. */
-export function useOpenDirectives(enabled: boolean): OpenDirectives {
+/**
+ * In the main window the full set. A document window (`doc-<n>`) listens only
+ * for its close request, so it can be closed, and leaves what is queued for it
+ * (the document to show) untaken for the shell that will show it.
+ */
+export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
   const [ready, setReady] = useState(false);
   const [errors, setErrors] = useState<WireError[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -81,7 +85,6 @@ export function useOpenDirectives(enabled: boolean): OpenDirectives {
   );
 
   useEffect(() => {
-    if (!enabled) return;
     let alive = true;
     const unlisten: UnlistenFn[] = [];
     let waiting: Queued[] | null = [];
@@ -125,7 +128,10 @@ export function useOpenDirectives(enabled: boolean): OpenDirectives {
           return;
         case EVENT_CLOSE_REQUESTED:
           if (tabs().tabs.some((t) => t.kind === "doc" && t.dirty)) {
-            notice(unhandled(item.event, " with unsaved changes"));
+            notice(
+              "Kern cannot close this window while a document has unsaved changes " +
+                "in this version. Save the document first."
+            );
           } else await confirmClose();
           return;
         default:
@@ -142,7 +148,9 @@ export function useOpenDirectives(enabled: boolean): OpenDirectives {
 
     (async () => {
       try {
-        for (const name of EVENTS) {
+        const names: readonly (typeof EVENTS)[number][] =
+          mode === "main" ? EVENTS : [EVENT_CLOSE_REQUESTED];
+        for (const name of names) {
           const un = await on(name, (payload) => {
             const item: Queued = { event: name, payload };
             if (waiting) waiting.push(item);
@@ -153,6 +161,11 @@ export function useOpenDirectives(enabled: boolean): OpenDirectives {
         }
         // A cleaned-up run (StrictMode's first) leaves the take to the one that replaced it.
         if (!alive) return;
+        if (mode === "doc") {
+          waiting = null;
+          setReady(true);
+          return;
+        }
         taken.current ??= openPendingTake();
         const queued = await taken.current;
         if (!alive) return;
@@ -176,7 +189,7 @@ export function useOpenDirectives(enabled: boolean): OpenDirectives {
       alive = false;
       unlisten.forEach((u) => u());
     };
-  }, [addError, notice, enabled]);
+  }, [addError, notice, mode]);
 
   return {
     ready,
