@@ -7,6 +7,7 @@ import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
 import { actions, currentContext, getAction, runAction } from "../keys/actions";
 import { useTabs, type FolderTab, type FolderViewState } from "../store/tabs";
 import { Breadcrumb } from "./Breadcrumb";
+import { ConfirmBanner } from "./ConfirmBanner";
 import { FileGrid } from "./FileGrid";
 import { FileList } from "./FileList";
 import { ROW_HEIGHT } from "./grid-layout";
@@ -137,6 +138,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [columns, setColumns] = useState(1);
   const root = useRef<HTMLDivElement>(null);
+  const files = useRef<HTMLDivElement>(null);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -150,6 +152,10 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   // belongs to the list again, once there is a list to take it.
   const focusSoon = useRef(false);
   const [asking, setAsking] = useState<{ list: typeof entries; newWindow: boolean } | null>(null);
+  const cancelAsking = useCallback(() => {
+    focusSoon.current = true;
+    setAsking(null);
+  }, []);
   // Navigates this view's own tab, which is not the active one when the panel is slid in over a document.
   const navigate = useCallback(
     (p: WirePath) => {
@@ -288,28 +294,6 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     root.current?.focus();
   });
 
-  // While the question is open it owns the keyboard: Escape answers no, Tab, Enter
-  // and Space reach its buttons, and every other key is held back from the
-  // shortcuts behind it (capture phase, before useShortcuts sees the event).
-  useEffect(() => {
-    if (!asking) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        focusSoon.current = true;
-        setAsking(null);
-        return;
-      }
-      const plain = !e.ctrlKey && !e.altKey && !e.metaKey;
-      if (plain && ["Tab", "Enter", " "].includes(e.key)) return;
-      e.preventDefault();
-      e.stopPropagation();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [asking]);
-
   const onItemDoubleClick = useCallback(
     (i: number, e: React.MouseEvent) => {
       const entry = latest.current.entries[i];
@@ -405,6 +389,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
             rowHeight={rowHeight}
             sortBy={sort.by}
             sortDir={sort.dir}
+            sortFailed={folder.sortError !== null}
             onSort={(by) => {
               focusSoon.current = true;
               useFolderUi.getState().chooseSort(tab.id, by);
@@ -436,7 +421,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   };
 
   return (
-    <div className="kern-files" data-testid="folder-view" data-view={viewMode}>
+    <div ref={files} className="kern-files" data-testid="folder-view" data-view={viewMode}>
       <div className="kern-files-bar">
         {editing ? (
           <LocationBar
@@ -521,35 +506,18 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         </div>
       )}
       {asking && (
-        <div role="alertdialog" aria-label="Open many items" className="kern-banner">
-          <span>
-            Open {asking.list.length} items at once? Each opens a tab, a window or an application.
-          </span>
-          <span>
-            <button
-              type="button"
-              className="kern-button"
-              onClick={() => {
-                const { list, newWindow } = asking;
-                setAsking(null);
-                void open(list, newWindow);
-              }}
-            >
-              Open {asking.list.length} items
-            </button>{" "}
-            <button
-              type="button"
-              className="kern-button"
-              autoFocus
-              onClick={() => {
-                focusSoon.current = true;
-                setAsking(null);
-              }}
-            >
-              Cancel
-            </button>
-          </span>
-        </div>
+        <ConfirmBanner
+          label="Open many items"
+          message={`Open ${asking.list.length} items at once? Each opens a tab, a window or an application.`}
+          confirmLabel={`Open ${asking.list.length} items`}
+          scope={files}
+          onConfirm={() => {
+            const { list, newWindow } = asking;
+            setAsking(null);
+            void open(list, newWindow);
+          }}
+          onCancel={cancelAsking}
+        />
       )}
       {folder.phase === "ready" && folder.sorting && (
         <p role="status" className="kern-note-body">

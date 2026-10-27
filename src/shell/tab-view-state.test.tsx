@@ -20,6 +20,7 @@ const ipc = vi.hoisted(() => ({
   on: vi.fn(),
   settingsGet: vi.fn(),
   userDirs: vi.fn(),
+  volumesList: vi.fn(),
   thumbRequest: vi.fn(),
   thumbCancel: vi.fn(),
 }));
@@ -78,6 +79,7 @@ beforeEach(() => {
   ipc.thumbRequest.mockResolvedValue(undefined);
   ipc.thumbCancel.mockResolvedValue(undefined);
   ipc.userDirs.mockResolvedValue({ home: p("/home/u"), dirs: [] });
+  ipc.volumesList.mockResolvedValue({ mounted: [], unmounted: [], problems: [] });
   ipc.settingsGet.mockResolvedValue({
     show_hidden: false,
     view_mode: "list",

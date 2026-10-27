@@ -428,3 +428,91 @@
   background: var(--kern-accent-soft);
   border: 1px solid var(--kern-accent);
 }
+
+/* The Trash view (design 5.2): the folder list's rows with an original-location and a deleted column. */
+.kern-trash-title {
+  flex: none;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.kern-trash-actions {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.kern-trash-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kern-trash-button:disabled {
+  color: var(--kern-text-dim);
+  cursor: default;
+  border-color: var(--kern-border);
+}
+
+.kern-col-original {
+  flex: 1;
+  font-family: var(--kern-font-mono);
+  font-size: 11.5px;
+  color: var(--kern-text-dim);
+}
+
+.kern-col-deleted {
+  flex: none;
+  width: 124px;
+  padding-left: 16px;
+  font-family: var(--kern-font-mono);
+  font-size: 11.5px;
+  color: var(--kern-text-dim);
+}
+
+.kern-trash-progress {
+  gap: var(--kern-density-gap);
+}
+
+.kern-progress {
+  flex: 1;
+  height: 6px;
+  overflow: hidden;
+  background: var(--kern-sunken);
+  border: 1px solid var(--kern-border);
+  border-radius: 3px;
+}
+
+.kern-progress-bar {
+  height: 100%;
+  background: var(--kern-accent);
+}
+
+/* The report panel of a failed or cancelled operation (src/ops/ReportPanel.tsx). */
+.kern-report {
+  align-items: flex-start;
+}
+
+.kern-report p {
+  margin: 0 0 4px;
+}
+
+.kern-report-title {
+  font-weight: 600;
+}
+
+.kern-report-heading {
+  margin-top: 6px;
+  font-family: var(--kern-font-mono);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  color: var(--kern-text-dim);
+}
+
+.kern-report-path {
+  font-family: var(--kern-font-mono);
+  font-size: 12px;
+}

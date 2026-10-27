@@ -101,7 +101,7 @@ export interface FolderApi extends Core {
  * that is still there stays selected wherever it moved to; one that went away
  * leaves the selection.
  */
-function remap(sel: Sel, from: readonly WireEntry[], to: readonly WireEntry[]): Sel {
+export function remap(sel: Sel, from: readonly WireEntry[], to: readonly WireEntry[]): Sel {
   if (sel.selected.size === 0 && sel.anchor === null && sel.cursor === null) return sel;
   const at = new Map<string, number>();
   to.forEach((e, i) => at.set(pathKey(e.path), i));
@@ -352,6 +352,10 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
       unlisten.forEach((u) => u());
       reload.current = () => undefined;
       stopWatch();
+      // A sort of this folder's listing is of no use to the next folder: end the worker
+      // (what waits is rejected and dropped as stale); the next sort starts a new one.
+      sorter.current?.dispose();
+      sorter.current = null;
     };
     // The folder is identified by its path key, not the identity of the path object.
     // eslint-disable-next-line react-hooks/exhaustive-deps

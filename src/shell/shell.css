@@ -225,11 +225,108 @@
 
 .kern-places {
   box-sizing: border-box;
+  display: flex;
   width: var(--shell-places-width);
   flex: none;
-  padding: var(--kern-density-gap);
+  flex-direction: column;
+  gap: var(--kern-density-gap);
+  padding: 0 var(--kern-density-gap) var(--kern-density-gap);
+  overflow-y: auto;
   background: var(--kern-sunken);
   border-right: 1px solid var(--kern-border);
+}
+
+/* Level with the tab row, kept free (design 4.1). */
+.kern-places-slot {
+  flex: none;
+  height: calc(var(--shell-button) + 6px);
+}
+
+.kern-places-heading {
+  padding: 0 6px 4px;
+}
+
+.kern-places-list {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+}
+
+.kern-place {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--kern-text);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-place:hover {
+  background: var(--kern-accent-soft);
+}
+
+.kern-place[aria-current="page"] {
+  font-weight: 600;
+  color: var(--kern-accent);
+  background: var(--kern-accent-soft);
+}
+
+.kern-place[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+.kern-place-unmounted {
+  cursor: default;
+  color: var(--kern-text-dim);
+}
+
+.kern-place-unmounted:hover {
+  background: none;
+}
+
+.kern-place-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kern-mount {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.kern-place-busy,
+.kern-places-none {
+  margin: 0;
+  padding: 2px 6px;
+  font-size: 12px;
+  color: var(--kern-text-dim);
+}
+
+.kern-places-error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  background: var(--kern-accent-soft);
+  border-radius: var(--kern-radius-small);
 }
 
 .kern-folder-area {

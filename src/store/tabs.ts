@@ -14,7 +14,13 @@ export type FolderTab = {
   cursor: number;
 };
 export type DocTab = { id: string; kind: "doc"; path: WirePath; dirty: boolean };
-export type Tab = FolderTab | DocTab;
+/**
+ * The Trash (design 5.2). A place of its own rather than a folder: it lists the
+ * home trash and the trashes of the mounted volumes, so it has no path and no
+ * history to step through. There is at most one (4.5: nothing opens twice).
+ */
+export type TrashTab = { id: string; kind: "trash" };
+export type Tab = FolderTab | DocTab | TrashTab;
 
 /**
  * What a folder tab's view keeps while another tab is shown: the scroll
@@ -51,6 +57,8 @@ export interface TabsState {
   openFolder(path: WirePath, inNewTab: boolean): void;
   /** Navigate the folder tab `id` (not necessarily the active one) to `path`. */
   navigateTab(id: string, path: WirePath): void;
+  /** Focus the Trash tab, or open it. */
+  openTrash(): void;
   /** Open a document tab, or focus the one already open on this path. */
   openDoc(path: WirePath): void;
   /** Close a tab; the active tab becomes its right neighbour, else its left. */
@@ -66,6 +74,7 @@ export interface TabsState {
 
 /** The tab's label: the last path component, or "/" for the root. */
 export function tabTitle(tab: Tab): string {
+  if (tab.kind === "trash") return "Trash";
   // A Bytes path shows with U+FFFD for the bytes that are not UTF-8.
   const trimmed = displayPath(tab.path).replace(/\/+$/, "");
   return trimmed.slice(trimmed.lastIndexOf("/") + 1) || "/";
@@ -186,6 +195,14 @@ export const useTabs = create<TabsState>()((set) => ({
       if (!t || t.kind !== "folder") return {};
       const moved = visit(t, path);
       return moved ? moveTab(s, moved) : {};
+    });
+  },
+  openTrash() {
+    set((s) => {
+      const open = s.tabs.find((t) => t.kind === "trash");
+      if (open) return { activeId: open.id };
+      const tab: TrashTab = { id: crypto.randomUUID(), kind: "trash" };
+      return { tabs: [...s.tabs, tab], activeId: tab.id };
     });
   },
   openDoc(path) {

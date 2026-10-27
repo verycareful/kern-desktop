@@ -30,7 +30,8 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
         {!props.starting && props.openingHome && <p>Opening the Home folder…</p>}
       </main>
     );
-  } else if (tab.kind === "folder") {
+  } else if (tab.kind === "folder" || tab.kind === "trash") {
+    // The Trash takes the folder area; the strip and Pinned and Recent are as for a folder.
     layout = "folder";
     body = (
       <>

@@ -497,14 +497,40 @@ describe("large folders", () => {
     WorkerStub.crash = true;
     const raw = bigList(5001);
     ipc.listDir.mockResolvedValue(raw);
-    const { result } = renderHook(() => useFolder("tab-1", p("/d"), OPTS));
+    const { result, rerender } = renderHook(
+      ({ sortBy }) => useFolder("tab-1", p("/d"), { ...OPTS, sortBy }),
+      { initialProps: { sortBy: "name" as SortBy } }
+    );
     await waitFor(() => expect(result.current.phase).toBe("ready"));
     expect(result.current.sortError).toMatchObject({ kind: "Sort" });
     expect(result.current.sortError?.message).toMatch(/worker died/);
     // No silent substitute: the entries are the folder's own order, not a main-thread sort.
     expect(result.current.entries.map((e) => e.name)).toEqual(raw.map((e) => e.name));
-    // Choosing a sort again tries again.
+    // Choosing a sort again tries again, on a new worker, and a good sort clears the error.
     WorkerStub.crash = false;
+    rerender({ sortBy: "size" });
+    await waitFor(() => expect(result.current.sortError).toBeNull());
+    expect(result.current.entries.map((e) => e.len)).toEqual(
+      sortEntries(raw, "size", "asc").map((e) => e.len)
+    );
+    expect(WorkerStub.made).toHaveLength(2);
+  });
+
+  test("a_folder_change_ends_the_old_folders_worker_sort", async () => {
+    let release!: () => void;
+    WorkerStub.gate = new Promise<void>((r) => (release = r));
+    ipc.listDir.mockResolvedValueOnce(bigList(5001, "/old"));
+    const { result, rerender } = renderHook(({ path }) => useFolder("tab-1", p(path), OPTS), {
+      initialProps: { path: "/old" },
+    });
+    await waitFor(() => expect(WorkerStub.made).toHaveLength(1));
+    ipc.listDir.mockResolvedValue([entry("n.txt", {}, "/new")]);
+    rerender({ path: "/new" });
+    // The sort of the folder that is no longer shown is not left running.
+    expect(WorkerStub.made[0]!.terminated).toBe(true);
+    await waitFor(() => expect(result.current.phase).toBe("ready"));
+    await act(async () => release());
+    expect(result.current.entries.map((e) => e.name)).toEqual(["n.txt"]);
   });
 
   test("unmount_ends_the_worker", async () => {

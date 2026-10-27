@@ -21,6 +21,7 @@ const ipc = vi.hoisted(() => ({
   on: vi.fn(),
   settingsGet: vi.fn(),
   userDirs: vi.fn(),
+  volumesList: vi.fn(),
   openPendingTake: vi.fn(),
   openPaths: vi.fn(),
   confirmClose: vi.fn(),
@@ -57,6 +58,7 @@ beforeEach(() => {
   ipc.unwatchDir.mockResolvedValue(undefined);
   ipc.themeGet.mockResolvedValue({ css: ":root{}", fallbacks: [], problems: [] });
   ipc.userDirs.mockResolvedValue({ home: p("/home/t"), dirs: [] });
+  ipc.volumesList.mockResolvedValue({ mounted: [], unmounted: [], problems: [] });
   ipc.settingsGet.mockResolvedValue({
     show_hidden: false,
     view_mode: "list",
@@ -112,8 +114,8 @@ test("a_cold_start_with_a_queued_folder_shows_that_folder_and_no_home", async ()
   render(<App />);
   expect(await screen.findByRole("tab", { name: "docs" })).toBeInTheDocument();
   await act(async () => {});
+  // No Home tab (the places strip looks the user's folders up for itself).
   expect(tabNames()).toEqual(["docs"]);
-  expect(ipc.userDirs).not.toHaveBeenCalled();
 });
 
 test("a_cold_start_with_nothing_queued_opens_home", async () => {
@@ -176,7 +178,6 @@ test("live_events_during_the_take_are_applied_after_the_queue", async () => {
   expect(tabNames()).toEqual([]);
   await act(async () => release([folder("/d/queued")]));
   await waitFor(() => expect(tabNames()).toEqual(["queued", "live"]));
-  expect(ipc.userDirs).not.toHaveBeenCalled();
 });
 
 test("a_select_is_applied_once_the_folder_has_listed", async () => {
@@ -356,6 +357,18 @@ test("a_document_window_can_be_closed", async () => {
   await emit("kern://close-requested", null);
   expect(ipc.confirmClose).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("a_close_request_that_arrives_before_the_subscription_resolves_is_applied", async () => {
+  asDocWindow();
+  // The event is delivered while `on` is still resolving, as a fast backend can.
+  ipc.on.mockImplementation((name: string, h: (payload: unknown) => void) => {
+    handlers[name] = h;
+    if (name === "kern://close-requested") h(null);
+    return Promise.resolve(() => undefined);
+  });
+  render(<App />);
+  await waitFor(() => expect(ipc.confirmClose).toHaveBeenCalledTimes(1));
 });
 
 test("a_document_window_that_cannot_close_says_why", async () => {

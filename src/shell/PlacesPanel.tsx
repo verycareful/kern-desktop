@@ -3,13 +3,48 @@
 // Design 4.1: the file manager. Docked, its two parts are cells of the
 // main grid: the places strip from the window top to the status bar, and the
 // folder area beside it under the tab row. Slid in over a document (4.3) they
-// are one panel. The strip (Places, Volumes, Trash) is filled by a later task;
-// its top slot, level with the tab row, is free and left empty.
+// are one panel. The strip holds Places, Volumes and Trash; its top slot,
+// level with the tab row, is free and left empty.
+import { Trash2 } from "lucide-react";
 import { FolderView } from "../files/FolderView";
+import { TrashView } from "../files/TrashView";
+import { currentContext, getAction, runAction } from "../keys/actions";
 import { activeTab, recentFolderTab, useTabs } from "../store/tabs";
+import { PlacesList } from "./PlacesList";
+import { trashShown } from "./place-nav";
+import { VolumesList } from "./VolumesList";
+
+function TrashPlace() {
+  const current = useTabs((s) => trashShown(s));
+  const action = getAction("place.trash");
+  return (
+    <section className="kern-places-group" aria-label="Trash">
+      <ul className="kern-places-list">
+        <li>
+          <button
+            type="button"
+            className="kern-place"
+            aria-current={current ? "page" : undefined}
+            onClick={() => runAction(action, currentContext())}
+          >
+            <Trash2 size={16} strokeWidth={2} aria-hidden />
+            <span className="kern-place-label">Trash</span>
+          </button>
+        </li>
+      </ul>
+    </section>
+  );
+}
 
 function PlacesStrip() {
-  return <nav className="kern-places" aria-label="Places" data-testid="places-strip" />;
+  return (
+    <nav className="kern-places" aria-label="Places and volumes" data-testid="places-strip">
+      <div className="kern-places-slot" />
+      <PlacesList />
+      <VolumesList />
+      <TrashPlace />
+    </nav>
+  );
 }
 
 function FolderArea(props: { docked?: boolean }) {
@@ -20,7 +55,11 @@ function FolderArea(props: { docked?: boolean }) {
   const region = props.docked ? { role: "region", "aria-label": "File manager" } : {};
   return (
     <div className="kern-folder-area" data-testid="folder-area" {...region}>
-      {tab && <FolderView key={tab.id} tab={tab} />}
+      {active?.kind === "trash" ? (
+        <TrashView key={active.id} tab={active} />
+      ) : (
+        tab && <FolderView key={tab.id} tab={tab} />
+      )}
     </div>
   );
 }

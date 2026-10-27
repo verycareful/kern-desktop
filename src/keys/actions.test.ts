@@ -3,7 +3,15 @@
 import type { WirePath } from "../ipc";
 import { usePanelsStore } from "../store/panels";
 import { useTabs } from "../store/tabs";
-import { actions, currentContext, getAction, isEnabled, runAction } from "./actions";
+import { useVolumes } from "../shell/volumes-store";
+import {
+  actions,
+  currentContext,
+  findDuplicateBindings,
+  getAction,
+  isEnabled,
+  runAction,
+} from "./actions";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 
@@ -63,4 +71,49 @@ test("folder_actions_without_a_mounted_folder_view_are_disabled", () => {
   // Settings-backed and sort actions need no controller.
   expect(isEnabled(getAction("folder.hidden.toggle"), currentContext())).toBe(true);
   expect(isEnabled(getAction("folder.sort.size"), currentContext())).toBe(true);
+});
+
+test("trash_actions_apply_to_the_trash_tab_only", () => {
+  const trash = actions.filter((a) => a.id.startsWith("trash."));
+  expect(trash.length).toBeGreaterThan(5);
+  for (const a of trash) expect(a.when, a.id).toBe("trash");
+  useTabs.getState().openFolder(p("/a"), false);
+  for (const a of trash) expect(isEnabled(a, currentContext()), a.id).toBe(false);
+  // The Trash tab has no folder actions.
+  useTabs.getState().openTrash();
+  for (const a of actions.filter((x) => x.id.startsWith("folder."))) {
+    expect(isEnabled(a, currentContext()), a.id).toBe(false);
+  }
+});
+
+test("the_trash_keys_do_not_collide_with_each_other_or_the_any_actions", () => {
+  expect(findDuplicateBindings()).toEqual([]);
+});
+
+test("volume_actions_are_aimed_at_the_current_volume_and_grey_out_without_one", () => {
+  useVolumes.getState().reset();
+  const unmount = getAction("volume.unmount");
+  const mount = getAction("volume.mount");
+  const eject = getAction("volume.eject");
+  for (const a of [unmount, mount, eject]) expect(isEnabled(a, currentContext()), a.id).toBe(false);
+  const m = (removable: boolean) => ({
+    mount_point: p("/mnt/x"),
+    device: "/dev/sdb1",
+    fs_type: "ext4",
+    label: "X",
+    removable,
+    read_only: false,
+  });
+  useVolumes.setState({ mounted: [m(false)], unmounted: [] });
+  useVolumes.getState().setCurrent(useVolumes.getState().volumes()[0]!.key);
+  expect(isEnabled(unmount, currentContext())).toBe(true);
+  // Eject is for removable drives; a fixed disk is only unmounted.
+  expect(isEnabled(eject, currentContext())).toBe(false);
+  expect(isEnabled(mount, currentContext())).toBe(false);
+  useVolumes.setState({ mounted: [m(true)] });
+  expect(isEnabled(eject, currentContext())).toBe(true);
+  // Busy volumes take no second action.
+  useVolumes.setState({ busy: { [useVolumes.getState().current!]: "Ejecting…" } });
+  expect(isEnabled(eject, currentContext())).toBe(false);
+  useVolumes.getState().reset();
 });

@@ -2,6 +2,13 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { WirePath } from "../ipc";
+
+// The places strip looks the user's folders and the volumes up.
+vi.mock("../ipc", async (orig) => ({
+  ...(await orig<typeof import("../ipc")>()),
+  userDirs: () => Promise.resolve({ home: { k: "Utf8", v: "/home/a" }, dirs: [] }),
+  volumesList: () => Promise.resolve({ mounted: [], unmounted: [], problems: [] }),
+}));
 import { actions, appliesTo } from "../keys/actions";
 import { usePanelsStore } from "../store/panels";
 import { useTabs } from "../store/tabs";
@@ -41,8 +48,10 @@ test("tab_row_sits_over_the_folder_area_only", () => {
   expect(screen.getByTestId("folder-area").parentElement).toBe(main);
   expect(screen.getByTestId("side-panel").parentElement).toBe(main);
   expect(main).not.toContainElement(screen.getByTestId("status-bar"));
-  // The strip's top slot is free: nothing in the strip yet.
-  expect(screen.getByTestId("places-strip")).toBeEmptyDOMElement();
+  // The strip's top slot, level with the tab row, is free: the first thing in the strip, empty.
+  const slot = screen.getByTestId("places-strip").firstElementChild;
+  expect(slot).toHaveClass("kern-places-slot");
+  expect(slot).toBeEmptyDOMElement();
 });
 
 test("doc_tab_shows_two_stubs", () => {
@@ -156,8 +165,9 @@ test("every_action_appears_in_a_menu", () => {
   };
   useTabs.getState().openFolder(p("/home/a"), false);
   useTabs.getState().openDoc(p("/home/a/n.md"));
+  useTabs.getState().openTrash();
   render(<MainWindow />);
-  for (const tabName of ["a", "n.md"]) {
+  for (const tabName of ["a", "n.md", "Trash"]) {
     fireEvent.click(screen.getByRole("tab", { name: tabName }));
     fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
     const menu = screen.getByTestId("action-menu");

@@ -14,16 +14,21 @@ const plural = (n: number, one: string, many: string) =>
 // only a dirty document is flagged here.
 export function StatusBar() {
   const tab = useTabs((s) => activeTab(s));
-  const counts = useFolderStatus((s) => (tab?.kind === "folder" ? s.byTab[tab.id] : undefined));
+  const counts = useFolderStatus((s) =>
+    tab?.kind === "folder" || tab?.kind === "trash" ? s.byTab[tab.id] : undefined
+  );
+  const place = !tab ? "" : tab.kind === "trash" ? "Trash" : displayPath(tab.path);
   return (
     <footer className="kern-status" data-testid="status-bar">
-      <span className="kern-status-path" title={tab ? displayPath(tab.path) : undefined}>
-        {tab ? displayPath(tab.path) : ""}
+      <span className="kern-status-path" title={place || undefined}>
+        {place}
       </span>
       {counts && (
         <span data-testid="status-count">
           {plural(counts.items, "item", "items")}
+          {counts.selected > 0 && tab?.kind === "trash" && ` \u00b7 ${counts.selected} selected`}
           {counts.selected > 0 &&
+            tab?.kind !== "trash" &&
             ` \u00b7 ${plural(counts.selected, "selected", "selected")} \u00b7 ${formatSize(counts.selectedBytes)}` +
               (counts.selectedFolders > 0
                 ? ` (${plural(counts.selectedFolders, "folder", "folders")} not counted)`

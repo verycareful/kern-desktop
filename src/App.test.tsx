@@ -46,6 +46,7 @@ vi.mock("./ipc", async () => ({
     }),
   themeGet,
   userDirs,
+  volumesList: () => Promise.resolve({ mounted: [], unmounted: [], problems: [] }),
   toWireError: (e: unknown) => e,
 }));
 
@@ -70,7 +71,8 @@ test("closing_the_last_tab_opens_home_again", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Close t" }));
   expect(await screen.findByRole("tab", { name: "t" })).toBeInTheDocument();
   expect(useTabs.getState().tabs).toHaveLength(1);
-  expect(userDirs).toHaveBeenCalledTimes(2);
+  // Two Home lookups of the window, and one of the places strip each time it is shown.
+  expect(userDirs).toHaveBeenCalledTimes(4);
 });
 
 test("home_lookup_failure_shows_the_error_with_retry", async () => {
@@ -85,6 +87,6 @@ test("home_lookup_failure_shows_the_error_with_retry", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   expect(await screen.findByRole("tab", { name: "t" })).toBeInTheDocument();
   expect(screen.queryByRole("alert")).toBeNull();
-  // Retry made one lookup, not two.
-  expect(userDirs).toHaveBeenCalledTimes(2);
+  // Retry made one Home lookup, not two; the places strip, shown with the tab, made its own.
+  expect(userDirs).toHaveBeenCalledTimes(3);
 });

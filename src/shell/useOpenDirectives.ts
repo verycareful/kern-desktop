@@ -161,14 +161,13 @@ export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
         }
         // A cleaned-up run (StrictMode's first) leaves the take to the one that replaced it.
         if (!alive) return;
-        if (mode === "doc") {
-          waiting = null;
-          setReady(true);
-          return;
+        // Events that arrived while the subscriptions were being placed are applied, after the queue.
+        let queued: Queued[] = [];
+        if (mode === "main") {
+          taken.current ??= openPendingTake();
+          queued = await taken.current;
+          if (!alive) return;
         }
-        taken.current ??= openPendingTake();
-        const queued = await taken.current;
-        if (!alive) return;
         const late = waiting ?? [];
         waiting = null;
         for (const item of [...queued, ...late]) enqueue(item);

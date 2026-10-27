@@ -637,21 +637,72 @@ test("the_confirmation_takes_focus_closes_on_escape_and_blocks_the_keys_behind_i
   fireEvent.keyDown(window, { key: "Enter" });
   const ask = await screen.findByRole("alertdialog");
   expect(within(ask).getByRole("button", { name: /cancel/i })).toHaveFocus();
-  // Keys meant for the list do nothing while the question is open.
+  // Keys meant for the list do nothing while the question is open. A real key
+  // is aimed at the focused element, here the Cancel button inside the view.
+  const cancel = within(ask).getByRole("button", { name: /cancel/i });
   const selected = () =>
     screen.getAllByTestId("file-row").filter((r) => r.getAttribute("aria-selected") === "true")
       .length;
   expect(selected()).toBe(12);
-  fireEvent.keyDown(window, { key: "ArrowDown" });
-  fireEvent.keyDown(window, { key: "A", ctrlKey: true, shiftKey: true });
-  fireEvent.keyDown(window, { key: "Enter", ctrlKey: true });
+  fireEvent.keyDown(cancel, { key: "ArrowDown" });
+  fireEvent.keyDown(cancel, { key: "A", ctrlKey: true, shiftKey: true });
+  fireEvent.keyDown(cancel, { key: "Enter", ctrlKey: true });
   expect(selected()).toBe(12);
   expect(ipc.openPaths).not.toHaveBeenCalled();
   // Escape answers no.
-  fireEvent.keyDown(within(ask).getByRole("button", { name: /cancel/i }), { key: "Escape" });
+  fireEvent.keyDown(cancel, { key: "Escape" });
   expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(ipc.openPaths).not.toHaveBeenCalled();
   // And the keys work again.
   fireEvent.keyDown(window, { key: "A", ctrlKey: true, shiftKey: true });
   expect(selected()).toBe(0);
+});
+
+test("the_confirmation_holds_only_the_keys_aimed_inside_its_folder_view", async () => {
+  await mount(many(12));
+  ipc.openPaths.mockResolvedValue([]);
+  fireEvent.click(screen.getAllByTestId("file-row")[0]!);
+  fireEvent.keyDown(window, { key: "a", ctrlKey: true });
+  fireEvent.keyDown(window, { key: "Enter" });
+  await screen.findByRole("alertdialog");
+  // A key aimed at something outside the view (another part of the window) is not held,
+  // and a key aimed inside the view is.
+  const outside = document.body.appendChild(document.createElement("button"));
+  const seen: boolean[] = [];
+  const probe = (e: Event) => seen.push(e.defaultPrevented);
+  window.addEventListener("keydown", probe);
+  try {
+    fireEvent.keyDown(outside, { key: "x", ctrlKey: true });
+    fireEvent.keyDown(screen.getByTestId("folder-list"), { key: "x", ctrlKey: true });
+    expect(seen).toEqual([false]);
+  } finally {
+    window.removeEventListener("keydown", probe);
+    outside.remove();
+  }
+});
+
+test("a_folder_on_an_unmounted_volume_offers_the_nearest_folder_that_still_exists", async () => {
+  // Unmounting removes the mount point; the watch of a folder under it ends with dir-gone.
+  let unmounted = false;
+  ipc.listDir.mockImplementation(async (path: WirePath) => {
+    const under = path.v.startsWith("/run/media/t/STICK");
+    if (under && unmounted) {
+      throw { kind: "NotFound", message: "no such directory", path: null, details: null };
+    }
+    return [entry("x")];
+  });
+  const tab = openTab("/run/media/t/STICK/a/b");
+  render(<Host tab={tab} />);
+  await screen.findByTestId("folder-list");
+  unmounted = true;
+  act(() => {
+    void handlers["kernkraft://dir-gone"]!({ key: tab.id });
+  });
+  const banner = await screen.findByTestId("gone-banner");
+  // Not the stale entries, and not a blank pane: the folder above the mount point.
+  expect(screen.queryByTestId("file-row")).toBeNull();
+  fireEvent.click(await within(banner).findByRole("button", { name: "/run/media/t" }));
+  await waitFor(() =>
+    expect((activeTab(useTabs.getState()) as FolderTab).path).toEqual(p("/run/media/t"))
+  );
 });

@@ -24,6 +24,7 @@ const COMMON = {
     view_mode: "list",
     ...(args.patch as object),
   }),
+  "plugin:kernkraft-tauri|volumes_list": { mounted: [], unmounted: [], problems: [] },
   "plugin:kernkraft-tauri|user_dirs": { home: { k: "Utf8", v: "/home/tester/docs" }, dirs: [] },
   "plugin:kernkraft-tauri|theme_get": { css: ":root{}", tokens: {}, fallbacks: [], problems: [] },
   "plugin:kernkraft-tauri|watch_dir": null,
@@ -143,6 +144,8 @@ test("hidden_toggle_ctrl_h", async ({ page, mockTauri }) => {
 
 test.describe("non-ASCII names", () => {
   test.use({ locale: "en-US" });
+  // The frame-gap measurement shares the machine with nothing else of this suite.
+  test.describe.configure({ mode: "serial" });
 
   // The names the mock below makes, rebuilt here to know the right order.
   const PREFIXES = ["é", "e", "z", "ä", "a", "日", "ß"];

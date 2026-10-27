@@ -62,6 +62,8 @@ export function FileList(
     rowHeight: number;
     sortBy: SortBy;
     sortDir: SortDir;
+    /** True while the list is in the folder's own order because sorting failed: no header claims an order. */
+    sortFailed?: boolean;
     onSort(by: SortBy): void;
     rootRef: React.RefObject<HTMLDivElement | null>;
     /** Counts keyboard moves of the cursor; each one scrolls the cursor into view. */
@@ -127,7 +129,7 @@ export function FileList(
       >
         <div role="row" className="kern-list-head" style={{ height: HEADER_HEIGHT }}>
           {COLUMNS.map((c) => {
-            const active = props.sortBy === c.by;
+            const active = !props.sortFailed && props.sortBy === c.by;
             const Arrow = props.sortDir === "asc" ? ArrowUp : ArrowDown;
             return (
               <div

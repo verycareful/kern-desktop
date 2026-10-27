@@ -7,6 +7,8 @@ import { folderController, type MoveTo } from "../files/folder-controller";
 import { useFolderUi } from "../files/folder-ui";
 import type { SortBy } from "../files/sort";
 import { setViewMode, toggleHidden, useViewSettings } from "../files/view-settings";
+import { trashController, type TrashMove } from "../files/trash-controller";
+import { useVolumes } from "../shell/volumes-store";
 
 // The single table of user-visible actions. Shortcuts (useShortcuts), the
 // main menu and the tab context menu (ActionMenu) all read it, so keyboard and
@@ -24,7 +26,7 @@ import { setViewMode, toggleHidden, useViewSettings } from "../files/view-settin
 // for the physical key (KeyboardEvent.code KeyW / Digit1), so Ctrl+W still
 // works there.
 
-export type ActionContextKind = "folder" | "doc";
+export type ActionContextKind = "folder" | "doc" | "trash";
 
 export type ActionContext = {
   tabs: TabsState;
@@ -41,7 +43,7 @@ export type Action = {
   /** The menu label. */
   label: string;
   /** The menu group heading. */
-  area: "Tabs" | "Navigation" | "Panels" | "Open" | "Selection" | "View";
+  area: "Tabs" | "Navigation" | "Panels" | "Open" | "Selection" | "View" | "Trash" | "Volumes";
   keys: string[];
   /** The tab kind the action applies to. */
   when: ActionContextKind | "any";
@@ -276,6 +278,154 @@ const folderActions: Action[] = [
 ];
 
 actions.push(...folderActions);
+
+// ---- the Trash (design 5.2) ----
+
+function trashOf(c: ActionContext) {
+  return c.target?.kind === "trash" ? trashController(c.target.id) : undefined;
+}
+
+function moveTrash(id: string, label: string, keys: string[], to: TrashMove): Action {
+  return {
+    id,
+    label,
+    area: "Selection",
+    keys,
+    when: "trash",
+    enabled: (c) => trashOf(c)?.canMove() ?? false,
+    run: (c) => trashOf(c)?.move(to, c.extend),
+  };
+}
+
+const trashActions: Action[] = [
+  // Restore is the Trash's "open"; Delete and Ctrl+Shift+Delete are the usual keys of the
+  // desktop file managers for deleting for good and emptying the Trash.
+  {
+    id: "trash.restore",
+    label: "Restore",
+    area: "Trash",
+    keys: ["Ctrl+R"],
+    when: "trash",
+    enabled: (c) => trashOf(c)?.canAct(true) ?? false,
+    run: (c) => trashOf(c)?.restore(),
+  },
+  {
+    id: "trash.purge",
+    label: "Delete permanently",
+    area: "Trash",
+    keys: ["Delete"],
+    when: "trash",
+    enabled: (c) => trashOf(c)?.canAct(true) ?? false,
+    run: (c) => trashOf(c)?.askPurge(),
+  },
+  {
+    id: "trash.empty",
+    label: "Empty Trash",
+    area: "Trash",
+    keys: ["Ctrl+Shift+Delete"],
+    when: "trash",
+    enabled: (c) => trashOf(c)?.canAct(false) ?? false,
+    run: (c) => trashOf(c)?.askEmpty(),
+  },
+  {
+    id: "trash.select.all",
+    label: "Select all",
+    area: "Selection",
+    keys: ["Ctrl+A"],
+    when: "trash",
+    enabled: (c) => trashOf(c) !== undefined,
+    run: (c) => trashOf(c)?.selectAll(),
+  },
+  {
+    id: "trash.select.none",
+    label: "Select none",
+    area: "Selection",
+    keys: ["Ctrl+Shift+A"],
+    when: "trash",
+    enabled: (c) => trashOf(c)?.hasSelection() ?? false,
+    run: (c) => trashOf(c)?.selectNone(),
+  },
+  moveTrash("trash.move.down", "Select next item", ["ArrowDown", "Shift+ArrowDown"], "down"),
+  moveTrash("trash.move.up", "Select previous item", ["ArrowUp", "Shift+ArrowUp"], "up"),
+  moveTrash("trash.move.first", "Select first item", ["Home", "Shift+Home"], "first"),
+  moveTrash("trash.move.last", "Select last item", ["End", "Shift+End"], "last"),
+  {
+    id: "trash.refresh",
+    label: "Refresh",
+    area: "View",
+    keys: ["F5"],
+    when: "trash",
+    enabled: (c) => trashOf(c) !== undefined,
+    run: (c) => trashOf(c)?.refresh(),
+  },
+];
+
+// ---- the places strip: Trash and volumes (design 4.1, 5.2, 5.3) ----
+
+// The volume actions are aimed at the volume with focus in the strip, or the
+// one a menu was opened on (useVolumes.current), so they are greyed in a menu
+// opened anywhere else.
+function volumeIs(kind: "mounted" | "unmounted", remove?: boolean): boolean {
+  const s = useVolumes.getState();
+  const v = s.currentVolume();
+  if (!v || v.kind !== kind || s.busy[v.key]) return false;
+  return !remove || (v.kind === "mounted" && v.mount.removable);
+}
+
+function runOnVolume(action: "mount" | "unmount" | "eject") {
+  const v = useVolumes.getState().currentVolume();
+  if (v) void useVolumes.getState().run(v, action);
+}
+
+const placeActions: Action[] = [
+  {
+    id: "place.trash",
+    label: "Open Trash",
+    area: "Navigation",
+    keys: [],
+    when: "any",
+    run: (c) => c.tabs.openTrash(),
+  },
+  {
+    id: "volume.mount",
+    label: "Mount",
+    area: "Volumes",
+    keys: [],
+    when: "any",
+    enabled: () => volumeIs("unmounted"),
+    run: () => runOnVolume("mount"),
+  },
+  {
+    id: "volume.unmount",
+    label: "Unmount",
+    area: "Volumes",
+    keys: [],
+    when: "any",
+    enabled: () => volumeIs("mounted"),
+    run: () => runOnVolume("unmount"),
+  },
+  // Eject unmounts every volume of the drive and ejects it or powers it off, as
+  // UDisks offers for the drive (kernkraft-volumes), so there is no separate power-off.
+  {
+    id: "volume.eject",
+    label: "Eject",
+    area: "Volumes",
+    keys: [],
+    when: "any",
+    enabled: () => volumeIs("mounted", true),
+    run: () => runOnVolume("eject"),
+  },
+  {
+    id: "volumes.refresh",
+    label: "Refresh volumes",
+    area: "Volumes",
+    keys: [],
+    when: "any",
+    run: () => void useVolumes.getState().refresh(),
+  },
+];
+
+actions.push(...trashActions, ...placeActions);
 
 export function getAction(id: string): Action {
   const a = actions.find((x) => x.id === id);

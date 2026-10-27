@@ -2,7 +2,11 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { dir, entry } from "./test-entries";
 import { sortEntries } from "./sort";
-import { applyPermutation, prepareSortInput, sortPermutation } from "./sort-core";
+import { applyPermutation, prepareSortInput, sortPermutation, type SortInput } from "./sort-core";
+import { createSorter } from "./sort-async";
+import type { Sel } from "./selection";
+import { remap } from "./useFolder";
+import type { WireEntry } from "../ipc";
 
 const names = (l: { name: string }[]) => l.map((e) => e.name);
 
@@ -131,40 +135,63 @@ test("random_mixed_names_equal_the_collator_order", () => {
   }
 });
 
-test("sort_100k_under_budget", () => {
+test("sort_100k_under_budget", async () => {
   // What this measures: the work the main thread keeps for a 100 000-entry
-  // folder of NON-ASCII names, which is everything but the sort itself:
-  // building the data posted to the worker and applying the index permutation
-  // that comes back. The collator sort runs in a Web Worker (sort-async.ts), so
-  // it is computed here outside the timed part. Budget 200 ms (Review Focus 2):
-  // the plan's budget for a refresh of a 100 000-entry folder, within the 0.1 s
-  // "instantaneous" and 1 s "flow" limits of Nielsen (Usability
-  // Engineering, 1993, ch. 5). The sort itself, about 400 ms for such names, is
-  // allowed to take longer only because it does not block the page; the
-  // Playwright test checks that no frame is held up.
+  // folder of NON-ASCII names, which is everything but the sort itself: what
+  // createSorter().sort does around the worker (building the data posted, the
+  // structured clone that postMessage makes of it, applying the index
+  // permutation that comes back) and the selection carried over to the new
+  // order. The collator sort runs in a Web Worker (sort-async.ts), so the stub
+  // answers with a permutation computed outside the timed part. Budget 200 ms
+  // (Review Focus 2): the plan's budget for a refresh of a 100 000-entry
+  // folder, within the 0.1 s "instantaneous" and 1 s "flow" limits of Nielsen
+  // (Usability Engineering, 1993, ch. 5). The sort itself, about 400 ms for
+  // such names, is allowed to take longer only because it does not block the
+  // page; the Playwright test checks that no frame is held up.
   const prefixes = ["\u00e9", "e", "z", "\u00e4", "a", "\u65e5", "\u00df"];
   let seed = 12345;
   const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
   const list = Array.from({ length: 100_000 }, (_, i) =>
     next() % 11 === 0
-      ? dir(`\u00e9dir${next() % 5000}`)
+      ? dir(`\u00e9dir${next() % 5000}-${i}`)
       : entry(`${prefixes[next() % prefixes.length]}file${next() % 100000}-${i}.txt`)
   );
-  const input = prepareSortInput(list, "name");
-  const perm = sortPermutation(input, "name", "asc"); // not timed: the worker's job
+  const perm = sortPermutation(prepareSortInput(list, "name"), "name", "asc"); // not timed: the worker's job
+  class CloneWorker {
+    listeners: ((e: never) => void)[] = [];
+    addEventListener(name: string, fn: (e: never) => void) {
+      if (name === "message") this.listeners.push(fn);
+    }
+    postMessage(msg: { id: number; input: SortInput }, transfer: Transferable[]) {
+      // A real postMessage copies the message on the posting thread, moving the transferred buffers.
+      structuredClone(msg, { transfer });
+      queueMicrotask(() =>
+        this.listeners.forEach((f) => f({ data: { id: msg.id, perm } } as never))
+      );
+    }
+    terminate() {}
+  }
+  const sorter = createSorter(() => new CloneWorker() as unknown as Worker);
+  // A thousand selected items, an anchor and a cursor, spread over the list.
+  const picked = Array.from({ length: 1000 }, (_, i) => i * 100);
+  const sel: Sel = { selected: new Set(picked), anchor: picked[0]!, cursor: picked[999]! };
   let best = Infinity;
+  let sorted: WireEntry[] = [];
+  let carried = sel;
   for (let run = 0; run < 3; run++) {
     const start = performance.now();
-    const posted = prepareSortInput(list, "name");
-    const sorted = applyPermutation(list, perm);
+    sorted = await sorter.sort(list, "name", "asc");
+    carried = remap(sel, list, sorted);
     best = Math.min(best, performance.now() - start);
-    expect(posted.names).toHaveLength(100_000);
-    expect(sorted).toHaveLength(100_000);
   }
+  sorter.dispose();
+  expect(sorted).toHaveLength(100_000);
+  expect(carried.selected.size).toBe(1000);
   expect(best).toBeLessThan(200);
-  // And the permutation is a correct sort.
-  const out = applyPermutation(list, perm);
-  expect(out.slice(0, 3).every((e) => e.kind === "dir")).toBe(true);
+  // And the permutation is a correct sort, the selection still names the same entries.
+  expect(sorted.slice(0, 3).every((e) => e.kind === "dir")).toBe(true);
+  const names = new Set(picked.map((i) => list[i]!.name));
+  expect([...carried.selected].every((i) => names.has(sorted[i]!.name))).toBe(true);
 });
 
 test("a_permutation_is_a_complete_reordering", () => {

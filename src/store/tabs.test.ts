@@ -251,3 +251,19 @@ test("a_select_request_is_held_for_its_tab_until_taken_and_dropped_on_close", ()
   s().requestSelect(id, [p("/home/a/x")]);
   expect(s().selectRequests[id]).toBeUndefined();
 });
+
+test("the_trash_opens_once_and_is_focused_again", () => {
+  useTabs.getState().openFolder(p("/a"), false);
+  useTabs.getState().openTrash();
+  const trash = useTabs.getState().activeId!;
+  useTabs.getState().openFolder(p("/b"), true);
+  useTabs.getState().openTrash();
+  expect(useTabs.getState().tabs.filter((t) => t.kind === "trash")).toHaveLength(1);
+  expect(useTabs.getState().activeId).toBe(trash);
+  expect(tabTitle(useTabs.getState().tabs.find((t) => t.id === trash)!)).toBe("Trash");
+  // Folder navigation never touches it: the keys that step through a folder's history do nothing there.
+  useTabs.getState().back();
+  useTabs.getState().up();
+  expect(useTabs.getState().activeId).toBe(trash);
+  expect(useTabs.getState().tabs).toHaveLength(3);
+});
