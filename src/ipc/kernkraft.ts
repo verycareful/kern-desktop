@@ -10,7 +10,7 @@ import type { WirePath } from "./wire-path";
 // Field names are the Rust field names (snake_case); argument names are the
 // camelCase of the Rust parameters.
 
-const cmd = (name: string) => `plugin:kernkraft|${name}`;
+const cmd = (name: string) => `plugin:kernkraft-tauri|${name}`;
 
 // ---- files ----
 

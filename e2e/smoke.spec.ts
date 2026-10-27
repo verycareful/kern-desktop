@@ -13,11 +13,11 @@ test("boots_with_mocked_ipc", async ({ page, mockTauri }) => {
       show_hidden: false,
       view_mode: "list",
     },
-    "plugin:kernkraft|list_dir": [],
-    "plugin:kernkraft|watch_dir": null,
-    "plugin:kernkraft|unwatch_dir": null,
-    "plugin:kernkraft|user_dirs": { home: { k: "Utf8", v: "/home/tester/docs" }, dirs: [] },
-    "plugin:kernkraft|theme_get": { css: ":root{}", tokens: {}, fallbacks: [], problems: [] },
+    "plugin:kernkraft-tauri|list_dir": [],
+    "plugin:kernkraft-tauri|watch_dir": null,
+    "plugin:kernkraft-tauri|unwatch_dir": null,
+    "plugin:kernkraft-tauri|user_dirs": { home: { k: "Utf8", v: "/home/tester/docs" }, dirs: [] },
+    "plugin:kernkraft-tauri|theme_get": { css: ":root{}", tokens: {}, fallbacks: [], problems: [] },
   });
   const errors: string[] = [];
   page.on("console", (message) => {

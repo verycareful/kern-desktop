@@ -18,7 +18,7 @@ describe("textSave", () => {
 
   test("passes_the_stamp_to_invoke_as_given", async () => {
     await textSave(PATH, "body", "lf", false, "s1:opened");
-    expect(invoke).toHaveBeenCalledWith("plugin:kernkraft|text_save", {
+    expect(invoke).toHaveBeenCalledWith("plugin:kernkraft-tauri|text_save", {
       path: PATH,
       text: "body",
       ending: "lf",
@@ -30,7 +30,7 @@ describe("textSave", () => {
   test("passes_a_deliberate_null_stamp_as_null", async () => {
     await textSave(PATH, "body", "crlf", true, null);
     expect(invoke).toHaveBeenCalledWith(
-      "plugin:kernkraft|text_save",
+      "plugin:kernkraft-tauri|text_save",
       expect.objectContaining({ stamp: null })
     );
   });

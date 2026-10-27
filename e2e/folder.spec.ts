@@ -23,10 +23,10 @@ const COMMON = {
     view_mode: "list",
     ...(args.patch as object),
   }),
-  "plugin:kernkraft|user_dirs": { home: { k: "Utf8", v: "/home/tester/docs" }, dirs: [] },
-  "plugin:kernkraft|theme_get": { css: ":root{}", tokens: {}, fallbacks: [], problems: [] },
-  "plugin:kernkraft|watch_dir": null,
-  "plugin:kernkraft|unwatch_dir": null,
+  "plugin:kernkraft-tauri|user_dirs": { home: { k: "Utf8", v: "/home/tester/docs" }, dirs: [] },
+  "plugin:kernkraft-tauri|theme_get": { css: ":root{}", tokens: {}, fallbacks: [], problems: [] },
+  "plugin:kernkraft-tauri|watch_dir": null,
+  "plugin:kernkraft-tauri|unwatch_dir": null,
 };
 
 const rows = (page: Page) => page.getByTestId("file-row");
@@ -34,7 +34,7 @@ const rows = (page: Page) => page.getByTestId("file-row");
 test("navigates_breadcrumb_and_back", async ({ page, mockTauri }) => {
   await mockTauri({
     ...COMMON,
-    "plugin:kernkraft|list_dir": (args: Record<string, unknown>) => {
+    "plugin:kernkraft-tauri|list_dir": (args: Record<string, unknown>) => {
       const file = (dir: string, name: string) => ({
         path: { k: "Utf8", v: `${dir}/${name}` },
         name,
@@ -89,7 +89,7 @@ test("navigates_breadcrumb_and_back", async ({ page, mockTauri }) => {
 test("scrolls_100k_rows", async ({ page, mockTauri }) => {
   await mockTauri({
     ...COMMON,
-    "plugin:kernkraft|list_dir": () =>
+    "plugin:kernkraft-tauri|list_dir": () =>
       Array.from({ length: 100_000 }, (_, i) => ({
         path: { k: "Utf8", v: `/home/tester/docs/file${i}.txt` },
         name: `file${i}.txt`,
@@ -117,7 +117,7 @@ test("scrolls_100k_rows", async ({ page, mockTauri }) => {
 test("hidden_toggle_ctrl_h", async ({ page, mockTauri }) => {
   await mockTauri({
     ...COMMON,
-    "plugin:kernkraft|list_dir": (args: Record<string, unknown>) => {
+    "plugin:kernkraft-tauri|list_dir": (args: Record<string, unknown>) => {
       const e = (name: string) => ({
         path: { k: "Utf8", v: `/home/tester/docs/${name}` },
         name,
@@ -150,7 +150,7 @@ test.describe("non-ASCII names", () => {
   test("sorts_100k_non_ascii_names_without_holding_up_a_frame", async ({ page, mockTauri }) => {
     await mockTauri({
       ...COMMON,
-      "plugin:kernkraft|list_dir": () => {
+      "plugin:kernkraft-tauri|list_dir": () => {
         const prefixes = ["é", "e", "z", "ä", "a", "日", "ß"];
         return Array.from({ length: 100_000 }, (_, i) => {
           const name = `${prefixes[i % 7]}file${(i * 7919) % 100000}-${i}.txt`;
