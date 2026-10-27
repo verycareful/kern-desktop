@@ -11,6 +11,7 @@ import { formatDate, formatSize } from "./format";
 import type { ItemsProps } from "./FileList";
 import { CARD, columnsFor } from "./grid-layout";
 import { thumbSizeFor, useThumbnails, type ThumbState } from "./useThumbnails";
+import { useRestoredScroll } from "./restore-scroll";
 import { useRubberBand } from "./useRubberBand";
 
 const ROW_PITCH = CARD.height + CARD.gap;
@@ -25,6 +26,8 @@ export function FileGrid(
     rootRef: React.RefObject<HTMLDivElement | null>;
     /** Counts keyboard moves of the cursor; each one scrolls the cursor into view. */
     revealTick: number;
+    /** The offset a tab view kept, put back when the grid mounts (R56). */
+    initialScroll: number;
   }
 ) {
   const { entries, sel } = props;
@@ -32,17 +35,21 @@ export function FileGrid(
   const scroller = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
+  const [measured, setMeasured] = useState(false);
   const columns = columnsFor(width);
 
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
     setWidth(el.clientWidth || el.getBoundingClientRect().width || 800);
+    setMeasured(true);
     if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => setWidth(el.clientWidth));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  useRestoredScroll(scroller, props.initialScroll, measured);
 
   const { onColumns } = props;
   useEffect(() => onColumns(columns), [columns, onColumns]);
@@ -123,6 +130,7 @@ export function FileGrid(
       <div
         ref={scroller}
         className="kern-scroll"
+        data-testid="folder-scroll"
         onPointerDown={onPointerDown}
         onContextMenu={(e) =>
           !(e.target as Element).closest("[data-item]") && props.onContextMenu(null, e)

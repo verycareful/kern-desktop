@@ -27,10 +27,24 @@ import { SORT_IN_WORKER_ABOVE, createSorter, type Sorter } from "./sort-async";
 
 export type Phase = "loading" | "ready" | "error" | "gone";
 
+/** A selection kept by path (R56), to put back on the first listing of `pathKey`. */
+export interface SeedSel {
+  pathKey: string;
+  selected: readonly string[];
+  anchor: string | null;
+  cursor: string | null;
+}
+
 export interface FolderOptions {
   hidden: boolean;
   sortBy: SortBy;
   sortDir: SortDir;
+  /**
+   * Read when the view mounts. It is applied to the first listing, only if that
+   * is the folder it was taken in, and then dropped: a later listing, or a
+   * listing of another folder, never sees it.
+   */
+  seed?: SeedSel | null;
 }
 
 interface Core {
@@ -101,6 +115,19 @@ function remap(sel: Sel, from: readonly WireEntry[], to: readonly WireEntry[]): 
   return { selected, anchor: index(sel.anchor), cursor: index(sel.cursor) };
 }
 
+/** The selection `seed` names, as indices into `entries`; what is no longer listed is left out. */
+function seedSel(seed: SeedSel, entries: readonly WireEntry[]): Sel {
+  const at = new Map<string, number>();
+  entries.forEach((e, i) => at.set(pathKey(e.path), i));
+  const selected = new Set<number>();
+  for (const k of seed.selected) {
+    const i = at.get(k);
+    if (i !== undefined) selected.add(i);
+  }
+  const one = (k: string | null) => (k === null ? null : (at.get(k) ?? null));
+  return { selected, anchor: one(seed.anchor), cursor: one(seed.cursor) };
+}
+
 /**
  * The nearest ancestor of `path` that lists, found by walking up with
  * list_dir (the one command that answers "is this readable folder there").
@@ -141,6 +168,7 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
     },
     []
   );
+  const seed = useRef(opts.seed ?? null);
   const resortSeq = useRef(0);
   const reload = useRef<() => void>(() => undefined);
   // The last unwatch sent for this tab's key. Every watch and unwatch of the
@@ -243,12 +271,16 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
           if (!alive || mine !== seq) return false;
         }
         rawRef.current = raw;
+        // The kept selection goes onto the first listing, if it is of the folder it was kept in.
+        const kept = seed.current;
+        seed.current = null;
+        const seeded = kept !== null && kept.pathKey === pathK ? seedSel(kept, entries) : null;
         setCore((c) => ({
           ...c,
           phase: "ready",
           raw,
           entries,
-          sel: remap(c.sel, c.entries, entries),
+          sel: seeded ?? remap(c.sel, c.entries, entries),
           sorting: false,
           sortError,
           error: null,

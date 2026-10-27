@@ -10,10 +10,11 @@ import { StatusBar } from "./StatusBar";
 import { TabBar } from "./TabBar";
 import "./shell.css";
 
-// Design 4.1: the tab row and the file manager fill the left two thirds, and
-// Pinned and Recent run the full height of the window on the right third. In
-// a document tab (4.3) the tab row spans the window and both panels are folded
-// to stubs that slide them over the document. The status bar spans the bottom.
+// Design 4.1 and R55: the places strip and Pinned and Recent run the full
+// height of the window (the strip on the left, Pinned and Recent on the right
+// third); the tab row sits over the folder area between them. In a document tab
+// (4.3) the tab row spans the window and both panels are folded to stubs that
+// slide them over the document. The status bar spans the bottom.
 export default function MainWindow(props: { openingHome?: boolean }) {
   useShortcuts();
   const tab = useTabs((s) => activeTab(s));

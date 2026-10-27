@@ -16,11 +16,31 @@ export type FolderTab = {
 export type DocTab = { id: string; kind: "doc"; path: WirePath; dirty: boolean };
 export type Tab = FolderTab | DocTab;
 
+/**
+ * What a folder tab's view keeps while another tab is shown (R56): the scroll
+ * offset, the selection and the location bar. Items are named by pathKey, so
+ * they are found again whatever order the listing comes back in. `pathKey` is
+ * the folder it was taken in; it is applied to that folder only.
+ */
+export interface FolderViewState {
+  pathKey: string;
+  scrollTop: number;
+  selected: string[];
+  anchor: string | null;
+  cursor: string | null;
+  /** The open location bar and its text, or null when the breadcrumb is shown. */
+  location: { text: string } | null;
+}
+
 export interface TabsState {
   tabs: Tab[];
   activeId: string | null;
   /** The folder tab that was active last; see recentFolderTab. */
   lastFolderId: string | null;
+  /** The saved view of each folder tab that is not shown, by tab id. */
+  views: Record<string, FolderViewState>;
+  /** Keep a folder tab's view; ignored for a tab that is gone (a view torn down by its tab's close). */
+  saveView(id: string, view: FolderViewState): void;
   /** Navigate the active folder tab, or open a folder tab when asked to or when the active tab is not a folder. */
   openFolder(path: WirePath, inNewTab: boolean): void;
   /** Navigate the folder tab `id` (not necessarily the active one) to `path`. */
@@ -51,13 +71,27 @@ export function activeTab(s: Pick<TabsState, "tabs" | "activeId">): Tab | null {
 
 type SetTabs = (fn: (s: TabsState) => Partial<TabsState>) => void;
 
+/** The state without the saved view of tab `id`. */
+function withoutView(views: Record<string, FolderViewState>, id: string) {
+  const rest = { ...views };
+  delete rest[id];
+  return rest;
+}
+
+/** A folder tab moved to another folder: it starts fresh there, so its saved view goes. */
+function moveTab(s: TabsState, moved: FolderTab): Partial<TabsState> {
+  return {
+    tabs: s.tabs.map((t) => (t.id === moved.id ? moved : t)),
+    views: withoutView(s.views, moved.id),
+  };
+}
+
 function updateActiveFolder(set: SetTabs, step: (t: FolderTab) => FolderTab | null) {
   set((s) => {
     const cur = activeTab(s);
     if (!cur || cur.kind !== "folder") return {};
     const nextTab = step(cur);
-    if (!nextTab) return {};
-    return { tabs: s.tabs.map((t) => (t.id === cur.id ? nextTab : t)) };
+    return nextTab ? moveTab(s, nextTab) : {};
   });
 }
 
@@ -86,6 +120,10 @@ export const useTabs = create<TabsState>()((set) => ({
   tabs: [],
   activeId: null,
   lastFolderId: null,
+  views: {},
+  saveView(id, view) {
+    set((s) => (s.tabs.some((t) => t.id === id) ? { views: { ...s.views, [id]: view } } : {}));
+  },
   openFolder(path, inNewTab) {
     set((s) => {
       const cur = activeTab(s);
@@ -100,7 +138,7 @@ export const useTabs = create<TabsState>()((set) => ({
         return { tabs: [...s.tabs, tab], activeId: tab.id };
       }
       const moved = visit(cur, path);
-      return moved ? { tabs: s.tabs.map((t) => (t.id === cur.id ? moved : t)) } : {};
+      return moved ? moveTab(s, moved) : {};
     });
   },
   navigateTab(id, path) {
@@ -108,7 +146,7 @@ export const useTabs = create<TabsState>()((set) => ({
       const t = s.tabs.find((x) => x.id === id);
       if (!t || t.kind !== "folder") return {};
       const moved = visit(t, path);
-      return moved ? { tabs: s.tabs.map((x) => (x.id === id ? moved : x)) } : {};
+      return moved ? moveTab(s, moved) : {};
     });
   },
   openDoc(path) {
@@ -125,8 +163,9 @@ export const useTabs = create<TabsState>()((set) => ({
       const i = s.tabs.findIndex((t) => t.id === id);
       if (i < 0) return {};
       const tabs = s.tabs.filter((t) => t.id !== id);
-      if (id !== s.activeId) return { tabs };
-      return { tabs, activeId: (tabs[i] ?? tabs[i - 1])?.id ?? null };
+      const views = withoutView(s.views, id);
+      if (id !== s.activeId) return { tabs, views };
+      return { tabs, views, activeId: (tabs[i] ?? tabs[i - 1])?.id ?? null };
     });
   },
   activate(id) {

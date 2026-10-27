@@ -165,3 +165,52 @@ test("the_last_folder_tab_is_kept_in_the_store", () => {
   useTabs.setState({ tabs: [], activeId: null, lastFolderId: null });
   expect(recentFolderTab(s())).toBeNull();
 });
+
+// R56: the per-tab view state of a folder tab (scroll, selection, location bar).
+const view = (key: string) => ({
+  pathKey: key,
+  scrollTop: 40,
+  selected: [key + "/a"],
+  anchor: null,
+  cursor: null,
+  location: null,
+});
+
+test("a_saved_view_is_held_for_a_tab_and_dropped_when_it_closes", () => {
+  s().openFolder(p("/home/a"), false);
+  const id = s().activeId!;
+  s().saveView(id, view("/home/a"));
+  expect(s().views[id]).toEqual(view("/home/a"));
+  s().close(id);
+  expect(s().views[id]).toBeUndefined();
+  // A view that unmounts because its tab closed saves after the close: ignored.
+  s().saveView(id, view("/home/a"));
+  expect(s().views[id]).toBeUndefined();
+});
+
+test("navigating_a_tab_drops_its_saved_view", () => {
+  s().openFolder(p("/home/a"), false);
+  const id = s().activeId!;
+  for (const go of [
+    () => s().openFolder(p("/home/a/b"), false),
+    () => s().navigateTab(id, p("/home/a/c")),
+    () => s().back(),
+    () => s().forward(),
+    () => s().up(),
+  ]) {
+    s().saveView(id, view("x"));
+    go();
+    expect(s().views[id]).toBeUndefined();
+  }
+});
+
+test("a_view_is_not_dropped_by_other_tabs_moving_or_by_switching", () => {
+  s().openFolder(p("/home/a"), false);
+  const a = s().activeId!;
+  s().openFolder(p("/home/b"), true);
+  s().saveView(a, view("/home/a"));
+  s().openFolder(p("/home/b/c"), false);
+  s().activate(a);
+  s().next();
+  expect(s().views[a]).toEqual(view("/home/a"));
+});

@@ -288,7 +288,8 @@ test("a_dir_gone_with_an_error_relists_and_reports_it", async () => {
     void handlers["kernkraft://dir-gone"]!({ key: "tab-1", error: denied });
   });
   await waitFor(() => expect(result.current.watchError).toEqual(denied));
-  expect(result.current.phase).toBe("ready");
+  // The error is set before the relist answers, so wait for the listing.
+  await waitFor(() => expect(result.current.phase).toBe("ready"));
 });
 
 test("a_slow_old_listing_never_overwrites_a_newer_one", async () => {

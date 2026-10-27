@@ -9,6 +9,7 @@ import { fileType, isFolder } from "./file-type";
 import { formatDate, formatSize } from "./format";
 import type { Sel } from "./selection";
 import type { SortBy, SortDir } from "./sort";
+import { useRestoredScroll } from "./restore-scroll";
 import { useRubberBand } from "./useRubberBand";
 
 /** The column header's height. */
@@ -65,6 +66,8 @@ export function FileList(
     rootRef: React.RefObject<HTMLDivElement | null>;
     /** Counts keyboard moves of the cursor; each one scrolls the cursor into view. */
     revealTick: number;
+    /** The offset a tab view kept, put back when the list mounts (R56). */
+    initialScroll: number;
   }
 ) {
   const { entries, sel, rowHeight } = props;
@@ -79,6 +82,7 @@ export function FileList(
     scrollMargin: HEADER_HEIGHT,
     initialRect: { width: 600, height: 400 },
   });
+  useRestoredScroll(scroller, props.initialScroll);
 
   // A keyboard move brings the cursor into view; a click or a relist does not.
   const cursor = useRef(sel.cursor);

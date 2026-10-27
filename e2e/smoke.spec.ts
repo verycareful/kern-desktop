@@ -35,14 +35,26 @@ test("boots_with_mocked_ipc", async ({ page, mockTauri }) => {
   await expect(page.getByTestId("side-panel")).toBeVisible();
   await expect(page.getByTestId("status-bar")).toContainText("/home/tester/docs");
 
-  // Design 4.1 layout: the tab row is over the left two thirds, the side panel
-  // runs from the window top, the status bar spans the bottom.
+  // R55 layout: the places strip runs from the window top down to the status
+  // bar, the tab row sits over the folder area (its left edge is the folder
+  // area's) and ends at the right third, which runs from the window top; the
+  // status bar spans the bottom.
   const tabBar = (await page.getByTestId("tab-bar").boundingBox())!;
+  const places = (await page.getByTestId("places-strip").boundingBox())!;
+  const area = (await page.getByTestId("folder-area").boundingBox())!;
   const side = (await page.getByTestId("side-panel").boundingBox())!;
   const status = (await page.getByTestId("status-bar").boundingBox())!;
-  expect(side.y).toBeLessThanOrEqual(tabBar.y);
-  expect(tabBar.x + tabBar.width).toBeLessThanOrEqual(side.x + 1);
+  expect(places.y).toBe(0);
+  expect(places.y + places.height).toBeCloseTo(status.y, 0);
+  expect(tabBar.x).toBeCloseTo(area.x, 0);
+  expect(tabBar.x).toBeCloseTo(places.x + places.width, 0);
+  expect(tabBar.y).toBeLessThanOrEqual(places.y);
+  expect(tabBar.x + tabBar.width).toBeCloseTo(side.x, 0);
+  expect(tabBar.y + tabBar.height).toBeCloseTo(area.y, 0);
+  expect(side.y).toBe(0);
+  expect(side.y + side.height).toBeCloseTo(status.y, 0);
   expect(Math.abs(side.width / (side.x + side.width) - 1 / 3)).toBeLessThan(0.02);
+  expect(status.x).toBe(0);
   expect(status.width).toBeGreaterThanOrEqual(side.x + side.width - 1);
 
   // Alt+Up goes to the parent, Alt+Left comes back (actions table shortcuts).

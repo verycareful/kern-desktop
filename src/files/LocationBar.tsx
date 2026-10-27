@@ -12,11 +12,16 @@ import { parseLocation } from "./path-input";
 // from, so a folder whose name is not UTF-8 is not turned into another path.
 export function LocationBar(props: {
   path: WirePath;
+  /** Text to show instead of the path (a bar reopened with what was typed, R56). */
+  initialText?: string;
+  /** Every change to the text, so the view can keep it. */
+  onText?(text: string): void;
   onNavigate(path: WirePath): void;
   onClose(): void;
 }) {
   const [initial] = useState(() => displayPath(props.path));
-  const [text, setText] = useState(initial);
+  const [resumed] = useState(props.initialText);
+  const [text, setText] = useState(resumed ?? initial);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -25,11 +30,13 @@ export function LocationBar(props: {
   useEffect(() => {
     alive.current = true;
     input.current?.focus();
-    input.current?.select();
+    if (resumed === undefined) input.current?.select();
+    // Typed text is continued, not replaced by the next key.
+    else input.current?.setSelectionRange(resumed.length, resumed.length);
     return () => {
       alive.current = false;
     };
-  }, []);
+  }, [resumed]);
 
   const submit = async () => {
     setError(null);
@@ -68,7 +75,10 @@ export function LocationBar(props: {
         spellCheck={false}
         value={text}
         disabled={busy}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value);
+          props.onText?.(e.target.value);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();

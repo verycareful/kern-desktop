@@ -2,10 +2,10 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FolderOpen, LayoutGrid, List, X } from "lucide-react";
-import { pathKey, toWireError, type WireError, type WirePath } from "../ipc";
+import { displayPath, pathKey, toWireError, type WireError, type WirePath } from "../ipc";
 import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
 import { actions, currentContext, getAction, runAction } from "../keys/actions";
-import { useTabs, type FolderTab } from "../store/tabs";
+import { useTabs, type FolderTab, type FolderViewState } from "../store/tabs";
 import { Breadcrumb } from "./Breadcrumb";
 import { FileGrid } from "./FileGrid";
 import { FileList } from "./FileList";
@@ -77,13 +77,31 @@ export function FolderView(props: { tab: FolderTab }) {
 function LoadedFolder({ tab }: { tab: FolderTab }) {
   const { showHidden, viewMode, density, error: settingsError } = useViewSettings();
   const sort = useFolderUi((s) => s.sort[tab.id] ?? DEFAULT_SORT);
+  const key = pathKey(tab.path);
+  // What this tab's view kept when it was last unmounted (R56). It is read once
+  // at mount, applies to the folder it was kept in, and is dropped for good on
+  // the first move to another folder: coming back by Back starts fresh too.
+  const [kept, setKept] = useState<FolderViewState | null>(() => {
+    const saved = useTabs.getState().views[tab.id];
+    return saved && saved.pathKey === key ? saved : null;
+  });
+  const keptHere = kept && kept.pathKey === key ? kept : null;
   const folder = useFolder(tab.id, tab.path, {
     hidden: showHidden,
     sortBy: sort.by,
     sortDir: sort.dir,
+    seed: keptHere,
   });
   const { entries, sel, dispatch, refresh } = folder;
-  const [editing, setEditing] = useState(false);
+  // Used up by the first listing (the list takes its scroll offset as it mounts)
+  // or by a move to another folder, whichever comes first.
+  useEffect(() => {
+    if (kept && (folder.phase === "ready" || kept.pathKey !== key)) setKept(null);
+  }, [kept, key, folder.phase]);
+  const [editing, setEditing] = useState(keptHere?.location != null);
+  // What the location bar was reopened with, and the text typed in it since (kept for the view state).
+  const [resumeText, setResumeText] = useState(keptHere?.location?.text);
+  const locationText = useRef<string | undefined>(resumeText);
   const [openErrors, setOpenErrors] = useState<WireError[]>([]);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [columns, setColumns] = useState(1);
@@ -116,6 +134,44 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   useEffect(() => {
     latest.current = { entries, sel, viewMode, columns };
   });
+
+  // The view state is saved as the view unmounts (a tab switch, or the
+  // folder panel folding away), from refs because the DOM is gone by then.
+  const scrollTop = useRef(keptHere?.scrollTop ?? 0);
+  const onScrollCapture = useCallback((e: React.UIEvent) => {
+    if ((e.target as Element).classList.contains("kern-scroll")) {
+      scrollTop.current = (e.target as Element).scrollTop;
+    }
+  }, []);
+  // Reset with the folder: a new folder starts at the top.
+  useEffect(() => {
+    if (kept === null || kept.pathKey !== key) scrollTop.current = 0;
+  }, [kept, key]);
+  const ending = useRef({ phase: folder.phase, editing, key, path: tab.path });
+  useEffect(() => {
+    ending.current = { phase: folder.phase, editing, key, path: tab.path };
+  });
+  useEffect(
+    () => () => {
+      const { entries: es, sel: s } = latest.current;
+      const end = ending.current;
+      // A view that never listed has nothing new to keep; what was kept stays.
+      if (end.phase !== "ready") return;
+      const name = (i: number | null) => {
+        const e = i === null ? undefined : es[i];
+        return e ? pathKey(e.path) : null;
+      };
+      useTabs.getState().saveView(tab.id, {
+        pathKey: end.key,
+        scrollTop: scrollTop.current,
+        selected: [...s.selected].sort((x, y) => x - y).flatMap((i) => name(i) ?? []),
+        anchor: name(s.anchor),
+        cursor: name(s.cursor),
+        location: end.editing ? { text: locationText.current ?? displayPath(end.path) } : null,
+      });
+    },
+    [tab.id]
+  );
 
   const open = useCallback(
     async (list: typeof entries, newWindow: boolean) => {
@@ -257,7 +313,6 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     onBand,
     onBackgroundClick,
   };
-  const key = pathKey(tab.path);
 
   let body;
   switch (folder.phase) {
@@ -308,6 +363,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
             onColumns={setColumns}
             rootRef={root}
             revealTick={revealTick}
+            initialScroll={keptHere?.scrollTop ?? 0}
           />
         ) : (
           <FileList
@@ -322,6 +378,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
             }}
             rootRef={root}
             revealTick={revealTick}
+            initialScroll={keptHere?.scrollTop ?? 0}
           />
         );
   }
@@ -351,9 +408,13 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         {editing ? (
           <LocationBar
             path={tab.path}
+            initialText={resumeText}
+            onText={(text) => (locationText.current = text)}
             onNavigate={navigate}
             onClose={() => {
               setEditing(false);
+              setResumeText(undefined);
+              locationText.current = undefined;
               root.current?.focus();
             }}
           />
@@ -443,7 +504,9 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
           Sorting…
         </p>
       )}
-      <div className="kern-files-body">{body}</div>
+      <div className="kern-files-body" onScrollCapture={onScrollCapture}>
+        {body}
+      </div>
       {menu && (
         <ActionMenu
           sections={CONTEXT_MENU}

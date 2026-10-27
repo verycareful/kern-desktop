@@ -46,9 +46,9 @@ function NavButton(props: { id: string; icon: typeof ArrowLeft }) {
 type OpenMenu =
   { kind: "tab"; x: number; y: number; targetId: string } | { kind: "app"; x: number; y: number };
 
-// Design 4.1: the tab row and the location controls sit over the left two
-// thirds. The breadcrumb and editable location bar arrive with the folder
-// area (Task 21).
+// Design 4.1 and R55: the tab row and the navigation buttons sit over the
+// folder area. The breadcrumb and editable location bar are in the folder
+// view, under this row.
 export function TabBar() {
   const { tabs, activeId, activate } = useTabs();
   const active = useTabs((s) => activeTab(s));

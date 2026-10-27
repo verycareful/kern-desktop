@@ -26,9 +26,11 @@
 }
 
 /*
- * Design 4.1: columns two to one. In a folder tab the tab row and the places
- * panel stack in the left column and the side panel spans both rows of the
- * right; in a document tab the tab row spans both columns.
+ * Design 4.1 and R55. A folder tab: the places strip and the side panel run
+ * from the window top down to the status bar; the tab row sits over the folder
+ * area only, starting at the strip's right edge and ending at the right third.
+ * The left two thirds are the strip and the folder area; the third column is
+ * the right third. A document tab: the tab row spans both columns.
  */
 .kern-main {
   display: grid;
@@ -38,23 +40,35 @@
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+.kern-main[data-layout="folder"] {
+  grid-template-columns:
+    var(--shell-places-width)
+    calc(200% / 3 - var(--shell-places-width))
+    minmax(0, 1fr);
+}
+
 .kern-main > .kern-tabbar {
   grid-row: 1;
   grid-column: 1 / -1;
 }
 
 .kern-main[data-layout="folder"] > .kern-tabbar {
+  grid-column: 2;
+}
+
+.kern-main[data-layout="folder"] > .kern-places {
+  grid-row: 1 / span 2;
   grid-column: 1;
 }
 
-.kern-main[data-layout="folder"] > .kern-panel-left {
+.kern-main[data-layout="folder"] > .kern-folder-area {
   grid-row: 2;
-  grid-column: 1;
+  grid-column: 2;
 }
 
 .kern-main[data-layout="folder"] > .kern-panel-right {
   grid-row: 1 / span 2;
-  grid-column: 2;
+  grid-column: 3;
   border-left: 1px solid var(--kern-border);
 }
 
@@ -210,6 +224,7 @@
 }
 
 .kern-places {
+  box-sizing: border-box;
   width: var(--shell-places-width);
   flex: none;
   padding: var(--kern-density-gap);
@@ -219,8 +234,10 @@
 
 .kern-folder-area {
   min-width: 0;
+  min-height: 0;
   flex: 1;
   overflow: auto;
+  background: var(--kern-surface);
 }
 
 .kern-side-section {

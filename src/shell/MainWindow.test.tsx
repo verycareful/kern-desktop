@@ -27,18 +27,22 @@ test("folder_tab_shows_three_regions", () => {
   expect(screen.queryByTestId("stub-right")).toBeNull();
 });
 
-test("tab_row_sits_over_the_left_two_thirds_only", () => {
+test("tab_row_sits_over_the_folder_area_only", () => {
   useTabs.getState().openFolder(p("/home/a"), false);
   render(<MainWindow />);
-  // Design 4.1: the right third runs from the window top, so the side panel is
-  // a sibling of the tab row and the places panel, not inside either; the
-  // status bar is outside the grid that holds them (it spans the whole bottom).
+  // R55: the places strip and the side panel run from the window top, the tab
+  // row sits over the folder area. All four are cells of one grid (the boxes
+  // are asserted in the Playwright smoke test); the status bar is outside the
+  // grid, so it spans the whole bottom.
   const main = screen.getByTestId("main-grid");
   expect(main).toHaveAttribute("data-layout", "folder");
   expect(screen.getByTestId("tab-bar").parentElement).toBe(main);
-  expect(screen.getByTestId("places-panel").parentElement).toBe(main);
+  expect(screen.getByTestId("places-strip").parentElement).toBe(main);
+  expect(screen.getByTestId("folder-area").parentElement).toBe(main);
   expect(screen.getByTestId("side-panel").parentElement).toBe(main);
   expect(main).not.toContainElement(screen.getByTestId("status-bar"));
+  // The strip's top slot is free: nothing in the strip yet.
+  expect(screen.getByTestId("places-strip")).toBeEmptyDOMElement();
 });
 
 test("doc_tab_shows_two_stubs", () => {
