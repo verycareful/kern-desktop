@@ -24,7 +24,9 @@ export type Volume =
   | { kind: "mounted"; key: string; mount: WireMount }
   | { kind: "unmounted"; key: string; device: Device };
 
-export const mountedKey = (m: WireMount) => `m:${pathKey(m.mount_point)}`;
+// A mounted volume is the device and where it is mounted: another device mounted at the same
+// path is another volume.
+export const mountedKey = (m: WireMount) => `m:${m.device}\n${pathKey(m.mount_point)}`;
 export const deviceKey = (d: Device) => `d:${d.object_path}`;
 
 export type VolumeAction = "mount" | "unmount" | "eject";

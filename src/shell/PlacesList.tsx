@@ -72,16 +72,34 @@ export function PlacesList() {
       .catch(() => undefined);
   }, []);
   useEffect(load, [load]);
+  useEffect(() => {
+    const again = () =>
+      void useUserDirs
+        .getState()
+        .refresh()
+        .catch(() => undefined);
+    window.addEventListener("focus", again);
+    return () => window.removeEventListener("focus", again);
+  }, []);
 
   return (
     <section className="kern-places-group" aria-label="Places">
       <h2 className="kern-label kern-places-heading">Places</h2>
-      {error && !dirs && (
+      {error && (
         <div role="alert" className="kern-places-error">
           <span>
-            The places could not be listed: {error.kind}: {error.message}
+            The places could not be {dirs ? "read again" : "listed"}: {error.kind}: {error.message}
           </span>{" "}
-          <button type="button" className="kern-button" onClick={load}>
+          <button
+            type="button"
+            className="kern-button"
+            onClick={() =>
+              void useUserDirs
+                .getState()
+                .refresh()
+                .catch(() => undefined)
+            }
+          >
             Retry
           </button>
         </div>

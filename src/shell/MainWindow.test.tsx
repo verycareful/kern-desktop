@@ -14,6 +14,7 @@ import { actions, appliesTo } from "../keys/actions";
 import { usePanelsStore } from "../store/panels";
 import { useTabs } from "../store/tabs";
 import MainWindow from "./MainWindow";
+import { VOLUME_MENU } from "./volume-menu";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 
@@ -176,7 +177,7 @@ test("every_action_appears_in_a_menu", () => {
     collect();
     // Exactly the actions that apply here, each showing its shortcut, grouped by area.
     const active = useTabs.getState().tabs.find((t) => t.id === useTabs.getState().activeId)!;
-    const applicable = actions.filter((a) => appliesTo(a, active));
+    const applicable = actions.filter((a) => a.when !== "volume" && appliesTo(a, active));
     expect(within(menu).getAllByRole("menuitem")).toHaveLength(applicable.length);
     for (const a of applicable) {
       const item = menu.querySelector(`[data-action-id="${a.id}"]`);
@@ -186,6 +187,8 @@ test("every_action_appears_in_a_menu", () => {
     expect(within(menu).getAllByRole("group").length).toBeGreaterThan(1);
     fireEvent.keyDown(menu, { key: "Escape" });
   }
+  // The volume actions are in the volume's own menu (right-click, Menu key), not the main one.
+  for (const section of VOLUME_MENU) for (const a of section.actions) seen.add(a.id);
   expect([...seen].sort()).toEqual(actions.map((a) => a.id).sort());
 });
 

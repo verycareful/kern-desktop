@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { HardDrive, Usb, X } from "lucide-react";
 import { displayPath, type Device, type WireError } from "../ipc";
 import { formatSize } from "../files/format";
-import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
-import { actions } from "../keys/actions";
+import { ActionMenu } from "../keys/ActionMenu";
 import { showFolder } from "./place-nav";
+import { VOLUME_MENU } from "./volume-menu";
 import { useCurrentPlace } from "./use-current-place";
 import { useVolumes, type Volume } from "./volumes-store";
 
@@ -17,15 +17,6 @@ import { useVolumes, type Volume } from "./volumes-store";
 // on. A volume being worked on shows what is happening and the rest of the
 // window stays usable. A failure is shown beside its volume in UDisks' own
 // words; what an incomplete eject already unmounted is listed too.
-
-const MENU: MenuSection[] = [
-  {
-    title: "Volume",
-    actions: ["volume.unmount", "volume.eject", "volume.mount"].map((id) =>
-      actions.find((a) => a.id === id)!
-    ),
-  },
-];
 
 function errorText(e: WireError): string {
   const base = `${e.kind}: ${e.message}`;
@@ -168,7 +159,17 @@ export function VolumesList() {
       {s.loaded && volumes.length === 0 && !s.loadError && (
         <p className="kern-places-none">No volumes.</p>
       )}
-      {menu && <ActionMenu sections={MENU} x={menu.x} y={menu.y} onClose={() => setMenu(null)} />}
+      {menu && (
+        <ActionMenu
+          sections={VOLUME_MENU}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => {
+            setMenu(null);
+            s.setCurrent(null);
+          }}
+        />
+      )}
     </section>
   );
 }

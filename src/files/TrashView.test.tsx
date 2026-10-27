@@ -88,10 +88,31 @@ test("the_trash_lists_name_original_path_and_deletion_time", async () => {
   }
 });
 
-test("an_empty_trash_says_so_and_disables_emptying", async () => {
+test("an_empty_trash_says_so_and_emptying_checks_a_fresh_listing", async () => {
   await shown([]);
   expect(screen.getByText(/trash is empty/i)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Empty Trash" })).toBeDisabled();
+  // The view may be stale: the button is there, and asks about a listing taken now.
+  fireEvent.click(screen.getByRole("button", { name: "Empty Trash" }));
+  expect(await screen.findByRole("status")).toHaveTextContent(/nothing to delete/i);
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  ipc.trashList.mockResolvedValue({ items: [item("late.txt")], unreadable: [] });
+  fireEvent.click(screen.getByRole("button", { name: "Empty Trash" }));
+  expect(await screen.findByRole("alertdialog")).toHaveTextContent("1 item");
+});
+
+test("two_failures_of_the_same_path_are_both_listed_and_dismissed_one_at_a_time", async () => {
+  await shown([item("a.txt")]);
+  ipc.trashRestore.mockRejectedValue({ kind: "Io", message: "first", path: null, details: null });
+  fireEvent.click(rows()[0]!);
+  fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+  await screen.findByTestId("report-panel");
+  ipc.trashRestore.mockRejectedValue({ kind: "Io", message: "second", path: null, details: null });
+  fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+  await waitFor(() => expect(screen.getAllByTestId("report-panel")).toHaveLength(2));
+  fireEvent.click(screen.getAllByRole("button", { name: /dismiss the report/i })[0]!);
+  const left = screen.getAllByTestId("report-panel");
+  expect(left).toHaveLength(1);
+  expect(left[0]).toHaveTextContent("second");
 });
 
 test("a_trash_that_cannot_be_listed_says_why_and_retries", async () => {

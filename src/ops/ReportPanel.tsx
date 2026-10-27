@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { X } from "lucide-react";
-import { displayPath, type WireError, type WireItemError } from "../ipc";
+import { displayPath, pathKey, type WireError, type WireItemError } from "../ipc";
 import type { Outcome } from "./outcome";
 
 // The least a report must do (Review Focus 5, design 5.7): say what
@@ -25,7 +25,7 @@ function ItemList(props: { heading: string; items: WireItemError[] }) {
       <p className="kern-report-heading">{props.heading}</p>
       <ul>
         {props.items.map((f, i) => (
-          <li key={i} data-testid="report-item">
+          <li key={`${pathKey(f.path)}\n${f.error.kind}\n${i}`} data-testid="report-item">
             <span className="kern-report-path">{displayPath(f.path)}</span>{" "}
             <ErrorLine error={f.error} />
           </li>

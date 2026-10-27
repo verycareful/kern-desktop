@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { WirePath, WireUserDirs } from "../ipc";
 import { useTabs, type FolderTab } from "../store/tabs";
@@ -133,4 +133,32 @@ test("a_volume_holding_the_shown_folder_does_not_also_mark_a_less_specific_place
     "page"
   );
   expect(screen.getByRole("button", { name: "Home" })).not.toHaveAttribute("aria-current");
+});
+
+test("the_user_folders_are_read_again_when_the_window_regains_focus", async () => {
+  ipc.userDirs.mockResolvedValue(dirs(["documents", "music"]));
+  render(<PlacesList />);
+  await screen.findByRole("button", { name: "Music" });
+  // Music is removed, Downloads is created; two focus events share one lookup.
+  ipc.userDirs.mockClear();
+  ipc.userDirs.mockResolvedValue(dirs(["documents", "download"]));
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("focus"));
+  });
+  await screen.findByRole("button", { name: "Downloads" });
+  expect(screen.queryByRole("button", { name: "Music" })).toBeNull();
+  expect(ipc.userDirs).toHaveBeenCalledTimes(1);
+});
+
+test("a_failed_reread_keeps_the_places_and_shows_the_error", async () => {
+  ipc.userDirs.mockResolvedValue(dirs(["documents"]));
+  render(<PlacesList />);
+  await screen.findByRole("button", { name: "Documents" });
+  ipc.userDirs.mockRejectedValue({ kind: "Io", message: "gone away", path: null, details: null });
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+  });
+  expect(await screen.findByRole("alert")).toHaveTextContent("gone away");
+  expect(screen.getByRole("button", { name: "Documents" })).toBeInTheDocument();
 });

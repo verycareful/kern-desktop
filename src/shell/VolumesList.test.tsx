@@ -14,7 +14,7 @@ const ipc = vi.hoisted(() => ({
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
 import { VolumesList } from "./VolumesList";
-import { useVolumes } from "./volumes-store";
+import { mountedKey, useVolumes } from "./volumes-store";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 const mount = (label: string, over: Partial<WireMount> = {}): WireMount => ({
@@ -184,15 +184,38 @@ test("the_menu_key_opens_the_volume_menu_and_its_actions_run_on_that_volume", as
   await waitFor(() => expect(ipc.volumeUnmount).toHaveBeenCalledWith(p("/run/media/t/OTHER")));
 });
 
-test("the_last_focused_volume_stays_the_target_while_the_main_menu_is_open", async () => {
+test("volume_actions_are_not_in_the_main_menu_but_in_the_volumes_own_menu", async () => {
+  const { menuSections } = await import("../keys/actions");
+  useTabs.getState().openFolder(p("/home/t"), false);
+  const tab = useTabs.getState().tabs[0]!;
+  const ids = menuSections(tab).flatMap((sec) => sec.actions.map((a) => a.id));
+  for (const id of ["volume.mount", "volume.unmount", "volume.eject"]) {
+    expect(ids).not.toContain(id);
+  }
   ipc.volumesList.mockResolvedValue(volumes({ mounted: [mount("STICK")] }));
   render(<VolumesList />);
-  const stick = await screen.findByRole("button", { name: "STICK" });
-  stick.focus();
-  // Opening the main menu moves the focus away from the row.
-  stick.blur();
-  const { currentContext, getAction, isEnabled } = await import("../keys/actions");
-  expect(isEnabled(getAction("volume.unmount"), currentContext())).toBe(true);
+  const menu = await openMenu("STICK");
+  for (const name of [/unmount/i, /eject/i, /mount/i]) {
+    expect(within(menu).getAllByRole("menuitem", { name }).length).toBeGreaterThan(0);
+  }
+});
+
+test("the_context_menu_acts_on_the_right_clicked_device_not_the_focused_one", async () => {
+  ipc.volumesList.mockResolvedValue(volumes({ mounted: [mount("STICK"), mount("OTHER")] }));
+  ipc.volumeUnmount.mockResolvedValue(undefined);
+  render(<VolumesList />);
+  (await screen.findByRole("button", { name: "STICK" })).focus();
+  const menu = await openMenu("OTHER");
+  fireEvent.click(within(menu).getByRole("menuitem", { name: /unmount/i }));
+  await waitFor(() => expect(ipc.volumeUnmount).toHaveBeenCalledWith(p("/run/media/t/OTHER")));
+  expect(ipc.volumeUnmount).toHaveBeenCalledTimes(1);
+});
+
+test("a_different_device_at_the_same_mount_path_is_a_different_volume", () => {
+  const a = mount("X", { device: "/dev/sdb1", mount_point: p("/mnt/x") });
+  const b = mount("X", { device: "/dev/sdc1", mount_point: p("/mnt/x") });
+  expect(mountedKey(a)).not.toBe(mountedKey(b));
+  expect(mountedKey(a)).toBe(mountedKey({ ...a }));
 });
 
 test("the_most_specific_volume_is_marked_current", async () => {

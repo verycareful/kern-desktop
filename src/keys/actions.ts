@@ -26,7 +26,9 @@ import { useVolumes } from "../shell/volumes-store";
 // for the physical key (KeyboardEvent.code KeyW / Digit1), so Ctrl+W still
 // works there.
 
-export type ActionContextKind = "folder" | "doc" | "trash";
+// "volume" actions are aimed at a volume of the places strip, not at a tab: they run from the
+// volume's own menu and are not part of the main menu.
+export type ActionContextKind = "folder" | "doc" | "trash" | "volume";
 
 export type ActionContext = {
   tabs: TabsState;
@@ -362,9 +364,8 @@ const trashActions: Action[] = [
 
 // ---- the places strip: Trash and volumes (design 4.1, 5.2, 5.3) ----
 
-// The volume actions are aimed at the volume last focused in the strip or last
-// given a menu (useVolumes.current), which the main menu keeps although opening it
-// moves the focus; with no such volume they are greyed.
+// The volume actions are aimed at the volume whose menu is open or that has the focus
+// (useVolumes.current), and are in that volume's own menu only; with none they are greyed.
 function volumeIs(kind: "mounted" | "unmounted", remove?: boolean): boolean {
   const s = useVolumes.getState();
   const v = s.currentVolume();
@@ -391,7 +392,7 @@ const placeActions: Action[] = [
     label: "Mount",
     area: "Volumes",
     keys: [],
-    when: "any",
+    when: "volume",
     enabled: () => volumeIs("unmounted"),
     run: () => runOnVolume("mount"),
   },
@@ -400,7 +401,7 @@ const placeActions: Action[] = [
     label: "Unmount",
     area: "Volumes",
     keys: [],
-    when: "any",
+    when: "volume",
     enabled: () => volumeIs("mounted"),
     run: () => runOnVolume("unmount"),
   },
@@ -412,7 +413,7 @@ const placeActions: Action[] = [
     label: "Eject",
     area: "Volumes",
     keys: [],
-    when: "any",
+    when: "volume",
     enabled: () => volumeIs("mounted", true),
     run: () => runOnVolume("eject"),
   },
@@ -435,7 +436,7 @@ export function getAction(id: string): Action {
 }
 
 export function appliesTo(a: Action, tab: Tab | null): boolean {
-  return a.when === "any" || a.when === tab?.kind;
+  return a.when === "any" || a.when === "volume" || a.when === tab?.kind;
 }
 
 export function isEnabled(a: Action, ctx: ActionContext): boolean {
@@ -452,7 +453,7 @@ export function runAction(a: Action, ctx: ActionContext): boolean {
 /** The actions that apply to a tab, grouped by area in table order. */
 export function menuSections(tab: Tab | null): { title: string; actions: Action[] }[] {
   const sections: { title: string; actions: Action[] }[] = [];
-  for (const a of actions.filter((x) => appliesTo(x, tab))) {
+  for (const a of actions.filter((x) => x.when !== "volume" && appliesTo(x, tab))) {
     const s = sections.find((x) => x.title === a.area);
     if (s) s.actions.push(a);
     else sections.push({ title: a.area, actions: [a] });

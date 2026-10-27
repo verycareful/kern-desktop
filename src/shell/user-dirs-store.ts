@@ -5,14 +5,16 @@ import { toWireError, userDirs, type WireError, type WireUserDirs } from "../ipc
 
 // Home and the user's folders (xdg-user-dirs) change rarely, and the places
 // strip is built again each time the window switches between layouts, so they
-// are looked up once and kept. A failed lookup is not kept: the next call
-// asks again.
+// are looked up once and kept, and read again when the window regains focus (a folder created or removed meanwhile). A failed lookup is not kept: the next call
+// asks again, and a failed re-read leaves the folders shown with the error beside them.
 
 interface UserDirsState {
   dirs: WireUserDirs | null;
   error: WireError | null;
   /** The folders; asks the backend only when none are kept (a call in flight is shared). */
   load(): Promise<WireUserDirs>;
+  /** Asks the backend again, keeping the folders shown until the answer; calls share one lookup. */
+  refresh(): Promise<WireUserDirs>;
   reset(): void;
 }
 
@@ -23,7 +25,9 @@ export const useUserDirs = create<UserDirsState>()((set, get) => ({
   error: null,
   load() {
     const kept = get().dirs;
-    if (kept) return Promise.resolve(kept);
+    return kept ? Promise.resolve(kept) : get().refresh();
+  },
+  refresh() {
     inflight ??= userDirs().then(
       (dirs) => {
         inflight = null;

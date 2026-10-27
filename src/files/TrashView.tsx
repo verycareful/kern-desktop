@@ -112,7 +112,9 @@ export function TrashView(props: { tab: TrashTab }) {
   const [unreadable, setUnreadable] = useState<WireItemError[]>([]);
   const [sel, setSel] = useState<Sel>(empty);
   const [working, setWorking] = useState<Working | null>(null);
-  const [outcomes, setOutcomes] = useState<Outcome[]>([]);
+  const [outcomes, setOutcomes] = useState<{ id: number; outcome: Outcome }[]>([]);
+  const nextOutcome = useRef(0);
+  const [emptyNote, setEmptyNote] = useState(false);
   const [asking, setAsking] = useState<Question | null>(null);
   const isActive = useTabs((s) => s.activeId === tabId);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -146,6 +148,7 @@ export function TrashView(props: { tab: TrashTab }) {
       setSel((s) => carry(s, latest.current.items, next));
       latest.current.items = next;
       setItems(next);
+      if (next.length > 0) setEmptyNote(false);
       setUnreadable(listing.unreadable);
       setLoadError(null);
       setPhase("ready");
@@ -191,7 +194,8 @@ export function TrashView(props: { tab: TrashTab }) {
   }, [epoch, refresh]);
 
   const report = (o: Outcome) => {
-    if (alive.current && needsAttention(o)) setOutcomes((list) => [...list, o]);
+    if (alive.current && needsAttention(o))
+      setOutcomes((list) => [...list, { id: nextOutcome.current++, outcome: o }]);
   };
 
   const selected = () => {
@@ -260,9 +264,11 @@ export function TrashView(props: { tab: TrashTab }) {
       const listing = await trashList();
       if (!alive.current) return;
       if (listing.items.length === 0) {
+        setEmptyNote(true);
         await refresh();
         return;
       }
+      setEmptyNote(false);
       setAsking({ kind: "empty", count: listing.items.length });
     } catch (e) {
       report({ title: "Empty Trash", report: null, error: toWireError(e) });
@@ -296,7 +302,8 @@ export function TrashView(props: { tab: TrashTab }) {
       },
       canAct: (needsSelection) =>
         latest.current.working === null &&
-        (needsSelection ? latest.current.sel.selected.size > 0 : latest.current.items.length > 0),
+        // Emptying is asked about a fresh listing, so it does not wait for this view to list items.
+        (needsSelection ? latest.current.sel.selected.size > 0 : true),
       restore: () => void act("restore", "Restore from Trash", trashRestore, selected()),
       askPurge: () => {
         const list = selected();
@@ -486,7 +493,7 @@ export function TrashView(props: { tab: TrashTab }) {
         <div className="kern-trash-actions" role="group" aria-label="Trash actions">
           {button("trash.restore", ArchiveRestore, idle && sel.selected.size > 0)}
           {button("trash.purge", Trash2, idle && sel.selected.size > 0)}
-          {button("trash.empty", Trash2, idle && items.length > 0)}
+          {button("trash.empty", Trash2, idle && phase === "ready")}
         </div>
       </div>
       {unreadable.length > 0 && (
@@ -495,7 +502,7 @@ export function TrashView(props: { tab: TrashTab }) {
             <p>Some items in the Trash could not be read, so they are not listed:</p>
             <ul>
               {unreadable.map((u, i) => (
-                <li key={`${pathKey(u.path)}:${i}`}>
+                <li key={`${pathKey(u.path)}\n${u.error.kind}\n${u.error.message}\n${i}`}>
                   {displayPath(u.path)}: {u.error.kind}: {u.error.message}
                 </li>
               ))}
@@ -503,13 +510,18 @@ export function TrashView(props: { tab: TrashTab }) {
           </div>
         </div>
       )}
-      {outcomes.map((o, i) => (
+      {outcomes.map(({ id, outcome }) => (
         <ReportPanel
-          key={i}
-          outcome={o}
-          onDismiss={() => setOutcomes((list) => list.filter((_, j) => j !== i))}
+          key={id}
+          outcome={outcome}
+          onDismiss={() => setOutcomes((list) => list.filter((o) => o.id !== id))}
         />
       ))}
+      {emptyNote && !working && (
+        <p role="status" className="kern-note-body">
+          The Trash is empty, so there is nothing to delete.
+        </p>
+      )}
       {working && working.what !== "empty" && (
         <p role="status" className="kern-note-body">
           {working.what === "restore" ? "Restoring…" : "Deleting…"}
