@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { useUserDirs } from "./user-dirs-store";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { WirePath } from "../ipc";
 
@@ -17,6 +18,7 @@ import MainWindow from "./MainWindow";
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 
 beforeEach(() => {
+  useUserDirs.getState().reset();
   useTabs.setState({ tabs: [], activeId: null });
   usePanelsStore.setState({ leftSlid: false, rightSlid: false });
 });

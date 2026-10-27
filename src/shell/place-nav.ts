@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { pathKey, type WirePath } from "../ipc";
+import { displayPath, pathKey, type WirePath } from "../ipc";
 import { activeTab, recentFolderTab, useTabs, type Tab, type TabsState } from "../store/tabs";
 
 // Design 4.1: a place of the strip (Home, a user folder, a volume) is shown in
@@ -48,4 +48,30 @@ export function within(place: WirePath, path: WirePath, inside: boolean): boolea
   if (!inside || place.k !== "Utf8" || path.k !== "Utf8") return false;
   const base = place.v.endsWith("/") ? place.v : `${place.v}/`;
   return path.v.startsWith(base);
+}
+
+export interface PlaceCandidate {
+  key: string;
+  path: WirePath;
+  /** True for a volume: it also holds the folders below its mount point. */
+  inside: boolean;
+}
+
+/**
+ * The one place the strip marks for `shown`: of those that are it or hold it,
+ * the one with the longest path (the most specific). Equal paths go to the
+ * first candidate, so a place listed before a volume wins.
+ */
+export function currentPlace(
+  shown: WirePath | null,
+  candidates: readonly PlaceCandidate[]
+): string | null {
+  if (shown === null) return null;
+  let best: { key: string; length: number } | null = null;
+  for (const c of candidates) {
+    if (!within(c.path, shown, c.inside)) continue;
+    const length = displayPath(c.path).length;
+    if (best === null || length > best.length) best = { key: c.key, length };
+  }
+  return best?.key ?? null;
 }

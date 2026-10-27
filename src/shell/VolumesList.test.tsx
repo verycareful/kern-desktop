@@ -183,3 +183,30 @@ test("the_menu_key_opens_the_volume_menu_and_its_actions_run_on_that_volume", as
   fireEvent.click(within(menu).getByRole("menuitem", { name: /unmount/i }));
   await waitFor(() => expect(ipc.volumeUnmount).toHaveBeenCalledWith(p("/run/media/t/OTHER")));
 });
+
+test("the_last_focused_volume_stays_the_target_while_the_main_menu_is_open", async () => {
+  ipc.volumesList.mockResolvedValue(volumes({ mounted: [mount("STICK")] }));
+  render(<VolumesList />);
+  const stick = await screen.findByRole("button", { name: "STICK" });
+  stick.focus();
+  // Opening the main menu moves the focus away from the row.
+  stick.blur();
+  const { currentContext, getAction, isEnabled } = await import("../keys/actions");
+  expect(isEnabled(getAction("volume.unmount"), currentContext())).toBe(true);
+});
+
+test("the_most_specific_volume_is_marked_current", async () => {
+  ipc.volumesList.mockResolvedValue(
+    volumes({
+      mounted: [
+        mount("OUTER", { mount_point: p("/mnt") }),
+        mount("INNER", { mount_point: p("/mnt/usb") }),
+      ],
+    })
+  );
+  useTabs.getState().openFolder(p("/mnt/usb/docs"), false);
+  render(<VolumesList />);
+  await screen.findByRole("button", { name: "INNER" });
+  expect(screen.getByRole("button", { name: "INNER" })).toHaveAttribute("aria-current", "page");
+  expect(screen.getByRole("button", { name: "OUTER" })).not.toHaveAttribute("aria-current");
+});

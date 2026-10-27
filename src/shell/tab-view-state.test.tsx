@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { useUserDirs } from "./user-dirs-store";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { pathKey, type Settings, type WireEntry, type WirePath } from "../ipc";
@@ -71,6 +72,7 @@ function stubScroll() {
 
 let restoreLayout: () => void;
 beforeEach(() => {
+  useUserDirs.getState().reset();
   restoreLayout = stubLayout(800, CLIENT_HEIGHT);
   restoreScroll = stubScroll();
   ipc.on.mockResolvedValue(() => undefined);

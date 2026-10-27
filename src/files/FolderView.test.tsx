@@ -706,3 +706,18 @@ test("a_folder_on_an_unmounted_volume_offers_the_nearest_folder_that_still_exist
     expect((activeTab(useTabs.getState()) as FolderTab).path).toEqual(p("/run/media/t"))
   );
 });
+
+test("the_confirmation_holds_keys_aimed_at_the_page_body_while_this_tab_is_active", async () => {
+  await mount(many(12));
+  ipc.openPaths.mockResolvedValue([]);
+  fireEvent.click(screen.getAllByTestId("file-row")[0]!);
+  fireEvent.keyDown(window, { key: "a", ctrlKey: true });
+  fireEvent.keyDown(window, { key: "Enter" });
+  await screen.findByRole("alertdialog");
+  const selected = () =>
+    screen.getAllByTestId("file-row").filter((r) => r.getAttribute("aria-selected") === "true")
+      .length;
+  expect(selected()).toBe(12);
+  fireEvent.keyDown(document.body, { key: "A", ctrlKey: true, shiftKey: true });
+  expect(selected()).toBe(12);
+});

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import {
   Download,
   FileText,
@@ -12,9 +12,10 @@ import {
   Video,
   type LucideIcon,
 } from "lucide-react";
-import { pathKey, toWireError, userDirs, type WireError, type WirePath } from "../ipc";
-import { useTabs } from "../store/tabs";
-import { showFolder, shownFolder } from "./place-nav";
+import type { WirePath } from "../ipc";
+import { showFolder } from "./place-nav";
+import { placeKey, useCurrentPlace } from "./use-current-place";
+import { useUserDirs } from "./user-dirs-store";
 
 // Design 4.1: the Places group of the strip. Home first, then the user's
 // folders that exist (user_dirs lists only those): Documents, Downloads and
@@ -59,58 +60,47 @@ function order(home: WirePath, dirs: { name: string; path: WirePath }[]): Place[
 }
 
 export function PlacesList() {
-  const [places, setPlaces] = useState<Place[]>([]);
-  const [error, setError] = useState<WireError | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const shown = useTabs((s) => shownFolder(s));
+  const dirs = useUserDirs((s) => s.dirs);
+  const error = useUserDirs((s) => s.error);
+  const current = useCurrentPlace();
+  const places = dirs ? order(dirs.home, dirs.dirs) : [];
+  const load = useCallback(() => {
+    // A failure is kept in the store, which is where it is shown from.
+    useUserDirs
+      .getState()
+      .load()
+      .catch(() => undefined);
+  }, []);
+  useEffect(load, [load]);
 
-  useEffect(() => {
-    let alive = true;
-    userDirs().then(
-      (d) => {
-        if (!alive) return;
-        setError(null);
-        setPlaces(order(d.home, d.dirs));
-      },
-      (e: unknown) => alive && setError(toWireError(e))
-    );
-    return () => {
-      alive = false;
-    };
-  }, [attempt]);
-
-  const retry = useCallback(() => setAttempt((n) => n + 1), []);
   return (
     <section className="kern-places-group" aria-label="Places">
       <h2 className="kern-label kern-places-heading">Places</h2>
-      {error && (
+      {error && !dirs && (
         <div role="alert" className="kern-places-error">
           <span>
             The places could not be listed: {error.kind}: {error.message}
           </span>{" "}
-          <button type="button" className="kern-button" onClick={retry}>
+          <button type="button" className="kern-button" onClick={load}>
             Retry
           </button>
         </div>
       )}
       <ul className="kern-places-list">
-        {places.map(({ key, label, path, Icon }) => {
-          const current = shown !== null && pathKey(shown) === pathKey(path);
-          return (
-            <li key={key}>
-              <button
-                type="button"
-                className="kern-place"
-                aria-current={current ? "page" : undefined}
-                title={label}
-                onClick={() => showFolder(path)}
-              >
-                <Icon size={16} strokeWidth={2} aria-hidden />
-                <span className="kern-place-label">{label}</span>
-              </button>
-            </li>
-          );
-        })}
+        {places.map(({ key, label, path, Icon }) => (
+          <li key={key}>
+            <button
+              type="button"
+              className="kern-place"
+              aria-current={current === placeKey(key) ? "page" : undefined}
+              title={label}
+              onClick={() => showFolder(path)}
+            >
+              <Icon size={16} strokeWidth={2} aria-hidden />
+              <span className="kern-place-label">{label}</span>
+            </button>
+          </li>
+        ))}
       </ul>
     </section>
   );

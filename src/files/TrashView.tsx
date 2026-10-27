@@ -4,7 +4,9 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArchiveRestore, Folder, Trash2 } from "lucide-react";
 import {
+  EVENT_OP_DONE,
   displayPath,
+  on,
   pathKey,
   startOp,
   toWireError,
@@ -22,7 +24,8 @@ import { actions, currentContext, getAction, runAction } from "../keys/actions";
 import { needsAttention, type Outcome } from "../ops/outcome";
 import { ReportPanel } from "../ops/ReportPanel";
 import { runOp, type RunningOp } from "../ops/run-op";
-import type { TrashTab } from "../store/tabs";
+import { useTabs, type TrashTab } from "../store/tabs";
+import { useVolumes } from "../shell/volumes-store";
 import { ConfirmBanner } from "./ConfirmBanner";
 import { deletedText } from "./trash-text";
 import { useFolderStatus } from "./folder-status";
@@ -86,6 +89,18 @@ type Working =
 
 const plural = (n: number) => `${n.toLocaleString("en-US")} ${n === 1 ? "item" : "items"}`;
 
+/** Up to this many names are listed in a question; more are counted, with the first few named. */
+const NAMED_UP_TO = 3;
+
+function describe(list: readonly WireTrashedItem[]): string {
+  const names = list.map((i) => i.name);
+  if (names.length <= NAMED_UP_TO) return names.join(", ");
+  return `${plural(names.length)}, including ${names.slice(0, NAMED_UP_TO).join(", ")}`;
+}
+
+/** What a confirmation is about, fixed when it is asked. */
+type Question = { kind: "purge"; items: WireTrashedItem[] } | { kind: "empty"; count: number };
+
 export function TrashView(props: { tab: TrashTab }) {
   const tabId = props.tab.id;
   const density = useViewSettings((s) => s.density);
@@ -98,7 +113,8 @@ export function TrashView(props: { tab: TrashTab }) {
   const [sel, setSel] = useState<Sel>(empty);
   const [working, setWorking] = useState<Working | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
-  const [asking, setAsking] = useState<"purge" | "empty" | null>(null);
+  const [asking, setAsking] = useState<Question | null>(null);
+  const isActive = useTabs((s) => s.activeId === tabId);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [revealTick, setRevealTick] = useState(0);
   const files = useRef<HTMLDivElement>(null);
@@ -149,6 +165,31 @@ export function TrashView(props: { tab: TrashTab }) {
     return () => window.removeEventListener("focus", onFocus);
   }, [refresh]);
 
+  // The Trash lists itself again when any operation ends (copies and moves leave it alone, and
+  // the listing is cheap) and after a volume action Kern performed, since a volume's trash
+  // appears and goes with the volume. A volume appearing or going by itself is not seen here yet.
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let live = true;
+    on(EVENT_OP_DONE, () => {
+      if (latest.current.working?.what !== "empty") void refresh();
+    }).then(
+      (u) => (live ? (off = u) : u()),
+      (e: unknown) => live && report({ title: "Trash", report: null, error: toWireError(e) })
+    );
+    return () => {
+      live = false;
+      off?.();
+    };
+  }, [refresh]);
+  const epoch = useVolumes((s) => s.epoch);
+  const seenEpoch = useRef(epoch);
+  useEffect(() => {
+    if (seenEpoch.current === epoch) return;
+    seenEpoch.current = epoch;
+    void refresh();
+  }, [epoch, refresh]);
+
   const report = (o: Outcome) => {
     if (alive.current && needsAttention(o)) setOutcomes((list) => [...list, o]);
   };
@@ -164,9 +205,9 @@ export function TrashView(props: { tab: TrashTab }) {
     async (
       what: "restore" | "purge",
       title: string,
-      call: (list: WireTrashedItem[]) => Promise<WireReport>
+      call: (list: WireTrashedItem[]) => Promise<WireReport>,
+      list: WireTrashedItem[]
     ) => {
-      const list = selected();
       if (list.length === 0 || latest.current.working) return;
       latest.current.working = { what };
       setWorking({ what });
@@ -195,7 +236,8 @@ export function TrashView(props: { tab: TrashTab }) {
     try {
       const op = runOp(
         () => startOp("empty_trash", []),
-        (progress) => alive.current && setWorking({ what: "empty", progress, cancelling: false })
+        (progress) =>
+          alive.current && setWorking((w) => (w?.what === "empty" ? { ...w, progress } : w))
       );
       running.current = op;
       const end = await op.done;
@@ -208,6 +250,23 @@ export function TrashView(props: { tab: TrashTab }) {
     if (alive.current) setWorking(null);
     report(outcome);
     await refresh();
+  }, [refresh]);
+
+  // Emptying is asked about with the count of a listing taken now, so the question is
+  // about what is in the Trash at this moment.
+  const askEmpty = useCallback(async () => {
+    if (latest.current.working) return;
+    try {
+      const listing = await trashList();
+      if (!alive.current) return;
+      if (listing.items.length === 0) {
+        await refresh();
+        return;
+      }
+      setAsking({ kind: "empty", count: listing.items.length });
+    } catch (e) {
+      report({ title: "Empty Trash", report: null, error: toWireError(e) });
+    }
   }, [refresh]);
 
   const cancelEmpty = () => {
@@ -238,12 +297,15 @@ export function TrashView(props: { tab: TrashTab }) {
       canAct: (needsSelection) =>
         latest.current.working === null &&
         (needsSelection ? latest.current.sel.selected.size > 0 : latest.current.items.length > 0),
-      restore: () => void act("restore", "Restore from Trash", trashRestore),
-      askPurge: () => latest.current.sel.selected.size > 0 && setAsking("purge"),
-      askEmpty: () => latest.current.items.length > 0 && setAsking("empty"),
+      restore: () => void act("restore", "Restore from Trash", trashRestore, selected()),
+      askPurge: () => {
+        const list = selected();
+        if (list.length > 0) setAsking({ kind: "purge", items: list });
+      },
+      askEmpty: () => void askEmpty(),
       refresh: () => void refresh(),
     });
-  }, [tabId, dispatch, act, refresh]);
+  }, [tabId, dispatch, act, refresh, askEmpty]);
 
   // The status bar's counts (design 4.1).
   useEffect(() => {
@@ -290,13 +352,6 @@ export function TrashView(props: { tab: TrashTab }) {
       </button>
     );
   };
-
-  const asked = asking === "purge" ? selected() : items;
-  const askMessage =
-    asking === "purge"
-      ? `Delete ${asked.length === 1 ? (asked[0]?.name ?? "") : plural(asked.length)} for good? ` +
-        "It cannot be undone."
-      : `Delete all ${plural(items.length)} in the Trash for good? This cannot be undone.`;
 
   let body;
   if (phase === "loading") {
@@ -492,15 +547,24 @@ export function TrashView(props: { tab: TrashTab }) {
       )}
       {asking && (
         <ConfirmBanner
-          label={asking === "purge" ? "Delete permanently" : "Empty the Trash"}
-          message={askMessage}
-          confirmLabel={asking === "purge" ? `Delete ${plural(asked.length)}` : "Empty the Trash"}
+          label={asking.kind === "purge" ? "Delete permanently" : "Empty the Trash"}
+          message={
+            asking.kind === "purge"
+              ? `Delete ${describe(asking.items)} for good? It cannot be undone.`
+              : `Delete everything in the Trash (${plural(asking.count)}) for good? ` +
+                "This cannot be undone."
+          }
+          confirmLabel={
+            asking.kind === "purge" ? `Delete ${plural(asking.items.length)}` : "Empty the Trash"
+          }
           scope={files}
+          active={isActive}
           onConfirm={() => {
-            const which = asking;
+            const q = asking;
             setAsking(null);
-            if (which === "purge") void act("purge", "Delete permanently", trashPurge);
-            else void emptyTrash();
+            if (q.kind === "purge") {
+              void act("purge", "Delete permanently", trashPurge, q.items);
+            } else void emptyTrash();
           }}
           onCancel={() => {
             setAsking(null);

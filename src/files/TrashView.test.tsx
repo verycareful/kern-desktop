@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { OpDoneEvent, WireReport, WireTrashedItem, WirePath } from "../ipc";
 import { useShortcuts } from "../keys/useShortcuts";
 import { useTabs, type TrashTab } from "../store/tabs";
+import { useVolumes } from "../shell/volumes-store";
 import { stubLayout } from "./test-layout";
 
 const ipc = vi.hoisted(() => ({
@@ -353,4 +354,112 @@ test("the_keyboard_selects_and_the_menu_carries_the_same_actions", async () => {
   for (const name of [/^restore/i, /delete permanently/i, /empty trash/i]) {
     expect(within(menu).getByRole("menuitem", { name })).toBeEnabled();
   }
+});
+
+// ---- fix round 1 ----
+
+test("delete_permanently_purges_exactly_the_items_it_asked_about", async () => {
+  await shown([item("a.txt"), item("b.txt"), item("c.txt")]);
+  fireEvent.click(rows()[1]!);
+  fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
+  const ask = await screen.findByRole("alertdialog");
+  expect(ask).toHaveTextContent("b.txt");
+  // The selection changes under the open question: a click, Ctrl+A, and a focus refresh
+  // that brings a different listing.
+  fireEvent.click(rows()[2]!);
+  fireEvent.keyDown(rows()[2]!, { key: "a", ctrlKey: true });
+  ipc.trashList.mockResolvedValue({ items: [item("z.txt"), item("b.txt")], unreadable: [] });
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+  });
+  ipc.trashPurge.mockResolvedValue(report());
+  fireEvent.click(
+    within(screen.getByRole("alertdialog")).getByRole("button", { name: /delete 1 item/i })
+  );
+  await waitFor(() => expect(ipc.trashPurge).toHaveBeenCalledWith([item("b.txt")]));
+});
+
+test("the_purge_question_names_few_items_and_counts_many", async () => {
+  const many = ["a", "b", "c", "d", "e", "f"].map((n) => item(`${n}.txt`));
+  await shown(many);
+  fireEvent.click(rows()[0]!);
+  fireEvent.keyDown(rows()[0]!, { key: "a", ctrlKey: true });
+  fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
+  const ask = await screen.findByRole("alertdialog");
+  expect(ask).toHaveTextContent("6 items");
+  expect(ask).toHaveTextContent("a.txt");
+  expect(ask).not.toHaveTextContent("f.txt");
+  fireEvent.click(within(ask).getByRole("button", { name: /cancel/i }));
+  fireEvent.click(rows()[0]!);
+  fireEvent.click(rows()[1]!, { ctrlKey: true });
+  fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
+  const few = await screen.findByRole("alertdialog");
+  expect(few).toHaveTextContent("a.txt");
+  expect(few).toHaveTextContent("b.txt");
+});
+
+test("empty_trash_counts_from_a_fresh_listing_and_says_everything", async () => {
+  await shown([item("a.txt"), item("b.txt")]);
+  ipc.trashList.mockResolvedValue({
+    items: [item("a.txt"), item("b.txt"), item("c.txt")],
+    unreadable: [],
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Empty Trash" }));
+  const ask = await screen.findByRole("alertdialog");
+  expect(ask).toHaveTextContent(/everything in the Trash/i);
+  expect(ask).toHaveTextContent("3 items");
+});
+
+test("the_trash_relists_when_another_operation_ends_and_after_a_volume_action", async () => {
+  await shown([item("a.txt")]);
+  ipc.trashList.mockResolvedValue({ items: [item("a.txt"), item("n.txt")], unreadable: [] });
+  await act(async () =>
+    handlers["kernkraft://op-done"]!({
+      op: 99,
+      report: report(),
+      properties: null,
+      scan: null,
+      error: null,
+    } satisfies OpDoneEvent)
+  );
+  await waitFor(() => expect(rows()).toHaveLength(2));
+  ipc.trashList.mockResolvedValue({ items: [item("a.txt")], unreadable: [] });
+  act(() => useVolumes.getState().bump());
+  await waitFor(() => expect(rows()).toHaveLength(1));
+});
+
+test("a_progress_event_does_not_undo_cancelling", async () => {
+  await shown([item("a.txt"), item("b.txt")]);
+  ipc.startOp.mockResolvedValue(5);
+  ipc.cancelOp.mockResolvedValue(undefined);
+  fireEvent.click(screen.getByRole("button", { name: "Empty Trash" }));
+  fireEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", { name: /empty the trash/i })
+  );
+  await screen.findByRole("progressbar");
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+  await screen.findByText("Cancelling…");
+  await act(async () =>
+    handlers["kernkraft://op-progress"]!({ op: 5, done: 1, total: 2, unit: "items", stage: "" })
+  );
+  expect(screen.getByText("Cancelling…")).toBeInTheDocument();
+  expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "1");
+});
+
+test("shift_delete_deletes_permanently_too", async () => {
+  await shown([item("a.txt")]);
+  fireEvent.click(rows()[0]!);
+  fireEvent.keyDown(rows()[0]!, { key: "Delete", shiftKey: true });
+  expect(await screen.findByRole("alertdialog")).toHaveTextContent("a.txt");
+});
+
+test("the_confirmation_holds_keys_aimed_at_the_page_body_while_this_tab_is_active", async () => {
+  await shown([item("a.txt"), item("b.txt")]);
+  fireEvent.click(rows()[0]!);
+  fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
+  await screen.findByRole("alertdialog");
+  // Focus lost to the page body: Ctrl+A must not select behind the question.
+  fireEvent.keyDown(document.body, { key: "a", ctrlKey: true });
+  expect(rows().filter((r) => r.getAttribute("aria-selected") === "true")).toHaveLength(1);
 });

@@ -26,7 +26,9 @@ export function StatusBar() {
       {counts && (
         <span data-testid="status-count">
           {plural(counts.items, "item", "items")}
-          {counts.selected > 0 && tab?.kind === "trash" && ` \u00b7 ${counts.selected} selected`}
+          {counts.selected > 0 &&
+            tab?.kind === "trash" &&
+            ` \u00b7 ${counts.selected.toLocaleString("en-US")} selected`}
           {counts.selected > 0 &&
             tab?.kind !== "trash" &&
             ` \u00b7 ${plural(counts.selected, "selected", "selected")} \u00b7 ${formatSize(counts.selectedBytes)}` +

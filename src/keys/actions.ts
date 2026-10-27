@@ -313,7 +313,7 @@ const trashActions: Action[] = [
     id: "trash.purge",
     label: "Delete permanently",
     area: "Trash",
-    keys: ["Delete"],
+    keys: ["Delete", "Shift+Delete"],
     when: "trash",
     enabled: (c) => trashOf(c)?.canAct(true) ?? false,
     run: (c) => trashOf(c)?.askPurge(),
@@ -362,9 +362,9 @@ const trashActions: Action[] = [
 
 // ---- the places strip: Trash and volumes (design 4.1, 5.2, 5.3) ----
 
-// The volume actions are aimed at the volume with focus in the strip, or the
-// one a menu was opened on (useVolumes.current), so they are greyed in a menu
-// opened anywhere else.
+// The volume actions are aimed at the volume last focused in the strip or last
+// given a menu (useVolumes.current), which the main menu keeps although opening it
+// moves the focus; with no such volume they are greyed.
 function volumeIs(kind: "mounted" | "unmounted", remove?: boolean): boolean {
   const s = useVolumes.getState();
   const v = s.currentVolume();
@@ -404,8 +404,9 @@ const placeActions: Action[] = [
     enabled: () => volumeIs("mounted"),
     run: () => runOnVolume("unmount"),
   },
-  // Eject unmounts every volume of the drive and ejects it or powers it off, as
-  // UDisks offers for the drive (kernkraft-volumes), so there is no separate power-off.
+  // Eject unmounts every volume of the drive, then ejects the drive when UDisks says it
+  // is Ejectable and powers it off otherwise (kernkraft-volumes), so there is no
+  // separate power-off action.
   {
     id: "volume.eject",
     label: "Eject",

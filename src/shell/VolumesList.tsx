@@ -6,8 +6,8 @@ import { displayPath, type Device, type WireError } from "../ipc";
 import { formatSize } from "../files/format";
 import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
 import { actions } from "../keys/actions";
-import { useTabs } from "../store/tabs";
-import { showFolder, shownFolder, within } from "./place-nav";
+import { showFolder } from "./place-nav";
+import { useCurrentPlace } from "./use-current-place";
 import { useVolumes, type Volume } from "./volumes-store";
 
 // Design 4.1 and 5.3: the Volumes group of the strip. Mounted volumes first,
@@ -43,7 +43,7 @@ const deviceText = (d: Device) =>
 
 export function VolumesList() {
   const s = useVolumes();
-  const shown = useTabs((t) => shownFolder(t));
+  const currentKey = useCurrentPlace();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   // No event announces a volume appearing, so the list is read when the strip
@@ -71,18 +71,7 @@ export function VolumesList() {
   };
 
   return (
-    <section
-      className="kern-places-group"
-      aria-label="Volumes"
-      onBlur={(e) => {
-        // Focus moving to this group's own menu keeps the volume the menu is for.
-        const to = e.relatedTarget;
-        if (to instanceof Element && (e.currentTarget.contains(to) || to.closest("[role=menu]"))) {
-          return;
-        }
-        s.setCurrent(null);
-      }}
-    >
+    <section className="kern-places-group" aria-label="Volumes">
       <h2 className="kern-label kern-places-heading">Volumes</h2>
       {s.loadError && (
         <div role="alert" className="kern-places-error">
@@ -108,9 +97,7 @@ export function VolumesList() {
                   type="button"
                   className="kern-place"
                   aria-busy={busy ? true : undefined}
-                  aria-current={
-                    shown !== null && within(v.mount.mount_point, shown, true) ? "page" : undefined
-                  }
+                  aria-current={currentKey === v.key ? "page" : undefined}
                   title={`${label(v)} (${displayPath(v.mount.mount_point)})`}
                   onFocus={() => s.setCurrent(v.key)}
                   onClick={() => showFolder(v.mount.mount_point)}

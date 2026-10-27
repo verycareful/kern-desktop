@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { WirePath, WireUserDirs } from "../ipc";
 import { useTabs, type FolderTab } from "../store/tabs";
+import { useUserDirs } from "./user-dirs-store";
 
 const ipc = vi.hoisted(() => ({ userDirs: vi.fn() }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
@@ -21,6 +22,7 @@ const labels = () =>
     .map((b) => b.textContent);
 
 beforeEach(() => {
+  useUserDirs.getState().reset();
   useTabs.setState({ tabs: [], activeId: null, views: {}, selectRequests: {} });
 });
 afterEach(() => {
@@ -110,4 +112,25 @@ test("with_no_folder_tab_a_place_opens_one", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Documents" }));
   const [tab] = useTabs.getState().tabs;
   expect(tab).toMatchObject({ kind: "folder", path: p("/home/t/documents") });
+});
+
+test("the_user_folders_are_looked_up_once_not_on_every_layout_switch", async () => {
+  ipc.userDirs.mockResolvedValue(dirs(["documents"]));
+  const first = render(<PlacesList />);
+  await screen.findByRole("button", { name: "Documents" });
+  first.unmount();
+  render(<PlacesList />);
+  expect(screen.getByRole("button", { name: "Documents" })).toBeInTheDocument();
+  expect(ipc.userDirs).toHaveBeenCalledTimes(1);
+});
+
+test("a_volume_holding_the_shown_folder_does_not_also_mark_a_less_specific_place", async () => {
+  ipc.userDirs.mockResolvedValue(dirs(["documents"]));
+  useTabs.getState().openFolder(p("/home/t/documents"), false);
+  render(<PlacesList />);
+  expect(await screen.findByRole("button", { name: "Documents" })).toHaveAttribute(
+    "aria-current",
+    "page"
+  );
+  expect(screen.getByRole("button", { name: "Home" })).not.toHaveAttribute("aria-current");
 });

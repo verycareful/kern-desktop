@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { useUserDirs } from "./user-dirs-store";
 import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -38,6 +39,7 @@ let queued: Queued[];
 let restoreLayout: () => void;
 
 beforeEach(() => {
+  useUserDirs.getState().reset();
   restoreLayout = stubLayout();
   handlers = {};
   calls = [];
@@ -114,8 +116,9 @@ test("a_cold_start_with_a_queued_folder_shows_that_folder_and_no_home", async ()
   render(<App />);
   expect(await screen.findByRole("tab", { name: "docs" })).toBeInTheDocument();
   await act(async () => {});
-  // No Home tab (the places strip looks the user's folders up for itself).
+  // No Home tab; the one lookup is the places strip's.
   expect(tabNames()).toEqual(["docs"]);
+  expect(ipc.userDirs).toHaveBeenCalledTimes(1);
 });
 
 test("a_cold_start_with_nothing_queued_opens_home", async () => {
@@ -178,6 +181,7 @@ test("live_events_during_the_take_are_applied_after_the_queue", async () => {
   expect(tabNames()).toEqual([]);
   await act(async () => release([folder("/d/queued")]));
   await waitFor(() => expect(tabNames()).toEqual(["queued", "live"]));
+  expect(ipc.userDirs).toHaveBeenCalledTimes(1);
 });
 
 test("a_select_is_applied_once_the_folder_has_listed", async () => {

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { useUserDirs } from "./shell/user-dirs-store";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { WireTheme } from "./ipc/kernkraft";
 import App from "./App";
@@ -51,6 +52,7 @@ vi.mock("./ipc", async () => ({
 }));
 
 beforeEach(() => {
+  useUserDirs.getState().reset();
   useTabs.setState({ tabs: [], activeId: null });
   userDirs.mockClear();
 });
@@ -71,8 +73,8 @@ test("closing_the_last_tab_opens_home_again", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Close t" }));
   expect(await screen.findByRole("tab", { name: "t" })).toBeInTheDocument();
   expect(useTabs.getState().tabs).toHaveLength(1);
-  // Two Home lookups of the window, and one of the places strip each time it is shown.
-  expect(userDirs).toHaveBeenCalledTimes(4);
+  // Home is looked up once and kept: the strip and the second Home tab reuse it.
+  expect(userDirs).toHaveBeenCalledTimes(1);
 });
 
 test("home_lookup_failure_shows_the_error_with_retry", async () => {
@@ -87,6 +89,6 @@ test("home_lookup_failure_shows_the_error_with_retry", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   expect(await screen.findByRole("tab", { name: "t" })).toBeInTheDocument();
   expect(screen.queryByRole("alert")).toBeNull();
-  // Retry made one Home lookup, not two; the places strip, shown with the tab, made its own.
-  expect(userDirs).toHaveBeenCalledTimes(3);
+  // Retry made one lookup, not two; the places strip reuses it.
+  expect(userDirs).toHaveBeenCalledTimes(2);
 });

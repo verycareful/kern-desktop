@@ -79,6 +79,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   const { showHidden, viewMode, density, error: settingsError } = useViewSettings();
   const sort = useFolderUi((s) => s.sort[tab.id] ?? DEFAULT_SORT);
   const key = pathKey(tab.path);
+  const isActive = useTabs((s) => s.activeId === tab.id);
   // What this tab's view kept when it was last unmounted (design 4.1). It is read once
   // at mount, applies to the folder it was kept in, and is dropped for good on
   // the first move to another folder: coming back by Back starts fresh too.
@@ -511,6 +512,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
           message={`Open ${asking.list.length} items at once? Each opens a tab, a window or an application.`}
           confirmLabel={`Open ${asking.list.length} items`}
           scope={files}
+          active={isActive}
           onConfirm={() => {
             const { list, newWindow } = asking;
             setAsking(null);

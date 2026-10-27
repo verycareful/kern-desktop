@@ -46,8 +46,15 @@ interface VolumesState {
   busy: Record<string, string>;
   /** Volume key to why the last action on it failed. */
   errors: Record<string, WireError>;
-  /** The volume the volume actions are aimed at: the one with focus, or a menu opened on. */
+  /**
+   * The volume the volume actions are aimed at: the one last focused or last opened a
+   * menu on. Opening the main menu takes the focus off the row, so it is kept until the
+   * volume goes away.
+   */
   current: string | null;
+  /** Counts the volume actions Kern has performed; the Trash reads it to list itself again. */
+  epoch: number;
+  bump(): void;
   setCurrent(key: string | null): void;
   clearError(key: string): void;
   volumes(): Volume[];
@@ -66,6 +73,7 @@ const initial = {
   busy: {},
   errors: {},
   current: null,
+  epoch: 0,
 };
 
 let listSeq = 0;
@@ -73,6 +81,7 @@ let listSeq = 0;
 export const useVolumes = create<VolumesState>()((set, get) => ({
   ...initial,
   setCurrent: (current) => set({ current }),
+  bump: () => set((s) => ({ epoch: s.epoch + 1 })),
   clearError: (key) =>
     set((s) => {
       const errors = { ...s.errors };
@@ -141,6 +150,7 @@ export const useVolumes = create<VolumesState>()((set, get) => ({
     }
     // The listing is read again whatever happened: a failed eject may have unmounted some.
     await get().refresh();
+    get().bump();
   },
   reset() {
     listSeq++;

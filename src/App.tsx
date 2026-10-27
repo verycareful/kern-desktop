@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useRef, useState } from "react";
-import { isMainWindow, toWireError, userDirs, type WireError } from "./ipc";
+import { isMainWindow, toWireError, type WireError } from "./ipc";
 import MainWindow from "./shell/MainWindow";
 import { useOpenDirectives } from "./shell/useOpenDirectives";
+import { useUserDirs } from "./shell/user-dirs-store";
 import { useTabs } from "./store/tabs";
 import { useTheme } from "./theme/useTheme";
 
@@ -33,14 +34,17 @@ export default function App() {
   // it without a tab.
   useEffect(() => {
     if (!isMain || !directives.ready || tabCount !== 0 || homeError !== null) return;
-    userDirs().then(
-      (dirs) => {
-        if (mounted.current && useTabs.getState().tabs.length === 0) {
-          useTabs.getState().openFolder(dirs.home, false);
-        }
-      },
-      (e: unknown) => mounted.current && setHomeError(toWireError(e))
-    );
+    useUserDirs
+      .getState()
+      .load()
+      .then(
+        (dirs) => {
+          if (mounted.current && useTabs.getState().tabs.length === 0) {
+            useTabs.getState().openFolder(dirs.home, false);
+          }
+        },
+        (e: unknown) => mounted.current && setHomeError(toWireError(e))
+      );
   }, [isMain, directives.ready, tabCount, homeError]);
 
   return (
