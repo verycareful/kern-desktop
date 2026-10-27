@@ -43,6 +43,8 @@ export default defineConfig({
   // The CSP's font-src is 'self', which excludes data: URIs, so no font file
   // may be inlined into the CSS however small it is.
   build: { assetsInlineLimit: 0 },
+  // The sorting worker is a module worker (new Worker(url, { type: "module" })).
+  worker: { format: "es" },
   server: {
     port: 1420,
     strictPort: true,

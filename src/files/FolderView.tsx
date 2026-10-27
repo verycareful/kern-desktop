@@ -199,6 +199,28 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     root.current?.focus();
   });
 
+  // While the question is open it owns the keyboard: Escape answers no, Tab, Enter
+  // and Space reach its buttons, and every other key is held back from the
+  // shortcuts behind it (capture phase, before useShortcuts sees the event).
+  useEffect(() => {
+    if (!asking) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        focusSoon.current = true;
+        setAsking(null);
+        return;
+      }
+      const plain = !e.ctrlKey && !e.altKey && !e.metaKey;
+      if (plain && ["Tab", "Enter", " "].includes(e.key)) return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [asking]);
+
   const onItemDoubleClick = useCallback(
     (i: number, e: React.MouseEvent) => {
       const entry = latest.current.entries[i];
@@ -242,7 +264,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     case "loading":
       body = (
         <p role="status" className="kern-note-body">
-          Loading…
+          {folder.sorting ? "Sorting…" : "Loading…"}
         </p>
       );
       break;
@@ -350,6 +372,14 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
           </span>
         </div>
       )}
+      {folder.sortError && (
+        <div role="alert" className="kern-banner">
+          <span>
+            The list could not be sorted, so it is in the order the folder gave it. Choosing a sort
+            tries again. <ErrorText error={folder.sortError} />
+          </span>
+        </div>
+      )}
       {folder.watchError && (
         <div role="alert" className="kern-banner">
           <span>
@@ -394,11 +424,24 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
             >
               Open {asking.list.length} items
             </button>{" "}
-            <button type="button" className="kern-button" onClick={() => setAsking(null)}>
+            <button
+              type="button"
+              className="kern-button"
+              autoFocus
+              onClick={() => {
+                focusSoon.current = true;
+                setAsking(null);
+              }}
+            >
               Cancel
             </button>
           </span>
         </div>
+      )}
+      {folder.phase === "ready" && folder.sorting && (
+        <p role="status" className="kern-note-body">
+          Sorting…
+        </p>
       )}
       <div className="kern-files-body">{body}</div>
       {menu && (

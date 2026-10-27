@@ -21,8 +21,12 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    // The plain Vite dev server: the Rust backend is replaced by the IPC mock.
-    command: "npm run dev",
+    // The production build, served by Vite's preview server: the Rust backend is
+    // replaced by the IPC mock. Not the dev server, because React's development
+    // build adds work per render that grows with the size of the props (about
+    // 250 ms for a 100 000-entry list), which would make the frame-gap test
+    // measure the development build instead of the app that ships.
+    command: "npx vite build && npx vite preview --port 1420 --strictPort",
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !isCI,
     timeout: 120_000,

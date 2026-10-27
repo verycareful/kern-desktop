@@ -155,3 +155,13 @@ test("recent_folder_tab_is_the_folder_tab_last_active", () => {
   s().close(b);
   expect(recentFolderTab(s())).toBeNull();
 });
+
+test("the_last_folder_tab_is_kept_in_the_store", () => {
+  s().openFolder(p("/a"), false);
+  const a = s().activeId!;
+  s().openDoc(p("/a/n.md"));
+  expect(s().lastFolderId).toBe(a);
+  // A reset of the store forgets it, with no module state left behind.
+  useTabs.setState({ tabs: [], activeId: null, lastFolderId: null });
+  expect(recentFolderTab(s())).toBeNull();
+});

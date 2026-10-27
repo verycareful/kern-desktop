@@ -626,3 +626,30 @@ test("enter_on_a_focused_breadcrumb_navigates_once_and_does_not_open_the_selecti
   expect(tab.path).toEqual(p("/d"));
   expect(tab.history).toHaveLength(2);
 });
+
+test("the_confirmation_takes_focus_closes_on_escape_and_blocks_the_keys_behind_it", async () => {
+  await mount(many(12));
+  ipc.openPaths.mockResolvedValue([]);
+  fireEvent.click(screen.getAllByTestId("file-row")[0]!);
+  fireEvent.keyDown(window, { key: "a", ctrlKey: true });
+  fireEvent.keyDown(window, { key: "Enter" });
+  const ask = await screen.findByRole("alertdialog");
+  expect(within(ask).getByRole("button", { name: /cancel/i })).toHaveFocus();
+  // Keys meant for the list do nothing while the question is open.
+  const selected = () =>
+    screen.getAllByTestId("file-row").filter((r) => r.getAttribute("aria-selected") === "true")
+      .length;
+  expect(selected()).toBe(12);
+  fireEvent.keyDown(window, { key: "ArrowDown" });
+  fireEvent.keyDown(window, { key: "A", ctrlKey: true, shiftKey: true });
+  fireEvent.keyDown(window, { key: "Enter", ctrlKey: true });
+  expect(selected()).toBe(12);
+  expect(ipc.openPaths).not.toHaveBeenCalled();
+  // Escape answers no.
+  fireEvent.keyDown(within(ask).getByRole("button", { name: /cancel/i }), { key: "Escape" });
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(ipc.openPaths).not.toHaveBeenCalled();
+  // And the keys work again.
+  fireEvent.keyDown(window, { key: "A", ctrlKey: true, shiftKey: true });
+  expect(selected()).toBe(0);
+});

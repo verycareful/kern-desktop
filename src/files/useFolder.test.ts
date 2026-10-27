@@ -2,9 +2,11 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { StrictMode } from "react";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { DirEvent, WireEntry, WireError, WirePath } from "../ipc";
 import { click, ctrlClick } from "./selection";
+import { sortEntries, type SortBy, type SortDir } from "./sort";
+import { sortPermutation } from "./sort-core";
 import { dir, entry } from "./test-entries";
 
 type Handler = (payload: DirEvent) => void;
@@ -385,4 +387,166 @@ test("the_previous_folders_entries_are_never_returned_for_the_new_path", async (
   await waitFor(() => expect(names(result.current.entries)).toEqual(["new"]));
   // Not even in the render that first has the new path.
   expect(seen.filter((s) => s.path === "/e").every((s) => !s.names.includes("old"))).toBe(true);
+});
+
+// ---- sorting of large folders in a worker, and the watch rules of round 2 ----
+
+class WorkerStub {
+  static made: WorkerStub[] = [];
+  static crash = false;
+  static gate: Promise<void> | null = null;
+  listeners: Record<string, ((e: never) => void)[]> = {};
+  terminated = false;
+  constructor() {
+    WorkerStub.made.push(this);
+  }
+  addEventListener(name: string, fn: (e: never) => void) {
+    (this.listeners[name] ??= []).push(fn);
+  }
+  postMessage(msg: {
+    id: number;
+    input: import("./sort-core").SortInput;
+    by: SortBy;
+    dir: SortDir;
+  }) {
+    const send = () => {
+      if (WorkerStub.crash) {
+        this.listeners.error?.forEach((f) => f({ message: "worker died" } as never));
+        return;
+      }
+      const perm = sortPermutation(msg.input, msg.by, msg.dir);
+      this.listeners.message?.forEach((f) => f({ data: { id: msg.id, perm } } as never));
+    };
+    if (WorkerStub.gate) void WorkerStub.gate.then(send);
+    else queueMicrotask(send);
+  }
+  terminate() {
+    this.terminated = true;
+  }
+}
+
+const bigList = (n: number, parent = "/d") =>
+  Array.from({ length: n }, (_, i) => entry(`f${(i * 7919) % n}.txt`, { len: i }, parent));
+
+describe("large folders", () => {
+  beforeEach(() => {
+    WorkerStub.made = [];
+    WorkerStub.crash = false;
+    WorkerStub.gate = null;
+    vi.stubGlobal("Worker", WorkerStub);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("above_5000_entries_the_worker_sorts_and_the_list_shows_when_it_is_done", async () => {
+    let release!: () => void;
+    WorkerStub.gate = new Promise<void>((r) => (release = r));
+    ipc.listDir.mockResolvedValue(bigList(5001));
+    const { result } = renderHook(() => useFolder("tab-1", p("/d"), OPTS));
+    await waitFor(() => expect(result.current.sorting).toBe(true));
+    // Nothing is shown unsorted in the meantime.
+    expect(result.current.phase).toBe("loading");
+    expect(result.current.entries).toEqual([]);
+    await act(async () => release());
+    await waitFor(() => expect(result.current.phase).toBe("ready"));
+    expect(result.current.sorting).toBe(false);
+    expect(result.current.entries.map((e) => e.name)).toEqual(
+      sortEntries(bigList(5001), "name", "asc").map((e) => e.name)
+    );
+    expect(WorkerStub.made).toHaveLength(1);
+  });
+
+  test("at_5000_entries_no_worker_is_used", async () => {
+    ipc.listDir.mockResolvedValue(bigList(5000));
+    const { result } = renderHook(() => useFolder("tab-1", p("/d"), OPTS));
+    await waitFor(() => expect(result.current.phase).toBe("ready"));
+    expect(WorkerStub.made).toHaveLength(0);
+  });
+
+  test("a_sort_change_of_a_large_folder_is_sorted_by_the_worker_and_keeps_the_selection", async () => {
+    ipc.listDir.mockResolvedValue(bigList(5001));
+    const { result, rerender } = renderHook(
+      ({ sortBy }) => useFolder("tab-1", p("/d"), { ...OPTS, sortBy }),
+      { initialProps: { sortBy: "name" as SortBy } }
+    );
+    await waitFor(() => expect(result.current.phase).toBe("ready"));
+    const pick = result.current.entries[10]!.name;
+    act(() => result.current.dispatch((s) => click(s, 10)));
+    rerender({ sortBy: "size" });
+    await waitFor(() => expect(result.current.entries[0]!.len).toBe(0));
+    const at = [...result.current.sel.selected][0]!;
+    expect(result.current.entries[at]!.name).toBe(pick);
+  });
+
+  test("a_result_for_an_older_listing_is_dropped", async () => {
+    let release!: () => void;
+    WorkerStub.gate = new Promise<void>((r) => (release = r));
+    ipc.listDir.mockResolvedValueOnce(bigList(5001, "/old"));
+    const { result } = renderHook(() => useFolder("tab-1", p("/d"), OPTS));
+    await waitFor(() => expect(WorkerStub.made).toHaveLength(1));
+    ipc.listDir.mockResolvedValue(bigList(5002, "/new"));
+    act(() => result.current.refresh());
+    await act(async () => release());
+    await waitFor(() => expect(result.current.phase).toBe("ready"));
+    expect(result.current.entries).toHaveLength(5002);
+  });
+
+  test("a_worker_failure_is_reported_and_the_list_shows_in_the_folders_order", async () => {
+    WorkerStub.crash = true;
+    const raw = bigList(5001);
+    ipc.listDir.mockResolvedValue(raw);
+    const { result } = renderHook(() => useFolder("tab-1", p("/d"), OPTS));
+    await waitFor(() => expect(result.current.phase).toBe("ready"));
+    expect(result.current.sortError).toMatchObject({ kind: "Sort" });
+    expect(result.current.sortError?.message).toMatch(/worker died/);
+    // No silent substitute: the entries are the folder's own order, not a main-thread sort.
+    expect(result.current.entries.map((e) => e.name)).toEqual(raw.map((e) => e.name));
+    // Choosing a sort again tries again.
+    WorkerStub.crash = false;
+  });
+
+  test("unmount_ends_the_worker", async () => {
+    ipc.listDir.mockResolvedValue(bigList(5001));
+    const { result, unmount } = renderHook(() => useFolder("tab-1", p("/d"), OPTS));
+    await waitFor(() => expect(result.current.phase).toBe("ready"));
+    unmount();
+    expect(WorkerStub.made[0]!.terminated).toBe(true);
+  });
+});
+
+test("a_successful_watch_does_not_show_the_previous_folders_unwatch_error", async () => {
+  const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    ipc.listDir.mockResolvedValue([]);
+    ipc.unwatchDir.mockRejectedValue(denied);
+    const { result, rerender } = renderHook(({ path }) => useFolder("tab-1", p(path), OPTS), {
+      initialProps: { path: "/d" },
+    });
+    await waitFor(() => expect(result.current.phase).toBe("ready"));
+    rerender({ path: "/e" });
+    await waitFor(() => expect(ipc.watchDir).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.phase).toBe("ready"));
+    expect(result.current.watchError).toBeNull();
+    // It is logged, with what it was about.
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("tab-1"), denied);
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+test("refresh_places_again_a_watch_that_died_while_running", async () => {
+  ipc.listDir.mockResolvedValue([entry("a")]);
+  const { result } = renderHook(() => useFolder("tab-1", p("/d"), OPTS));
+  await waitFor(() => expect(result.current.phase).toBe("ready"));
+  expect(ipc.watchDir).toHaveBeenCalledTimes(1);
+  act(() => {
+    void handlers["kernkraft://dir-gone"]!({ key: "tab-1", error: denied });
+  });
+  await waitFor(() => expect(result.current.watchError).toEqual(denied));
+  await waitFor(() => expect(result.current.phase).toBe("ready"));
+  expect(ipc.watchDir).toHaveBeenCalledTimes(1);
+  act(() => result.current.refresh());
+  await waitFor(() => expect(ipc.watchDir).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(result.current.watchError).toBeNull());
 });

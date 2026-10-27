@@ -18,6 +18,7 @@ import {
 } from "../ipc";
 import { empty, type Sel } from "./selection";
 import { sortEntries, type SortBy, type SortDir } from "./sort";
+import { SORT_IN_WORKER_ABOVE, createSorter, type Sorter } from "./sort-async";
 
 // One folder shown in one tab (design 4.1, 5.1): lists it, watches it under
 // the tab's id, and keeps the listing current. The list shown is always the
@@ -41,6 +42,13 @@ interface Core {
   /** The listing in display order; `sel` indexes this. */
   entries: WireEntry[];
   sel: Sel;
+  /** True while a large listing is being sorted in the worker. */
+  sorting: boolean;
+  /**
+   * Why the sort failed (the worker); the entries are then in the order the
+   * folder gave them. Cleared by the next sort that works.
+   */
+  sortError: WireError | null;
   /** Why the listing failed, in phase "error". */
   error: WireError | null;
   /** Why live updates are not running, if they are not; the listing still shows. */
@@ -58,6 +66,8 @@ const initial = (key: string): Core => ({
   raw: [],
   entries: [],
   sel: empty,
+  sorting: false,
+  sortError: null,
   error: null,
   watchError: null,
   gone: null,
@@ -121,6 +131,17 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
   });
   // The listing as sent, for re-sorting outside a state updater (React may run an updater twice).
   const rawRef = useRef<WireEntry[]>([]);
+  // Large folders are sorted in a worker, created at the first need and ended with the view.
+  const sorter = useRef<Sorter | null>(null);
+  const getSorter = () => (sorter.current ??= createSorter());
+  useEffect(
+    () => () => {
+      sorter.current?.dispose();
+      sorter.current = null;
+    },
+    []
+  );
+  const resortSeq = useRef(0);
   const reload = useRef<() => void>(() => undefined);
   // The last unwatch sent for this tab's key. Every watch and unwatch of the
   // key is chained after it, so the backend sees them in the order they were
@@ -142,7 +163,7 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
         unwatchDir(tabId).then(
           () => null,
           (e: unknown) => {
-            console.error("unwatch_dir failed", e);
+            console.error(`unwatch_dir failed for the view of tab ${tabId}`, e);
             return toWireError(e);
           }
         )
@@ -154,13 +175,13 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
     const stopWatch = () => {
       if (!watching) return;
       watching = false;
-      void chainUnwatch().then((err) => {
-        if (err && alive) setCore((c) => ({ ...c, watchError: err }));
-      });
+      // A failure is logged by chainUnwatch: the folder this watch was for is no
+      // longer on show, so there is nothing for the error to be shown beside.
+      void chainUnwatch();
     };
 
     const startWatch = async () => {
-      const previous = await unwatching.current;
+      await unwatching.current;
       if (!alive) return;
       try {
         await watchDir(tabId, target);
@@ -168,7 +189,7 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
         watchFailed = false;
         // This effect was cleaned up while the watch was being placed: end it.
         if (!alive) stopWatch();
-        else setCore((c) => ({ ...c, watchError: previous }));
+        else setCore((c) => ({ ...c, watchError: null }));
       } catch (e) {
         watchFailed = true;
         if (alive) setCore((c) => ({ ...c, watchError: toWireError(e) }));
@@ -177,7 +198,15 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
 
     const showNone = (patch: Partial<Core>) => {
       rawRef.current = [];
-      setCore((c) => ({ ...c, raw: [], entries: [], sel: empty, ...patch }));
+      setCore((c) => ({
+        ...c,
+        raw: [],
+        entries: [],
+        sel: empty,
+        sorting: false,
+        sortError: null,
+        ...patch,
+      }));
     };
 
     // True when the folder listed. A list that is no longer the latest asked
@@ -187,7 +216,32 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
       try {
         const raw = await listDir(target, hidden.current);
         if (!alive || mine !== seq) return false;
-        const entries = order(raw);
+        let entries: WireEntry[];
+        let sortError: WireError | null = null;
+        if (raw.length <= SORT_IN_WORKER_ABOVE) entries = order(raw);
+        else {
+          setCore((c) => ({ ...c, sorting: true }));
+          try {
+            // The sort may be changed while the worker works: sort again for the new order.
+            let used: typeof sort.current;
+            do {
+              used = sort.current;
+              entries = await getSorter().sort(raw, used.by, used.dir);
+            } while (
+              alive &&
+              mine === seq &&
+              (used.by !== sort.current.by || used.dir !== sort.current.dir)
+            );
+          } catch (e) {
+            if (!alive || mine !== seq) return false;
+            // Not sorted by the main thread instead: that would freeze the page for the
+            // very folders the worker is for, and a quiet substitute is what the rules rule out.
+            // The list is shown in the folder's own order, with the reason.
+            entries = raw;
+            sortError = toWireError(e);
+          }
+          if (!alive || mine !== seq) return false;
+        }
         rawRef.current = raw;
         setCore((c) => ({
           ...c,
@@ -195,6 +249,8 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
           raw,
           entries,
           sel: remap(c.sel, c.entries, entries),
+          sorting: false,
+          sortError,
           error: null,
           gone: null,
         }));
@@ -233,7 +289,12 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
             if (ev.key !== tabId) return;
             // The old listing is not shown for another moment.
             showNone({ phase: "loading", error: null, gone: null });
-            if (ev.error) setCore((c) => ({ ...c, watchError: ev.error ?? null }));
+            if (ev.error) {
+              // The watch ended on its own: F5 puts it back.
+              watching = false;
+              watchFailed = true;
+              setCore((c) => ({ ...c, watchError: ev.error ?? null }));
+            }
             // The folder may be back (replaced in place), or the watch alone may
             // have failed: list again to find out, and watch again if it is there.
             const listed = await load();
@@ -274,8 +335,24 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
   useEffect(() => {
     const raw = rawRef.current;
     if (raw.length === 0) return;
-    const entries = sortEntries(raw, opts.sortBy, opts.sortDir);
-    setCore((c) => (c.raw === raw ? { ...c, entries, sel: remap(c.sel, c.entries, entries) } : c));
+    const stamp = ++resortSeq.current;
+    const apply = (entries: WireEntry[], sortError: WireError | null) =>
+      setCore((c) =>
+        c.raw === raw && stamp === resortSeq.current
+          ? { ...c, entries, sel: remap(c.sel, c.entries, entries), sorting: false, sortError }
+          : c
+      );
+    if (raw.length <= SORT_IN_WORKER_ABOVE) {
+      apply(sortEntries(raw, opts.sortBy, opts.sortDir), null);
+      return;
+    }
+    setCore((c) => (c.raw === raw ? { ...c, sorting: true } : c));
+    getSorter()
+      .sort(raw, opts.sortBy, opts.sortDir)
+      .then(
+        (entries) => apply(entries, null),
+        (e: unknown) => apply(raw, toWireError(e))
+      );
   }, [opts.sortBy, opts.sortDir]);
 
   const dispatch = useCallback(

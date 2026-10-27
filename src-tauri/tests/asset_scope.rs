@@ -76,7 +76,34 @@ fn the_asset_scope_is_the_thumbnail_cache_kernkraft_writes() {
     // A symlink inside thumbnails/ that points outside is refused.
     assert!(!served(&scope, &thumbs.join("link.png")));
 
-    // Without it: both fall back to $HOME/.cache.
-    let (_, tauri_cache) = scope_for(None);
+    // XDG_CACHE_HOME naming the cache through a symlink: Tauri and kernkraft both use
+    // the path as given, and a thumbnail under it is served (the scope matches
+    // the resolved path), while the cache's neighbours still are not.
+    let link = root.join("cache-link");
+    let (scope, tauri_cache) = scope_for(Some(&link));
+    assert_eq!(tauri_cache, link);
     assert_eq!(tauri_cache, kernkraft_fs::base_dirs().unwrap().cache);
+    assert!(served(&scope, &link.join("thumbnails/normal/a.png")));
+    assert!(!served(&scope, &link.join("secret.txt")));
+    assert!(!served(&scope, &root.join("outside.txt")));
+
+    // Without XDG_CACHE_HOME both fall back to $HOME/.cache, and a thumbnail
+    // there is served.
+    let home = root.join("home");
+    let home_thumbs = home.join(".cache/thumbnails/large");
+    fs::create_dir_all(&home_thumbs).unwrap();
+    fs::write(home_thumbs.join("b.png"), b"png").unwrap();
+    let saved_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+    let (scope, tauri_cache) = scope_for(None);
+    let kernkraft_cache = kernkraft_fs::base_dirs().unwrap().cache;
+    match saved_home {
+        Some(h) => std::env::set_var("HOME", h),
+        None => std::env::remove_var("HOME"),
+    }
+    assert_eq!(tauri_cache, home.join(".cache"));
+    assert_eq!(tauri_cache, kernkraft_cache);
+    assert!(served(&scope, &home_thumbs.join("b.png")));
+    assert!(!served(&scope, Path::new("/etc/passwd")));
+    assert!(!served(&scope, &home.join(".cache/other.txt")));
 }

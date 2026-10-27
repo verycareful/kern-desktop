@@ -139,3 +139,76 @@ test("hidden_toggle_ctrl_h", async ({ page, mockTauri }) => {
   await page.keyboard.press("Control+h");
   await expect(rows(page)).toHaveCount(1);
 });
+
+test.describe("non-ASCII names", () => {
+  test.use({ locale: "en-US" });
+
+  // The names the mock below makes, rebuilt here to know the right order.
+  const PREFIXES = ["é", "e", "z", "ä", "a", "日", "ß"];
+  const nameAt = (i: number) => `${PREFIXES[i % 7]}file${(i * 7919) % 100000}-${i}.txt`;
+
+  test("sorts_100k_non_ascii_names_without_holding_up_a_frame", async ({ page, mockTauri }) => {
+    await mockTauri({
+      ...COMMON,
+      "plugin:kernkraft|list_dir": () => {
+        const prefixes = ["é", "e", "z", "ä", "a", "日", "ß"];
+        return Array.from({ length: 100_000 }, (_, i) => {
+          const name = `${prefixes[i % 7]}file${(i * 7919) % 100000}-${i}.txt`;
+          return {
+            path: { k: "Utf8", v: `/home/tester/docs/${name}` },
+            name,
+            kind: "file",
+            target_is_dir: false,
+            len: i,
+            modified_ms: null,
+            hidden: false,
+            mime: "text/plain",
+          };
+        });
+      },
+    });
+    // What the page's collator orders: the smallest and the largest name.
+    const collator = new Intl.Collator("en-US", { numeric: true });
+    let min = nameAt(0);
+    let max = nameAt(0);
+    for (let i = 1; i < 100_000; i++) {
+      const n = nameAt(i);
+      if (collator.compare(n, min) < 0) min = n;
+      if (collator.compare(n, max) > 0) max = n;
+    }
+
+    await page.goto("/");
+    await expect(page.getByTestId("status-count")).toHaveText("100,000 items");
+    await expect(rows(page).first()).toHaveAttribute("data-name", min);
+
+    // Watch the frames while the list is sorted the other way round: a
+    // requestAnimationFrame callback that comes late means the page was busy.
+    await page.evaluate(() => {
+      const w = window as unknown as { __gaps: number[]; __run: boolean };
+      w.__gaps = [];
+      w.__run = true;
+      let last = performance.now();
+      const tick = (now: number) => {
+        w.__gaps.push(now - last);
+        last = now;
+        if (w.__run) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await page.getByRole("columnheader", { name: "Name" }).getByRole("button").click();
+    await expect(rows(page).first()).toHaveAttribute("data-name", max);
+    const gaps = await page.evaluate(() => {
+      const w = window as unknown as { __gaps: number[]; __run: boolean };
+      w.__run = false;
+      return w.__gaps;
+    });
+    expect(gaps.length).toBeGreaterThan(0);
+    const worst = Math.max(...gaps);
+    test.info().annotations.push({ type: "longest frame gap (ms)", description: String(worst) });
+    expect(worst).toBeLessThan(200);
+
+    // And the other end of the list is the smallest name.
+    await page.getByTestId("folder-scroll").evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect(rows(page).last()).toHaveAttribute("data-name", min);
+  });
+});
