@@ -214,3 +214,40 @@ test("a_view_is_not_dropped_by_other_tabs_moving_or_by_switching", () => {
   s().next();
   expect(s().views[a]).toEqual(view("/home/a"));
 });
+
+// R57: opening a folder from outside focuses the tab it is already open in.
+test("focus_or_open_folder_opens_once_and_then_focuses", () => {
+  s().openFolder(p("/home/a"), false);
+  const a = s().activeId!;
+  s().focusOrOpenFolder(p("/home/b"));
+  const b = s().activeId!;
+  expect(b).not.toBe(a);
+  expect(s().tabs).toHaveLength(2);
+  s().focusOrOpenFolder(p("/home/a"));
+  expect(s().activeId).toBe(a);
+  s().focusOrOpenFolder(p("/home/a"));
+  expect(s().tabs).toHaveLength(2);
+  // A folder tab that moved on is found by where it is now.
+  s().focusOrOpenFolder(p("/home/b"));
+  expect(s().activeId).toBe(b);
+});
+
+test("focus_or_open_folder_ignores_document_tabs", () => {
+  s().openDoc(p("/home/a"));
+  s().focusOrOpenFolder(p("/home/a"));
+  expect(s().tabs.map((t) => t.kind)).toEqual(["doc", "folder"]);
+});
+
+test("a_select_request_is_held_for_its_tab_until_taken_and_dropped_on_close", () => {
+  s().openFolder(p("/home/a"), false);
+  const id = s().activeId!;
+  s().requestSelect(id, [p("/home/a/x")]);
+  expect(s().selectRequests[id]).toEqual([p("/home/a/x")]);
+  s().clearSelectRequest(id);
+  expect(s().selectRequests[id]).toBeUndefined();
+  s().requestSelect(id, [p("/home/a/x")]);
+  s().close(id);
+  expect(s().selectRequests[id]).toBeUndefined();
+  s().requestSelect(id, [p("/home/a/x")]);
+  expect(s().selectRequests[id]).toBeUndefined();
+});

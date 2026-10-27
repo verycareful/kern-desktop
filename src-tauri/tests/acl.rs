@@ -11,6 +11,7 @@ use std::fs;
 
 use kern_lib::store::Store;
 use kern_lib::store_cmds::StoreState;
+use kern_lib::windows::WindowState;
 use serde_json::{json, Value};
 use tauri::ipc::{CallbackFn, InvokeBody};
 use tauri::test::{get_ipc_response, mock_builder, MockRuntime, INVOKE_KEY};
@@ -34,7 +35,11 @@ fn env(label: &str) -> Env {
     let app = mock_builder()
         .plugin(kernkraft_tauri::init())
         .manage(StoreState::new(Store::new(config, state)))
-        .invoke_handler(tauri::generate_handler![kern_lib::store_cmds::settings_get,])
+        .manage(WindowState::default())
+        .invoke_handler(tauri::generate_handler![
+            kern_lib::store_cmds::settings_get,
+            kern_lib::windows::open_pending_take,
+        ])
         .build(tauri::generate_context!())
         .unwrap();
     let window = WebviewWindowBuilder::new(&app, label, Default::default())
@@ -78,9 +83,24 @@ fn a_kern_command_is_allowed_by_the_main_capability() {
 }
 
 #[test]
+fn the_main_window_may_take_what_was_queued_for_it() {
+    // The command the main window's frontend calls to receive its queued
+    // directives (R57); without the grant they would stay queued forever.
+    let e = env("main");
+    assert_eq!(
+        invoke(&e, "open_pending_take", json!({})).unwrap(),
+        json!([])
+    );
+}
+
+#[test]
 fn a_window_the_capability_does_not_name_is_refused() {
     let e = env("stranger");
-    for cmd in [kernkraft("user_dirs"), "settings_get".to_string()] {
+    for cmd in [
+        kernkraft("user_dirs"),
+        "settings_get".to_string(),
+        "open_pending_take".to_string(),
+    ] {
         let err = invoke(&e, &cmd, json!({})).unwrap_err();
         assert!(
             err.as_str().unwrap().contains("not allowed"),

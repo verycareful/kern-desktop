@@ -13,6 +13,7 @@ const SETTINGS = {
   view_mode: "list",
 };
 const COMMON = {
+  open_pending_take: [],
   settings_get: SETTINGS,
   settings_set: (args: Record<string, unknown>) => ({
     follow: { colours: true, accent: true, fonts: true, radius: true },

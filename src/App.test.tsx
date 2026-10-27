@@ -25,6 +25,14 @@ vi.mock("./ipc", async () => ({
   watchDir: () => Promise.resolve(),
   unwatchDir: () => Promise.resolve(),
   on: () => Promise.resolve(() => undefined),
+  openPendingTake: () => Promise.resolve([]),
+  EVENT_OPEN: "kern://open",
+  EVENT_SELECT: "kern://select",
+  EVENT_OPEN_ERROR: "kern://open-error",
+  EVENT_PROPERTIES: "kern://properties",
+  EVENT_ADOPT_DOC: "kern://adopt-doc",
+  EVENT_ADOPT_CANCELLED: "kern://adopt-cancelled",
+  EVENT_CLOSE_REQUESTED: "kern://close-requested",
   settingsGet: () =>
     Promise.resolve({
       follow: { colours: true, accent: true, fonts: true, radius: true },

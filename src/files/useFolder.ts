@@ -90,6 +90,8 @@ const initial = (key: string): Core => ({
 export interface FolderApi extends Core {
   /** Applies a selection function (from selection.ts) to the current selection. */
   dispatch(op: (sel: Sel, count: number) => Sel): void;
+  /** Selects the entries with these path keys (those listed; the first becomes the cursor). */
+  selectKeys(keys: readonly string[]): void;
   /** Lists the folder again now. */
   refresh(): void;
 }
@@ -392,10 +394,21 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
       setCore((c) => ({ ...c, sel: op(c.sel, c.entries.length) })),
     []
   );
+  const selectKeys = useCallback(
+    (keys: readonly string[]) =>
+      setCore((c) => ({
+        ...c,
+        sel: seedSel(
+          { pathKey: "", selected: keys, anchor: keys[0] ?? null, cursor: keys[0] ?? null },
+          c.entries
+        ),
+      })),
+    []
+  );
   const refresh = useCallback(() => reload.current(), []);
 
   // For the render in which the path has changed but its effect has not yet
   // run, the state is still the previous folder's: show nothing of it.
   const shown = core.key === folderKey ? core : initial(folderKey);
-  return { ...shown, dispatch, refresh };
+  return { ...shown, dispatch, selectKeys, refresh };
 }

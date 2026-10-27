@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toWireError, userDirs, type WireError } from "./ipc";
 import MainWindow from "./shell/MainWindow";
+import { useOpenDirectives } from "./shell/useOpenDirectives";
 import { useTabs } from "./store/tabs";
 import { useTheme } from "./theme/useTheme";
 
@@ -10,6 +11,7 @@ export default function App() {
   const { error, problems } = useTheme();
   const [homeError, setHomeError] = useState<WireError | null>(null);
   const tabCount = useTabs((s) => s.tabs.length);
+  const directives = useOpenDirectives();
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -22,9 +24,12 @@ export default function App() {
   // Design 4.4 names a Home folder tab for the main window, and the window
   // never sits without a tab: a new window, and closing the last tab, both
   // open Home. Retry only clears the error; this effect then looks Home up
-  // again. A tab opened while the lookup ran wins.
+  // again. A tab opened while the lookup ran wins. A start that was asked to
+  // open something (`kern ~/Documents`, 4.5) shows that and no Home: Home is
+  // only opened once what was queued for the window has been applied and left
+  // it without a tab.
   useEffect(() => {
-    if (tabCount !== 0 || homeError !== null) return;
+    if (!directives.ready || tabCount !== 0 || homeError !== null) return;
     userDirs().then(
       (dirs) => {
         if (mounted.current && useTabs.getState().tabs.length === 0) {
@@ -33,7 +38,7 @@ export default function App() {
       },
       (e: unknown) => mounted.current && setHomeError(toWireError(e))
     );
-  }, [tabCount, homeError]);
+  }, [directives.ready, tabCount, homeError]);
 
   return (
     <div data-testid="shell" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -51,6 +56,22 @@ export default function App() {
           </button>
         </p>
       )}
+      {directives.errors.map((e, i) => (
+        <p role="alert" key={`e${i}`}>
+          {e.kind}: {e.message}{" "}
+          <button type="button" onClick={() => directives.dismissError(i)}>
+            Dismiss
+          </button>
+        </p>
+      ))}
+      {directives.notices.map((n) => (
+        <p role="alert" key={`n${n.id}`}>
+          {n.text}{" "}
+          <button type="button" onClick={() => directives.dismissNotice(n.id)}>
+            Dismiss
+          </button>
+        </p>
+      ))}
       {problems.length > 0 && (
         <ul role="status" aria-label="System theme problems">
           {problems.map((p) => (
@@ -61,7 +82,7 @@ export default function App() {
         </ul>
       )}
       <div style={{ flex: 1, minHeight: 0 }}>
-        <MainWindow openingHome={tabCount === 0 && homeError === null} />
+        <MainWindow openingHome={directives.ready && tabCount === 0 && homeError === null} />
       </div>
     </div>
   );

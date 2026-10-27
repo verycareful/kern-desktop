@@ -39,6 +39,12 @@ export interface TabsState {
   lastFolderId: string | null;
   /** The saved view of each folder tab that is not shown, by tab id. */
   views: Record<string, FolderViewState>;
+  /** Items to select in a folder tab once it has listed (kern://select, R57); taken by its view. */
+  selectRequests: Record<string, WirePath[]>;
+  requestSelect(id: string, paths: WirePath[]): void;
+  clearSelectRequest(id: string): void;
+  /** Focus the folder tab that shows `path`, or open one (a folder opened from outside, R57). */
+  focusOrOpenFolder(path: WirePath): void;
   /** Keep a folder tab's view; ignored for a tab that is gone (a view torn down by its tab's close). */
   saveView(id: string, view: FolderViewState): void;
   /** Navigate the active folder tab, or open a folder tab when asked to or when the active tab is not a folder. */
@@ -78,11 +84,18 @@ function withoutView(views: Record<string, FolderViewState>, id: string) {
   return rest;
 }
 
-/** A folder tab moved to another folder: it starts fresh there, so its saved view goes. */
+function withoutRequest(requests: Record<string, WirePath[]>, id: string) {
+  const rest = { ...requests };
+  delete rest[id];
+  return rest;
+}
+
+/** A folder tab moved to another folder: it starts fresh there, so its saved view and pending selection go. */
 function moveTab(s: TabsState, moved: FolderTab): Partial<TabsState> {
   return {
     tabs: s.tabs.map((t) => (t.id === moved.id ? moved : t)),
     views: withoutView(s.views, moved.id),
+    selectRequests: withoutRequest(s.selectRequests, moved.id),
   };
 }
 
@@ -121,6 +134,32 @@ export const useTabs = create<TabsState>()((set) => ({
   activeId: null,
   lastFolderId: null,
   views: {},
+  selectRequests: {},
+  requestSelect(id, paths) {
+    set((s) =>
+      s.tabs.some((t) => t.id === id)
+        ? { selectRequests: { ...s.selectRequests, [id]: paths } }
+        : {}
+    );
+  },
+  clearSelectRequest(id) {
+    set((s) => ({ selectRequests: withoutRequest(s.selectRequests, id) }));
+  },
+  focusOrOpenFolder(path) {
+    set((s) => {
+      const key = pathKey(path);
+      const open = s.tabs.find((t) => t.kind === "folder" && pathKey(t.path) === key);
+      if (open) return { activeId: open.id };
+      const tab: FolderTab = {
+        id: crypto.randomUUID(),
+        kind: "folder",
+        path,
+        history: [path],
+        cursor: 0,
+      };
+      return { tabs: [...s.tabs, tab], activeId: tab.id };
+    });
+  },
   saveView(id, view) {
     set((s) => (s.tabs.some((t) => t.id === id) ? { views: { ...s.views, [id]: view } } : {}));
   },
@@ -164,8 +203,9 @@ export const useTabs = create<TabsState>()((set) => ({
       if (i < 0) return {};
       const tabs = s.tabs.filter((t) => t.id !== id);
       const views = withoutView(s.views, id);
-      if (id !== s.activeId) return { tabs, views };
-      return { tabs, views, activeId: (tabs[i] ?? tabs[i - 1])?.id ?? null };
+      const selectRequests = withoutRequest(s.selectRequests, id);
+      if (id !== s.activeId) return { tabs, views, selectRequests };
+      return { tabs, views, selectRequests, activeId: (tabs[i] ?? tabs[i - 1])?.id ?? null };
     });
   },
   activate(id) {

@@ -99,10 +99,34 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     if (kept && (folder.phase === "ready" || kept.pathKey !== key)) setKept(null);
   }, [kept, key, folder.phase]);
   const [editing, setEditing] = useState(keptHere?.location != null);
+  const [openErrors, setOpenErrors] = useState<WireError[]>([]);
+  const [revealTick, setRevealTick] = useState(0);
+  // Items another program asked to have selected here (kern://select, R57), once listed.
+  const selectRequest = useTabs((s) => s.selectRequests[tab.id]);
+  const { selectKeys } = folder;
+  useEffect(() => {
+    if (!selectRequest || folder.phase !== "ready") return;
+    useTabs.getState().clearSelectRequest(tab.id);
+    const listed = new Set(entries.map((e) => pathKey(e.path)));
+    const wanted = selectRequest.filter((p) => listed.has(pathKey(p)));
+    selectKeys(wanted.map(pathKey));
+    setRevealTick((n) => n + 1);
+    const missing = selectRequest.filter((p) => !listed.has(pathKey(p)));
+    if (missing.length > 0) {
+      setOpenErrors((errs) => [
+        ...errs,
+        {
+          kind: "NotFound",
+          message: `Not in this folder, so not selected: ${missing.map(displayPath).join(", ")}`,
+          path: null,
+          details: null,
+        },
+      ]);
+    }
+  }, [selectRequest, folder.phase, entries, selectKeys, tab.id]);
   // What the location bar was reopened with, and the text typed in it since (kept for the view state).
   const [resumeText, setResumeText] = useState(keptHere?.location?.text);
   const locationText = useRef<string | undefined>(resumeText);
-  const [openErrors, setOpenErrors] = useState<WireError[]>([]);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [columns, setColumns] = useState(1);
   const root = useRef<HTMLDivElement>(null);
@@ -118,7 +142,6 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   // After a click on the header, the breadcrumb or a view button the keyboard
   // belongs to the list again, once there is a list to take it.
   const focusSoon = useRef(false);
-  const [revealTick, setRevealTick] = useState(0);
   const [asking, setAsking] = useState<{ list: typeof entries; newWindow: boolean } | null>(null);
   // Navigates this view's own tab, which is not the active one when the panel is slid in over a document.
   const navigate = useCallback(

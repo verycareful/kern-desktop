@@ -5,6 +5,7 @@ import { test, expect } from "./support/mockInvoke";
 test("boots_with_mocked_ipc", async ({ page, mockTauri }) => {
   // The theme the shell asks for at startup.
   await mockTauri({
+    open_pending_take: [],
     settings_get: {
       follow: { colours: true, accent: true, fonts: true, radius: true },
       theme_mode: "system",
