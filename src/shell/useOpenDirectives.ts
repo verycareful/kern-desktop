@@ -9,6 +9,7 @@ import {
   EVENT_OPEN_ERROR,
   EVENT_PROPERTIES,
   EVENT_SELECT,
+  confirmClose,
   displayPath,
   on,
   openPendingTake,
@@ -23,15 +24,17 @@ import {
 } from "../ipc";
 import { useTabs } from "../store/tabs";
 
-// Design 4.4 and 4.5, R57: what the backend tells the main window to do. The
+// Design 4.4 and 4.5: what the backend tells the main window to do. The
 // backend queues events for a window until it has asked for them once with
 // open_pending_take, so the window subscribes first, takes the queue, applies
 // it in order and then the live events, which wait behind the queue while it
 // is being taken.
 //
-// Events of features this window does not have yet (kern://properties, a
-// document window's load_doc, adopt-doc and close-requested) are never
-// dropped quietly: each is reported as a notice that names it.
+// A window asked to close with no dirty tab closes at once (design 4.5 with an
+// empty list of dirty tabs). Events of features this window does not have yet
+// (kern://properties, a document window's load_doc, adopt-doc, and a close
+// with a dirty tab) are never dropped quietly: each is reported as a notice
+// that names it.
 
 /** Every event the window listens to; those without a case in `apply` are reported. */
 const EVENTS = [
@@ -62,7 +65,8 @@ export interface OpenDirectives {
 const unhandled = (name: string, detail = ""): string =>
   `Kern received "${name}"${detail} but this version cannot act on it yet.`;
 
-export function useOpenDirectives(): OpenDirectives {
+/** `enabled` is false in a window that is not the main one: it neither subscribes nor takes. */
+export function useOpenDirectives(enabled: boolean): OpenDirectives {
   const [ready, setReady] = useState(false);
   const [errors, setErrors] = useState<WireError[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -77,6 +81,7 @@ export function useOpenDirectives(): OpenDirectives {
   );
 
   useEffect(() => {
+    if (!enabled) return;
     let alive = true;
     const unlisten: UnlistenFn[] = [];
     let waiting: Queued[] | null = [];
@@ -118,6 +123,11 @@ export function useOpenDirectives(): OpenDirectives {
         case EVENT_OPEN_ERROR:
           addError(item.payload as WireError);
           return;
+        case EVENT_CLOSE_REQUESTED:
+          if (tabs().tabs.some((t) => t.kind === "doc" && t.dirty)) {
+            notice(unhandled(item.event, " with unsaved changes"));
+          } else await confirmClose();
+          return;
         default:
           notice(unhandled(item.event));
       }
@@ -141,16 +151,20 @@ export function useOpenDirectives(): OpenDirectives {
           if (alive) unlisten.push(un);
           else un();
         }
+        // A cleaned-up run (StrictMode's first) leaves the take to the one that replaced it.
+        if (!alive) return;
         taken.current ??= openPendingTake();
         const queued = await taken.current;
-        // A cleaned-up run (StrictMode's first) leaves the queue to the one that replaced it.
         if (!alive) return;
         const late = waiting ?? [];
         waiting = null;
         for (const item of [...queued, ...late]) enqueue(item);
       } catch (e) {
         if (alive) {
+          // What arrived while the take was out is still applied.
+          const late = waiting ?? [];
           waiting = null;
+          late.forEach(enqueue);
           addError(toWireError(e));
         }
       }
@@ -162,7 +176,7 @@ export function useOpenDirectives(): OpenDirectives {
       alive = false;
       unlisten.forEach((u) => u());
     };
-  }, [addError, notice]);
+  }, [addError, notice, enabled]);
 
   return {
     ready,

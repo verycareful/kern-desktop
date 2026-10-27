@@ -10,7 +10,7 @@ import { useViewSettings } from "../files/view-settings";
 import { usePanelsStore } from "../store/panels";
 import { useTabs } from "../store/tabs";
 
-// R56: switching tabs keeps each folder tab's scroll offset, selection,
+// Switching tabs keeps each folder tab's scroll offset, selection,
 // cursor and location bar; the view is remounted, never kept hidden.
 
 const ipc = vi.hoisted(() => ({
@@ -20,8 +20,14 @@ const ipc = vi.hoisted(() => ({
   on: vi.fn(),
   settingsGet: vi.fn(),
   userDirs: vi.fn(),
+  thumbRequest: vi.fn(),
+  thumbCancel: vi.fn(),
 }));
-vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
+vi.mock("../ipc", async (orig) => ({
+  ...(await orig<typeof import("../ipc")>()),
+  ...ipc,
+  assetUrl: (f: { v: string }) => `asset://${f.v}`,
+}));
 
 import MainWindow from "./MainWindow";
 
@@ -69,6 +75,8 @@ beforeEach(() => {
   ipc.on.mockResolvedValue(() => undefined);
   ipc.watchDir.mockResolvedValue(undefined);
   ipc.unwatchDir.mockResolvedValue(undefined);
+  ipc.thumbRequest.mockResolvedValue(undefined);
+  ipc.thumbCancel.mockResolvedValue(undefined);
   ipc.userDirs.mockResolvedValue({ home: p("/home/u"), dirs: [] });
   ipc.settingsGet.mockResolvedValue({
     show_hidden: false,
@@ -245,4 +253,43 @@ test("a_view_that_never_listed_does_not_overwrite_the_saved_state", async () => 
   fireEvent.click(screen.getByRole("tab", { name: "b" }));
   await act(async () => release?.(files("/d/a", 30)));
   expect(useTabs.getState().views[a]?.selected).toEqual([pathKey(p("/d/a/f07"))]);
+});
+
+test("the_offset_survives_two_round_trips", async () => {
+  await twoTabs();
+  await switchTo("a");
+  scrollTo(250);
+  await switchTo("b");
+  await switchTo("a");
+  expect(scroller().scrollTop).toBe(250);
+  // Away again without scrolling: the restored offset is what is kept.
+  await switchTo("b");
+  await switchTo("a");
+  expect(scroller().scrollTop).toBe(250);
+});
+
+test("the_offset_survives_two_round_trips_in_the_grid", async () => {
+  ipc.settingsGet.mockResolvedValue({
+    show_hidden: false,
+    view_mode: "grid",
+    density: "cozy",
+  } as Settings);
+  useTabs.getState().openFolder(p("/d/a"), false);
+  useTabs.getState().openFolder(p("/d/b"), true);
+  render(<MainWindow />);
+  const gridListed = () => waitFor(() => expect(screen.getByTestId("folder-grid")).toBeVisible());
+  await gridListed();
+  const go = async (name: string) => {
+    fireEvent.click(screen.getByRole("tab", { name }));
+    await gridListed();
+    await waitFor(() => expect(screen.getAllByTestId("file-card").length).toBeGreaterThan(0));
+  };
+  await go("a");
+  scrollTo(250);
+  await go("b");
+  await go("a");
+  expect(scroller().scrollTop).toBe(250);
+  await go("b");
+  await go("a");
+  expect(scroller().scrollTop).toBe(250);
 });

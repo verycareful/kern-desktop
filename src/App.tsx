@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useRef, useState } from "react";
-import { toWireError, userDirs, type WireError } from "./ipc";
+import { isMainWindow, toWireError, userDirs, type WireError } from "./ipc";
 import MainWindow from "./shell/MainWindow";
 import { useOpenDirectives } from "./shell/useOpenDirectives";
 import { useTabs } from "./store/tabs";
@@ -11,7 +11,9 @@ export default function App() {
   const { error, problems } = useTheme();
   const [homeError, setHomeError] = useState<WireError | null>(null);
   const tabCount = useTabs((s) => s.tabs.length);
-  const directives = useOpenDirectives();
+  // Only the main window browses until document windows have their own shell.
+  const [isMain] = useState(isMainWindow);
+  const directives = useOpenDirectives(isMain);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -29,7 +31,7 @@ export default function App() {
   // only opened once what was queued for the window has been applied and left
   // it without a tab.
   useEffect(() => {
-    if (!directives.ready || tabCount !== 0 || homeError !== null) return;
+    if (!isMain || !directives.ready || tabCount !== 0 || homeError !== null) return;
     userDirs().then(
       (dirs) => {
         if (mounted.current && useTabs.getState().tabs.length === 0) {
@@ -38,7 +40,7 @@ export default function App() {
       },
       (e: unknown) => mounted.current && setHomeError(toWireError(e))
     );
-  }, [directives.ready, tabCount, homeError]);
+  }, [isMain, directives.ready, tabCount, homeError]);
 
   return (
     <div data-testid="shell" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -82,7 +84,10 @@ export default function App() {
         </ul>
       )}
       <div style={{ flex: 1, minHeight: 0 }}>
-        <MainWindow openingHome={directives.ready && tabCount === 0 && homeError === null} />
+        <MainWindow
+          starting={isMain && !directives.ready}
+          openingHome={isMain && directives.ready && tabCount === 0 && homeError === null}
+        />
       </div>
     </div>
   );

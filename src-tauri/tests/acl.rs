@@ -85,7 +85,7 @@ fn a_kern_command_is_allowed_by_the_main_capability() {
 #[test]
 fn the_main_window_may_take_what_was_queued_for_it() {
     // The command the main window's frontend calls to receive its queued
-    // directives (R57); without the grant they would stay queued forever.
+    // directives; without the grant they would stay queued forever.
     let e = env("main");
     assert_eq!(
         invoke(&e, "open_pending_take", json!({})).unwrap(),

@@ -30,7 +30,7 @@ test("folder_tab_shows_three_regions", () => {
 test("tab_row_sits_over_the_folder_area_only", () => {
   useTabs.getState().openFolder(p("/home/a"), false);
   render(<MainWindow />);
-  // R55: the places strip and the side panel run from the window top, the tab
+  // The places strip and the side panel run from the window top, the tab
   // row sits over the folder area. All four are cells of one grid (the boxes
   // are asserted in the Playwright smoke test); the status bar is outside the
   // grid, so it spans the whole bottom.

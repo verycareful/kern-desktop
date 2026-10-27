@@ -78,7 +78,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   const { showHidden, viewMode, density, error: settingsError } = useViewSettings();
   const sort = useFolderUi((s) => s.sort[tab.id] ?? DEFAULT_SORT);
   const key = pathKey(tab.path);
-  // What this tab's view kept when it was last unmounted (R56). It is read once
+  // What this tab's view kept when it was last unmounted (design 4.1). It is read once
   // at mount, applies to the folder it was kept in, and is dropped for good on
   // the first move to another folder: coming back by Back starts fresh too.
   const [kept, setKept] = useState<FolderViewState | null>(() => {
@@ -101,7 +101,9 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   const [editing, setEditing] = useState(keptHere?.location != null);
   const [openErrors, setOpenErrors] = useState<WireError[]>([]);
   const [revealTick, setRevealTick] = useState(0);
-  // Items another program asked to have selected here (kern://select, R57), once listed.
+  // What could not be selected, apart from the open errors, which are replaced by each open.
+  const [selectNotes, setSelectNotes] = useState<WireError[]>([]);
+  // Items another program asked to have selected here (kern://select), once listed.
   const selectRequest = useTabs((s) => s.selectRequests[tab.id]);
   const { selectKeys } = folder;
   useEffect(() => {
@@ -113,17 +115,22 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     setRevealTick((n) => n + 1);
     const missing = selectRequest.filter((p) => !listed.has(pathKey(p)));
     if (missing.length > 0) {
-      setOpenErrors((errs) => [
-        ...errs,
+      // A dotfile is not listed while hidden files are off: say that, not that it is absent.
+      const hidden = (p: WirePath) =>
+        !showHidden && displayPath(p).split("/").pop()!.startsWith(".");
+      const describe = (p: WirePath) =>
+        `${displayPath(p)} (${hidden(p) ? "hidden, Ctrl+H shows hidden files" : "not in this folder"})`;
+      setSelectNotes((notes) => [
+        ...notes,
         {
           kind: "NotFound",
-          message: `Not in this folder, so not selected: ${missing.map(displayPath).join(", ")}`,
+          message: `Not selected: ${missing.map(describe).join(", ")}`,
           path: null,
           details: null,
         },
       ]);
     }
-  }, [selectRequest, folder.phase, entries, selectKeys, tab.id]);
+  }, [selectRequest, folder.phase, entries, selectKeys, tab.id, showHidden]);
   // What the location bar was reopened with, and the text typed in it since (kept for the view state).
   const [resumeText, setResumeText] = useState(keptHere?.location?.text);
   const locationText = useRef<string | undefined>(resumeText);
@@ -166,10 +173,13 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       scrollTop.current = (e.target as Element).scrollTop;
     }
   }, []);
-  // Reset with the folder: a new folder starts at the top.
+  // A new folder starts at the top; the kept view's offset stays until then.
+  const scrolledKey = useRef(key);
   useEffect(() => {
-    if (kept === null || kept.pathKey !== key) scrollTop.current = 0;
-  }, [kept, key]);
+    if (scrolledKey.current === key) return;
+    scrolledKey.current = key;
+    scrollTop.current = 0;
+  }, [key]);
   const ending = useRef({ phase: folder.phase, editing, key, path: tab.path });
   useEffect(() => {
     ending.current = { phase: folder.phase, editing, key, path: tab.path };
@@ -470,6 +480,25 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
             Changes to this folder will not appear by themselves (press F5 to refresh):{" "}
             <ErrorText error={folder.watchError} />
           </span>
+        </div>
+      )}
+      {selectNotes.length > 0 && (
+        <div role="alert" className="kern-banner">
+          <ul>
+            {selectNotes.map((e, i) => (
+              <li key={i}>
+                <ErrorText error={e} />
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            className="kern-icon-button"
+            aria-label="Dismiss"
+            onClick={() => setSelectNotes([])}
+          >
+            <X size={16} strokeWidth={2} aria-hidden />
+          </button>
         </div>
       )}
       {openErrors.length > 0 && (

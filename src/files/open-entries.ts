@@ -18,8 +18,10 @@ export const OPEN_CONFIRM_ABOVE = 10;
  * (Ctrl), each folder opens in a tab of its own, since folders live only in
  * the main window. Files go to the open command with origin "inside": it
  * decides (text becomes a document tab here or, with the gesture, a window;
- * anything else goes to its default application) and the tab is made here
- * from what it returns. Resolves to the errors to show, one per failure.
+ * anything else goes to its default application). The tab, window or focus
+ * it asks for is applied by the directive the backend sends to the main
+ * window, once, so what comes back here is only checked for failures.
+ * Resolves to the errors to show, one per failure.
  */
 export async function openEntries(
   list: readonly WireEntry[],
@@ -53,10 +55,6 @@ export async function openEntries(
           path: o.path,
           details: null,
         });
-      } else if (o.action === "folder_tab") useTabs.getState().navigateTab(tabId, o.path);
-      else if (o.action === "doc_tab") useTabs.getState().openDoc(o.path);
-      else if (o.action === "focus" && o.location?.kind === "tab") {
-        useTabs.getState().activate(o.location.tab_id);
       }
     }
   } catch (e) {

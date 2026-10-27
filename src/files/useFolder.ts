@@ -27,7 +27,7 @@ import { SORT_IN_WORKER_ABOVE, createSorter, type Sorter } from "./sort-async";
 
 export type Phase = "loading" | "ready" | "error" | "gone";
 
-/** A selection kept by path (R56), to put back on the first listing of `pathKey`. */
+/** A selection kept by path, to put back on the first listing of `pathKey`. */
 export interface SeedSel {
   pathKey: string;
   selected: readonly string[];

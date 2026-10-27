@@ -416,7 +416,7 @@ async fn show_properties<R: Runtime>(
         return;
     }
     // Never an empty main: with no main window yet, it opens on the folder
-    // of the first item (design ruling R42).
+    // of the first item (the first item is the one the caller means to show).
     if app.get_webview_window(MAIN).is_none() {
         let first = present_paths[0];
         let folder = first.parent().unwrap_or(first).to_path_buf();

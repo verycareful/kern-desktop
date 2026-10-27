@@ -17,7 +17,7 @@ export type DocTab = { id: string; kind: "doc"; path: WirePath; dirty: boolean }
 export type Tab = FolderTab | DocTab;
 
 /**
- * What a folder tab's view keeps while another tab is shown (R56): the scroll
+ * What a folder tab's view keeps while another tab is shown the scroll
  * offset, the selection and the location bar. Items are named by pathKey, so
  * they are found again whatever order the listing comes back in. `pathKey` is
  * the folder it was taken in; it is applied to that folder only.
@@ -39,11 +39,11 @@ export interface TabsState {
   lastFolderId: string | null;
   /** The saved view of each folder tab that is not shown, by tab id. */
   views: Record<string, FolderViewState>;
-  /** Items to select in a folder tab once it has listed (kern://select, R57); taken by its view. */
+  /** Items to select in a folder tab once it has listed (kern://select); taken by its view. */
   selectRequests: Record<string, WirePath[]>;
   requestSelect(id: string, paths: WirePath[]): void;
   clearSelectRequest(id: string): void;
-  /** Focus the folder tab that shows `path`, or open one (a folder opened from outside, R57). */
+  /** Focus the folder tab that shows `path`, or open one (a folder opened from outside, design 4.5). */
   focusOrOpenFolder(path: WirePath): void;
   /** Keep a folder tab's view; ignored for a tab that is gone (a view torn down by its tab's close). */
   saveView(id: string, view: FolderViewState): void;

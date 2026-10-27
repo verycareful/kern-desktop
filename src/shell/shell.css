@@ -26,7 +26,7 @@
 }
 
 /*
- * Design 4.1 and R55. A folder tab: the places strip and the side panel run
+ * Design 4.1. A folder tab: the places strip and the side panel run
  * from the window top down to the status bar; the tab row sits over the folder
  * area only, starting at the strip's right edge and ending at the right third.
  * The left two thirds are the strip and the folder area; the third column is

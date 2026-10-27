@@ -36,7 +36,7 @@ test("boots_with_mocked_ipc", async ({ page, mockTauri }) => {
   await expect(page.getByTestId("side-panel")).toBeVisible();
   await expect(page.getByTestId("status-bar")).toContainText("/home/tester/docs");
 
-  // R55 layout: the places strip runs from the window top down to the status
+  // Layout: the places strip runs from the window top down to the status
   // bar, the tab row sits over the folder area (its left edge is the folder
   // area's) and ends at the right third, which runs from the window top; the
   // status bar spans the bottom.
@@ -49,7 +49,7 @@ test("boots_with_mocked_ipc", async ({ page, mockTauri }) => {
   expect(places.y + places.height).toBeCloseTo(status.y, 0);
   expect(tabBar.x).toBeCloseTo(area.x, 0);
   expect(tabBar.x).toBeCloseTo(places.x + places.width, 0);
-  expect(tabBar.y).toBeLessThanOrEqual(places.y);
+  expect(tabBar.y).toBe(0);
   expect(tabBar.x + tabBar.width).toBeCloseTo(side.x, 0);
   expect(tabBar.y + tabBar.height).toBeCloseTo(area.y, 0);
   expect(side.y).toBe(0);

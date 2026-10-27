@@ -26,7 +26,7 @@ export function FileGrid(
     rootRef: React.RefObject<HTMLDivElement | null>;
     /** Counts keyboard moves of the cursor; each one scrolls the cursor into view. */
     revealTick: number;
-    /** The offset a tab view kept, put back when the grid mounts (R56). */
+    /** The offset a tab view kept, put back when the grid mounts. */
     initialScroll: number;
   }
 ) {

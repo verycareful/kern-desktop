@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-// Design 4.1 and R55: the file manager. Docked, its two parts are cells of the
+// Design 4.1: the file manager. Docked, its two parts are cells of the
 // main grid: the places strip from the window top to the status bar, and the
 // folder area beside it under the tab row. Slid in over a document (4.3) they
 // are one panel. The strip (Places, Volumes, Trash) is filled by a later task;

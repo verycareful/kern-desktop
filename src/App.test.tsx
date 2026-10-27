@@ -26,6 +26,8 @@ vi.mock("./ipc", async () => ({
   unwatchDir: () => Promise.resolve(),
   on: () => Promise.resolve(() => undefined),
   openPendingTake: () => Promise.resolve([]),
+  confirmClose: () => Promise.resolve(),
+  isMainWindow: () => true,
   EVENT_OPEN: "kern://open",
   EVENT_SELECT: "kern://select",
   EVENT_OPEN_ERROR: "kern://open-error",

@@ -182,7 +182,7 @@ test("double_click_on_a_folder_navigates_the_tab", async () => {
   expect(ipc.openPaths).not.toHaveBeenCalled();
 });
 
-test("double_click_on_a_text_file_opens_a_doc_tab_from_the_outcome", async () => {
+test("double_click_on_a_text_file_asks_the_backend_and_leaves_the_tab_to_its_directive", async () => {
   await mount([entry("n.txt", { mime: "text/plain" })]);
   const outcome: OpenOutcome = {
     path: p("/d/n.txt"),
@@ -192,10 +192,11 @@ test("double_click_on_a_text_file_opens_a_doc_tab_from_the_outcome", async () =>
   };
   ipc.openPaths.mockResolvedValue([outcome]);
   fireEvent.doubleClick(screen.getAllByTestId("file-row")[0]!);
-  await waitFor(() => expect(useTabs.getState().tabs.some((t) => t.kind === "doc")).toBe(true));
+  await waitFor(() => expect(ipc.openPaths).toHaveBeenCalled());
   expect(ipc.openPaths).toHaveBeenCalledWith([p("/d/n.txt")], "inside", "default");
-  const doc = useTabs.getState().tabs.find((t) => t.kind === "doc")!;
-  expect(doc.path).toEqual(p("/d/n.txt"));
+  // The document tab comes from the directive the backend sends, once.
+  await act(async () => {});
+  expect(useTabs.getState().tabs.some((t) => t.kind === "doc")).toBe(false);
 });
 
 test("a_file_for_another_app_opens_no_tab", async () => {
@@ -495,15 +496,16 @@ test("every_grid_mount_has_its_own_thumbnail_key", async () => {
   expect(ipc.thumbCancel).not.toHaveBeenCalledWith(second);
 });
 
-test("a_folder_tab_outcome_navigates_the_tab", async () => {
+test("a_folder_tab_outcome_is_left_to_its_directive", async () => {
   const { tab } = await mount([entry("link-to-dir")]);
   ipc.openPaths.mockResolvedValue([
     { path: p("/d/link-to-dir"), action: "folder_tab", location: null, error: null },
   ]);
   fireEvent.doubleClick(screen.getAllByTestId("file-row")[0]!);
-  await waitFor(() =>
-    expect((activeTab(useTabs.getState()) as FolderTab).path).toEqual(p("/d/link-to-dir"))
-  );
+  await waitFor(() => expect(ipc.openPaths).toHaveBeenCalled());
+  await act(async () => {});
+  expect(useTabs.getState().tabs).toHaveLength(1);
+  expect((activeTab(useTabs.getState()) as FolderTab).path).toEqual(p("/d"));
   expect(activeTab(useTabs.getState())?.id).toBe(tab.id);
 });
 

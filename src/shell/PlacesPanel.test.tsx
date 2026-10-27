@@ -74,16 +74,15 @@ test("navigating_in_the_slid_in_panel_navigates_that_tab_and_keeps_the_document"
   expect(useTabs.getState().activeId).toBe(doc);
 });
 
-test("opening_a_file_in_the_slid_in_panel_follows_design_4_3", async () => {
+test("opening_a_file_in_the_slid_in_panel_asks_the_backend_for_a_document_tab", async () => {
   await slideIn();
   ipc.openPaths.mockResolvedValue([
     { path: p("/d/sub/n.txt"), action: "doc_tab", location: null, error: null },
   ]);
   fireEvent.doubleClick(screen.getByTestId("file-row"));
-  await waitFor(() => expect(useTabs.getState().tabs).toHaveLength(3));
+  await waitFor(() => expect(ipc.openPaths).toHaveBeenCalled());
+  // Origin "inside": the backend decides and sends the directive that opens the tab (design 4.3).
   expect(ipc.openPaths).toHaveBeenCalledWith([p("/d/sub/n.txt")], "inside", "default");
-  const active = useTabs.getState().tabs.find((t) => t.id === useTabs.getState().activeId)!;
-  expect(active).toMatchObject({ kind: "doc", path: p("/d/sub/n.txt") });
 });
 
 test("with_no_folder_tab_the_slid_in_panel_has_no_folder_view", async () => {

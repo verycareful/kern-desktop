@@ -12,7 +12,7 @@ import { parseLocation } from "./path-input";
 // from, so a folder whose name is not UTF-8 is not turned into another path.
 export function LocationBar(props: {
   path: WirePath;
-  /** Text to show instead of the path (a bar reopened with what was typed, R56). */
+  /** Text to show instead of the path (a bar reopened with what was typed). */
   initialText?: string;
   /** Every change to the text, so the view can keep it. */
   onText?(text: string): void;

@@ -166,7 +166,7 @@ test("the_last_folder_tab_is_kept_in_the_store", () => {
   expect(recentFolderTab(s())).toBeNull();
 });
 
-// R56: the per-tab view state of a folder tab (scroll, selection, location bar).
+// The per-tab view state of a folder tab (scroll, selection, location bar).
 const view = (key: string) => ({
   pathKey: key,
   scrollTop: 40,
@@ -215,7 +215,7 @@ test("a_view_is_not_dropped_by_other_tabs_moving_or_by_switching", () => {
   expect(s().views[a]).toEqual(view("/home/a"));
 });
 
-// R57: opening a folder from outside focuses the tab it is already open in.
+// Opening a folder from outside focuses the tab it is already open in.
 test("focus_or_open_folder_opens_once_and_then_focuses", () => {
   s().openFolder(p("/home/a"), false);
   const a = s().activeId!;

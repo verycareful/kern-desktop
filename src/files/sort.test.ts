@@ -136,8 +136,7 @@ test("sort_100k_under_budget", () => {
   // folder of NON-ASCII names, which is everything but the sort itself:
   // building the data posted to the worker and applying the index permutation
   // that comes back. The collator sort runs in a Web Worker (sort-async.ts), so
-  // it is computed here outside the timed part. Budget 200 ms (Review Focus 2,
-  // R53): the plan's budget for a refresh of a 100 000-entry folder, within the
+  // it is computed here outside the timed part. Budget 200 ms (Review Focus 2): the plan's budget for a refresh of a 100 000-entry folder, within the
   // 0.1 s "instantaneous" and 1 s "flow" limits of Nielsen (Usability
   // Engineering, 1993, ch. 5). The sort itself, about 400 ms for such names, is
   // allowed to take longer only because it does not block the page; the

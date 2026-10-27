@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Queued, Settings, WirePath } from "../ipc";
@@ -10,7 +11,7 @@ import { useViewSettings } from "../files/view-settings";
 import { usePanelsStore } from "../store/panels";
 import { useTabs } from "../store/tabs";
 
-// R57: the main window subscribes, takes what was queued for it, applies that
+// The main window subscribes, takes what was queued for it, applies that
 // and then the live events, in order. Nothing it cannot handle is dropped.
 
 const ipc = vi.hoisted(() => ({
@@ -21,6 +22,8 @@ const ipc = vi.hoisted(() => ({
   settingsGet: vi.fn(),
   userDirs: vi.fn(),
   openPendingTake: vi.fn(),
+  openPaths: vi.fn(),
+  confirmClose: vi.fn(),
   themeGet: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
@@ -47,6 +50,9 @@ beforeEach(() => {
     calls.push("take");
     return Promise.resolve(queued);
   });
+  ipc.openPaths.mockResolvedValue([]);
+  ipc.confirmClose.mockResolvedValue(undefined);
+  delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   ipc.watchDir.mockResolvedValue(undefined);
   ipc.unwatchDir.mockResolvedValue(undefined);
   ipc.themeGet.mockResolvedValue({ css: ":root{}", fallbacks: [], problems: [] });
@@ -226,13 +232,13 @@ test("an_event_this_window_cannot_handle_is_reported_never_dropped", async () =>
     .join("\n");
   expect(text).toContain("kern://properties");
   expect(text).toContain("load_doc");
-  await emit("kern://close-requested", null);
+  await emit("kern://adopt-doc", { path: p("/d/a"), text_state: null, from: "doc-1" });
   expect(
     screen
       .getAllByRole("alert")
       .map((a) => a.textContent)
       .join("\n")
-  ).toContain("kern://close-requested");
+  ).toContain("kern://adopt-doc");
 });
 
 test("a_failed_take_is_reported_and_home_still_opens", async () => {
@@ -240,4 +246,105 @@ test("a_failed_take_is_reported_and_home_still_opens", async () => {
   render(<App />);
   expect(await screen.findByRole("tab", { name: "t" })).toBeInTheDocument();
   expect(screen.getByRole("alert")).toHaveTextContent("no queue");
+});
+
+test("only_the_live_run_takes_the_queue_under_strict_mode", async () => {
+  queue(folder("/d/docs"));
+  render(
+    <StrictMode>
+      <App />
+    </StrictMode>
+  );
+  expect(await screen.findByRole("tab", { name: "docs" })).toBeInTheDocument();
+  await act(async () => {});
+  expect(tabNames()).toEqual(["docs"]);
+  expect(ipc.openPendingTake).toHaveBeenCalledTimes(1);
+});
+
+test("events_buffered_before_a_failed_take_are_still_applied", async () => {
+  let fail!: (e: unknown) => void;
+  ipc.openPendingTake.mockImplementation(() => new Promise<Queued[]>((_, r) => (fail = r)));
+  render(<App />);
+  await waitFor(() => expect(fail).toBeDefined());
+  await emit("kern://open", { kind: "folder_tab", path: p("/d/live") });
+  await act(async () => fail({ kind: "Io", message: "no queue", path: null, details: null }));
+  await waitFor(() => expect(tabNames()).toEqual(["live"]));
+  expect(screen.getByRole("alert")).toHaveTextContent("no queue");
+});
+
+test("a_hidden_item_that_cannot_be_selected_is_said_to_be_hidden", async () => {
+  queue(folder("/d/x"), {
+    event: "kern://select",
+    payload: { tab: p("/d/x"), paths: [p("/d/x/.bashrc"), p("/d/x/zzz")] },
+  });
+  render(<App />);
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent(/\.bashrc.*hidden/);
+  expect(alert).toHaveTextContent(/zzz.*not in this folder/i);
+});
+
+test("opening_an_item_does_not_wipe_the_select_report", async () => {
+  queue(folder("/d/x"), {
+    event: "kern://select",
+    payload: { tab: p("/d/x"), paths: [p("/d/x/zzz")] },
+  });
+  render(<App />);
+  await screen.findByRole("alert");
+  fireEvent.doubleClick((await screen.findAllByTestId("file-row"))[0]!);
+  await waitFor(() => expect(ipc.openPaths).toHaveBeenCalled());
+  await act(async () => {});
+  expect(screen.getByRole("alert")).toHaveTextContent(/zzz/);
+});
+
+test("close_requested_closes_the_window_when_no_tab_is_dirty", async () => {
+  render(<App />);
+  await screen.findByRole("tab", { name: "t" });
+  await emit("kern://close-requested", null);
+  expect(ipc.confirmClose).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("a_failed_close_is_shown", async () => {
+  ipc.confirmClose.mockRejectedValue({ kind: "Io", message: "cannot close", path: null });
+  render(<App />);
+  await screen.findByRole("tab", { name: "t" });
+  await emit("kern://close-requested", null);
+  expect(await screen.findByRole("alert")).toHaveTextContent("cannot close");
+});
+
+test("close_requested_with_a_dirty_tab_does_not_close_and_says_so", async () => {
+  render(<App />);
+  await screen.findByRole("tab", { name: "t" });
+  useTabs.getState().openDoc(p("/d/n.md"));
+  const doc = useTabs.getState().activeId!;
+  act(() =>
+    useTabs.setState((s) => ({
+      tabs: s.tabs.map((t) => (t.id === doc && t.kind === "doc" ? { ...t, dirty: true } : t)),
+    }))
+  );
+  await emit("kern://close-requested", null);
+  expect(ipc.confirmClose).not.toHaveBeenCalled();
+  expect(await screen.findByRole("alert")).toHaveTextContent("kern://close-requested");
+});
+
+test("a_window_other_than_main_does_not_take_the_queue_or_open_home", async () => {
+  (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {
+    metadata: { currentWindow: { label: "doc-1" } },
+  };
+  render(<App />);
+  await act(async () => {});
+  expect(ipc.openPendingTake).not.toHaveBeenCalled();
+  expect(ipc.userDirs).not.toHaveBeenCalled();
+  expect(tabNames()).toEqual([]);
+});
+
+test("a_loading_line_shows_until_the_queue_is_applied", async () => {
+  let release!: (q: Queued[]) => void;
+  ipc.openPendingTake.mockImplementation(() => new Promise<Queued[]>((r) => (release = r)));
+  render(<App />);
+  expect(await screen.findByRole("status")).toHaveTextContent(/starting/i);
+  await waitFor(() => expect(release).toBeDefined());
+  await act(async () => release([folder("/d/docs")]));
+  expect(await screen.findByRole("tab", { name: "docs" })).toBeInTheDocument();
+  expect(screen.queryByText(/starting/i)).toBeNull();
 });

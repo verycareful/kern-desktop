@@ -10,12 +10,12 @@ import { StatusBar } from "./StatusBar";
 import { TabBar } from "./TabBar";
 import "./shell.css";
 
-// Design 4.1 and R55: the places strip and Pinned and Recent run the full
+// Design 4.1: the places strip and Pinned and Recent run the full
 // height of the window (the strip on the left, Pinned and Recent on the right
 // third); the tab row sits over the folder area between them. In a document tab
 // (4.3) the tab row spans the window and both panels are folded to stubs that
 // slide them over the document. The status bar spans the bottom.
-export default function MainWindow(props: { openingHome?: boolean }) {
+export default function MainWindow(props: { openingHome?: boolean; starting?: boolean }) {
   useShortcuts();
   const tab = useTabs((s) => activeTab(s));
   const { leftOpen, rightOpen } = usePanels();
@@ -26,7 +26,8 @@ export default function MainWindow(props: { openingHome?: boolean }) {
     layout = "none";
     body = (
       <main className="kern-empty" data-testid="no-tab">
-        {props.openingHome && <p>Opening the Home folder…</p>}
+        {props.starting && <p role="status">Starting…</p>}
+        {!props.starting && props.openingHome && <p>Opening the Home folder…</p>}
       </main>
     );
   } else if (tab.kind === "folder") {
