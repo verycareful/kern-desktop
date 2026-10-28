@@ -11,6 +11,7 @@ import type { Sel } from "./selection";
 import type { SortBy, SortDir } from "./sort";
 import { useRestoredScroll } from "./restore-scroll";
 import { useRubberBand } from "./useRubberBand";
+import { useCurrentItem } from "./use-current-item";
 
 /** The column header's height. */
 const HEADER_HEIGHT = 32;
@@ -96,6 +97,8 @@ export function FileList(
     if (revealTick > 0 && cursor.current !== null) virtual.scrollToIndex(cursor.current);
   }, [revealTick, virtual]);
 
+  const item = useCurrentItem(entries.length, sel.cursor);
+
   const layout: Layout = { kind: "list", rowHeight, count: entries.length };
   const { onPointerDown, band } = useRubberBand({
     scroller,
@@ -114,9 +117,10 @@ export function FileList(
       aria-label="Files"
       aria-multiselectable
       aria-rowcount={entries.length}
-      aria-activedescendant={sel.cursor === null ? undefined : `${uid}-row-${sel.cursor}`}
+      aria-activedescendant={item.current === null ? undefined : `${uid}-row-${item.current}`}
       className="kern-list"
       data-testid="folder-list"
+      {...item.handlers}
     >
       <div
         ref={scroller}
@@ -170,7 +174,7 @@ export function FileList(
                 className={
                   "kern-row" +
                   (selected ? " kern-selected" : "") +
-                  (sel.cursor === v.index ? " kern-cursor" : "")
+                  (item.outlined === v.index ? " kern-cursor" : "")
                 }
                 style={{
                   height: rowHeight,

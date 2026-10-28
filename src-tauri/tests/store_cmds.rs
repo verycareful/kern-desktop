@@ -63,6 +63,7 @@ fn env() -> Env {
             .__allow_command(cmd.to_owned(), ExecutionContext::Local);
     }
     let app = mock_builder()
+        .plugin(kern_lib::zoom::plugin())
         .manage(StoreState::new(Store::new(config.clone(), state.clone())))
         .invoke_handler(tauri::generate_handler![
             kern_lib::store_cmds::settings_get,

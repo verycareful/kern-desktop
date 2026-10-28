@@ -175,18 +175,24 @@
   color: var(--kern-text-dim);
 }
 
+/*
+ * The space between the path bar and the first row or card is the theme's
+ * gap for the density in use (--kern-density-gap, theme base.css), the same
+ * space the bar and the rows keep from the sides.
+ */
 .kern-list,
 .kern-grid {
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  padding-top: var(--kern-density-gap);
 }
 
+/* Keyboard focus shows on the current item (.kern-cursor), not as a frame round the view. */
 .kern-list:focus-visible,
 .kern-grid:focus-visible {
-  outline: 2px solid var(--kern-accent);
-  outline-offset: -2px;
+  outline: none;
 }
 
 .kern-scroll {

@@ -12,6 +12,9 @@
 //! and `store_errors_take` hands the queue over. A report reaches a window
 //! by both routes when it was listening, so the UI shows each `moved_to`
 //! once.
+//!
+//! Every read or write of the settings also applies the interface size to
+//! the windows (`zoom.rs`), which covers startup and a change from any window.
 
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -133,6 +136,7 @@ pub fn apply_at_startup<R: Runtime>(app: &AppHandle<R>) {
             .and_then(|store| store.settings_get())
             .map(|loaded| finish(&app, loaded, EVENT_SETTINGS_CHANGED))
             .and_then(|s| {
+                crate::zoom::apply(&app, s.interface_size);
                 let user = UserChoice {
                     mode: s.theme_mode,
                     accent: s.accent,
@@ -152,7 +156,9 @@ pub fn apply_at_startup<R: Runtime>(app: &AppHandle<R>) {
 pub async fn settings_get<R: Runtime>(app: AppHandle<R>) -> Result<Settings, WireError> {
     let store = app.state::<StoreState>().store()?;
     let loaded = blocking(move || store.settings_get()).await?;
-    Ok(finish(&app, loaded, EVENT_SETTINGS_CHANGED))
+    let settings = finish(&app, loaded, EVENT_SETTINGS_CHANGED);
+    crate::zoom::apply(&app, settings.interface_size);
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -162,7 +168,9 @@ pub async fn settings_set<R: Runtime>(
 ) -> Result<Settings, WireError> {
     let store = app.state::<StoreState>().store()?;
     let loaded = blocking(move || store.settings_set(patch)).await?;
-    Ok(finish(&app, loaded, EVENT_SETTINGS_CHANGED))
+    let settings = finish(&app, loaded, EVENT_SETTINGS_CHANGED);
+    crate::zoom::apply(&app, settings.interface_size);
+    Ok(settings)
 }
 
 #[tauri::command]

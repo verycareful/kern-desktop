@@ -28,6 +28,8 @@ export interface Settings {
   editor_zoom: number;
   view_mode: ViewMode;
   show_hidden: boolean;
+  /** Interface size in percent: 80, 90, 100, 110 or 125 (store.rs INTERFACE_SIZES). */
+  interface_size: number;
 }
 
 /** The keys settings_set takes. A `follow` patch may be partial. */

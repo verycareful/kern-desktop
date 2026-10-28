@@ -14,9 +14,11 @@ import {
   type ViewMode,
   type WireError,
 } from "../ipc";
+import { DEFAULT_INTERFACE_SIZE, stepInterfaceSize } from "../theme/interface-size";
 
 // The settings the folder view follows (design 7.2): whether hidden files show,
-// list or grid, and the density that sets the row height. The stored settings
+// list or grid, the density that sets the row height, and the interface size
+// (the zoom itself is applied by the backend; the actions step it). The stored settings
 // are the source; this holds their last known value for the view and for the
 // actions (Ctrl+H, the view buttons), which write through settings_set.
 interface ViewSettingsState {
@@ -24,6 +26,8 @@ interface ViewSettingsState {
   showHidden: boolean;
   viewMode: ViewMode;
   density: Density;
+  /** The interface size in percent. */
+  interfaceSize: number;
   /** The last read or write that failed, until the next one succeeds. */
   error: WireError | null;
 }
@@ -33,6 +37,7 @@ export const useViewSettings = create<ViewSettingsState>()(() => ({
   showHidden: false,
   viewMode: "list",
   density: "cozy",
+  interfaceSize: DEFAULT_INTERFACE_SIZE,
   error: null,
 }));
 
@@ -42,6 +47,7 @@ function apply(s: Settings): void {
     showHidden: s.show_hidden,
     viewMode: s.view_mode,
     density: s.density,
+    interfaceSize: s.interface_size,
     error: null,
   });
 }
@@ -65,6 +71,9 @@ async function write(patch: SettingsPatch): Promise<void> {
 
 export const toggleHidden = () => write({ show_hidden: !useViewSettings.getState().showHidden });
 export const setViewMode = (view_mode: ViewMode) => write({ view_mode });
+export const setInterfaceSize = (interface_size: number) => write({ interface_size });
+export const stepSize = (direction: 1 | -1) =>
+  setInterfaceSize(stepInterfaceSize(useViewSettings.getState().interfaceSize, direction));
 
 /** Keeps the store in step with the stored settings while a folder view is mounted. */
 export function useViewSettingsSync(): void {

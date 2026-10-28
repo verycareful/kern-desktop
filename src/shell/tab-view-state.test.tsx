@@ -11,8 +11,8 @@ import { useViewSettings } from "../files/view-settings";
 import { usePanelsStore } from "../store/panels";
 import { useTabs } from "../store/tabs";
 
-// Switching tabs keeps each folder tab's scroll offset, selection,
-// cursor and location bar; the view is remounted, never kept hidden.
+// Switching tabs keeps each folder tab's scroll offset, selection
+// and cursor; the view is remounted, never kept hidden.
 
 const ipc = vi.hoisted(() => ({
   listDir: vi.fn(),
@@ -132,7 +132,7 @@ function scrollTo(top: number) {
   fireEvent.scroll(scroller());
 }
 
-test("switching_away_and_back_restores_scroll_selection_cursor_and_location", async () => {
+test("switching_away_and_back_restores_scroll_selection_and_cursor_but_not_the_location_text", async () => {
   const { a } = await twoTabs();
   await switchTo("a");
   fireEvent.click(row("f02"));
@@ -150,9 +150,14 @@ test("switching_away_and_back_restores_scroll_selection_cursor_and_location", as
 
   await switchTo("a");
   expect(selectedNames()).toEqual(["f02", "f04"]);
+  // The cursor outline shows while the list has the keyboard.
+  expect(row("f04")).not.toHaveClass("kern-cursor");
+  act(() => screen.getByTestId("folder-list").focus());
   expect(row("f04")).toHaveClass("kern-cursor");
   expect(scroller().scrollTop).toBe(250);
-  expect(screen.getByRole("textbox", { name: "Location" })).toHaveValue("/d/typed");
+  // The bar's text is not kept (design 5.1).
+  expect(screen.queryByRole("textbox", { name: "Location" })).toBeNull();
+  expect(useTabs.getState().views[a]).not.toHaveProperty("location");
 });
 
 test("a_closed_location_bar_stays_closed", async () => {
@@ -228,7 +233,6 @@ test("a_state_from_another_folder_of_the_tab_is_not_applied", async () => {
     selected: ["some other folder/f01"],
     anchor: null,
     cursor: null,
-    location: { text: "x" },
   });
   await switchTo("a");
   expect(selectedNames()).toEqual([]);

@@ -100,7 +100,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   useEffect(() => {
     if (kept && (folder.phase === "ready" || kept.pathKey !== key)) setKept(null);
   }, [kept, key, folder.phase]);
-  const [editing, setEditing] = useState(keptHere?.location != null);
+  const [editing, setEditing] = useState(false);
   const [openErrors, setOpenErrors] = useState<WireError[]>([]);
   const [revealTick, setRevealTick] = useState(0);
   // What could not be selected, apart from the open errors, which are replaced by each open.
@@ -133,9 +133,6 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       ]);
     }
   }, [selectRequest, folder.phase, entries, selectKeys, tab.id, showHidden]);
-  // What the location bar was reopened with, and the text typed in it since (kept for the view state).
-  const [resumeText, setResumeText] = useState(keptHere?.location?.text);
-  const locationText = useRef<string | undefined>(resumeText);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [columns, setColumns] = useState(1);
   const root = useRef<HTMLDivElement>(null);
@@ -187,9 +184,9 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     scrolledKey.current = key;
     scrollTop.current = 0;
   }, [key]);
-  const ending = useRef({ phase: folder.phase, editing, key, path: tab.path });
+  const ending = useRef({ phase: folder.phase, key });
   useEffect(() => {
-    ending.current = { phase: folder.phase, editing, key, path: tab.path };
+    ending.current = { phase: folder.phase, key };
   });
   useEffect(
     () => () => {
@@ -207,7 +204,6 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         selected: [...s.selected].sort((x, y) => x - y).flatMap((i) => name(i) ?? []),
         anchor: name(s.anchor),
         cursor: name(s.cursor),
-        location: end.editing ? { text: locationText.current ?? displayPath(end.path) } : null,
       });
     },
     [tab.id]
@@ -427,14 +423,11 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         {editing ? (
           <LocationBar
             path={tab.path}
-            initialText={resumeText}
-            onText={(text) => (locationText.current = text)}
             onNavigate={navigate}
-            onClose={() => {
+            onClose={(how) => {
               setEditing(false);
-              setResumeText(undefined);
-              locationText.current = undefined;
-              root.current?.focus();
+              // Enter and Escape hand the keyboard to the list; focus that left on its own stays where it went.
+              if (how === "done") root.current?.focus();
             }}
           />
         ) : (

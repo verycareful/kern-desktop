@@ -13,6 +13,9 @@ import { CARD, columnsFor } from "./grid-layout";
 import { thumbSizeFor, useThumbnails, type ThumbState } from "./useThumbnails";
 import { useRestoredScroll } from "./restore-scroll";
 import { useRubberBand } from "./useRubberBand";
+import { useCurrentItem } from "./use-current-item";
+import { useViewSettings } from "./view-settings";
+import { zoomFactor } from "../theme/interface-size";
 
 const ROW_PITCH = CARD.height + CARD.gap;
 const OVERSCAN = 3;
@@ -91,11 +94,14 @@ export function FileGrid(
   // queue of the view that replaced it.
   const mount = useRef(0);
   if (mount.current === 0) mount.current = ++mounts;
+  const zoom = zoomFactor(useViewSettings((s) => s.interfaceSize));
   const thumbs = useThumbnails(
     `${props.thumbKey}:${mount.current}`,
     visible,
-    thumbSizeFor(window.devicePixelRatio || 1)
+    thumbSizeFor(window.devicePixelRatio || 1, zoom)
   );
+
+  const item = useCurrentItem(entries.length, sel.cursor);
 
   const layout: Layout = {
     kind: "grid",
@@ -123,9 +129,10 @@ export function FileGrid(
       tabIndex={0}
       aria-label="Files"
       aria-multiselectable
-      aria-activedescendant={sel.cursor === null ? undefined : `${uid}-card-${sel.cursor}`}
+      aria-activedescendant={item.current === null ? undefined : `${uid}-card-${item.current}`}
       className="kern-grid"
       data-testid="folder-grid"
+      {...item.handlers}
     >
       <div
         ref={scroller}
@@ -161,7 +168,7 @@ export function FileGrid(
                     className={
                       "kern-card" +
                       (selected ? " kern-selected" : "") +
-                      (sel.cursor === i ? " kern-cursor" : "")
+                      (item.outlined === i ? " kern-cursor" : "")
                     }
                     style={{ width: CARD.width, height: CARD.height }}
                     onClick={(ev) => props.onItemClick(i, ev)}

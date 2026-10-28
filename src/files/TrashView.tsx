@@ -42,6 +42,7 @@ import {
   type Sel,
 } from "./selection";
 import { useViewSettings } from "./view-settings";
+import { useCurrentItem } from "./use-current-item";
 import "./files.css";
 
 // Design 5.2: the Trash lists the home trash and the trashes of the mounted
@@ -333,6 +334,7 @@ export function TrashView(props: { tab: TrashTab }) {
     scrollMargin: HEADER_HEIGHT,
     initialRect: { width: 600, height: 400 },
   });
+  const focus = useCurrentItem(items.length, sel.cursor);
   const cursor = useRef(sel.cursor);
   useEffect(() => {
     cursor.current = sel.cursor;
@@ -394,9 +396,10 @@ export function TrashView(props: { tab: TrashTab }) {
         aria-label="Trash"
         aria-multiselectable
         aria-rowcount={items.length}
-        aria-activedescendant={sel.cursor === null ? undefined : `${uid}-row-${sel.cursor}`}
+        aria-activedescendant={focus.current === null ? undefined : `${uid}-row-${focus.current}`}
         className="kern-list"
         data-testid="trash-list"
+        {...focus.handlers}
       >
         <div
           ref={scroller}
@@ -442,7 +445,7 @@ export function TrashView(props: { tab: TrashTab }) {
                   className={
                     "kern-row" +
                     (isSelected ? " kern-selected" : "") +
-                    (sel.cursor === v.index ? " kern-cursor" : "")
+                    (focus.outlined === v.index ? " kern-cursor" : "")
                   }
                   style={{
                     height: rowHeight,

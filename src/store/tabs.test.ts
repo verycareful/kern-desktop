@@ -166,14 +166,13 @@ test("the_last_folder_tab_is_kept_in_the_store", () => {
   expect(recentFolderTab(s())).toBeNull();
 });
 
-// The per-tab view state of a folder tab (scroll, selection, location bar).
+// The per-tab view state of a folder tab (scroll, selection, cursor).
 const view = (key: string) => ({
   pathKey: key,
   scrollTop: 40,
   selected: [key + "/a"],
   anchor: null,
   cursor: null,
-  location: null,
 });
 
 test("a_saved_view_is_held_for_a_tab_and_dropped_when_it_closes", () => {

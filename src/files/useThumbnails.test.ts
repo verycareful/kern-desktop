@@ -60,6 +60,16 @@ test("sizes_follow_the_pixel_ratio", () => {
   expect(thumbSizeFor(2)).toBe("large");
 });
 
+test("sizes_are_asked_in_device_pixels_so_they_stay_sharp_under_zoom", () => {
+  // The picture area is 128 CSS px; on screen it is 128 x pixel ratio x interface zoom device pixels.
+  expect(thumbSizeFor(1, 0.9)).toBe("normal");
+  expect(thumbSizeFor(1, 1)).toBe("normal");
+  expect(thumbSizeFor(1, 1.1)).toBe("large");
+  expect(thumbSizeFor(1, 1.25)).toBe("large");
+  expect(thumbSizeFor(1.25, 0.9)).toBe("large");
+  expect(thumbSizeFor(1.1, 0.9)).toBe("normal");
+});
+
 test("requests_only_the_visible_images", async () => {
   const visible = [img("a.png"), entry("b.txt", { mime: "text/plain" }), img("c.png")];
   const { result } = renderHook(() => useThumbnails("t1", visible, "normal"));

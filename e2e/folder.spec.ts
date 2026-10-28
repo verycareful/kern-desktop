@@ -11,6 +11,7 @@ const SETTINGS = {
   density: "cozy",
   show_hidden: false,
   view_mode: "list",
+  interface_size: 90,
 };
 const COMMON = {
   open_pending_take: [],
@@ -22,6 +23,7 @@ const COMMON = {
     density: "cozy",
     show_hidden: false,
     view_mode: "list",
+    interface_size: 90,
     ...(args.patch as object),
   }),
   "plugin:kernkraft-tauri|volumes_list": { mounted: [], unmounted: [], problems: [] },
@@ -215,4 +217,74 @@ test.describe("non-ASCII names", () => {
     await page.getByTestId("folder-scroll").evaluate((el) => (el.scrollTop = el.scrollHeight));
     await expect(rows(page).last()).toHaveAttribute("data-name", min);
   });
+});
+
+test("keyboard_focus_outlines_the_current_item_not_the_list", async ({ page, mockTauri }) => {
+  const file = (name: string) => ({
+    path: { k: "Utf8", v: `/home/tester/docs/${name}` },
+    name,
+    kind: "file",
+    target_is_dir: false,
+    len: 10,
+    modified_ms: null,
+    hidden: false,
+    mime: "application/pdf",
+  });
+  await mockTauri({
+    ...COMMON,
+    "plugin:kernkraft-tauri|list_dir": [file("a.pdf"), file("b.pdf")],
+  });
+  await page.goto("/");
+  await expect(rows(page)).toHaveCount(2);
+  const list = page.getByTestId("folder-list");
+  const outline = (loc: ReturnType<Page["getByTestId"]>) =>
+    loc.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { style: s.outlineStyle, width: s.outlineWidth };
+    });
+
+  await list.focus();
+  // Focused with no current item: no frame round the list, the first row outlined.
+  expect((await outline(list)).style).toBe("none");
+  await expect(rows(page).first()).toHaveClass(/kern-cursor/);
+  expect((await outline(rows(page).first())).style).toBe("solid");
+  await expect(rows(page).first()).toHaveAttribute("aria-selected", "false");
+
+  await page.keyboard.press("ArrowDown");
+  await expect(rows(page).first()).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("button", { name: /grid view/i }).focus();
+  // Focus elsewhere: no outline on any row.
+  for (const row of await rows(page).all()) {
+    expect((await outline(row)).style).toBe("none");
+  }
+});
+
+test("the_first_row_is_spaced_from_the_path_bar", async ({ page, mockTauri }) => {
+  await mockTauri({
+    ...COMMON,
+    "plugin:kernkraft-tauri|list_dir": [
+      {
+        path: { k: "Utf8", v: "/home/tester/docs/a.pdf" },
+        name: "a.pdf",
+        kind: "file",
+        target_is_dir: false,
+        len: 10,
+        modified_ms: null,
+        hidden: false,
+        mime: "application/pdf",
+      },
+    ],
+  });
+  await page.goto("/");
+  await expect(rows(page)).toHaveCount(1);
+  const gap = async (below: string) => {
+    const bar = await page.locator(".kern-files-bar").boundingBox();
+    const next = await page.locator(below).first().boundingBox();
+    return next!.y - (bar!.y + bar!.height);
+  };
+  // The column header is the first thing under the bar in the list.
+  expect(await gap(".kern-list-head")).toBeGreaterThanOrEqual(12);
+  await page.getByRole("button", { name: /grid view/i }).click();
+  await expect(page.getByTestId("file-card")).toHaveCount(1);
+  expect(await gap('[data-testid="file-card"]')).toBeGreaterThanOrEqual(12);
 });

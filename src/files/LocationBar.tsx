@@ -7,44 +7,51 @@ import { parseLocation } from "./path-input";
 // The typed location (Ctrl+L, design 5.1). Enter checks the text and navigates;
 // whatever is wrong with the text is shown here and the bar stays open. Whether
 // the folder exists is for the folder view to say: it lists the folder anyway,
-// and shows the error or the missing-folder banner. Escape closes the bar
-// without going anywhere. Text left as it was shown keeps the path it came
-// from, so a folder whose name is not UTF-8 is not turned into another path.
+// and shows the error or the missing-folder banner. The bar closes without going
+// anywhere on Escape, and when focus leaves it (a click elsewhere, another
+// window), dropping what was typed. A check under way is let finish: leaving
+// then neither closes the bar nor loses the error, and a check that succeeds
+// goes on to close it. Text left as it was shown keeps the path it came from, so
+// a folder whose name is not UTF-8 is not turned into another path.
 export function LocationBar(props: {
   path: WirePath;
-  /** Text to show instead of the path (a bar reopened with what was typed). */
-  initialText?: string;
-  /** Every change to the text, so the view can keep it. */
-  onText?(text: string): void;
   onNavigate(path: WirePath): void;
-  onClose(): void;
+  /** "done" is Enter or Escape, after which the keyboard belongs to the list; "blur" is focus leaving. */
+  onClose(how: "done" | "blur"): void;
 }) {
   const [initial] = useState(() => displayPath(props.path));
-  const [resumed] = useState(props.initialText);
-  const [text, setText] = useState(resumed ?? initial);
+  const [text, setText] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
+  const checking = useRef(false);
+  const closed = useRef(false);
 
   useEffect(() => {
     alive.current = true;
     input.current?.focus();
-    if (resumed === undefined) input.current?.select();
-    // Typed text is continued, not replaced by the next key.
-    else input.current?.setSelectionRange(resumed.length, resumed.length);
+    input.current?.select();
     return () => {
       alive.current = false;
     };
-  }, [resumed]);
+  }, []);
+
+  // Closing is announced once, whichever of Enter, Escape and blur comes first.
+  const close = (how: "done" | "blur") => {
+    if (closed.current) return;
+    closed.current = true;
+    props.onClose(how);
+  };
 
   const submit = async () => {
     setError(null);
     if (text === initial) {
       props.onNavigate(props.path);
-      props.onClose();
+      close("done");
       return;
     }
+    checking.current = true;
     setBusy(true);
     try {
       // The Home folder is only needed for ~, so it is looked up only then.
@@ -56,11 +63,12 @@ export function LocationBar(props: {
       }
       if (!alive.current) return;
       props.onNavigate(parsed.path);
-      props.onClose();
+      close("done");
     } catch (e) {
       const err = toWireError(e);
       if (alive.current) setError(`${err.kind}: ${err.message}`);
     } finally {
+      checking.current = false;
       if (alive.current) setBusy(false);
     }
   };
@@ -74,18 +82,16 @@ export function LocationBar(props: {
         aria-invalid={error !== null}
         spellCheck={false}
         value={text}
-        disabled={busy}
-        onChange={(e) => {
-          setText(e.target.value);
-          props.onText?.(e.target.value);
-        }}
+        readOnly={busy}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => !checking.current && close("blur")}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
             void submit();
           } else if (e.key === "Escape") {
             e.preventDefault();
-            props.onClose();
+            close("done");
           }
         }}
       />

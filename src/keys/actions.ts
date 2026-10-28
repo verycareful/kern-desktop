@@ -6,7 +6,14 @@ import { usePanelsStore } from "../store/panels";
 import { folderController, type MoveTo } from "../files/folder-controller";
 import { useFolderUi } from "../files/folder-ui";
 import type { SortBy } from "../files/sort";
-import { setViewMode, toggleHidden, useViewSettings } from "../files/view-settings";
+import {
+  setInterfaceSize,
+  setViewMode,
+  stepSize,
+  toggleHidden,
+  useViewSettings,
+} from "../files/view-settings";
+import { DEFAULT_INTERFACE_SIZE, stepInterfaceSize } from "../theme/interface-size";
 import { trashController, type TrashMove } from "../files/trash-controller";
 import { useVolumes } from "../shell/volumes-store";
 
@@ -280,6 +287,42 @@ const folderActions: Action[] = [
 ];
 
 actions.push(...folderActions);
+
+// ---- the interface size (design 7.2) ----
+// No keys: Ctrl+= and Ctrl+- are the editor's text zoom (design 4.5). Every
+// window is zoomed alike, so these apply whatever tab is shown.
+
+const size = () => useViewSettings.getState().interfaceSize;
+const sizeActions: Action[] = [
+  {
+    id: "view.size.larger",
+    label: "Larger interface",
+    area: "View",
+    keys: [],
+    when: "any",
+    enabled: () => stepInterfaceSize(size(), 1) !== size(),
+    run: () => void stepSize(1),
+  },
+  {
+    id: "view.size.smaller",
+    label: "Smaller interface",
+    area: "View",
+    keys: [],
+    when: "any",
+    enabled: () => stepInterfaceSize(size(), -1) !== size(),
+    run: () => void stepSize(-1),
+  },
+  {
+    id: "view.size.reset",
+    label: "Reset interface size",
+    area: "View",
+    keys: [],
+    when: "any",
+    enabled: () => size() !== DEFAULT_INTERFACE_SIZE,
+    run: () => void setInterfaceSize(DEFAULT_INTERFACE_SIZE),
+  },
+];
+actions.push(...sizeActions);
 
 // ---- the Trash (design 5.2) ----
 

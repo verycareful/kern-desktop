@@ -54,6 +54,13 @@ pub const RECENTS_CAP: usize = 50;
 pub const ZOOM_MIN: f32 = 0.25;
 pub const ZOOM_MAX: f32 = 5.0;
 
+/// The interface sizes, in percent of the webview's normal size: the steps of
+/// the Larger and Smaller actions (maintainer, 2026-10-28). The frontend's
+/// `INTERFACE_SIZES` lists the same values.
+pub const INTERFACE_SIZES: [u32; 5] = [80, 90, 100, 110, 125];
+/// A little smaller than the webview's normal size (maintainer, 2026-10-28).
+pub const DEFAULT_INTERFACE_SIZE: u32 = 90;
+
 /// Directory name under the XDG config and state homes.
 const APP_DIR: &str = "kern";
 
@@ -92,6 +99,9 @@ pub struct Settings {
     pub editor_zoom: f32,
     pub view_mode: ViewMode,
     pub show_hidden: bool,
+    /// The interface size in percent, one of [`INTERFACE_SIZES`]; applied as
+    /// the zoom of every window (`zoom.rs`).
+    pub interface_size: u32,
     /// Keys inside `follow` this version does not define.
     #[serde(skip)]
     pub follow_extra: Map<String, Value>,
@@ -117,6 +127,7 @@ impl Default for Settings {
             editor_zoom: 1.0,
             view_mode: ViewMode::default(),
             show_hidden: false,
+            interface_size: DEFAULT_INTERFACE_SIZE,
             follow_extra: Map::new(),
             extra: Map::new(),
         }
@@ -369,6 +380,16 @@ fn check_zoom(z: &f32) -> Result<(), String> {
     }
 }
 
+fn check_interface_size(size: &u32) -> Result<(), String> {
+    if INTERFACE_SIZES.contains(size) {
+        Ok(())
+    } else {
+        Err(format!(
+            "interface size {size} is not one of {INTERFACE_SIZES:?}"
+        ))
+    }
+}
+
 fn check_roots(roots: &[WirePath]) -> Result<(), String> {
     roots
         .iter()
@@ -470,6 +491,14 @@ impl Stored for Settings {
             &mut keep,
             &mut problems,
             any_value,
+        );
+        take(
+            &mut obj,
+            "interface_size",
+            &mut s.interface_size,
+            &mut keep,
+            &mut problems,
+            check_interface_size,
         );
         if let Some(raw) = obj.remove("follow") {
             match parse_follow(&raw) {
@@ -654,7 +683,8 @@ impl Store {
 
     /// Merges `patch` (field name to new value) into the settings. A field
     /// this version does not define, a value of the wrong type, an
-    /// `editor_zoom` outside [`ZOOM_MIN`] to [`ZOOM_MAX`] or a scan root
+    /// `editor_zoom` outside [`ZOOM_MIN`] to [`ZOOM_MAX`], an `interface_size`
+    /// that is not one of [`INTERFACE_SIZES`] or a scan root
     /// that is not an absolute path refuses the whole patch and writes
     /// nothing. A `null` clears `terminal`.
     ///

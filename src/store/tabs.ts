@@ -24,7 +24,7 @@ export type Tab = FolderTab | DocTab | TrashTab;
 
 /**
  * What a folder tab's view keeps while another tab is shown: the scroll
- * offset, the selection and the location bar. Items are named by pathKey, so
+ * offset, the selection and the cursor. Items are named by pathKey, so
  * they are found again whatever order the listing comes back in. `pathKey` is
  * the folder it was taken in; it is applied to that folder only.
  */
@@ -34,8 +34,6 @@ export interface FolderViewState {
   selected: string[];
   anchor: string | null;
   cursor: string | null;
-  /** The open location bar and its text, or null when the breadcrumb is shown. */
-  location: { text: string } | null;
 }
 
 export interface TabsState {

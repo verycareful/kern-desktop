@@ -26,13 +26,17 @@ export type ThumbState =
   | { state: "none" }
   | { state: "error"; error: WireError };
 
+/** The width of the card's picture area in CSS pixels (grid-layout.ts CARD). */
+const PICTURE_CSS_PX = 128;
+
 /**
  * The cache sizes are 128 and 256 px (Thumbnail Managing Standard 0.9.0). The
- * grid shows an image at most 128 CSS px wide, so a 1x screen takes "normal"
- * and any denser one "large", which keeps it from being scaled up.
+ * picture area is 128 CSS px wide, which is 128 x the screen's pixel ratio x
+ * the interface zoom in device pixels; "normal" is enough when that is no more
+ * than 128, and "large" keeps a denser or zoomed-in view from being scaled up.
  */
-export function thumbSizeFor(devicePixelRatio: number): ThumbSize {
-  return devicePixelRatio > 1 ? "large" : "normal";
+export function thumbSizeFor(devicePixelRatio: number, zoom = 1): ThumbSize {
+  return PICTURE_CSS_PX * devicePixelRatio * zoom > 128 ? "large" : "normal";
 }
 
 // A thumbnail is only as current as the file it was made from, so what has

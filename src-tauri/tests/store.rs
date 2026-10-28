@@ -9,7 +9,10 @@ use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use kern_lib::store::{move_aside, volume_online, Store, ViewMode, RECENTS_CAP};
+use kern_lib::store::{
+    move_aside, volume_online, Store, ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES,
+    RECENTS_CAP,
+};
 use kernkraft_tauri::WirePath;
 use serde_json::{json, Map, Value};
 
@@ -523,4 +526,78 @@ fn prune_report_holds_the_stores_after_removal() {
     assert_eq!(report.pins_removed, vec![wp(&gone)]);
     assert_eq!(report.pins.entries, vec![wp(&kept)]);
     assert_eq!(report.pins, s.pins_get().unwrap().value);
+}
+
+#[test]
+fn interface_size_defaults_to_90_and_accepts_only_the_listed_sizes() {
+    let e = env();
+    let s = store(&e);
+    assert_eq!(s.settings_get().unwrap().value.interface_size, 90);
+    assert_eq!(INTERFACE_SIZES, [80, 90, 100, 110, 125]);
+    assert_eq!(DEFAULT_INTERFACE_SIZE, 90);
+    for bad in [
+        json!(0),
+        json!(85),
+        json!(95),
+        json!(150),
+        json!(-90),
+        json!(100.5),
+        json!("100"),
+        json!(null),
+    ] {
+        assert!(
+            s.settings_set(patch(json!({"interface_size": bad})))
+                .is_err(),
+            "{bad} accepted"
+        );
+    }
+    // A refused patch writes nothing.
+    assert!(!e.config.join("settings.json").exists());
+    for good in INTERFACE_SIZES {
+        let out = s
+            .settings_set(patch(json!({ "interface_size": good })))
+            .unwrap();
+        assert_eq!(out.value.interface_size, good);
+    }
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["interface_size"],
+        json!(125)
+    );
+    assert_eq!(store(&e).settings_get().unwrap().value.interface_size, 125);
+}
+
+#[test]
+fn a_bad_stored_interface_size_is_reported_kept_and_replaced_by_the_next_choice() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    fs::write(e.config.join("settings.json"), r#"{"interface_size": 77}"#).unwrap();
+    let got = store(&e).settings_get().unwrap();
+    // In memory the default stands in, and the report names the field.
+    assert_eq!(got.value.interface_size, 90);
+    assert_eq!(got.corrupt.len(), 1);
+    assert_eq!(got.corrupt[0].field.as_deref(), Some("interface_size"));
+    assert!(got.corrupt[0].moved_to.is_none());
+    // The file is left as it was until the user chooses a size.
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["interface_size"],
+        json!(77)
+    );
+    let set = store(&e)
+        .settings_set(patch(json!({"interface_size": 110})))
+        .unwrap();
+    assert_eq!(set.value.interface_size, 110);
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["interface_size"],
+        json!(110)
+    );
+    assert!(store(&e).settings_get().unwrap().corrupt.is_empty());
+    // A stored value of the wrong type is a bad value too.
+    fs::write(
+        e.config.join("settings.json"),
+        r#"{"interface_size": "big"}"#,
+    )
+    .unwrap();
+    let got = store(&e).settings_get().unwrap();
+    assert_eq!(got.value.interface_size, 90);
+    assert_eq!(got.corrupt[0].field.as_deref(), Some("interface_size"));
 }

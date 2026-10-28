@@ -392,6 +392,29 @@ test("ctrl_l_opens_the_location_bar_and_enter_navigates", async () => {
   await waitFor(() => expect(screen.queryByRole("textbox", { name: /location/i })).toBeNull());
 });
 
+test("the_location_bar_closes_when_focus_leaves_it_and_the_list_does_not_take_the_focus_back", async () => {
+  await mount([entry("a")], "/d");
+  fireEvent.keyDown(window, { key: "l", ctrlKey: true });
+  const input = await screen.findByRole("textbox", { name: /location/i });
+  fireEvent.change(input, { target: { value: "/typed" } });
+  const grid = screen.getByRole("button", { name: /grid view/i });
+  grid.focus();
+  await waitFor(() => expect(screen.queryByRole("textbox", { name: /location/i })).toBeNull());
+  expect(grid).toHaveFocus();
+  // The typed text is gone: reopening shows the folder's path.
+  fireEvent.keyDown(window, { key: "l", ctrlKey: true });
+  expect(await screen.findByRole("textbox", { name: /location/i })).toHaveValue("/d");
+});
+
+test("escape_closes_the_location_bar_and_gives_the_keyboard_to_the_list", async () => {
+  await mount([entry("a")], "/d");
+  fireEvent.keyDown(window, { key: "l", ctrlKey: true });
+  const input = await screen.findByRole("textbox", { name: /location/i });
+  fireEvent.keyDown(input, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("textbox", { name: /location/i })).toBeNull());
+  expect(screen.getByTestId("folder-list")).toHaveFocus();
+});
+
 test("a_missing_location_is_navigated_to_and_shown_as_gone_by_the_view", async () => {
   await mount([], "/d");
   fireEvent.keyDown(window, { key: "l", ctrlKey: true });

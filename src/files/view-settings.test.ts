@@ -9,7 +9,12 @@ vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()),
 
 import { toggleHidden, setViewMode, useViewSettings, useViewSettingsSync } from "./view-settings";
 
-const S = { show_hidden: false, view_mode: "list", density: "compact" } as Settings;
+const S = {
+  show_hidden: false,
+  view_mode: "list",
+  density: "compact",
+  interface_size: 110,
+} as Settings;
 let changed: ((s: Settings) => void) | undefined;
 const unlisten = vi.fn();
 
@@ -76,4 +81,16 @@ test("unmount_unsubscribes", async () => {
   await waitFor(() => expect(changed).toBeDefined());
   unmount();
   await waitFor(() => expect(unlisten).toHaveBeenCalled());
+});
+
+test("the_interface_size_is_read_and_follows_changes", async () => {
+  // Before any read it is the default, 90 percent.
+  vi.resetModules();
+  const fresh = await import("./view-settings");
+  expect(fresh.useViewSettings.getState().interfaceSize).toBe(90);
+  renderHook(() => useViewSettingsSync());
+  await waitFor(() => expect(useViewSettings.getState().loaded).toBe(true));
+  expect(useViewSettings.getState().interfaceSize).toBe(110);
+  act(() => changed!({ ...S, interface_size: 80 }));
+  expect(useViewSettings.getState().interfaceSize).toBe(80);
 });

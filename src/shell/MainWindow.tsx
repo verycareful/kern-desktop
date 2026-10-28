@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { useViewSettingsSync } from "../files/view-settings";
 import { useShortcuts } from "../keys/useShortcuts";
 import { usePanels } from "../store/panels";
 import { activeTab, useTabs } from "../store/tabs";
@@ -17,6 +18,8 @@ import "./shell.css";
 // slide them over the document. The status bar spans the bottom.
 export default function MainWindow(props: { openingHome?: boolean; starting?: boolean }) {
   useShortcuts();
+  // The interface size actions step the stored size whatever tab is shown.
+  useViewSettingsSync();
   const tab = useTabs((s) => activeTab(s));
   const { leftOpen, rightOpen } = usePanels();
 

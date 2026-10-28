@@ -976,6 +976,7 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
         }
         WindowEvent::Destroyed => {
             let app = window.app_handle();
+            crate::zoom::forget(app, window.label());
             if let Some(st) = app.try_state::<WindowState>() {
                 if window.label() == MAIN {
                     st.open.remove_tabs();

@@ -12,6 +12,7 @@ pub mod prelaunch;
 pub mod store;
 pub mod store_cmds;
 pub mod windows;
+pub mod zoom;
 
 use tauri::Manager;
 
@@ -43,6 +44,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(kernkraft_tauri::init())
+        .plugin(zoom::plugin())
         .on_window_event(windows::on_window_event)
         .on_page_load(windows::on_page_load)
         .setup(move |app| {
