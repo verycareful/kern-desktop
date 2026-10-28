@@ -127,3 +127,12 @@ test("volume_actions_are_aimed_at_the_current_volume_and_grey_out_without_one", 
   expect(isEnabled(eject, currentContext())).toBe(false);
   useVolumes.getState().reset();
 });
+
+test("refresh_volumes_is_greyed_while_no_strip_follows_the_volumes", async () => {
+  const refresh = getAction("volumes.refresh");
+  useVolumes.getState().reset();
+  expect(isEnabled(refresh, currentContext())).toBe(false);
+  useVolumes.setState({ followers: 1 });
+  expect(isEnabled(refresh, currentContext())).toBe(true);
+  useVolumes.getState().reset();
+});

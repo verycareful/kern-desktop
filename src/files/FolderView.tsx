@@ -235,7 +235,10 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   useEffect(() => {
     const selected = () => {
       const { entries: es, sel: s } = latest.current;
-      return [...s.selected].sort((a, b) => a - b).flatMap((i) => (es[i] ? [es[i]] : []));
+      const picked = [...s.selected].sort((a, b) => a - b).flatMap((i) => (es[i] ? [es[i]] : []));
+      // Nothing selected: the item the view outlines (the cursor) is the one Enter means.
+      const outlined = s.cursor === null ? undefined : es[s.cursor];
+      return picked.length === 0 && outlined ? [outlined] : picked;
     };
     const step = (to: MoveTo): number => {
       const { viewMode: mode, columns: cols } = latest.current;
@@ -246,6 +249,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       selectAll: () => dispatch((s, n) => selectAll(s, n)),
       selectNone: () => dispatch((s) => selectNone(s)),
       hasSelection: () => latest.current.sel.selected.size > 0,
+      canOpen: () => selected().length > 0,
       canMove: (to) =>
         latest.current.entries.length > 0 &&
         (latest.current.viewMode === "grid" || (to !== "left" && to !== "right")),

@@ -13,7 +13,9 @@ export interface FolderController {
   /** False when the move has no meaning in the current view (left and right in the list). */
   canMove(to: MoveTo): boolean;
   move(to: MoveTo, extend: boolean): void;
-  /** Opens the selected items; `newWindow` is the Ctrl gesture of design 4.3. */
+  /** True when `open` has something to open: a selection, or else the outlined item. */
+  canOpen(): boolean;
+  /** Opens the selected items, or the outlined item when nothing is selected; `newWindow` is the Ctrl gesture of design 4.3. */
   open(newWindow: boolean): void;
   refresh(): void;
   editLocation(): void;

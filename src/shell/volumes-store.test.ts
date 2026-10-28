@@ -129,19 +129,18 @@ test("a_failed_subscription_is_shown_and_the_volumes_are_still_listed", async ()
   expect(useVolumes.getState().mounted).toHaveLength(1);
 });
 
-test("a_volume_key_comes_from_its_identity_not_its_path_or_node", () => {
+test("a_volume_key_is_its_identity_and_mount_point_not_the_node_or_list_order", () => {
   const a = mount("X", { device: "/dev/sdb1" });
-  // Same disk, remounted elsewhere and seen under another device node: the same volume.
-  expect(mountedKey({ ...a, device: "/dev/sdc1", mount_point: { k: "Utf8", v: "/mnt/x" } })).toBe(
-    mountedKey(a)
-  );
+  // Same disk at the same mount point, seen under another device node: the same volume.
+  expect(mountedKey({ ...a, device: "/dev/sdc1" })).toBe(mountedKey(a));
+  // The same disk mounted somewhere else is another volume (verify_mount passes for either).
+  expect(mountedKey({ ...a, mount_point: { k: "Utf8", v: "/mnt/x" } })).not.toBe(mountedKey(a));
   // Another disk at the same node and path (unplugged and replugged): another volume.
   const replugged = {
     ...a,
     identity: { ...known("X"), diskseq: 99999 },
   } as typeof a;
   expect(mountedKey(replugged)).not.toBe(mountedKey(a));
-  // An unmounted device of the same disk is not the mounted key's namesake.
   expect(deviceKey(device("X"))).not.toBe(mountedKey(a));
 });
 
@@ -213,4 +212,66 @@ test("an_action_on_a_volume_with_no_identity_is_refused_without_calling_kernkraf
   expect(ipc.volumeUnmount).not.toHaveBeenCalled();
   expect(ipc.volumeEject).not.toHaveBeenCalled();
   expect(ipc.volumeMount).not.toHaveBeenCalled();
+});
+
+test("after_a_relist_error_busy_and_the_menu_target_stay_on_the_same_mount_of_a_disk", async () => {
+  const at = (v: string) => mount("DATA", { mount_point: { k: "Utf8", v } });
+  const [a, b] = [at("/mnt/a"), at("/mnt/b")];
+  const onB = () =>
+    useVolumes
+      .getState()
+      .volumes()
+      .find((v) => v.kind === "mounted" && v.mount.mount_point.v === "/mnt/b")!;
+  const relist = async (mounted: (typeof a)[]) => {
+    ipc.volumesList.mockResolvedValue(volumes({ mounted }));
+    await useVolumes.getState().refresh();
+  };
+  await relist([a, b]);
+  const keyB = onB().key;
+  // An error on /b and a menu opened on /b; then /a goes away and the list is read again.
+  ipc.volumeUnmount.mockRejectedValueOnce(problem("Busy", "held"));
+  await useVolumes.getState().run(onB(), "unmount");
+  useVolumes.getState().setCurrent(keyB);
+  await relist([b]);
+  expect(onB().key).toBe(keyB);
+  expect(useVolumes.getState().errors[keyB]?.kind).toBe("Busy");
+  const current = useVolumes.getState().currentVolume();
+  expect(current?.kind === "mounted" && current.mount.mount_point).toEqual(b.mount_point);
+  // A run in flight on /b is still busy on /b after /a comes back and the order changes.
+  let finish!: () => void;
+  ipc.volumeEject.mockReturnValue(new Promise<void>((r) => (finish = r)));
+  const running = useVolumes.getState().run(onB(), "eject");
+  await relist([a, b]);
+  expect(onB().key).toBe(keyB);
+  expect(useVolumes.getState().busy[keyB]).toBeTruthy();
+  const first = useVolumes.getState().volumes()[0]!;
+  expect(useVolumes.getState().busy[first.key]).toBeUndefined();
+  finish();
+  await running;
+});
+
+test("the_number_of_strips_following_is_counted_for_the_refresh_action", async () => {
+  expect(useVolumes.getState().followers).toBe(0);
+  const stop = await useVolumes.getState().follow();
+  expect(useVolumes.getState().followers).toBe(1);
+  stop();
+  expect(useVolumes.getState().followers).toBe(0);
+});
+
+test("overlapping_listings_run_one_at_a_time_and_the_first_ones_problems_are_kept", async () => {
+  // kernkraft hands its once-only problems to the first listing it starts. A second request
+  // while that is in flight must wait its turn, and must not make the first answer be dropped.
+  let first!: (v: ReturnType<typeof volumes>) => void;
+  ipc.volumesList
+    .mockReturnValueOnce(new Promise((r) => (first = r)))
+    .mockResolvedValue(volumes({ mounted: [mount("STICK")] }));
+  const one = useVolumes.getState().refresh();
+  const two = useVolumes.getState().refresh();
+  await Promise.resolve();
+  expect(ipc.volumesList).toHaveBeenCalledTimes(1);
+  first(volumes({ problems: [problem("UdisksAbsent")] }));
+  await Promise.all([one, two]);
+  expect(ipc.volumesList).toHaveBeenCalledTimes(2);
+  expect(useVolumes.getState().kept.map((k) => k.error.kind)).toEqual(["UdisksAbsent"]);
+  expect(useVolumes.getState().mounted).toHaveLength(1);
 });

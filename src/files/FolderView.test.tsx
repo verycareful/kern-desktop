@@ -826,3 +826,31 @@ test("a_list_emptied_while_another_window_has_the_focus_keeps_the_keyboard_in_th
   const note = await screen.findByTestId("folder-empty");
   await waitFor(() => expect(note).toHaveFocus());
 });
+
+test("enter_with_nothing_selected_opens_the_outlined_item", async () => {
+  await mount([dir("sub"), entry("b")]);
+  act(() => screen.getByTestId("folder-list").focus());
+  // The first row is outlined and nothing is selected.
+  expect(screen.getAllByTestId("file-row")[0]).toHaveClass("kern-cursor");
+  fireEvent.keyDown(window, { key: "Enter" });
+  await waitFor(() =>
+    expect((activeTab(useTabs.getState()) as FolderTab).path).toEqual(p("/d/sub"))
+  );
+});
+
+test("enter_in_the_grid_with_nothing_selected_opens_the_outlined_item", async () => {
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, view_mode: "grid" });
+  await mountGrid([dir("sub"), entry("b")]);
+  act(() => screen.getByTestId("folder-grid").focus());
+  fireEvent.keyDown(window, { key: "Enter" });
+  await waitFor(() =>
+    expect((activeTab(useTabs.getState()) as FolderTab).path).toEqual(p("/d/sub"))
+  );
+});
+
+test("enter_with_no_selection_and_no_cursor_does_nothing", async () => {
+  await mount([dir("sub")]);
+  fireEvent.keyDown(window, { key: "Enter" });
+  await act(async () => {});
+  expect((activeTab(useTabs.getState()) as FolderTab).path).toEqual(p("/d"));
+});

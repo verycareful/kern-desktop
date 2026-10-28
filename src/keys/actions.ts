@@ -197,7 +197,7 @@ const folderActions: Action[] = [
     area: "Open",
     keys: ["Enter"],
     when: "folder",
-    enabled: (c) => controllerOf(c)?.hasSelection() ?? false,
+    enabled: (c) => controllerOf(c)?.canOpen() ?? false,
     run: (c) => controllerOf(c)?.open(false),
   },
   {
@@ -206,7 +206,7 @@ const folderActions: Action[] = [
     area: "Open",
     keys: ["Ctrl+Enter"],
     when: "folder",
-    enabled: (c) => controllerOf(c)?.hasSelection() ?? false,
+    enabled: (c) => controllerOf(c)?.canOpen() ?? false,
     run: (c) => controllerOf(c)?.open(true),
   },
   {
@@ -471,6 +471,9 @@ const placeActions: Action[] = [
     area: "Volumes",
     keys: [],
     when: "any",
+    // The list is read through a strip that follows the event (listener first); with none
+    // mounted there is nothing to refresh.
+    enabled: () => useVolumes.getState().followers > 0,
     run: () => void useVolumes.getState().refresh(),
   },
 ];

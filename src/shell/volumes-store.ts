@@ -4,6 +4,7 @@ import { create } from "zustand";
 import {
   EVENT_VOLUMES_CHANGED,
   on,
+  pathKey,
   toWireError,
   volumeEject,
   volumeMount,
@@ -39,12 +40,15 @@ export type Volume =
 
 const identityKey = (id: Identity, device: string) =>
   id.state === "known" ? `${id.major}:${id.minor}:${id.diskseq}` : `?${device}`;
-export const mountedKey = (m: WireMount) => `m:${identityKey(m.identity, m.device)}`;
+// A disk can be mounted in more than one place and unmount/eject check only the disk, so the
+// mount point is part of the key; the key does not depend on the order of the list.
+export const mountedKey = (m: WireMount) =>
+  `m:${identityKey(m.identity, m.device)}@${pathKey(m.mount_point)}`;
 export const deviceKey = (d: Device) => `d:${identityKey(d.identity, d.device)}`;
 
 /**
- * The keys of a listing's mounted volumes, in order. One disk can be mounted in more than
- * one place; the later mounts of a disk get a number, so every key is unique.
+ * The keys of a listing's mounted volumes, in order. Two mounts of one disk at one mount
+ * point (stacked) would share a key; the later ones get a number so every key is unique.
  */
 export function mountedKeys(mounted: readonly WireMount[]): string[] {
   const seen = new Map<string, number>();
@@ -87,6 +91,8 @@ interface VolumesState {
    * listing does not clear them.
    */
   kept: Kept[];
+  /** Strips following the event now; Refresh volumes needs one. */
+  followers: number;
   /** The event could not be subscribed to, so the list does not follow changes. */
   watchError: WireError | null;
   /** The listing itself failed. */
@@ -97,9 +103,8 @@ interface VolumesState {
   /** Volume key to why the last action on it failed. */
   errors: Record<string, WireError>;
   /**
-   * The volume the volume actions are aimed at: the one last focused or last opened a
-   * menu on. Opening the main menu takes the focus off the row, so it is kept until the
-   * volume goes away.
+   * The key of the volume the volume actions are aimed at: the one whose menu is open. Cleared
+   * when the menu closes.
    */
   current: string | null;
   /** Counts the volume actions Kern has performed; the Trash reads it to list itself again. */
@@ -123,6 +128,7 @@ const initial = {
   problems: [],
   kept: [],
   watchError: null,
+  followers: 0,
   loadError: null,
   loaded: false,
   busy: {},
@@ -158,8 +164,12 @@ export const useVolumes = create<VolumesState>()((set, get) => ({
       // The list is read once so it is not empty, with the reason it will not follow changes.
       set({ watchError: toWireError(e) });
     }
+    set((s) => ({ followers: s.followers + 1 }));
     await get().refresh();
-    return () => off?.();
+    return () => {
+      off?.();
+      set((s) => ({ followers: s.followers - 1 }));
+    };
   },
   bump: () => set((s) => ({ epoch: s.epoch + 1 })),
   clearError: (key) =>
