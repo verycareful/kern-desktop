@@ -22,6 +22,7 @@ vi.mock("../ipc", async (orig) => ({
 let restore: () => void;
 beforeEach(() => {
   restore = stubLayout();
+  common.onSeedCursor.mockClear();
 });
 afterEach(() => {
   cleanup();
@@ -36,6 +37,7 @@ const common = {
   onContextMenu: vi.fn(),
   onBand: vi.fn(),
   onBackgroundClick: vi.fn(),
+  onSeedCursor: vi.fn(),
   rootRef: { current: null },
   revealTick: 0,
   initialScroll: 0,
@@ -92,6 +94,36 @@ for (const kind of ["list", "grid"] as const) {
     }
     expect(common.onItemClick).not.toHaveBeenCalled();
     expect(common.onBand).not.toHaveBeenCalled();
+  });
+
+  test(`${kind}_seeds_the_cursor_when_it_is_focused_with_none`, () => {
+    render(views[kind](empty));
+    fireEvent.focus(root());
+    expect(common.onSeedCursor).toHaveBeenCalledTimes(1);
+  });
+
+  test(`${kind}_does_not_seed_when_there_is_a_cursor_or_nothing_to_point_at`, () => {
+    render(views[kind](withCursor));
+    fireEvent.focus(root());
+    expect(common.onSeedCursor).not.toHaveBeenCalled();
+    cleanup();
+    const none = { ...common, entries: [] as typeof entries };
+    render(
+      kind === "list" ? (
+        <FileList
+          {...none}
+          sel={empty}
+          rowHeight={36}
+          sortBy="name"
+          sortDir="asc"
+          onSort={vi.fn()}
+        />
+      ) : (
+        <FileGrid {...none} sel={empty} thumbKey="t" onColumns={vi.fn()} />
+      )
+    );
+    fireEvent.focus(root());
+    expect(common.onSeedCursor).not.toHaveBeenCalled();
   });
 
   test(`${kind}_drops_the_outline_when_focus_moves_to_something_else`, () => {

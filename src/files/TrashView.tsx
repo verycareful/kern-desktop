@@ -36,6 +36,7 @@ import {
   ctrlClick,
   empty,
   move,
+  seedCursor,
   selectAll,
   selectNone,
   shiftClick,
@@ -43,6 +44,7 @@ import {
 } from "./selection";
 import { useViewSettings } from "./view-settings";
 import { useCurrentItem } from "./use-current-item";
+import { useKeepKeyboard } from "./use-keep-keyboard";
 import "./files.css";
 
 // Design 5.2: the Trash lists the home trash and the trashes of the mounted
@@ -122,6 +124,10 @@ export function TrashView(props: { tab: TrashTab }) {
   const [revealTick, setRevealTick] = useState(0);
   const files = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLDivElement>(null);
+  const note = useRef<HTMLDivElement>(null);
+  // The list takes the keyboard; the empty Trash's note does when there is no list.
+  const keyboardTarget = useCallback(() => root.current ?? note.current, []);
+  const keep = useKeepKeyboard(files, keyboardTarget);
   const scroller = useRef<HTMLDivElement>(null);
   const alive = useRef(true);
   const running = useRef<RunningOp | null>(null);
@@ -170,8 +176,9 @@ export function TrashView(props: { tab: TrashTab }) {
   }, [refresh]);
 
   // The Trash lists itself again when any operation ends (copies and moves leave it alone, and
-  // the listing is cheap) and after a volume action Kern performed, since a volume's trash
-  // appears and goes with the volume. A volume appearing or going by itself is not seen here yet.
+  // the listing is cheap) and whenever the volumes change, since a volume's trash appears and
+  // goes with the volume: the volume list bumps its epoch after an action Kern performed and
+  // after each kernkraft://volumes-changed.
   useEffect(() => {
     let off: (() => void) | undefined;
     let live = true;
@@ -334,7 +341,9 @@ export function TrashView(props: { tab: TrashTab }) {
     scrollMargin: HEADER_HEIGHT,
     initialRect: { width: 600, height: 400 },
   });
-  const focus = useCurrentItem(items.length, sel.cursor);
+  const focus = useCurrentItem(items.length, sel.cursor, () =>
+    dispatch((s, n) => seedCursor(s, n))
+  );
   const cursor = useRef(sel.cursor);
   useEffect(() => {
     cursor.current = sel.cursor;
@@ -382,7 +391,7 @@ export function TrashView(props: { tab: TrashTab }) {
     );
   } else if (items.length === 0) {
     body = (
-      <div className="kern-note" data-testid="trash-empty">
+      <div ref={note} tabIndex={-1} className="kern-note" data-testid="trash-empty">
         <Trash2 size={30} strokeWidth={1.8} aria-hidden />
         <p className="kern-note-title">The Trash is empty</p>
       </div>
@@ -490,7 +499,13 @@ export function TrashView(props: { tab: TrashTab }) {
 
   const progress = working?.what === "empty" ? working : null;
   return (
-    <div ref={files} className="kern-files kern-trash" data-testid="trash-view">
+    <div
+      ref={files}
+      className="kern-files kern-trash"
+      data-testid="trash-view"
+      onFocus={keep.onFocus}
+      onBlur={keep.onBlur}
+    >
       <div className="kern-files-bar">
         <h2 className="kern-trash-title">Trash</h2>
         <div className="kern-trash-actions" role="group" aria-label="Trash actions">
@@ -583,7 +598,7 @@ export function TrashView(props: { tab: TrashTab }) {
           }}
           onCancel={() => {
             setAsking(null);
-            root.current?.focus();
+            keyboardTarget()?.focus();
           }}
         />
       )}

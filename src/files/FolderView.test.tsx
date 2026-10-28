@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import type { OpenOutcome, Settings, WireEntry, WireError, WirePath } from "../ipc";
 import { useShortcuts } from "../keys/useShortcuts";
 import { activeTab, useTabs, type FolderTab } from "../store/tabs";
@@ -70,8 +70,11 @@ async function mount(entries: WireEntry[], path = "/d") {
 
 const rowNames = () => screen.queryAllByTestId("file-row").map((r) => r.getAttribute("data-name"));
 
+let hasFocus: MockInstance<() => boolean>;
 beforeEach(() => {
   restoreLayout = stubLayout();
+  // Kern's window has focus (jsdom reports none while a blur handler runs).
+  hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
   handlers = {};
   ipc.on.mockImplementation((name: string, h: (payload: unknown) => void) => {
     handlers[name] = h;
@@ -93,6 +96,9 @@ beforeEach(() => {
 
 afterEach(async () => {
   cleanup();
+  // Only the spy on document.hasFocus: restoring every mock would also empty the ipc mocks that
+  // an unmounting view still calls a microtask later.
+  hasFocus.mockRestore();
   await Promise.resolve();
   restoreLayout();
   vi.clearAllMocks();
@@ -743,4 +749,80 @@ test("the_confirmation_holds_keys_aimed_at_the_page_body_while_this_tab_is_activ
   expect(selected()).toBe(12);
   fireEvent.keyDown(document.body, { key: "A", ctrlKey: true, shiftKey: true });
   expect(selected()).toBe(12);
+});
+
+test("an_empty_folder_note_takes_the_keyboard_after_navigating_into_it", async () => {
+  ipc.listDir.mockResolvedValue([dir("sub")]);
+  const tab = openTab("/d/x");
+  render(<Host tab={tab} />);
+  await screen.findByTestId("folder-list");
+  await waitFor(() => expect(screen.queryAllByTestId("file-row").length).toBeGreaterThan(0));
+  ipc.listDir.mockResolvedValue([]);
+  const crumb = within(screen.getByRole("navigation", { name: /path/i })).getByRole("button", {
+    name: "d",
+  });
+  fireEvent.click(crumb);
+  const note = await screen.findByTestId("folder-empty");
+  expect(note).toHaveAttribute("tabindex", "-1");
+  await waitFor(() => expect(note).toHaveFocus());
+  expect(document.body).not.toHaveFocus();
+});
+
+test("focusing_the_list_with_no_cursor_puts_the_cursor_on_the_first_item_without_selecting", async () => {
+  await mount([entry("a"), entry("b"), entry("c")]);
+  const list = screen.getByTestId("folder-list");
+  const selected = () =>
+    screen.getAllByTestId("file-row").map((r) => r.getAttribute("aria-selected") === "true");
+  act(() => list.focus());
+  expect(selected()).toEqual([false, false, false]);
+  expect(screen.getAllByTestId("file-row")[0]).toHaveClass("kern-cursor");
+  // The arrow key agrees with the outline: it moves on from the first item.
+  fireEvent.keyDown(window, { key: "ArrowDown" });
+  expect(selected()).toEqual([false, true, false]);
+  expect(screen.getAllByTestId("file-row")[1]).toHaveClass("kern-cursor");
+});
+
+test("focusing_the_grid_with_no_cursor_seeds_it_too", async () => {
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, view_mode: "grid" });
+  await mountGrid([entry("a"), entry("b")]);
+  act(() => screen.getByTestId("folder-grid").focus());
+  fireEvent.keyDown(window, { key: "ArrowRight" });
+  const cards = screen.getAllByTestId("file-card");
+  expect(cards[1]).toHaveAttribute("aria-selected", "true");
+  expect(cards[0]).toHaveAttribute("aria-selected", "false");
+});
+
+test("a_list_emptied_while_it_has_the_keyboard_hands_it_to_the_empty_note", async () => {
+  await mount([entry("a"), entry("b")]);
+  act(() => screen.getByTestId("folder-list").focus());
+  ipc.listDir.mockResolvedValue([]);
+  fireEvent.keyDown(window, { key: "F5" });
+  const note = await screen.findByTestId("folder-empty");
+  await waitFor(() => expect(note).toHaveFocus());
+});
+
+test("a_list_emptied_after_the_user_clicked_away_does_not_take_the_keyboard_back", async () => {
+  await mount([entry("a"), entry("b")]);
+  const list = screen.getByTestId("folder-list");
+  act(() => list.focus());
+  // A click on the page's background: focus goes to the body, with no element to go to.
+  act(() => list.blur());
+  ipc.listDir.mockResolvedValue([]);
+  fireEvent.keyDown(window, { key: "F5" });
+  const note = await screen.findByTestId("folder-empty");
+  expect(note).not.toHaveFocus();
+});
+
+test("a_list_emptied_while_another_window_has_the_focus_keeps_the_keyboard_in_the_view", async () => {
+  await mount([entry("a")]);
+  const list = screen.getByTestId("folder-list");
+  act(() => list.focus());
+  // The window loses focus: the list blurs while the document has none, which is not the user
+  // leaving the list. The note takes the keyboard it will have when the window comes back.
+  hasFocus.mockReturnValue(false);
+  act(() => list.blur());
+  ipc.listDir.mockResolvedValue([]);
+  fireEvent.keyDown(window, { key: "F5" });
+  const note = await screen.findByTestId("folder-empty");
+  await waitFor(() => expect(note).toHaveFocus());
 });

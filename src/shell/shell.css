@@ -310,6 +310,7 @@
 }
 
 .kern-place-busy,
+.kern-place-note,
 .kern-places-none {
   margin: 0;
   padding: 2px 6px;

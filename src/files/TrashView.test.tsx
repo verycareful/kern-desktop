@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import type { OpDoneEvent, WireReport, WireTrashedItem, WirePath } from "../ipc";
 import { useShortcuts } from "../keys/useShortcuts";
 import { useTabs, type TrashTab } from "../store/tabs";
@@ -10,6 +10,7 @@ import { stubLayout } from "./test-layout";
 
 const ipc = vi.hoisted(() => ({
   trashList: vi.fn(),
+  volumesList: vi.fn(),
   trashRestore: vi.fn(),
   trashPurge: vi.fn(),
   startOp: vi.fn(),
@@ -49,8 +50,10 @@ function Host() {
   return <TrashView tab={tab} />;
 }
 
+let hasFocus: MockInstance<() => boolean>;
 beforeEach(() => {
   restoreLayout = stubLayout();
+  hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
   handlers = {};
   ipc.on.mockImplementation((name: string, h: (payload: unknown) => void) => {
     handlers[name] = h;
@@ -62,6 +65,9 @@ beforeEach(() => {
 });
 afterEach(async () => {
   cleanup();
+  // Only the spy on document.hasFocus: restoring every mock would also empty the ipc mocks that
+  // an unmounting view still calls a microtask later.
+  hasFocus.mockRestore();
   await Promise.resolve();
   restoreLayout();
   vi.clearAllMocks();
@@ -449,6 +455,17 @@ test("the_trash_relists_when_another_operation_ends_and_after_a_volume_action", 
   await waitFor(() => expect(rows()).toHaveLength(1));
 });
 
+test("the_trash_relists_when_a_volume_appears_or_goes_by_itself", async () => {
+  await shown([item("a.txt")]);
+  // The strip follows kernkraft://volumes-changed; a volume's trash goes with the volume.
+  ipc.volumesList.mockResolvedValue({ mounted: [], unmounted: [], problems: [] });
+  await act(async () => void (await useVolumes.getState().follow()));
+  ipc.trashList.mockResolvedValue({ items: [], unreadable: [] });
+  await act(async () => handlers["kernkraft://volumes-changed"]!({ problems: [] }));
+  await waitFor(() => expect(screen.queryAllByTestId("trash-row")).toHaveLength(0));
+  expect(ipc.volumesList).toHaveBeenCalledTimes(2);
+});
+
 test("a_progress_event_does_not_undo_cancelling", async () => {
   await shown([item("a.txt"), item("b.txt")]);
   ipc.startOp.mockResolvedValue(5);
@@ -483,4 +500,26 @@ test("the_confirmation_holds_keys_aimed_at_the_page_body_while_this_tab_is_activ
   // Focus lost to the page body: Ctrl+A must not select behind the question.
   fireEvent.keyDown(document.body, { key: "a", ctrlKey: true });
   expect(rows().filter((r) => r.getAttribute("aria-selected") === "true")).toHaveLength(1);
+});
+
+test("the_empty_trash_note_can_hold_the_keyboard", async () => {
+  await shown([]);
+  const note = screen.getByTestId("trash-empty");
+  expect(note).toHaveAttribute("tabindex", "-1");
+});
+
+test("deleting_the_last_item_for_good_leaves_the_keyboard_on_the_empty_note", async () => {
+  await shown([item("a.txt")]);
+  fireEvent.click(rows()[0]!);
+  fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
+  const ask = await screen.findByRole("alertdialog");
+  // The confirmation holds the keyboard; answering it removes the button that had it.
+  expect(within(ask).getByRole("button", { name: /cancel/i })).toHaveFocus();
+  ipc.trashPurge.mockResolvedValue(
+    report({ done: [{ source: p("/home/t/docs/a.txt"), dest: null }] })
+  );
+  ipc.trashList.mockResolvedValue({ items: [], unreadable: [] });
+  fireEvent.click(within(ask).getByRole("button", { name: /delete 1 item/i }));
+  const note = await screen.findByTestId("trash-empty");
+  await waitFor(() => expect(note).toHaveFocus());
 });

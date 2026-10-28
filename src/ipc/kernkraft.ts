@@ -367,8 +367,26 @@ export const mimeOf = (path: WirePath) => invoke<WireMime>(cmd("mime_of"), { pat
 
 // ---- volumes ----
 
+/**
+ * Which disk a volume is on (kernkraft-volumes' DiskId): the device number and
+ * the kernel's disk sequence number, read when the volume was listed.
+ * `major:minor` is reused at once when a device is unplugged; `diskseq` is
+ * unique per disk object until reboot and shared by a disk's partitions. A
+ * stick reformatted in place keeps both.
+ */
+export interface DiskId {
+  major: number;
+  minor: number;
+  diskseq: number;
+}
+
+/** A volume's identity, or why it has none; a volume with none cannot be unmounted, ejected or mounted. */
+export type Identity = ({ state: "known" } & DiskId) | { state: "unknown"; reason: string };
+
+/** A mounted volume. `identity` is passed back as `disk` to unmount and eject. */
 export interface WireMount {
   mount_point: WirePath;
+  identity: Identity;
   device: string;
   fs_type: string;
   label: string;
@@ -386,6 +404,10 @@ export interface Device {
   /** Size in bytes. */
   size: number;
   system: boolean;
+  /** The filesystem UUID, empty when it has none. For display only: clones share it. */
+  uuid: string;
+  /** Passed back whole, as listed, to `volume_mount`. */
+  identity: Identity;
 }
 
 export interface WireVolumes {
@@ -394,14 +416,19 @@ export interface WireVolumes {
   problems: WireError[];
 }
 
+/** The payload of `kernkraft://volumes-changed`: list the volumes again. `problems` are what the watch met since the last event. */
+export interface VolumesChanged {
+  problems: WireError[];
+}
+
 export const volumesList = () => invoke<WireVolumes>(cmd("volumes_list"));
 export const volumeMount = (device: Device) => invoke<WirePath>(cmd("volume_mount"), { device });
 
-export const volumeUnmount = (mountPoint: WirePath) =>
-  invoke<void>(cmd("volume_unmount"), { mountPoint });
+export const volumeUnmount = (mountPoint: WirePath, disk: DiskId) =>
+  invoke<void>(cmd("volume_unmount"), { mountPoint, disk });
 
-export const volumeEject = (mountPoint: WirePath) =>
-  invoke<void>(cmd("volume_eject"), { mountPoint });
+export const volumeEject = (mountPoint: WirePath, disk: DiskId) =>
+  invoke<void>(cmd("volume_eject"), { mountPoint, disk });
 
 // ---- search and Documents ----
 

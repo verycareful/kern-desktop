@@ -26,6 +26,7 @@ function list(sortFailed: boolean) {
       onContextMenu={vi.fn()}
       onBand={vi.fn()}
       onBackgroundClick={vi.fn()}
+      onSeedCursor={vi.fn()}
       rowHeight={36}
       sortBy="name"
       sortDir="asc"

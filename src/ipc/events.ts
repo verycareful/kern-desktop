@@ -10,6 +10,7 @@ import type {
   OpProgressEvent,
   SearchHitEvent,
   ThumbEvent,
+  VolumesChanged,
   WireTheme,
 } from "./kernkraft";
 import type { CorruptReport, DropPayload, Directive, Pins, Recents, Settings } from "./app";
@@ -25,6 +26,7 @@ export const EVENT_DIR_CHANGED = "kernkraft://dir-changed";
 export const EVENT_DIR_GONE = "kernkraft://dir-gone";
 export const EVENT_THUMB = "kernkraft://thumb";
 export const EVENT_THEME_CHANGED = "kernkraft://theme-changed";
+export const EVENT_VOLUMES_CHANGED = "kernkraft://volumes-changed";
 
 // Kern's own events (src-tauri: store_cmds.rs, windows.rs, dnd.rs).
 export const EVENT_SETTINGS_CHANGED = "kern://settings-changed";
@@ -52,6 +54,7 @@ export interface EventPayloads {
   "kernkraft://dir-gone": DirEvent;
   "kernkraft://thumb": ThumbEvent;
   "kernkraft://theme-changed": WireTheme;
+  "kernkraft://volumes-changed": VolumesChanged;
   "kern://settings-changed": Settings;
   "kern://pins-changed": Pins;
   "kern://recents-changed": Recents;

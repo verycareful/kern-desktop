@@ -250,8 +250,11 @@ test("keyboard_focus_outlines_the_current_item_not_the_list", async ({ page, moc
   expect((await outline(rows(page).first())).style).toBe("solid");
   await expect(rows(page).first()).toHaveAttribute("aria-selected", "false");
 
+  // The arrow key moves on from the outlined first row: the second is selected and outlined.
   await page.keyboard.press("ArrowDown");
-  await expect(rows(page).first()).toHaveAttribute("aria-selected", "true");
+  await expect(rows(page).nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(rows(page).nth(1)).toHaveClass(/kern-cursor/);
+  await expect(rows(page).first()).toHaveAttribute("aria-selected", "false");
   await page.getByRole("button", { name: /grid view/i }).focus();
   // Focus elsewhere: no outline on any row.
   for (const row of await rows(page).all()) {

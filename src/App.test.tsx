@@ -21,6 +21,7 @@ vi.mock("./ipc", async () => ({
   EVENT_SETTINGS_CHANGED: "kern://settings-changed",
   EVENT_DIR_CHANGED: "kernkraft://dir-changed",
   EVENT_DIR_GONE: "kernkraft://dir-gone",
+  EVENT_VOLUMES_CHANGED: "kernkraft://volumes-changed",
   // The folder view of the Home tab: an empty folder.
   listDir: () => Promise.resolve([]),
   watchDir: () => Promise.resolve(),

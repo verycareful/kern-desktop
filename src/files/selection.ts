@@ -60,6 +60,16 @@ export function selectAll(s: Sel, count: number): Sel {
   };
 }
 
+/**
+ * The view got the keyboard with no current item: the cursor goes to the first
+ * item, which is the one the view outlines, so arrow keys move on from what is
+ * shown. Nothing is selected. A selection or cursor that exists is kept.
+ */
+export function seedCursor(s: Sel, count: number): Sel {
+  if (count <= 0 || s.cursor !== null) return s;
+  return { ...s, cursor: 0 };
+}
+
 export function selectNone(_s: Sel): Sel {
   return empty;
 }

@@ -2,12 +2,13 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useState } from "react";
 import { HardDrive, Usb, X } from "lucide-react";
-import { displayPath, type Device, type WireError } from "../ipc";
+import { displayPath, type Device, type Identity } from "../ipc";
 import { formatSize } from "../files/format";
 import { ActionMenu } from "../keys/ActionMenu";
 import { showFolder } from "./place-nav";
 import { VOLUME_MENU } from "./volume-menu";
 import { useCurrentPlace } from "./use-current-place";
+import { identityNote, volumeErrorText } from "./volume-text";
 import { useVolumes, type Volume } from "./volumes-store";
 
 // Design 4.1 and 5.3: the Volumes group of the strip. Mounted volumes first,
@@ -16,16 +17,12 @@ import { useVolumes, type Volume } from "./volumes-store";
 // they run through the action table, aimed at the volume the menu was opened
 // on. A volume being worked on shows what is happening and the rest of the
 // window stays usable. A failure is shown beside its volume in UDisks' own
-// words; what an incomplete eject already unmounted is listed too.
+// words; what an incomplete eject already unmounted is listed too. The list
+// follows kernkraft://volumes-changed (volumes-store.ts follow). Problems
+// kernkraft reports only once stay here until dismissed. A volume with no
+// identity shows why, and Kern does not act on it.
 
-function errorText(e: WireError): string {
-  const base = `${e.kind}: ${e.message}`;
-  const d = e.details;
-  if (d?.k === "EjectIncomplete" && d.unmounted.length > 0) {
-    return `${base} (already unmounted: ${d.unmounted.map(displayPath).join(", ")})`;
-  }
-  return base;
-}
+const errorText = volumeErrorText;
 
 const deviceText = (d: Device) =>
   [d.fs_type, d.size > 0 ? formatSize(d.size) : "", d.system ? "internal" : ""]
@@ -37,17 +34,17 @@ export function VolumesList() {
   const currentKey = useCurrentPlace();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
-  // No event announces a volume appearing, so the list is read when the strip
-  // appears, when the window comes back into use and after every action.
+  // The event is subscribed to before the first listing; the strip leaving stops following.
   useEffect(() => {
-    const refresh = () => void useVolumes.getState().refresh();
-    refresh();
-    const onVisible = () => document.visibilityState === "visible" && refresh();
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", onVisible);
+    let live = true;
+    let stop: (() => void) | undefined;
+    void useVolumes
+      .getState()
+      .follow()
+      .then((off) => (live ? (stop = off) : off()));
     return () => {
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", onVisible);
+      live = false;
+      stop?.();
     };
   }, []);
 
@@ -72,15 +69,39 @@ export function VolumesList() {
           </button>
         </div>
       )}
-      {s.problems.map((p, i) => (
-        <div key={i} role="alert" className="kern-places-error">
-          {errorText(p)}
+      {s.watchError && (
+        <div role="alert" className="kern-places-error">
+          The volume list will not follow changes: {errorText(s.watchError)}
+        </div>
+      )}
+      {s.kept.map((k) => (
+        <div key={k.id} role="alert" className="kern-places-error">
+          <span>{errorText(k.error)}</span>
+          <button
+            type="button"
+            className="kern-icon-button"
+            aria-label={`Dismiss the ${k.error.kind} notice`}
+            onClick={() => s.dismiss(k.id)}
+          >
+            <X size={14} strokeWidth={2} aria-hidden />
+          </button>
         </div>
       ))}
+      {s.problems
+        .filter(
+          (p) => !s.kept.some((k) => k.error.kind === p.kind && k.error.message === p.message)
+        )
+        .map((p, i) => (
+          <div key={i} role="alert" className="kern-places-error">
+            {errorText(p)}
+          </div>
+        ))}
       <ul className="kern-places-list">
         {volumes.map((v) => {
           const busy = s.busy[v.key];
           const error = s.errors[v.key];
+          const identity: Identity = v.kind === "mounted" ? v.mount.identity : v.device.identity;
+          const note = identityNote(identity);
           return (
             <li key={v.key} className="kern-volume">
               {v.kind === "mounted" ? (
@@ -90,7 +111,6 @@ export function VolumesList() {
                   aria-busy={busy ? true : undefined}
                   aria-current={currentKey === v.key ? "page" : undefined}
                   title={`${label(v)} (${displayPath(v.mount.mount_point)})`}
-                  onFocus={() => s.setCurrent(v.key)}
                   onClick={() => showFolder(v.mount.mount_point)}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -122,8 +142,7 @@ export function VolumesList() {
                     className="kern-button kern-mount"
                     aria-label={`Mount ${label(v)}`}
                     aria-busy={busy ? true : undefined}
-                    disabled={Boolean(busy)}
-                    onFocus={() => s.setCurrent(v.key)}
+                    disabled={Boolean(busy) || identity.state === "unknown"}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       openMenu(v, { x: e.clientX, y: e.clientY }, e.currentTarget);
@@ -134,6 +153,7 @@ export function VolumesList() {
                   </button>
                 </div>
               )}
+              {note && <p className="kern-place-note">{note}</p>}
               {busy && (
                 <p role="status" className="kern-place-busy">
                   {busy}

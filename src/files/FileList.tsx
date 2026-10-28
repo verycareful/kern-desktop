@@ -34,6 +34,8 @@ export interface ItemsProps {
   onContextMenu(i: number | null, e: React.MouseEvent): void;
   onBand(indices: number[], additive: boolean, base: Sel): void;
   onBackgroundClick(): void;
+  /** The view got the keyboard with no cursor: put it on the first item, selecting nothing. */
+  onSeedCursor(): void;
 }
 
 export function FileBadge(props: { entry: WireEntry; size: number }) {
@@ -97,7 +99,7 @@ export function FileList(
     if (revealTick > 0 && cursor.current !== null) virtual.scrollToIndex(cursor.current);
   }, [revealTick, virtual]);
 
-  const item = useCurrentItem(entries.length, sel.cursor);
+  const item = useCurrentItem(entries.length, sel.cursor, props.onSeedCursor);
 
   const layout: Layout = { kind: "list", rowHeight, count: entries.length };
   const { onPointerDown, band } = useRubberBand({

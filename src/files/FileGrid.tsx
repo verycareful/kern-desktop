@@ -101,7 +101,7 @@ export function FileGrid(
     thumbSizeFor(window.devicePixelRatio || 1, zoom)
   );
 
-  const item = useCurrentItem(entries.length, sel.cursor);
+  const item = useCurrentItem(entries.length, sel.cursor, props.onSeedCursor);
 
   const layout: Layout = {
     kind: "grid",

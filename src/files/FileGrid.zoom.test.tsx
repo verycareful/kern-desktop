@@ -40,6 +40,7 @@ async function sizeAskedAt(interfaceSize: number) {
       onContextMenu={vi.fn()}
       onBand={vi.fn()}
       onBackgroundClick={vi.fn()}
+      onSeedCursor={vi.fn()}
       rootRef={{ current: null }}
       revealTick={0}
       initialScroll={0}

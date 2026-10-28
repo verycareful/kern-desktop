@@ -46,3 +46,12 @@ test("the_first_row_and_the_cards_are_spaced_from_the_path_bar_by_the_gap_token"
     expect(rulesFor(css, sel).join(), sel).toMatch(/padding-top:\s*var\(--kern-density-gap\)/);
   }
 });
+
+test("the_empty_notes_keep_the_theme_focus_frame_when_they_hold_the_keyboard", () => {
+  // An empty folder or Trash note takes focus (tabIndex -1) so the keyboard is never lost
+  // to the page; it keeps base.css's :focus-visible frame, drawn inside so the note's
+  // overflow does not clip it.
+  const rules = rulesFor(css, ".kern-note:focus-visible").join();
+  expect(rules).toMatch(/outline-offset:\s*-2px/);
+  expect(rules).not.toMatch(/outline:\s*none/);
+});

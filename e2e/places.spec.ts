@@ -28,6 +28,7 @@ const COMMON = {
     mounted: [
       {
         mount_point: { k: "Utf8", v: "/run/media/tester/STICK" },
+        identity: { state: "known", major: 8, minor: 17, diskseq: 12 },
         device: "/dev/sdb1",
         fs_type: "vfat",
         label: "STICK",
@@ -43,6 +44,8 @@ const COMMON = {
         fs_type: "ext4",
         size: 500000000000,
         system: false,
+        uuid: "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+        identity: { state: "known", major: 8, minor: 33, diskseq: 13 },
       },
     ],
     problems: [],

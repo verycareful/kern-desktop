@@ -16,12 +16,14 @@ import { registerFolder, type MoveTo } from "./folder-controller";
 import { useFolderStatus } from "./folder-status";
 import { GoneBanner } from "./GoneBanner";
 import { LocationBar } from "./LocationBar";
+import { useKeepKeyboard } from "./use-keep-keyboard";
 import { OPEN_CONFIRM_ABOVE, openEntries } from "./open-entries";
 import {
   click,
   ctrlClick,
   move,
   rubberBand,
+  seedCursor,
   selectAll,
   selectNone,
   shiftClick,
@@ -137,6 +139,10 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   const [columns, setColumns] = useState(1);
   const root = useRef<HTMLDivElement>(null);
   const files = useRef<HTMLDivElement>(null);
+  const note = useRef<HTMLDivElement>(null);
+  // The list takes the keyboard; an empty folder's note does when there is no list.
+  const keyboardTarget = useCallback(() => root.current ?? note.current, []);
+  const keep = useKeepKeyboard(files, keyboardTarget);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -288,7 +294,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   useEffect(() => {
     if (!focusSoon.current || folder.phase === "loading") return;
     focusSoon.current = false;
-    root.current?.focus();
+    keyboardTarget()?.focus();
   });
 
   const onItemDoubleClick = useCallback(
@@ -313,6 +319,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       dispatch(() => rubberBand(base, indices, additive)),
     [dispatch]
   );
+  const onSeedCursor = useCallback(() => dispatch((s, n) => seedCursor(s, n)), [dispatch]);
   const onBackgroundClick = useCallback(() => {
     dispatch((s) => selectNone(s));
     root.current?.focus();
@@ -326,6 +333,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     onContextMenu,
     onBand,
     onBackgroundClick,
+    onSeedCursor,
   };
 
   let body;
@@ -362,7 +370,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     default:
       body =
         entries.length === 0 ? (
-          <div className="kern-note" data-testid="folder-empty">
+          <div ref={note} tabIndex={-1} className="kern-note" data-testid="folder-empty">
             <FolderOpen size={30} strokeWidth={1.8} aria-hidden />
             <p className="kern-note-title">This folder is empty</p>
             {!showHidden && (
@@ -418,7 +426,14 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   };
 
   return (
-    <div ref={files} className="kern-files" data-testid="folder-view" data-view={viewMode}>
+    <div
+      ref={files}
+      className="kern-files"
+      data-testid="folder-view"
+      data-view={viewMode}
+      onFocus={keep.onFocus}
+      onBlur={keep.onBlur}
+    >
       <div className="kern-files-bar">
         {editing ? (
           <LocationBar
@@ -427,7 +442,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
             onClose={(how) => {
               setEditing(false);
               // Enter and Escape hand the keyboard to the list; focus that left on its own stays where it went.
-              if (how === "done") root.current?.focus();
+              if (how === "done") keyboardTarget()?.focus();
             }}
           />
         ) : (

@@ -16,10 +16,14 @@ const ipc = vi.hoisted(() => ({
   on: vi.fn(),
   settingsGet: vi.fn(),
   openPaths: vi.fn(),
+  userDirs: vi.fn(),
+  volumesList: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
 import MainWindow from "./MainWindow";
+import { useUserDirs } from "./user-dirs-store";
+import { useVolumes } from "./volumes-store";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 let restore: () => void;
@@ -34,6 +38,10 @@ beforeEach(() => {
     view_mode: "list",
     density: "cozy",
   } as Settings);
+  ipc.userDirs.mockResolvedValue({ home: p("/home/t"), dirs: [] });
+  ipc.volumesList.mockResolvedValue({ mounted: [], unmounted: [], problems: [] });
+  useUserDirs.getState().reset();
+  useVolumes.getState().reset();
   ipc.listDir.mockResolvedValue([entry("n.txt", { mime: "text/plain" }, "/d/sub")]);
   useViewSettings.setState({ loaded: false, error: null });
   useTabs.setState({ tabs: [], activeId: null });
@@ -46,6 +54,12 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 
+// The strip looks the user's folders and the volumes up as it appears; the tests wait for both.
+async function stripSettled() {
+  await screen.findByText("No volumes.");
+  await screen.findByRole("button", { name: "Home" });
+}
+
 async function slideIn() {
   useTabs.getState().openFolder(p("/d/sub"), false);
   const folderId = useTabs.getState().activeId!;
@@ -53,6 +67,7 @@ async function slideIn() {
   render(<MainWindow />);
   fireEvent.click(screen.getByRole("button", { name: "File manager panel" }));
   await waitFor(() => expect(screen.getAllByTestId("file-row")).toHaveLength(1));
+  await stripSettled();
   return folderId;
 }
 
@@ -72,6 +87,9 @@ test("navigating_in_the_slid_in_panel_navigates_that_tab_and_keeps_the_document"
   expect(tab.path).toEqual(p("/d"));
   expect(useTabs.getState().tabs).toHaveLength(2);
   expect(useTabs.getState().activeId).toBe(doc);
+  // The tab lists its new folder; wait for it so the update lands inside the test.
+  await waitFor(() => expect(ipc.listDir).toHaveBeenLastCalledWith(p("/d"), false));
+  await waitFor(() => expect(screen.getAllByTestId("file-row")).toHaveLength(1));
 });
 
 test("opening_a_file_in_the_slid_in_panel_asks_the_backend_for_a_document_tab", async () => {
@@ -89,5 +107,6 @@ test("with_no_folder_tab_the_slid_in_panel_has_no_folder_view", async () => {
   useTabs.getState().openDoc(p("/d/old.md"));
   render(<MainWindow />);
   fireEvent.click(screen.getByRole("button", { name: "File manager panel" }));
+  await stripSettled();
   expect(screen.getByTestId("folder-area")).toBeEmptyDOMElement();
 });

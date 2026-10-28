@@ -2,10 +2,12 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { Device, WireMount, WirePath, WireVolumes } from "../ipc";
+import type { VolumesChanged, WirePath } from "../ipc";
+import { device, diskOf, known, mount, problem, volumes } from "./test-volumes";
 import { useTabs } from "../store/tabs";
 
 const ipc = vi.hoisted(() => ({
+  on: vi.fn(),
   volumesList: vi.fn(),
   volumeMount: vi.fn(),
   volumeUnmount: vi.fn(),
@@ -14,36 +16,23 @@ const ipc = vi.hoisted(() => ({
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
 import { VolumesList } from "./VolumesList";
-import { mountedKey, useVolumes } from "./volumes-store";
+import { useVolumes } from "./volumes-store";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
-const mount = (label: string, over: Partial<WireMount> = {}): WireMount => ({
-  mount_point: p(`/run/media/t/${label}`),
-  device: "/dev/sdb1",
-  fs_type: "vfat",
-  label,
-  removable: true,
-  read_only: false,
-  ...over,
-});
-const device = (label: string, over: Partial<Device> = {}): Device => ({
-  object_path: `/org/freedesktop/UDisks2/block_devices/${label}`,
-  device: `/dev/${label}`,
-  label,
-  fs_type: "ext4",
-  size: 8_000_000_000,
-  system: false,
-  ...over,
-});
-const volumes = (v: Partial<WireVolumes>): WireVolumes => ({
-  mounted: [],
-  unmounted: [],
-  problems: [],
-  ...v,
-});
 
+let fire: (payload?: VolumesChanged) => Promise<void>;
 beforeEach(() => {
   useVolumes.getState().reset();
+  ipc.on.mockImplementation((name: string, h: (payload: VolumesChanged) => void) => {
+    if (name === "kernkraft://volumes-changed") {
+      fire = (payload = { problems: [] }) =>
+        act(async () => {
+          h(payload);
+          await Promise.resolve();
+        });
+    }
+    return Promise.resolve(() => undefined);
+  });
   useTabs.setState({ tabs: [], activeId: null, views: {}, selectRequests: {} });
 });
 afterEach(() => {
@@ -71,7 +60,7 @@ test("volume_busy_error_shown", async () => {
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent("Busy");
   expect(alert).toHaveTextContent("target is busy: held by process 4211 (bash)");
-  expect(ipc.volumeUnmount).toHaveBeenCalledWith(p("/run/media/t/STICK"));
+  expect(ipc.volumeUnmount).toHaveBeenCalledWith(p("/run/media/t/STICK"), diskOf("STICK"));
   // The volume is not busy any more and can be tried again.
   expect(screen.getByRole("button", { name: "STICK" })).not.toHaveAttribute("aria-busy", "true");
 });
@@ -181,7 +170,9 @@ test("the_menu_key_opens_the_volume_menu_and_its_actions_run_on_that_volume", as
   fireEvent.keyDown(other, { key: "ContextMenu" });
   const menu = await screen.findByRole("menu");
   fireEvent.click(within(menu).getByRole("menuitem", { name: /unmount/i }));
-  await waitFor(() => expect(ipc.volumeUnmount).toHaveBeenCalledWith(p("/run/media/t/OTHER")));
+  await waitFor(() =>
+    expect(ipc.volumeUnmount).toHaveBeenCalledWith(p("/run/media/t/OTHER"), diskOf("OTHER"))
+  );
 });
 
 test("volume_actions_are_not_in_the_main_menu_but_in_the_volumes_own_menu", async () => {
@@ -207,15 +198,10 @@ test("the_context_menu_acts_on_the_right_clicked_device_not_the_focused_one", as
   (await screen.findByRole("button", { name: "STICK" })).focus();
   const menu = await openMenu("OTHER");
   fireEvent.click(within(menu).getByRole("menuitem", { name: /unmount/i }));
-  await waitFor(() => expect(ipc.volumeUnmount).toHaveBeenCalledWith(p("/run/media/t/OTHER")));
+  await waitFor(() =>
+    expect(ipc.volumeUnmount).toHaveBeenCalledWith(p("/run/media/t/OTHER"), diskOf("OTHER"))
+  );
   expect(ipc.volumeUnmount).toHaveBeenCalledTimes(1);
-});
-
-test("a_different_device_at_the_same_mount_path_is_a_different_volume", () => {
-  const a = mount("X", { device: "/dev/sdb1", mount_point: p("/mnt/x") });
-  const b = mount("X", { device: "/dev/sdc1", mount_point: p("/mnt/x") });
-  expect(mountedKey(a)).not.toBe(mountedKey(b));
-  expect(mountedKey(a)).toBe(mountedKey({ ...a }));
 });
 
 test("the_most_specific_volume_is_marked_current", async () => {
@@ -232,4 +218,110 @@ test("the_most_specific_volume_is_marked_current", async () => {
   await screen.findByRole("button", { name: "INNER" });
   expect(screen.getByRole("button", { name: "INNER" })).toHaveAttribute("aria-current", "page");
   expect(screen.getByRole("button", { name: "OUTER" })).not.toHaveAttribute("aria-current");
+});
+
+test("the_list_follows_the_volumes_changed_event", async () => {
+  ipc.volumesList.mockResolvedValue(volumes({ mounted: [mount("STICK")] }));
+  render(<VolumesList />);
+  await screen.findByRole("button", { name: "STICK" });
+  ipc.volumesList.mockResolvedValue(
+    volumes({ mounted: [mount("STICK"), mount("CARD")], unmounted: [device("BACKUP")] })
+  );
+  await fire();
+  await screen.findByRole("button", { name: "CARD" });
+  expect(screen.getByRole("button", { name: "Mount BACKUP" })).toBeInTheDocument();
+  ipc.volumesList.mockResolvedValue(volumes({ mounted: [mount("CARD")] }));
+  await fire();
+  await waitFor(() => expect(screen.queryByRole("button", { name: "STICK" })).toBeNull());
+});
+
+test("the_event_is_subscribed_to_before_the_first_listing", async () => {
+  ipc.volumesList.mockResolvedValue(volumes({}));
+  render(<VolumesList />);
+  await waitFor(() => expect(ipc.volumesList).toHaveBeenCalled());
+  expect(ipc.on.mock.invocationCallOrder[0]).toBeLessThan(
+    ipc.volumesList.mock.invocationCallOrder[0]!
+  );
+});
+
+test("a_problem_reported_once_stays_on_screen_until_it_is_dismissed", async () => {
+  ipc.volumesList
+    .mockResolvedValueOnce(volumes({ problems: [problem("UdisksAbsent")] }))
+    .mockResolvedValue(volumes({ mounted: [mount("STICK")] }));
+  render(<VolumesList />);
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent(/UDisks2 is not running/);
+  // The listing after it, and an event, do not clear it.
+  await fire();
+  await screen.findByRole("button", { name: "STICK" });
+  expect(screen.getByRole("alert")).toHaveTextContent(/UDisks2 is not running/);
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss the UdisksAbsent notice" }));
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("a_problem_in_an_event_is_shown_in_plain_words_and_kept", async () => {
+  ipc.volumesList.mockResolvedValue(volumes({}));
+  render(<VolumesList />);
+  await screen.findByText("No volumes.");
+  await fire({ problems: [problem("CallbackPanic", "boom")] });
+  expect(await screen.findByRole("alert")).toHaveTextContent(/watcher hit an internal error/);
+  await fire();
+  expect(screen.getByRole("alert")).toHaveTextContent(/watcher hit an internal error/);
+});
+
+test("an_identity_mismatch_is_explained_and_the_list_read_again", async () => {
+  ipc.volumesList.mockResolvedValue(volumes({ mounted: [mount("STICK")] }));
+  ipc.volumeUnmount.mockRejectedValue(
+    problem("IdentityMismatch", "not the volume that was listed: disk changed")
+  );
+  render(<VolumesList />);
+  const menu = await openMenu("STICK");
+  const calls = ipc.volumesList.mock.calls.length;
+  fireEvent.click(within(menu).getByRole("menuitem", { name: /unmount/i }));
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent(/no longer the volume that was listed/);
+  expect(alert).toHaveTextContent("disk changed");
+  await waitFor(() => expect(ipc.volumesList.mock.calls.length).toBeGreaterThan(calls));
+});
+
+const unknown = {
+  state: "unknown",
+  reason: "no disk sequence number: kernel older than 5.15",
+} as const;
+
+test("a_mounted_volume_with_no_identity_shows_why_and_has_no_unmount_or_eject", async () => {
+  ipc.volumesList.mockResolvedValue(volumes({ mounted: [mount("OLD", { identity: unknown })] }));
+  render(<VolumesList />);
+  const menu = await openMenu("OLD");
+  expect(screen.getByText(/kernel older than 5.15/)).toBeInTheDocument();
+  expect(within(menu).getByRole("menuitem", { name: /unmount/i })).toBeDisabled();
+  expect(within(menu).getByRole("menuitem", { name: /eject/i })).toBeDisabled();
+  fireEvent.click(within(menu).getByRole("menuitem", { name: /unmount/i }));
+  expect(ipc.volumeUnmount).not.toHaveBeenCalled();
+});
+
+test("an_unmounted_device_with_no_identity_shows_why_and_cannot_be_mounted", async () => {
+  ipc.volumesList.mockResolvedValue(volumes({ unmounted: [device("RAW", { identity: unknown })] }));
+  render(<VolumesList />);
+  const button = await screen.findByRole("button", { name: "Mount RAW" });
+  expect(button).toBeDisabled();
+  expect(screen.getByText(/kernel older than 5.15/)).toBeInTheDocument();
+  fireEvent.click(button);
+  expect(ipc.volumeMount).not.toHaveBeenCalled();
+});
+
+test("a_replugged_disk_at_the_same_path_is_not_the_volume_that_was_busy", async () => {
+  ipc.volumesList.mockResolvedValue(volumes({ mounted: [mount("STICK")] }));
+  let finish!: () => void;
+  ipc.volumeEject.mockReturnValue(new Promise<void>((r) => (finish = r)));
+  render(<VolumesList />);
+  const menu = await openMenu("STICK");
+  fireEvent.click(within(menu).getByRole("menuitem", { name: /eject/i }));
+  await screen.findByRole("status");
+  // Another disk now shows at the same node and path: it is a different volume, not busy.
+  const other = mount("STICK", { identity: { ...known("STICK"), diskseq: 7 } as never });
+  ipc.volumesList.mockResolvedValue(volumes({ mounted: [other] }));
+  await fire();
+  await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+  await act(async () => finish());
 });

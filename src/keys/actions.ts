@@ -290,9 +290,11 @@ actions.push(...folderActions);
 
 // ---- the interface size (design 7.2) ----
 // No keys: Ctrl+= and Ctrl+- are the editor's text zoom (design 4.5). Every
-// window is zoomed alike, so these apply whatever tab is shown.
+// window is zoomed alike, so these apply whatever tab is shown. They wait for the
+// stored settings: until they are read the size held is the default, not the user's.
 
 const size = () => useViewSettings.getState().interfaceSize;
+const settingsLoaded = () => useViewSettings.getState().loaded;
 const sizeActions: Action[] = [
   {
     id: "view.size.larger",
@@ -300,7 +302,7 @@ const sizeActions: Action[] = [
     area: "View",
     keys: [],
     when: "any",
-    enabled: () => stepInterfaceSize(size(), 1) !== size(),
+    enabled: () => settingsLoaded() && stepInterfaceSize(size(), 1) !== size(),
     run: () => void stepSize(1),
   },
   {
@@ -309,7 +311,7 @@ const sizeActions: Action[] = [
     area: "View",
     keys: [],
     when: "any",
-    enabled: () => stepInterfaceSize(size(), -1) !== size(),
+    enabled: () => settingsLoaded() && stepInterfaceSize(size(), -1) !== size(),
     run: () => void stepSize(-1),
   },
   {
@@ -318,7 +320,7 @@ const sizeActions: Action[] = [
     area: "View",
     keys: [],
     when: "any",
-    enabled: () => size() !== DEFAULT_INTERFACE_SIZE,
+    enabled: () => settingsLoaded() && size() !== DEFAULT_INTERFACE_SIZE,
     run: () => void setInterfaceSize(DEFAULT_INTERFACE_SIZE),
   },
 ];
@@ -407,12 +409,15 @@ const trashActions: Action[] = [
 
 // ---- the places strip: Trash and volumes (design 4.1, 5.2, 5.3) ----
 
-// The volume actions are aimed at the volume whose menu is open or that has the focus
-// (useVolumes.current), and are in that volume's own menu only; with none they are greyed.
+// The volume actions are aimed at the volume whose menu is open (useVolumes.current), and are
+// in that volume's own menu only; with none they are greyed, and so are all of them for a
+// volume whose identity is unknown.
 function volumeIs(kind: "mounted" | "unmounted", remove?: boolean): boolean {
   const s = useVolumes.getState();
   const v = s.currentVolume();
   if (!v || v.kind !== kind || s.busy[v.key]) return false;
+  if ((v.kind === "mounted" ? v.mount.identity : v.device.identity).state === "unknown")
+    return false;
   return !remove || (v.kind === "mounted" && v.mount.removable);
 }
 

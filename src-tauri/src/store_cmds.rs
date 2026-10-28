@@ -124,29 +124,41 @@ fn finish<R: Runtime, T: serde::Serialize + Clone>(
     loaded.value
 }
 
-/// Reads the stored settings, for startup, applies the theme preferences
-/// through kernkraft-tauri, and reports a corrupt file. Runs off the main
-/// thread: it reads files, and theming gathers system sources.
-pub fn apply_at_startup<R: Runtime>(app: &AppHandle<R>) {
-    let app = app.clone();
-    std::thread::spawn(move || {
-        let state = app.state::<StoreState>();
-        let outcome = state
-            .store()
-            .and_then(|store| store.settings_get())
-            .map(|loaded| finish(&app, loaded, EVENT_SETTINGS_CHANGED))
-            .and_then(|s| {
-                crate::zoom::apply(&app, s.interface_size);
-                let user = UserChoice {
-                    mode: s.theme_mode,
-                    accent: s.accent,
-                    density: s.density,
-                };
-                app.kernkraft().theme_set_prefs(s.follow, user).map(|_| ())
-            });
-        if let Err(e) = outcome {
+/// Reads the stored settings for startup, reports a corrupt file and puts the
+/// stored interface size in force. Runs on the calling thread, before any
+/// window is created, so the first window is zoomed from the start.
+pub fn load_startup_settings<R: Runtime>(app: &AppHandle<R>) -> Option<Settings> {
+    let state = app.state::<StoreState>();
+    match state.store().and_then(|store| store.settings_get()) {
+        Ok(loaded) => {
+            let settings = finish(app, loaded, EVENT_SETTINGS_CHANGED);
+            crate::zoom::apply(app, settings.interface_size);
+            Some(settings)
+        }
+        Err(e) => {
             // No window can be listening yet and there is no log; stderr is
             // what a terminal launch or the journal shows.
+            eprintln!("kern: reading the stored settings failed: {e}");
+            None
+        }
+    }
+}
+
+/// Applies the stored settings at startup: the interface size at once (see
+/// [`load_startup_settings`]), the theme preferences through kernkraft-tauri
+/// on another thread, since theming gathers system sources.
+pub fn apply_at_startup<R: Runtime>(app: &AppHandle<R>) {
+    let Some(s) = load_startup_settings(app) else {
+        return;
+    };
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let user = UserChoice {
+            mode: s.theme_mode,
+            accent: s.accent,
+            density: s.density,
+        };
+        if let Err(e) = app.kernkraft().theme_set_prefs(s.follow, user) {
             eprintln!("kern: applying the stored theme settings failed: {e}");
         }
     });

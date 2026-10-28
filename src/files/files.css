@@ -160,6 +160,11 @@
   color: var(--kern-text-dim);
 }
 
+/* The note takes the keyboard when there is no list (tabIndex -1); base.css draws its frame. */
+.kern-note:focus-visible {
+  outline-offset: -2px;
+}
+
 .kern-note-title {
   margin: 8px 0 0;
   font-size: 16px;

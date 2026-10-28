@@ -9,6 +9,7 @@ vi.mock("../ipc", async (orig) => ({
   ...(await orig<typeof import("../ipc")>()),
   userDirs: () => Promise.resolve({ home: { k: "Utf8", v: "/home/a" }, dirs: [] }),
   volumesList: () => Promise.resolve({ mounted: [], unmounted: [], problems: [] }),
+  on: () => Promise.resolve(() => undefined),
 }));
 import { actions, appliesTo } from "../keys/actions";
 import { usePanelsStore } from "../store/panels";

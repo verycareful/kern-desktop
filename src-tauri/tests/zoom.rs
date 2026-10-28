@@ -141,3 +141,42 @@ fn a_closed_window_is_forgotten() {
     assert!(!e.zooms().contains_key("doc-1"), "{:?}", e.zooms());
     assert!(e.zooms().contains_key("main"));
 }
+
+#[test]
+fn applying_the_size_already_in_force_leaves_the_windows_alone() {
+    let e = env();
+    // Dropping the record is the only way to see whether a window was zoomed again.
+    zoom::forget(e.app.handle(), "main");
+    zoom::apply(e.app.handle(), 90);
+    assert!(!e.zooms().contains_key("main"), "{:?}", e.zooms());
+    zoom::apply(e.app.handle(), 100);
+    assert!(near(e.zooms()["main"], 1.0), "{:?}", e.zooms());
+    // The settings being read again with the same size does not zoom either.
+    zoom::forget(e.app.handle(), "main");
+    e.call("settings_set", json!({"patch": {"interface_size": 100}}))
+        .unwrap();
+    assert!(!e.zooms().contains_key("main"), "{:?}", e.zooms());
+}
+
+#[test]
+fn the_stored_size_is_in_force_before_the_first_window_is_created() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().canonicalize().unwrap();
+    let (config, state) = (root.join("config"), root.join("state"));
+    fs::create_dir_all(&config).unwrap();
+    fs::write(config.join("settings.json"), r#"{"interface_size": 125}"#).unwrap();
+    let app = mock_builder()
+        .plugin(zoom::plugin())
+        .manage(StoreState::new(Store::new(config, state)))
+        .build(mock_context(noop_assets()))
+        .unwrap();
+    // No window exists yet: the size is read and put in force by this call alone.
+    let settings = kern_lib::store_cmds::load_startup_settings(app.handle()).unwrap();
+    assert_eq!(settings.interface_size, 125);
+    assert_eq!(zoom::current(app.handle()), 125);
+    // So the first window is created at the stored size and never shows the default.
+    WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    assert!(near(zoom::applied(app.handle())["main"], 1.25));
+}

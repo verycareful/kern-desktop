@@ -8,11 +8,15 @@ import { parseLocation } from "./path-input";
 // whatever is wrong with the text is shown here and the bar stays open. Whether
 // the folder exists is for the folder view to say: it lists the folder anyway,
 // and shows the error or the missing-folder banner. The bar closes without going
-// anywhere on Escape, and when focus leaves it (a click elsewhere, another
-// window), dropping what was typed. A check under way is let finish: leaving
-// then neither closes the bar nor loses the error, and a check that succeeds
-// goes on to close it. Text left as it was shown keeps the path it came from, so
-// a folder whose name is not UTF-8 is not turned into another path.
+// anywhere on Escape, and when focus leaves it for something else in Kern (a
+// click elsewhere), dropping what was typed. Focus leaving Kern's window
+// (Alt+Tab, another application) leaves the bar and its text as they were; the
+// next blur inside Kern or Escape closes it. A check under way is let finish:
+// leaving then neither closes the bar nor loses the error, and a check that
+// succeeds goes on to close it, as a blur when focus had left meanwhile so that
+// the list does not take the keyboard back. Text left as it was shown keeps the
+// path it came from, so a folder whose name is not UTF-8 is not turned into
+// another path.
 export function LocationBar(props: {
   path: WirePath;
   onNavigate(path: WirePath): void;
@@ -26,6 +30,7 @@ export function LocationBar(props: {
   const input = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
   const checking = useRef(false);
+  const leftDuringCheck = useRef(false);
   const closed = useRef(false);
 
   useEffect(() => {
@@ -52,6 +57,7 @@ export function LocationBar(props: {
       return;
     }
     checking.current = true;
+    leftDuringCheck.current = false;
     setBusy(true);
     try {
       // The Home folder is only needed for ~, so it is looked up only then.
@@ -63,7 +69,7 @@ export function LocationBar(props: {
       }
       if (!alive.current) return;
       props.onNavigate(parsed.path);
-      close("done");
+      close(leftDuringCheck.current ? "blur" : "done");
     } catch (e) {
       const err = toWireError(e);
       if (alive.current) setError(`${err.kind}: ${err.message}`);
@@ -84,7 +90,11 @@ export function LocationBar(props: {
         value={text}
         readOnly={busy}
         onChange={(e) => setText(e.target.value)}
-        onBlur={() => !checking.current && close("blur")}
+        onBlur={() => {
+          if (checking.current) leftDuringCheck.current = true;
+          // The document has no focus when the whole window lost it.
+          else if (document.hasFocus()) close("blur");
+        }}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();

@@ -14,7 +14,7 @@ const IDS = ["view.size.larger", "view.size.smaller", "view.size.reset"];
 
 beforeEach(() => {
   useTabs.setState({ tabs: [], activeId: null });
-  useViewSettings.setState({ interfaceSize: 90, error: null });
+  useViewSettings.setState({ loaded: true, interfaceSize: 90, error: null });
   ipc.settingsSet.mockImplementation((patch: Partial<Settings>) =>
     Promise.resolve({ show_hidden: false, view_mode: "list", density: "cozy", ...patch })
   );
@@ -63,4 +63,15 @@ test("reset_writes_the_default", async () => {
   useViewSettings.setState({ interfaceSize: 125 });
   runAction(getAction("view.size.reset"), currentContext());
   await vi.waitFor(() => expect(ipc.settingsSet).toHaveBeenLastCalledWith({ interface_size: 90 }));
+});
+
+test("until_the_settings_are_loaded_all_three_are_greyed_and_do_nothing", () => {
+  // The size shown before the settings are read is the default, not the user's: stepping from
+  // it would write a size from a value that is not theirs.
+  useViewSettings.setState({ loaded: false, interfaceSize: 125 });
+  for (const id of IDS) expect(isEnabled(getAction(id), currentContext()), id).toBe(false);
+  expect(runAction(getAction("view.size.smaller"), currentContext())).toBe(false);
+  expect(ipc.settingsSet).not.toHaveBeenCalled();
+  useViewSettings.setState({ loaded: true });
+  expect(isEnabled(getAction("view.size.smaller"), currentContext())).toBe(true);
 });

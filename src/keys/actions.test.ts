@@ -4,6 +4,7 @@ import type { WirePath } from "../ipc";
 import { usePanelsStore } from "../store/panels";
 import { useTabs } from "../store/tabs";
 import { useVolumes } from "../shell/volumes-store";
+import { known } from "../shell/test-volumes";
 import {
   actions,
   currentContext,
@@ -98,6 +99,7 @@ test("volume_actions_are_aimed_at_the_current_volume_and_grey_out_without_one", 
   for (const a of [unmount, mount, eject]) expect(isEnabled(a, currentContext()), a.id).toBe(false);
   const m = (removable: boolean) => ({
     mount_point: p("/mnt/x"),
+    identity: known("X"),
     device: "/dev/sdb1",
     fs_type: "ext4",
     label: "X",
@@ -114,6 +116,14 @@ test("volume_actions_are_aimed_at_the_current_volume_and_grey_out_without_one", 
   expect(isEnabled(eject, currentContext())).toBe(true);
   // Busy volumes take no second action.
   useVolumes.setState({ busy: { [useVolumes.getState().current!]: "Ejecting…" } });
+  expect(isEnabled(eject, currentContext())).toBe(false);
+  // A volume with no identity takes none of the three.
+  useVolumes.setState({
+    mounted: [{ ...m(true), identity: { state: "unknown", reason: "no diskseq" } }],
+    busy: {},
+  });
+  useVolumes.getState().setCurrent(useVolumes.getState().volumes()[0]!.key);
+  expect(isEnabled(unmount, currentContext())).toBe(false);
   expect(isEnabled(eject, currentContext())).toBe(false);
   useVolumes.getState().reset();
 });

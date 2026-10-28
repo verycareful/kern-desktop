@@ -7,6 +7,7 @@ import {
   move,
   rubberBand,
   selectAll,
+  seedCursor,
   selectNone,
   shiftClick,
   type Sel,
@@ -96,4 +97,25 @@ test("move_with_extend_grows_from_the_anchor", () => {
 
 test("move_in_an_empty_list_selects_nothing", () => {
   expect(ids(move(empty, 1, false, 0))).toEqual([]);
+});
+
+test("seed_cursor_puts_the_cursor_on_the_first_item_and_selects_nothing", () => {
+  const s = seedCursor(empty, 3);
+  expect(s.cursor).toBe(0);
+  expect(ids(s)).toEqual([]);
+  expect(s.anchor).toBeNull();
+  // Arrow keys then move from it: down goes to the second item.
+  expect(move(s, 1, false, 3).cursor).toBe(1);
+});
+
+test("seed_cursor_keeps_a_selection_and_a_cursor_that_exist", () => {
+  const picked = click(empty, 2);
+  expect(seedCursor(picked, 3)).toBe(picked);
+  const rows: Sel = { selected: new Set([1]), anchor: 1, cursor: null };
+  expect(ids(seedCursor(rows, 3))).toEqual([1]);
+  expect(seedCursor(rows, 3).cursor).toBe(0);
+});
+
+test("seed_cursor_in_an_empty_list_does_nothing", () => {
+  expect(seedCursor(empty, 0)).toBe(empty);
 });

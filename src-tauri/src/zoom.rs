@@ -6,7 +6,9 @@
 //! `interface_size` (percent, see `store.rs`) zooms every Kern window alike:
 //! the stored value is applied when the settings are read at startup and
 //! whenever they change, and to each webview as it is created and as its
-//! page loads, so a window opened later starts at the same size. The zoom is
+//! page loads, so a window opened later starts at the same size. At startup
+//! the stored size is put in force before the first window is created, so a
+//! window never shows at the default and then jumps. The zoom is
 //! set from here with Tauri's `Webview::set_zoom`; the frontend needs no
 //! permission for it. Density and the editor's text zoom are separate.
 
@@ -61,9 +63,14 @@ fn set<R: Runtime>(state: &InterfaceZoom, webview: &Webview<R>) {
 }
 
 /// Makes `percent` the interface size and zooms every open window to it.
+/// Nothing is zoomed when it is the size already in force: the settings are
+/// read on every window's startup and each read applies them, and a window
+/// created or loaded since was zoomed by the plugin's hooks.
 pub fn apply<R: Runtime>(app: &AppHandle<R>, percent: u32) {
     let state = app.state::<InterfaceZoom>();
-    state.percent.store(percent, Ordering::Relaxed);
+    if state.percent.swap(percent, Ordering::Relaxed) == percent {
+        return;
+    }
     for window in app.webview_windows().values() {
         set(&state, window.as_ref());
     }
