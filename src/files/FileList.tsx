@@ -175,7 +175,7 @@ export function FileList(
                 aria-rowindex={v.index + 1}
                 aria-selected={selected}
                 data-item
-                data-index={v.index}
+                data-key={pathKey(e.path)}
                 data-testid="file-row"
                 data-name={e.name}
                 {...(isFolder(e) ? { [DROP_TARGET_ATTR]: dropTargetValue(e.path) } : {})}

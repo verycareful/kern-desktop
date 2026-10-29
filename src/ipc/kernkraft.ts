@@ -49,6 +49,16 @@ export interface WireUserDirs {
   dirs: WireUserDir[];
 }
 
+/**
+ * The answer of `same_filesystem` for one source (kernkraft-tauri's WireSame): `same` says whether
+ * moving the source into the destination folder is one rename(2), or `failed` says why that could
+ * not be told. An answer that fails is never to be guessed: the item is shown with its error and
+ * left alone. An answer can still be wrong where a filesystem has rename rules of its own
+ * (overlayfs, FUSE); a `same` that rename then refuses falls back to copy and delete, and a
+ * `different` for a rename that would have worked makes a copy. Neither loses data.
+ */
+export type WireSame = { state: "checked"; same: boolean } | { state: "failed"; error: WireError };
+
 export const listDir = (path: WirePath, hidden: boolean) =>
   invoke<WireEntry[]>(cmd("list_dir"), { path, hidden });
 
@@ -60,6 +70,10 @@ export const createFile = (parent: WirePath, name: string) =>
 
 export const rename = (path: WirePath, newName: string) =>
   invoke<WirePath>(cmd("rename"), { path, newName });
+
+/** One `WireSame` per source, in the order of the sources, in one call. */
+export const sameFilesystem = (sources: WirePath[], dest: WirePath) =>
+  invoke<WireSame[]>(cmd("same_filesystem"), { sources, dest });
 
 export const undo = () => invoke<WireUndoOutcome>(cmd("undo"));
 export const redo = () => invoke<WireUndoOutcome>(cmd("redo"));
@@ -422,6 +436,13 @@ export interface VolumesChanged {
 }
 
 export const volumesList = () => invoke<WireVolumes>(cmd("volumes_list"));
+
+/**
+ * The once-only volume problems kernkraft holds (those of starting its watcher and those the
+ * watch met), oldest first, cleared by the call. After the last one, `ProblemsNotShown` says how
+ * many more arrived than it keeps. Called on load, after subscribing and before the first listing.
+ */
+export const volumesProblemsTake = () => invoke<WireError[]>(cmd("volumes_problems_take"));
 export const volumeMount = (device: Device) => invoke<WirePath>(cmd("volume_mount"), { device });
 
 export const volumeUnmount = (mountPoint: WirePath, disk: DiskId) =>

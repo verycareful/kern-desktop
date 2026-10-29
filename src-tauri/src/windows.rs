@@ -290,6 +290,8 @@ fn built(st: &WindowState, label: &str) -> String {
 fn build_doc_window<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), WireError> {
     WebviewWindowBuilder::new(app, label, WebviewUrl::default())
         .title("Kern")
+        // Kern's own handler takes drops of files (dnd.rs); Tauri's would take them first.
+        .disable_drag_drop_handler()
         .inner_size(DOC_SIZE.0, DOC_SIZE.1)
         .min_inner_size(DOC_MIN_SIZE.0, DOC_MIN_SIZE.1)
         .build()
@@ -969,7 +971,6 @@ pub fn page_reloading<R: Runtime>(app: &AppHandle<R>, label: &str) {
 /// that is gone is forgotten.
 pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
     match event {
-        WindowEvent::DragDrop(_) => crate::dnd::on_window_event(window, event),
         WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             ask_to_close(window);

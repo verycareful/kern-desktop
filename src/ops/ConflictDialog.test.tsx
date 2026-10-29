@@ -80,17 +80,6 @@ test("an_entry_that_could_not_be_read_is_said_so", () => {
   expect(screen.getByTestId("conflict-dialog")).toHaveTextContent(/could not be read/);
 });
 
-test("replacing_a_folder_with_a_folder_says_it_merges", () => {
-  const a: WireEntry = dir("d", {}) as WireEntry;
-  show({ source_entry: a, existing_entry: a });
-  expect(screen.getByTestId("conflict-dialog")).toHaveTextContent(/merges/);
-});
-
-test("a_file_over_a_file_does_not_mention_merging", () => {
-  show();
-  expect(screen.getByTestId("conflict-dialog")).not.toHaveTextContent(/merges/);
-});
-
 test("other_operations_waiting_for_an_answer_are_counted", () => {
   show({}, 2);
   expect(screen.getByRole("status")).toHaveTextContent("2 other operations");
@@ -111,13 +100,61 @@ test("tab_stays_inside_the_dialog", () => {
   expect(screen.getByRole("checkbox", { name: "Apply to all" })).toHaveFocus();
 });
 
-test("replace_says_what_is_there_is_lost_and_cannot_be_undone", () => {
-  show();
+/** The note the Replace button is described by. */
+function replaceNote() {
   const replace = screen.getByRole("button", { name: "Replace" });
   const note = document.getElementById(replace.getAttribute("aria-describedby")!);
+  expect(screen.getByTestId("conflict-dialog")).toContainElement(note);
+  return note!;
+}
+
+const folder = (): WireEntry => dir("d", {}) as WireEntry;
+
+test("replacing_a_file_with_a_file_says_what_is_there_is_lost_and_cannot_be_undone", () => {
+  show();
+  const note = replaceNote();
   expect(note).toHaveTextContent(/already there is lost/i);
   expect(note).toHaveTextContent(/cannot be undone/i);
-  expect(screen.getByTestId("conflict-dialog")).toContainElement(note);
+  expect(note).not.toHaveTextContent(/merge/i);
+});
+
+test("replacing_a_folder_with_a_folder_says_the_folders_are_merged_and_the_clashes_inside_are_asked", () => {
+  show({ source_entry: folder(), existing_entry: folder() });
+  const note = replaceNote();
+  expect(note).toHaveTextContent(/folders are merged/i);
+  expect(note).toHaveTextContent(/inside .* asked about/i);
+  expect(note).toHaveTextContent(/merge cannot be undone/i);
+  // Nothing is lost by the merge itself, so "lost" must not be said of the folder.
+  expect(note).not.toHaveTextContent(/lost/i);
+});
+
+test("a_folder_against_a_file_is_not_replaced_and_nothing_is_lost", () => {
+  for (const sides of [
+    { source_entry: folder(), existing_entry: entry("d", { len: 1 }, "/b") },
+    { source_entry: entry("d", { len: 1 }, "/a"), existing_entry: folder() },
+  ]) {
+    show(sides);
+    const note = replaceNote();
+    expect(note).toHaveTextContent(/does not put a folder over a file or a file over a folder/i);
+    expect(note).toHaveTextContent(/nothing .* changed/i);
+    expect(note).not.toHaveTextContent(/is lost/i);
+    cleanup();
+  }
+});
+
+test("a_link_to_a_folder_is_not_a_folder_for_replacing_because_the_link_itself_is_replaced", () => {
+  // The conflict is judged on the entries themselves, links not followed.
+  const link = entry("d", { kind: "symlink", target_is_dir: true }, "/a");
+  show({ source_entry: link, existing_entry: entry("d", { len: 1 }, "/b") });
+  expect(replaceNote()).toHaveTextContent(/already there is lost/i);
+});
+
+test("when_a_side_could_not_be_read_the_note_says_both_things_that_can_happen", () => {
+  show({ existing_entry: null });
+  const note = replaceNote();
+  expect(note).toHaveTextContent(/lost/i);
+  expect(note).toHaveTextContent(/merged/i);
+  expect(note).toHaveTextContent(/cannot be undone/i);
 });
 
 test("apply_to_all_says_it_is_this_operations_when_others_are_in_flight", () => {

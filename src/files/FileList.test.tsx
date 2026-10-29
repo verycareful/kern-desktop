@@ -53,3 +53,9 @@ test("the_header_claims_no_sort_order_while_the_sort_has_failed", () => {
     expect(within(header).getByRole("button").querySelector("svg")).toBeNull();
   }
 });
+
+test("every_row_carries_the_key_of_its_item", () => {
+  list(false);
+  const keys = screen.getAllByTestId("file-row").map((r) => r.getAttribute("data-key"));
+  expect(keys).toEqual(["Utf8:/d/a", "Utf8:/d/b"]);
+});

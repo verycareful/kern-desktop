@@ -6,11 +6,13 @@ import { activeTab, useTabs } from "../store/tabs";
 import { ConflictDialog } from "./ConflictDialog";
 import { ProgressPanel } from "./ProgressPanel";
 import { ReportDialog } from "./ReportDialog";
+import { UndoBanner } from "./UndoBanner";
 import { useOps } from "./useOps";
 
 // The window's part of the file operations (design 5.1): the progress panel,
 // the name conflict being asked, and the reports waiting to be read. Reads the
-// undo history once at the start so the Edit menu has its labels.
+// undo history once at the start so the Edit menu has its labels, and says so
+// (UndoBanner) when it cannot.
 export function OpsHost() {
   const ops = useOps((s) => s.ops);
   const answer = useOps((s) => s.answer);
@@ -46,6 +48,7 @@ export function OpsHost() {
   const first = asking[0];
   return (
     <>
+      <UndoBanner />
       <ProgressPanel />
       {first?.conflict && (
         <ConflictDialog

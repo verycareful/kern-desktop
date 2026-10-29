@@ -52,6 +52,7 @@ vi.mock("./ipc", async () => ({
   themeGet,
   userDirs,
   volumesList: () => Promise.resolve({ mounted: [], unmounted: [], problems: [] }),
+  volumesProblemsTake: () => Promise.resolve([]),
   toWireError: (e: unknown) => e,
 }));
 

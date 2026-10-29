@@ -20,18 +20,20 @@ import { itemsText } from "../ops/labels";
 // applications can take (`onLeave`). Nothing is moved, copied or deleted here:
 // the owner of the view decides what a drop does.
 
+/** The attribute a row or card carries: the path key of the item it shows. */
+export const ITEM_KEY_ATTR = "data-key";
+
 const OVER = "kern-drop-over";
 const DRAGGING = "kern-dragging";
 
 export function useItemDrag(args: {
-  /** The path key of the item at `index` in the list shown now, or null if there is none. */
-  keyAt(index: number): string | null;
   /**
    * The items to drag when the item with this path key was pressed: the
    * selection when it holds that item, else just that item, which becomes the
-   * selection. Empty when the item is no longer listed. The item is named by its
-   * key and not by where it was, because the list can change between the press
-   * and the moment the drag begins.
+   * selection. Empty when the item is no longer listed. The item is named by
+   * the key its own element carries (`data-key`), read at the press, and not by
+   * where it was or by what a ref last held, because the list can change between
+   * the press and the moment the drag begins.
    */
   itemsFor(key: string): readonly WireEntry[];
   onDrop(sources: WirePath[], target: WirePath, mods: DragModifiers): void;
@@ -48,11 +50,8 @@ export function useItemDrag(args: {
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     const target = e.target as Element;
     if (e.button !== 0 || target.closest("input, button")) return;
-    const item = target.closest("[data-item]");
-    const index = Number(item?.getAttribute("data-index"));
-    if (!item || !Number.isInteger(index)) return;
-    const pressed = latest.current.keyAt(index);
-    if (pressed === null) return;
+    const pressed = target.closest("[data-item]")?.getAttribute(ITEM_KEY_ATTR);
+    if (!pressed) return;
     const start = { x: e.clientX, y: e.clientY };
     let sources: WirePath[] | null = null;
     let over: Element | null = null;

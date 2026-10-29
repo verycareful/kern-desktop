@@ -11,6 +11,7 @@ import { stubLayout } from "./test-layout";
 const ipc = vi.hoisted(() => ({
   trashList: vi.fn(),
   volumesList: vi.fn(),
+  volumesProblemsTake: vi.fn(),
   trashRestore: vi.fn(),
   trashPurge: vi.fn(),
   startOp: vi.fn(),
@@ -458,6 +459,7 @@ test("the_trash_relists_when_another_operation_ends_and_after_a_volume_action", 
 test("the_trash_relists_when_a_volume_appears_or_goes_by_itself", async () => {
   await shown([item("a.txt")]);
   // The strip follows kernkraft://volumes-changed; a volume's trash goes with the volume.
+  ipc.volumesProblemsTake.mockResolvedValue([]);
   ipc.volumesList.mockResolvedValue({ mounted: [], unmounted: [], problems: [] });
   await act(async () => void (await useVolumes.getState().follow()));
   ipc.trashList.mockResolvedValue({ items: [], unreadable: [] });

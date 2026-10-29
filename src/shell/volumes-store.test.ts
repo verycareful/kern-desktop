@@ -8,6 +8,7 @@ import { device, diskOf, known, mount, problem, volumes } from "./test-volumes";
 const ipc = vi.hoisted(() => ({
   on: vi.fn(),
   volumesList: vi.fn(),
+  volumesProblemsTake: vi.fn(),
   volumeMount: vi.fn(),
   volumeUnmount: vi.fn(),
   volumeEject: vi.fn(),
@@ -36,6 +37,7 @@ beforeEach(() => {
     return Promise.resolve(() => undefined);
   });
   ipc.volumesList.mockResolvedValue(volumes({}));
+  ipc.volumesProblemsTake.mockResolvedValue([]);
 });
 afterEach(() => vi.clearAllMocks());
 
@@ -58,6 +60,57 @@ test("the_listener_is_in_place_before_the_first_listing", async () => {
   expect(ipc.on.mock.invocationCallOrder[0]).toBeLessThan(
     ipc.volumesList.mock.invocationCallOrder[0]!
   );
+});
+
+test("the_problems_kernkraft_held_are_taken_on_load_after_subscribing_and_before_listing", async () => {
+  ipc.volumesProblemsTake.mockResolvedValue([problem("UdisksAbsent")]);
+  await useVolumes.getState().follow();
+  expect(ipc.volumesProblemsTake).toHaveBeenCalledTimes(1);
+  const order = (m: { mock: { invocationCallOrder: number[] } }) => m.mock.invocationCallOrder[0]!;
+  expect(order(ipc.on)).toBeLessThan(order(ipc.volumesProblemsTake));
+  expect(order(ipc.volumesProblemsTake)).toBeLessThan(order(ipc.volumesList));
+  expect(useVolumes.getState().kept.map((k) => k.error.kind)).toEqual(["UdisksAbsent"]);
+});
+
+test("a_problem_found_by_the_take_and_by_the_first_listing_is_kept_once", async () => {
+  ipc.volumesProblemsTake.mockResolvedValue([problem("UdisksAbsent", "no udisks")]);
+  ipc.volumesList.mockResolvedValueOnce(
+    volumes({ problems: [problem("UdisksAbsent", "no udisks"), problem("Labels", "other")] })
+  );
+  await useVolumes.getState().follow();
+  expect(useVolumes.getState().kept.map((k) => k.error.kind)).toEqual(["UdisksAbsent", "Labels"]);
+});
+
+test("problems_are_the_same_only_when_kind_message_and_path_all_agree", async () => {
+  const at = (v: string) => ({ ...problem("Io", "denied"), path: { k: "Utf8" as const, v } });
+  ipc.volumesProblemsTake.mockResolvedValue([
+    at("/a"),
+    at("/b"),
+    at("/a"),
+    problem("Io", "denied"),
+  ]);
+  await useVolumes.getState().follow();
+  expect(useVolumes.getState().kept.map((k) => k.error.path?.v ?? null)).toEqual([
+    "/a",
+    "/b",
+    null,
+  ]);
+});
+
+test("a_take_that_fails_is_kept_as_a_problem_and_the_volumes_are_still_listed", async () => {
+  ipc.volumesProblemsTake.mockRejectedValue(problem("Ipc", "take refused"));
+  ipc.volumesList.mockResolvedValue(volumes({ mounted: [mount("STICK")] }));
+  await useVolumes.getState().follow();
+  expect(useVolumes.getState().kept.map((k) => k.error.message)).toEqual(["take refused"]);
+  expect(useVolumes.getState().mounted).toHaveLength(1);
+});
+
+test("each_strip_that_starts_following_takes_what_was_held_while_nobody_listened", async () => {
+  await useVolumes.getState().follow();
+  ipc.volumesProblemsTake.mockResolvedValue([problem("CallbackPanic", "boom")]);
+  await useVolumes.getState().follow();
+  expect(ipc.volumesProblemsTake).toHaveBeenCalledTimes(2);
+  expect(useVolumes.getState().kept.map((k) => k.error.kind)).toEqual(["CallbackPanic"]);
 });
 
 test("each_event_lists_the_volumes_again", async () => {

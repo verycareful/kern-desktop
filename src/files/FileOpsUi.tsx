@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { X } from "lucide-react";
 import { NameDialog } from "../ops/NameDialog";
+import { errorText } from "../ops/error-text";
 import { NAMED_UP_TO, namesText, plural } from "../ops/labels";
 import { Paged } from "../ops/ReportPanel";
 import { useState } from "react";
@@ -23,7 +24,8 @@ function EveryItem(props: { names: readonly string[] }) {
 }
 
 // What a folder view shows for its file operations: the failures it has to
-// tell about, the question being asked, and the dialog that names something new.
+// tell about, the question being asked (delete for good), and the dialog that
+// names something new.
 export function FileOpsUi(props: {
   ops: FileOps;
   /** The element the view's keyboard belongs to while a question is open. */
@@ -40,7 +42,8 @@ export function FileOpsUi(props: {
           <ul>
             {ops.problems.map((p) => (
               <li key={p.id}>
-                {p.error.kind}: {p.error.message}
+                {p.about && `${p.about}: `}
+                {errorText(p.error)}
               </li>
             ))}
           </ul>
@@ -71,20 +74,7 @@ export function FileOpsUi(props: {
           confirmLabel={`Delete ${plural(q.items.length, "item", "items")}`}
           scope={scope}
           active={active}
-          onConfirm={() => ops.answer(false)}
-          onCancel={ops.cancelAsk}
-        />
-      )}
-      {q?.kind === "drop" && (
-        <ConfirmBanner
-          label="Copy or move"
-          message={`Move or copy ${q.names} into ${q.destName}?`}
-          confirmLabel="Move here"
-          alternateLabel="Copy here"
-          scope={scope}
-          active={active}
-          onConfirm={() => ops.answer(false)}
-          onAlternate={() => ops.answer(true)}
+          onConfirm={ops.answer}
           onCancel={ops.cancelAsk}
         />
       )}

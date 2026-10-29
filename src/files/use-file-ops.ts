@@ -2,37 +2,45 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  clipClearIf,
   clipGet,
   clipSet,
   createDir,
   createFile,
   pathKey,
   rename as renameItem,
+  sameFilesystem,
   toWireError,
   type WireEntry,
   type WireError,
   type WirePath,
   type WireReport,
 } from "../ipc";
+import { planDrop, type DropChoice, type DropPlan } from "../ops/dnd";
 import { baseName, itemsText, namesText } from "../ops/labels";
 import { nameIsText, nameProblem } from "../ops/names";
-import { useOps } from "../ops/useOps";
+import { clearSpentCut } from "../ops/spent-cut";
+import { useOps, type OpEnd } from "../ops/useOps";
 import type { FolderController } from "./folder-controller";
 
 // The file operations of one folder view (design 5.1, 5.7, 5.8): create,
 // rename, copy, cut, paste, trash, delete for good, and what is dropped on the
 // folder. Every one of them acts on what the view hands over as selected, and
-// on nothing else: an item that is only outlined is never touched. A question
-// (delete for good, copy or move a drop) is frozen when it is asked: it names
-// the items it was asked about, and a selection that changes while it is open
-// does not change what the answer does. Whatever fails is kept in `problems`
-// and shown by the view until it is dismissed.
+// on nothing else: an item that is only outlined is never touched. The question
+// (delete for good) is frozen when it is asked: it names the items it was asked
+// about, and a selection that changes while it is open does not change what the
+// answer does. Whatever fails is kept in `problems` and shown by the view until
+// it is dismissed.
 
 /** A question waiting for an answer, with what it is about. */
-export type Question =
-  | { kind: "delete"; items: { path: WirePath; name: string }[] }
-  | { kind: "drop"; sources: WirePath[]; dest: WirePath; destName: string; names: string };
+export type Question = { kind: "delete"; items: { path: WirePath; name: string }[] };
+
+/** Something that went wrong, with the item it is about when it is about one. */
+export interface Problem {
+  id: number;
+  error: WireError;
+  /** The name of the item, when the problem is that one item's. */
+  about?: string;
+}
 
 /** The name being edited in place. */
 export interface RenameState {
@@ -83,9 +91,7 @@ const REPLACEMENT = "\ufffd";
 
 /** What a question asked, in a few words. */
 function describeQuestion(q: Question): string {
-  return q.kind === "delete"
-    ? `Delete ${namesText(q.items.map((i) => i.name))} for good`
-    : `Move or copy ${q.names} into ${q.destName}`;
+  return `Delete ${namesText(q.items.map((i) => i.name))} for good`;
 }
 
 /** True when a move ended with every source moved: nothing failed, was skipped, cancelled or not reached. */
@@ -147,13 +153,29 @@ export function useFileOps(args: FileOpsArgs) {
         .notify(`A new question replaced the one that was open (${describeQuestion(prior)}).`);
     }
   }, []);
-  const [problems, setProblems] = useState<{ id: number; error: WireError }[]>([]);
+  const [problems, setProblems] = useState<Problem[]>([]);
   const nextProblem = useRef(0);
 
   const fail = useCallback((e: unknown) => {
     if (!alive.current) return;
     const error = toWireError(e);
     setProblems((list) => [...list, { id: nextProblem.current++, error }]);
+  }, []);
+
+  // A failure of something that outlives the view (a drop is judged after the view may be gone):
+  // shown in the view while it is there, else as a report.
+  const failAfter = useCallback((e: unknown, about?: WirePath) => {
+    const error = toWireError(e);
+    const name = about ? baseName(about) : undefined;
+    if (alive.current) {
+      setProblems((list) => [...list, { id: nextProblem.current++, error, about: name }]);
+    } else {
+      useOps.getState().report({
+        title: name ? `Dropping ${name}` : "Dropping files",
+        report: null,
+        error,
+      });
+    }
   }, []);
 
   // Puts the selection on the items that appeared in this folder, once it has listed them.
@@ -211,11 +233,10 @@ export function useFileOps(args: FileOpsArgs) {
         onEnd: (end) => {
           showDone(end.report);
           // A cut that was fully moved is spent: the clipboard is cleared, if it still holds that
-          // cut. One that left anything behind (a failure, a skip, a cancel) stays, so it can be
-          // pasted again; what already moved is then reported as not found.
-          if (clip.op === "cut" && movedEverything(end)) {
-            clipClearIf("cut", clip.paths).catch(fail);
-          }
+          // cut, as soon as the window has the focus. One that left anything behind (a failure, a
+          // skip, a cancel) stays, so it can be pasted again; what already moved is then
+          // reported as not found.
+          if (clip.op === "cut" && movedEverything(end)) void clearSpentCut(clip.paths);
         },
       });
     } catch (e) {
@@ -302,47 +323,58 @@ export function useFileOps(args: FileOpsArgs) {
     ask({ kind: "delete", items: list.map((e) => ({ path: e.path, name: e.name })) });
   }, [ask]);
 
-  const askDrop = useCallback(
-    (sources: WirePath[], dest: WirePath) => {
-      ask({
-        kind: "drop",
-        sources,
-        dest,
-        destName: baseName(dest),
-        names: namesText(sources.map(baseName)),
-      });
-    },
-    [ask]
-  );
-
+  // What dropped items do (design 5.8): Ctrl copies, Shift moves, and with neither the
+  // filesystems decide per item, in one question to the backend. A move is for the items on the
+  // same filesystem as the destination folder, a copy for the others; an item the backend could
+  // not judge is shown with its error and left alone. The two halves run as two operations, each
+  // reported on its own.
   const drop = useCallback(
-    (choice: "copy" | "move", sources: WirePath[], dest: WirePath) => {
+    async (choice: DropChoice, sources: WirePath[], dest: WirePath) => {
       const here = pathKey(dest) === pathKey(latest.current.folder);
-      void useOps.getState().start({
-        kind: choice,
-        sources,
-        dest,
-        onEnd: (end) => here && showDone(end.report),
-      });
-    },
-    [showDone]
-  );
-
-  /** Answers the open question; `alternate` is the second button of a drop (copy). */
-  const answer = useCallback(
-    (alternate: boolean) => {
-      const q = asking;
-      ask(null);
-      latest.current.focusList();
-      if (!q) return;
-      if (q.kind === "delete") {
-        void useOps.getState().start({ kind: "delete", sources: q.items.map((i) => i.path) });
+      let plan: DropPlan;
+      if (choice === "by_filesystem") {
+        try {
+          plan = planDrop(sources, await sameFilesystem(sources, dest));
+        } catch (e) {
+          failAfter(e);
+          return;
+        }
       } else {
-        drop(alternate ? "copy" : "move", q.sources, q.dest);
+        plan = {
+          move: choice === "move" ? sources : [],
+          copy: choice === "copy" ? sources : [],
+          failed: [],
+        };
+      }
+      for (const f of plan.failed) failAfter(f.error, f.path);
+      const halves = (
+        [
+          ["move", plan.move],
+          ["copy", plan.copy],
+        ] as const
+      ).filter(([, list]) => list.length > 0);
+      // What landed in the folder on show is selected once both halves have ended.
+      const landed: WirePath[] = [];
+      let open = halves.length;
+      const ended = (end: OpEnd) => {
+        if (here && end.report)
+          landed.push(...end.report.done.flatMap((d) => (d.dest ? [d.dest] : [])));
+        if (--open === 0 && landed.length > 0) showResult(landed);
+      };
+      for (const [kind, list] of halves) {
+        void useOps.getState().start({ kind, sources: list, dest, onEnd: ended });
       }
     },
-    [asking, ask, drop]
+    [failAfter, showResult]
   );
+
+  /** Answers the open question: it can only be the permanent delete. */
+  const answer = useCallback(() => {
+    const q = asking;
+    ask(null);
+    latest.current.focusList();
+    if (q) void useOps.getState().start({ kind: "delete", sources: q.items.map((i) => i.path) });
+  }, [asking, ask]);
 
   const cancelAsk = useCallback(() => {
     ask(null);
@@ -381,7 +413,6 @@ export function useFileOps(args: FileOpsArgs) {
     asking,
     answer,
     cancelAsk,
-    askDrop,
     drop,
     problems,
     dismissProblem: (id: number) => setProblems((list) => list.filter((p) => p.id !== id)),

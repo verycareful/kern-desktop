@@ -10,6 +10,7 @@ import {
   volumeMount,
   volumeUnmount,
   volumesList,
+  volumesProblemsTake,
   type Device,
   type DiskId,
   type Identity,
@@ -21,7 +22,10 @@ import {
 // kernkraft (mounted from /proc/self/mountinfo, unmounted from UDisks2) and
 // follows kernkraft://volumes-changed: the listener is put in place before the
 // first listing (kernkraft starts its watcher with that listing and the
-// event means "list again"), and each event lists again. Mount, unmount and
+// event means "list again"), and each event lists again. Between the two the
+// problems kernkraft holds are taken (`volumes_problems_take`): those found
+// while no window listened, or before this page was loaded, reach the screen
+// too. Mount, unmount and
 // eject are commands whose promises settle when UDisks answers, so a volume is
 // "busy" from the call to the answer and the rest of the window stays usable.
 // Every failure is kept against its volume and shown there with UDisks' own
@@ -71,7 +75,12 @@ export interface Kept {
   id: number;
   error: WireError;
 }
-const sameProblem = (a: WireError, b: WireError) => a.kind === b.kind && a.message === b.message;
+// A problem is told from another by its kind, message and path, as kernkraft's contract has it:
+// one can reach the page by the take, the first listing and an event.
+const sameProblem = (a: WireError, b: WireError) =>
+  a.kind === b.kind &&
+  a.message === b.message &&
+  (a.path === null || b.path === null ? a.path === b.path : pathKey(a.path) === pathKey(b.path));
 
 export type VolumeAction = "mount" | "unmount" | "eject";
 const BUSY_TEXT: Record<VolumeAction, string> = {
@@ -165,6 +174,7 @@ export const useVolumes = create<VolumesState>()((set, get) => ({
       set({ watchError: toWireError(e) });
     }
     set((s) => ({ followers: s.followers + 1 }));
+    await takeHeld(set, get);
     await get().refresh();
     return () => {
       off?.();
@@ -280,6 +290,17 @@ export const useVolumes = create<VolumesState>()((set, get) => ({
 }));
 
 type Set = (partial: Partial<VolumesState>) => void;
+
+/** Takes the problems kernkraft holds and keeps them; a take that fails is itself kept as a problem. */
+async function takeHeld(set: Set, get: () => VolumesState): Promise<void> {
+  const mine = resets;
+  try {
+    const held = await volumesProblemsTake();
+    if (mine === resets) keep(set, get, held);
+  } catch (e) {
+    if (mine === resets) keep(set, get, [toWireError(e)]);
+  }
+}
 
 /** Adds problems to the kept ones, leaving out any already kept. */
 function keep(set: Set, get: () => VolumesState, errors: WireError[]): void {

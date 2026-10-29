@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import type { Page } from "@playwright/test";
-import { test, expect } from "./support/mockInvoke";
+import { test, expect, emitTauriEvent } from "./support/mockInvoke";
 
 // File operations through the production build with an in-page stand-in for the
 // backend (design 5.1, 5.7). The stand-in keeps folders as lists of entries,
@@ -144,6 +144,18 @@ const BACKEND = {
     ...(args.patch as object),
   }),
   [`${K}volumes_list`]: { mounted: [], unmounted: [], problems: [] },
+  [`${K}volumes_problems_take`]: [],
+  // Anything under /mnt is another filesystem than the folders shown; "unreadable" cannot be told.
+  [`${K}same_filesystem`]: (args: Record<string, unknown>) =>
+    (args.sources as WirePath[]).map((s) => {
+      if (s.v.endsWith("/unreadable")) {
+        return {
+          state: "failed",
+          error: { kind: "NotFound", message: "gone", path: s, details: null },
+        };
+      }
+      return { state: "checked", same: !s.v.startsWith("/mnt/") };
+    }),
   [`${K}user_dirs`]: { home: { k: "Utf8", v: "/home/tester" }, dirs: [] },
   [`${K}theme_get`]: { css: ":root{}", tokens: {}, fallbacks: [], problems: [] },
   [`${K}unwatch_dir`]: null,
@@ -481,3 +493,50 @@ test("delete_in_the_places_strip_does_nothing_to_the_folders_selection", async (
   await page.keyboard.press("Delete");
   await expect(rows(page)).toHaveCount(1);
 });
+
+for (const zoom of [0.8, 1, 1.25]) {
+  test(`a_drop_from_another_application_lands_on_the_row_under_it_at_${Math.round(zoom * 100)}_percent_and_splits_by_filesystem`, async ({
+    page,
+    mockTauri,
+  }) => {
+    const home = "/home/tester";
+    await installFake(page, {
+      [`Utf8:${home}`]: [folder(home, "other"), folder(home, "sub"), file(home, "a.txt")],
+    });
+    await mockTauri(BACKEND);
+    await page.goto("/");
+    await expect(rows(page)).toHaveCount(3);
+    // The pointer is over the "sub" row. The backend gives its position and the view's size in the
+    // webview's own units, which are the page's CSS pixels times the interface zoom.
+    const box = (await rowNamed(page, "sub").boundingBox())!;
+    const page_ = await page.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+    await emitTauriEvent(page, "kern://drop", {
+      paths: [
+        { k: "Utf8", v: `${home}/a.txt` },
+        { k: "Utf8", v: "/mnt/usb/b.txt" },
+        { k: "Utf8", v: "/mnt/usb/unreadable" },
+      ],
+      position: { x: (box.x + box.width / 2) * zoom, y: (box.y + box.height / 2) * zoom },
+      view: { width: page_.w * zoom, height: page_.h * zoom },
+      offered: ["copy", "move", "link"],
+      selected: "copy",
+    });
+    // a.txt is on the folder's filesystem: moved. b.txt is not: copied. The third could not be
+    // judged: shown, and in no operation.
+    await expect(page.getByRole("alert")).toContainText("unreadable");
+    const ops = await startedOps(page);
+    expect(ops).toEqual([
+      {
+        kind: "move",
+        sources: [{ k: "Utf8", v: `${home}/a.txt` }],
+        dest: { k: "Utf8", v: `${home}/sub` },
+      },
+      {
+        kind: "copy",
+        sources: [{ k: "Utf8", v: "/mnt/usb/b.txt" }],
+        dest: { k: "Utf8", v: `${home}/sub` },
+      },
+    ]);
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  });
+}

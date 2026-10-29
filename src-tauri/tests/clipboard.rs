@@ -11,10 +11,10 @@ use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 
 use kern_lib::clipboard::{
-    decode_gnome_copied, decode_uri_list, encode_gnome_copied, encode_uri_list, encode_utf8_text,
-    holds_exactly, kde_cut_data, offered_targets, refuse_dot_segments, require_focus,
-    try_decode_gnome_copied, try_decode_uri_list, uri_list_op, ClipOp, TARGET_GNOME,
-    TARGET_KDE_CUT, TARGET_URI_LIST,
+    clear_plan, decode_gnome_copied, decode_uri_list, encode_gnome_copied, encode_uri_list,
+    encode_utf8_text, holds_exactly, kde_cut_data, offered_targets, refuse_dot_segments,
+    require_focus, try_decode_gnome_copied, try_decode_uri_list, uri_list_op, Clear, ClipOp,
+    Ownership, TARGET_GNOME, TARGET_KDE_CUT, TARGET_URI_LIST,
 };
 
 fn raw(bytes: &[u8]) -> PathBuf {
@@ -163,22 +163,6 @@ fn empty_or_malformed_payloads_are_errors_naming_the_target() {
 }
 
 #[test]
-fn drop_payload_carries_paths_losslessly_and_the_position() {
-    use kern_lib::dnd::drop_payload;
-    use kernkraft_tauri::WirePath;
-
-    let p = drop_payload(&awkward(), 12.5, 7.0);
-    assert_eq!(p.paths.len(), 4);
-    assert_eq!(p.paths[0], WirePath::Utf8("/home/a b/x.txt".to_owned()));
-    // The name that is not UTF-8 travels as bytes and decodes to itself.
-    assert!(matches!(p.paths[1], WirePath::Bytes(_)));
-    assert_eq!(p.paths[1].to_path_buf().unwrap(), awkward()[1]);
-    let json = serde_json::to_value(&p).unwrap();
-    assert_eq!(json["position"]["x"], 12.5);
-    assert_eq!(json["position"]["y"], 7.0);
-}
-
-#[test]
 fn kde_cut_target_is_offered_on_cut_only() {
     // KIO's setClipboardDataCut writes "1" under application/x-kde-cutselection
     // for a cut and "0" (or nothing) for a copy; Kern offers it for a cut only.
@@ -282,4 +266,76 @@ fn paths_that_differ_only_in_bytes_that_are_not_utf8_are_different() {
         ClipOp::Cut,
         &[raw(b"/tmp/\xfe.bin")]
     ));
+}
+
+// ---- clearing a cut that was pasted ----
+
+#[test]
+fn a_clipboard_that_is_not_the_pasted_cut_is_left_alone_whoever_owns_it() {
+    for kern_owns in [true, false] {
+        for changed in [true, false] {
+            assert_eq!(clear_plan(false, changed, kern_owns), Clear::Keep);
+        }
+    }
+}
+
+#[test]
+fn a_clipboard_that_changed_since_it_was_read_is_left_alone() {
+    // The cut was read, then something else was copied before the clear: that copy is kept.
+    assert_eq!(clear_plan(true, true, true), Clear::Keep);
+    assert_eq!(clear_plan(true, true, false), Clear::Keep);
+}
+
+#[test]
+fn kerns_own_offer_is_released_and_not_replaced_by_empty_text() {
+    assert_eq!(clear_plan(true, false, true), Clear::Release);
+}
+
+#[test]
+fn another_applications_cut_is_taken_over_since_it_cannot_be_released() {
+    assert_eq!(clear_plan(true, false, false), Clear::TakeOver);
+}
+
+#[test]
+fn nothing_is_offered_before_the_first_claim() {
+    static O: Ownership = Ownership::new();
+    assert_eq!(O.current(), 0);
+}
+
+#[test]
+fn a_claimed_offer_is_current_until_it_is_dropped() {
+    static O: Ownership = Ownership::new();
+    let offer = O.offer();
+    // Made but not yet accepted by GTK: not current.
+    assert_eq!(O.current(), 0);
+    O.claim(offer.id());
+    assert_eq!(O.current(), offer.id());
+    drop(offer);
+    assert_eq!(O.current(), 0);
+}
+
+#[test]
+fn an_older_offer_dropped_after_a_newer_one_was_claimed_leaves_the_newer_current() {
+    static O: Ownership = Ownership::new();
+    let old = O.offer();
+    O.claim(old.id());
+    let new = O.offer();
+    O.claim(new.id());
+    assert_ne!(old.id(), new.id());
+    assert_eq!(O.current(), new.id());
+    drop(old);
+    assert_eq!(O.current(), new.id());
+    drop(new);
+    assert_eq!(O.current(), 0);
+}
+
+#[test]
+fn an_offer_that_was_never_claimed_does_not_clear_the_one_that_is() {
+    static O: Ownership = Ownership::new();
+    let kept = O.offer();
+    O.claim(kept.id());
+    let refused = O.offer();
+    drop(refused);
+    assert_eq!(O.current(), kept.id());
+    drop(kept);
 }

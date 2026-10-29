@@ -9,6 +9,7 @@ import { useTabs } from "../store/tabs";
 const ipc = vi.hoisted(() => ({
   on: vi.fn(),
   volumesList: vi.fn(),
+  volumesProblemsTake: vi.fn(),
   volumeMount: vi.fn(),
   volumeUnmount: vi.fn(),
   volumeEject: vi.fn(),
@@ -46,6 +47,7 @@ async function openMenu(name: string) {
 }
 
 test("volume_busy_error_shown", async () => {
+  ipc.volumesProblemsTake.mockResolvedValue([]);
   ipc.volumesList.mockResolvedValue(volumes({ mounted: [mount("STICK")] }));
   ipc.volumeUnmount.mockRejectedValue({
     kind: "Busy",

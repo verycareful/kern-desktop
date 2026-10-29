@@ -165,7 +165,7 @@ export function FileGrid(
                     role="option"
                     aria-selected={selected}
                     data-item
-                    data-index={i}
+                    data-key={pathKey(e.path)}
                     data-testid="file-card"
                     data-name={e.name}
                     {...(isFolder(e) ? { [DROP_TARGET_ATTR]: dropTargetValue(e.path) } : {})}

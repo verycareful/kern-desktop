@@ -26,6 +26,7 @@ const COMMON = {
       { name: "documents", path: { k: "Utf8", v: "/home/tester/Documents" } },
     ],
   },
+  "plugin:kernkraft-tauri|volumes_problems_take": [],
   "plugin:kernkraft-tauri|volumes_list": {
     mounted: [
       {

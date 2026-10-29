@@ -45,6 +45,7 @@ pub fn run() {
         )
         .plugin(kernkraft_tauri::init())
         .plugin(zoom::plugin())
+        .plugin(dnd::plugin())
         .on_window_event(windows::on_window_event)
         .on_page_load(windows::on_page_load)
         .setup(move |app| {

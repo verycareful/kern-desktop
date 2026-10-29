@@ -72,6 +72,11 @@ interface OpsState {
   /** What undo and redo would do now (kernkraft's undo_state), for the Edit menu. */
   undoLabel: string | null;
   redoLabel: string | null;
+  /**
+   * Why the undo history could not be read, or null. It means Undo and Redo may be wrong or
+   * missing, so it stays on screen (UndoBanner) until a read works.
+   */
+  undoError: WireError | null;
   /** Counts the undos and redos that ran, so views of what they change can list again. */
   changes: number;
   /** Runs an operation; settles once it has ended and been reported. */
@@ -111,6 +116,7 @@ export const useOps = create<OpsState>()((set, get) => ({
   notice: null,
   undoLabel: null,
   redoLabel: null,
+  undoError: null,
   changes: 0,
 
   async start(spec) {
@@ -248,16 +254,9 @@ export const useOps = create<OpsState>()((set, get) => ({
   async refreshUndo() {
     try {
       const state = await undoState();
-      set({ undoLabel: state.undo, redoLabel: state.redo });
+      set({ undoLabel: state.undo, redoLabel: state.redo, undoError: null });
     } catch (e) {
-      // A failure is kept until it is read: it means Undo and Redo may be wrong or missing, and it
-      // repeats with every operation, so one report stands for the same failure.
-      const error = toWireError(e);
-      const title = "The undo history could not be read";
-      const known = get().reports.some(
-        (r) => r.outcome.title === title && r.outcome.error?.message === error.message
-      );
-      if (!known) get().report({ title, report: null, error });
+      set({ undoError: toWireError(e) });
     }
   },
 
@@ -270,6 +269,7 @@ export const useOps = create<OpsState>()((set, get) => ({
       notice: null,
       undoLabel: null,
       redoLabel: null,
+      undoError: null,
       changes: 0,
     });
   },

@@ -27,6 +27,7 @@ const COMMON = {
     ...(args.patch as object),
   }),
   "plugin:kernkraft-tauri|volumes_list": { mounted: [], unmounted: [], problems: [] },
+  "plugin:kernkraft-tauri|volumes_problems_take": [],
   "plugin:kernkraft-tauri|user_dirs": { home: { k: "Utf8", v: "/home/tester/docs" }, dirs: [] },
   "plugin:kernkraft-tauri|theme_get": { css: ":root{}", tokens: {}, fallbacks: [], problems: [] },
   "plugin:kernkraft-tauri|watch_dir": null,

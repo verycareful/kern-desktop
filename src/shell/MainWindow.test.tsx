@@ -9,6 +9,7 @@ vi.mock("../ipc", async (orig) => ({
   ...(await orig<typeof import("../ipc")>()),
   userDirs: () => Promise.resolve({ home: { k: "Utf8", v: "/home/a" }, dirs: [] }),
   volumesList: () => Promise.resolve({ mounted: [], unmounted: [], problems: [] }),
+  volumesProblemsTake: () => Promise.resolve([]),
   on: () => Promise.resolve(() => undefined),
   // The window reads the undo history once.
   undoState: () => Promise.resolve({ undo: null, redo: null }),

@@ -1,13 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { pathKey, type WirePath } from "../ipc";
+import { pathKey, type DragAction, type WireError, type WirePath, type WireSame } from "../ipc";
 
 // Drag and drop (design 5.1, 5.8). Inside Kern a drag is made of pointer
 // events: the item under the pointer is a drop target when it carries
 // `data-drop-target`, and the modifier keys are those of the pointer event.
 // When the pointer leaves the window the drag becomes a native one (`dragOut`)
-// that other applications can receive. A drop from another application
-// arrives as kern://drop with a position and no modifier state.
+// that other applications can take. A drop from another application arrives as
+// kern://drop with a position, the size of the view it is measured in, and the
+// actions the other application offers; it carries no modifier state, because
+// during a native drag the webview gets no key events.
+//
+// What a drop does: Ctrl copies and Shift moves. Without one, an application that
+// offers exactly one of copy and move is obeyed. Otherwise a move is what the
+// source and the destination allow: the item is moved when it is on the same
+// filesystem as the folder it goes to (a move is then a rename) and copied when it
+// is not, item by item.
 
 /** Pointer travel before a press on an item becomes a drag, in CSS pixels: GTK's gtk-dnd-drag-threshold default. */
 export const ITEM_DRAG_THRESHOLD = 8;
@@ -15,7 +23,8 @@ export const ITEM_DRAG_THRESHOLD = 8;
 /** The attribute that makes an element a drop target; its value is the folder as `dropTargetValue` writes it. */
 export const DROP_TARGET_ATTR = "data-drop-target";
 
-export type DropChoice = "copy" | "move" | "ask";
+/** `by_filesystem`: the backend says per item whether the move would be a rename. */
+export type DropChoice = "copy" | "move" | "by_filesystem";
 
 export interface DragModifiers {
   ctrl: boolean;
@@ -23,17 +32,59 @@ export interface DragModifiers {
 }
 
 /**
- * What a drop does. Ctrl copies and Shift moves. Neither, both, or no
- * modifier state at all (a drop from another application) is a question for
- * the user: the rule for a drop with no modifier needs to know whether the
- * source and the destination are on one filesystem, and nothing the backend
- * offers says so, so nothing is decided on a guess.
+ * What decides a drop before any filesystem is looked at. Ctrl alone copies and Shift alone
+ * moves, whatever the other application offers. With neither, or both, or no modifier state at
+ * all (a drop from another application), an application that offers exactly one of copy and
+ * move gets that one; `link` and `ask` are not Kern's to act on. Anything else is left to the
+ * filesystems.
  */
-export function decideDrop(mods: DragModifiers | null): DropChoice {
-  if (mods === null) return "ask";
-  if (mods.ctrl && !mods.shift) return "copy";
-  if (mods.shift && !mods.ctrl) return "move";
-  return "ask";
+export function decideDrop(
+  mods: DragModifiers | null,
+  offered: readonly DragAction[] | null = null
+): DropChoice {
+  if (mods?.ctrl && !mods.shift) return "copy";
+  if (mods?.shift && !mods.ctrl) return "move";
+  const copy = offered?.includes("copy") ?? false;
+  const move = offered?.includes("move") ?? false;
+  if (copy && !move) return "copy";
+  if (move && !copy) return "move";
+  return "by_filesystem";
+}
+
+/** What a drop decided by the filesystems does with each source. */
+export interface DropPlan {
+  /** On the same filesystem as the destination: moved. */
+  move: WirePath[];
+  /** On another: copied. */
+  copy: WirePath[];
+  /** Could not be judged: shown with the error and left alone. */
+  failed: { path: WirePath; error: WireError }[];
+}
+
+/**
+ * Sorts the sources by the answer for each. A source whose answer failed is never acted on. An
+ * answer list of another length than the sources is a broken contract, and no source is acted
+ * on: each is reported as failed.
+ */
+export function planDrop(sources: readonly WirePath[], answers: readonly WireSame[]): DropPlan {
+  const plan: DropPlan = { move: [], copy: [], failed: [] };
+  if (answers.length !== sources.length) {
+    const error: WireError = {
+      kind: "Internal",
+      message: `the filesystem check gave ${answers.length} ${answers.length === 1 ? "answer" : "answers"} for ${sources.length} sources`,
+      path: null,
+      details: null,
+    };
+    plan.failed = sources.map((path) => ({ path, error }));
+    return plan;
+  }
+  sources.forEach((path, i) => {
+    const answer = answers[i]!;
+    if (answer.state === "failed") plan.failed.push({ path, error: answer.error });
+    else if (answer.same) plan.move.push(path);
+    else plan.copy.push(path);
+  });
+  return plan;
 }
 
 export function dropTargetValue(path: WirePath): string {
@@ -78,22 +129,27 @@ export function leftWindow(x: number, y: number, width: number, height: number):
   return x < 0 || y < 0 || x >= width || y >= height;
 }
 
-/**
- * How many physical pixels one CSS pixel of the page covers: the webview's
- * width in physical pixels over the page's width in CSS pixels (the window's
- * innerWidth). Measured, so it holds for any device scale and any interface
- * size without a claim about what devicePixelRatio includes.
- */
-export function physicalPerCssPixel(physicalWidth: number, cssWidth: number): number {
-  if (!(physicalWidth > 0) || !(cssWidth > 0) || !Number.isFinite(physicalWidth + cssWidth)) {
-    throw new RangeError(
-      `cannot tell the scale of the page from a width of ${physicalWidth} physical and ${cssWidth} CSS pixels`
-    );
-  }
-  return physicalWidth / cssWidth;
+export interface Size {
+  width: number;
+  height: number;
 }
 
-/** kern://drop gives the pointer in physical pixels from the webview's corner; `ratio` is `physicalPerCssPixel`. */
-export function toCssPoint(pos: { x: number; y: number }, ratio: number): { x: number; y: number } {
-  return { x: pos.x / ratio, y: pos.y / ratio };
+/**
+ * A point of kern://drop in CSS pixels. The backend gives the pointer in the webview's own units
+ * together with the webview's size in the same units, and the page's size in CSS pixels
+ * (`window.innerWidth` and `innerHeight`) is what the same area measures here, so the ratio is
+ * measured and holds for any scale factor and any interface size.
+ */
+export function toCssPoint(
+  pos: { x: number; y: number },
+  view: Size,
+  page: Size
+): { x: number; y: number } {
+  const sizes = [view.width, view.height, page.width, page.height];
+  if (!sizes.every((n) => n > 0 && Number.isFinite(n))) {
+    throw new RangeError(
+      `cannot tell the scale of the page from a view of ${view.width} x ${view.height} and a page of ${page.width} x ${page.height}`
+    );
+  }
+  return { x: (pos.x * page.width) / view.width, y: (pos.y * page.height) / view.height };
 }

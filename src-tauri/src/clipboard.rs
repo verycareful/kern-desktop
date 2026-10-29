@@ -30,7 +30,12 @@
 //! that is not UTF-8 survives a round trip.
 //!
 //! After a cut has been pasted, [`clip_clear_if`] ends the offer of those
-//! files, but only if the clipboard still holds exactly that cut.
+//! files, but only if the clipboard still holds exactly that cut. The
+//! clipboard's owner answers a read through the main loop, so the clipboard
+//! can change between the read and the clear. Kern therefore notes whether
+//! the clipboard's owner changed while it waited ([`Ownership`] for its own
+//! offers, GTK's `owner-change` for anyone else's) and clears in the same
+//! main-loop turn that decides, never after a change.
 //!
 //! A path with a `.` or `..` segment is refused: another application
 //! collapses such segments textually (RFC 3986, section 5.2.4), which names
@@ -45,15 +50,18 @@
 //! a write still returns success), so every command first requires that the
 //! calling window is focused and fails with `NoFocus` otherwise.
 
+use std::cell::Cell;
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::time::Duration;
 
 use gtk::gdk;
+use gtk::glib::ObjectExt;
 use kernkraft_tauri::{WireError, WirePath};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
@@ -378,6 +386,10 @@ static OWNED: AtomicBool = AtomicBool::new(false);
 
 fn set_files(op: ClipOp, gnome: Vec<u8>, uris: Vec<u8>, text: String) -> Result<(), WireError> {
     let names = offered_targets(op);
+    // Lives as long as GTK keeps this offer: GTK drops the closure when the clipboard is
+    // cleared, replaced, or taken by another application.
+    let offer = OWNERSHIP.offer();
+    let id = offer.id();
     let targets: Vec<gtk::TargetEntry> = names
         .iter()
         .enumerate()
@@ -385,6 +397,7 @@ fn set_files(op: ClipOp, gnome: Vec<u8>, uris: Vec<u8>, text: String) -> Result<
         .collect();
     let clipboard = gtk::Clipboard::get(&gdk::SELECTION_CLIPBOARD);
     let owned = clipboard.set_with_data(&targets, move |_, data, info| {
+        let _offer = &offer;
         let Some(&name) = names.get(info as usize) else {
             return;
         };
@@ -399,6 +412,7 @@ fn set_files(op: ClipOp, gnome: Vec<u8>, uris: Vec<u8>, text: String) -> Result<
         }
     });
     if owned {
+        OWNERSHIP.claim(id);
         mark_storable(&clipboard);
         Ok(())
     } else {
@@ -529,14 +543,109 @@ pub fn holds_exactly(held: Option<&(ClipOp, Vec<PathBuf>)>, op: ClipOp, paths: &
     matches!(held, Some((o, p)) if *o == op && p.as_slice() == paths)
 }
 
-/// Ends the offer of files: the clipboard is cleared when Kern owns it, and
-/// when another application does (a cut made in a file manager) Kern takes it
-/// over with empty text, since one application cannot release another's
-/// selection. Either way a paste finds no files.
-fn clear_files() {
-    let clipboard = gtk::Clipboard::get(&gdk::SELECTION_CLIPBOARD);
-    clipboard.clear();
-    clipboard.set_text("");
+/// Which offer of files, if any, is Kern's own clipboard content right now.
+///
+/// Every offer made with [`Ownership::offer`] holds an [`Offer`] for as long as GTK keeps
+/// it; GTK drops the offer's closure, and with it the [`Offer`], when the clipboard is
+/// cleared, replaced by a newer offer or text, or taken by another application. So
+/// [`Ownership::current`] is the id of the offer Kern holds, or 0 when it holds none, and
+/// an id that differs between two moments says the offer changed in between.
+pub struct Ownership {
+    current: AtomicU64,
+    issued: AtomicU64,
+}
+
+impl Ownership {
+    pub const fn new() -> Ownership {
+        Ownership {
+            current: AtomicU64::new(0),
+            issued: AtomicU64::new(0),
+        }
+    }
+
+    /// A new offer, not yet current. Call [`Ownership::claim`] with its id once GTK has
+    /// accepted it.
+    pub fn offer(&'static self) -> Offer {
+        Offer {
+            owner: self,
+            id: self.issued.fetch_add(1, Ordering::SeqCst) + 1,
+        }
+    }
+
+    /// Makes the offer with this id the current one.
+    pub fn claim(&self, id: u64) {
+        self.current.store(id, Ordering::SeqCst);
+    }
+
+    /// The id of Kern's offer of files, or 0.
+    pub fn current(&self) -> u64 {
+        self.current.load(Ordering::SeqCst)
+    }
+}
+
+impl Default for Ownership {
+    fn default() -> Ownership {
+        Ownership::new()
+    }
+}
+
+/// One offer of [`Ownership`]. Dropping it ends the offer, unless a newer one has been
+/// claimed since.
+pub struct Offer {
+    owner: &'static Ownership,
+    id: u64,
+}
+
+impl Offer {
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+}
+
+impl Drop for Offer {
+    fn drop(&mut self) {
+        let _ = self
+            .owner
+            .current
+            .compare_exchange(self.id, 0, Ordering::SeqCst, Ordering::SeqCst);
+    }
+}
+
+/// Kern's own offers of files on the clipboard.
+static OWNERSHIP: Ownership = Ownership::new();
+
+/// What clearing a pasted cut does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Clear {
+    /// The clipboard is not that cut, or changed since it was read: it is left as it is.
+    Keep,
+    /// Kern's own offer: it is released. Nothing else is put on the clipboard.
+    Release,
+    /// Another application's offer (a cut made in a file manager): one application cannot
+    /// release another's selection, so Kern takes the clipboard over with empty text.
+    TakeOver,
+}
+
+/// What to do about a cut that was pasted, given what was found: whether the clipboard
+/// held exactly that cut when it was read, whether the clipboard's owner changed since,
+/// and whether Kern holds an offer of files now. Anything but a clipboard that is still
+/// the cut that was read is left alone.
+pub fn clear_plan(holds_cut: bool, changed_since_read: bool, kern_owns: bool) -> Clear {
+    if !holds_cut || changed_since_read {
+        Clear::Keep
+    } else if kern_owns {
+        Clear::Release
+    } else {
+        Clear::TakeOver
+    }
+}
+
+fn apply(clipboard: &gtk::Clipboard, plan: Clear) {
+    match plan {
+        Clear::Keep => return,
+        Clear::Release => clipboard.clear(),
+        Clear::TakeOver => clipboard.set_text(""),
+    }
     // Nothing of Kern's to hand to a clipboard manager at exit any more.
     OWNED.store(false, Ordering::SeqCst);
 }
@@ -544,9 +653,17 @@ fn clear_files() {
 /// Clears the clipboard only if it still holds `op` on exactly `paths`, and
 /// says whether it did. It is for a cut that has been pasted: the files are
 /// where they were pasted, and a second paste would only look for them in the
-/// old place. The check and the clear are one step on the GTK main thread, so
-/// nothing can be copied in between; what the user copied meanwhile is kept.
-/// A clipboard that holds something unreadable is not the cut, and is left.
+/// old place.
+///
+/// The clipboard's owner answers the read through the main loop, so the user
+/// can copy something else while it is read. The owner is therefore checked
+/// again in the callback that decides, in the same main-loop turn as the
+/// clear: if GTK reported an owner change meanwhile, or Kern's own offer is
+/// another one than when the read began, the clipboard is left alone and the
+/// answer is `false`. Kern's own offer is released (`clear`); another
+/// application's is taken over with empty text, since one application cannot
+/// release another's selection. A clipboard that holds something unreadable
+/// is not the cut, and is left.
 #[tauri::command]
 pub async fn clip_clear_if<R: Runtime>(
     window: WebviewWindow<R>,
@@ -557,12 +674,23 @@ pub async fn clip_clear_if<R: Runtime>(
     focused(&window).await?;
     let app = window.app_handle().clone();
     on_main(&app, move |tx| {
-        read_held(move |held| {
-            let holds = held.is_ok_and(|h| holds_exactly(h.as_ref(), op, &paths));
-            if holds {
-                clear_files();
+        let clipboard = gtk::Clipboard::get(&gdk::SELECTION_CLIPBOARD);
+        let offer_at_read = OWNERSHIP.current();
+        let changed = Rc::new(Cell::new(false));
+        let watch = clipboard.connect_local("owner-change", false, {
+            let changed = changed.clone();
+            move |_| {
+                changed.set(true);
+                None
             }
-            let _ = tx.send(Ok(holds));
+        });
+        read_held(move |held| {
+            clipboard.disconnect(watch);
+            let holds = held.is_ok_and(|h| holds_exactly(h.as_ref(), op, &paths));
+            let moved_on = changed.get() || OWNERSHIP.current() != offer_at_read;
+            let plan = clear_plan(holds, moved_on, OWNERSHIP.current() != 0);
+            apply(&clipboard, plan);
+            let _ = tx.send(Ok(plan != Clear::Keep));
         });
     })
     .await

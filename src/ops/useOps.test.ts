@@ -346,29 +346,46 @@ test("an_undo_that_stopped_partway_lists_what_was_and_was_not_done", async () =>
   expect(useOps.getState().reports[0]!.outcome.error).toMatchObject({ kind: "Partial" });
 });
 
-test("a_failure_to_read_the_undo_history_stays_until_it_is_dismissed", async () => {
+test("a_failure_to_read_the_undo_history_is_one_banner_state_not_a_report", async () => {
   vi.useFakeTimers();
   ipc.undoState.mockRejectedValue(err("Internal", "journal poisoned"));
   await useOps.getState().refreshUndo();
-  expect(useOps.getState().notice).toBeNull();
-  const [shown] = useOps.getState().reports;
-  expect(shown!.outcome.title).toBe("The undo history could not be read");
-  expect(shown!.outcome.error).toMatchObject({ kind: "Internal", message: "journal poisoned" });
-  // It is still there long after a notice would have gone.
-  vi.advanceTimersByTime(10 * NOTICE_MS);
-  expect(useOps.getState().reports).toHaveLength(1);
-  useOps.getState().dismissReport(shown!.id);
+  // It does not queue a (modal) report and it is not a notice that goes away.
   expect(useOps.getState().reports).toEqual([]);
+  expect(useOps.getState().notice).toBeNull();
+  expect(useOps.getState().undoError).toMatchObject({
+    kind: "Internal",
+    message: "journal poisoned",
+  });
+  vi.advanceTimersByTime(10 * NOTICE_MS);
+  expect(useOps.getState().undoError).not.toBeNull();
 });
 
-test("the_same_undo_history_failure_is_not_queued_twice", async () => {
+test("the_same_undo_history_failure_repeating_is_still_one_banner", async () => {
   ipc.undoState.mockRejectedValue(err("Internal", "journal poisoned"));
   await useOps.getState().refreshUndo();
   await useOps.getState().refreshUndo();
-  expect(useOps.getState().reports).toHaveLength(1);
   ipc.undoState.mockRejectedValue(err("Internal", "something else"));
   await useOps.getState().refreshUndo();
-  expect(useOps.getState().reports).toHaveLength(2);
+  expect(useOps.getState().reports).toEqual([]);
+  // The banner shows the latest failure.
+  expect(useOps.getState().undoError?.message).toBe("something else");
+});
+
+test("a_successful_read_takes_the_undo_history_banner_away_and_sets_the_labels", async () => {
+  ipc.undoState.mockRejectedValue(err("Internal", "journal poisoned"));
+  await useOps.getState().refreshUndo();
+  ipc.undoState.mockResolvedValue({ undo: "Undo trash of a", redo: null });
+  await useOps.getState().refreshUndo();
+  expect(useOps.getState().undoError).toBeNull();
+  expect(useOps.getState().undoLabel).toBe("Undo trash of a");
+});
+
+test("reset_forgets_the_undo_history_failure", async () => {
+  ipc.undoState.mockRejectedValue(err("Internal", "journal poisoned"));
+  await useOps.getState().refreshUndo();
+  useOps.getState().reset();
+  expect(useOps.getState().undoError).toBeNull();
 });
 
 test("a_failed_answer_asks_the_question_again_and_shows_the_error", async () => {

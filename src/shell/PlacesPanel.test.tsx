@@ -18,6 +18,7 @@ const ipc = vi.hoisted(() => ({
   openPaths: vi.fn(),
   userDirs: vi.fn(),
   volumesList: vi.fn(),
+  volumesProblemsTake: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
@@ -39,6 +40,7 @@ beforeEach(() => {
     density: "cozy",
   } as Settings);
   ipc.userDirs.mockResolvedValue({ home: p("/home/t"), dirs: [] });
+  ipc.volumesProblemsTake.mockResolvedValue([]);
   ipc.volumesList.mockResolvedValue({ mounted: [], unmounted: [], problems: [] });
   useUserDirs.getState().reset();
   useVolumes.getState().reset();

@@ -20,6 +20,8 @@ export function volumeErrorText(e: WireError): string {
       return `Kern cannot tell which disk this is, so it will not unmount or eject it. (${detail(e)})`;
     case "UdisksAbsent":
       return "Disks that are plugged in or taken out will not appear here, because UDisks2 is not running. Volumes that are mounted or unmounted still update.";
+    case "ProblemsNotShown":
+      return `More volume problems happened than Kern keeps, so some are not shown. (${detail(e)})`;
     case "CallbackPanic":
       return `Kern's volume watcher hit an internal error and keeps running, but the list may have missed a change; Refresh volumes lists it again. (${detail(e)})`;
   }

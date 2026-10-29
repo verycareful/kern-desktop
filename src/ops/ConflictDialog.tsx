@@ -7,7 +7,10 @@ import { formatDate, formatSize } from "../files/format";
 import { Modal } from "./Modal";
 
 // A name is taken at the destination (design 5.1): skip the item, replace
-// what is there, or keep both. "Apply to all" gives every later conflict of
+// what is there, or keep both. What Replace does depends on what the two are:
+// a file or link replaces a file or link, which is lost; two folders are merged,
+// each clash inside asked about in turn; a folder against a file (either way)
+// is refused for that item and nothing changes. "Apply to all" gives every later conflict of
 // the same operation the same answer without asking. Cancel stops the
 // operation, which is also what Escape does: the worker waits for an answer,
 // and the only way out that destroys nothing is to stop. Skip has the focus
@@ -38,6 +41,28 @@ function Side(props: {
   );
 }
 
+type Sides = "files" | "folders" | "mixed" | "unknown";
+
+/**
+ * What the two sides are, as kernkraft's Replace sees them: by what each entry is itself, so a
+ * link to a folder counts as the link it is.
+ */
+function sidesOf(source: WireEntry | null, existing: WireEntry | null): Sides {
+  if (source === null || existing === null) return "unknown";
+  const [a, b] = [source.kind === "dir", existing.kind === "dir"];
+  return a && b ? "folders" : a || b ? "mixed" : "files";
+}
+
+const REPLACE_NOTE: Record<Sides, string> = {
+  files: "Replace: the item already there is lost and cannot be undone.",
+  folders:
+    "Replace: the two folders are merged, and the items inside that clash are asked about one by one. A merge cannot be undone.",
+  mixed:
+    "Replace does not put a folder over a file or a file over a folder: this item would fail, and nothing already there is changed.",
+  unknown:
+    "Replace: what is already there is lost, or merged when both are folders, and this cannot be undone.",
+};
+
 export function ConflictDialog(props: {
   conflict: OpConflictEvent;
   /** What the operation is doing, for the heading. */
@@ -53,11 +78,7 @@ export function ConflictDialog(props: {
   const [all, setAll] = useState(false);
   const skip = useRef<HTMLButtonElement>(null);
   const id = useId();
-  const bothFolders =
-    conflict.source_entry !== null &&
-    conflict.existing_entry !== null &&
-    isFolder(conflict.source_entry) &&
-    isFolder(conflict.existing_entry);
+  const sides = sidesOf(conflict.source_entry, conflict.existing_entry);
   const answer = (choice: ConflictChoice) => props.onAnswer(choice, all);
   return (
     <Modal
@@ -73,11 +94,6 @@ export function ConflictDialog(props: {
         <Side heading="Already there" path={conflict.existing} entry={conflict.existing_entry} />
         <Side heading="Coming in" path={conflict.source} entry={conflict.source_entry} />
       </div>
-      {bothFolders && (
-        <p className="kern-modal-text">
-          Replacing a folder merges the two: what is inside with the same name is asked about too.
-        </p>
-      )}
       <label className="kern-modal-check" htmlFor={`${id}-all`}>
         <input
           id={`${id}-all`}
@@ -88,7 +104,7 @@ export function ConflictDialog(props: {
         {props.others > 0 ? "Apply to all in this operation" : "Apply to all"}
       </label>
       <p id={`${id}-replace`} className="kern-modal-text">
-        Replace: the item already there is lost and cannot be undone.
+        {REPLACE_NOTE[sides]}
       </p>
       {props.waiting > 0 && (
         <p className="kern-modal-text" role="status">

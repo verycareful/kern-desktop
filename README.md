@@ -18,7 +18,7 @@
 [![Vitest](https://img.shields.io/badge/Vitest-3-6E9F18?style=flat-square&logo=vitest&logoColor=white)](https://vitest.dev/)
 [![Playwright](https://img.shields.io/badge/Playwright-1.49-2EAD33?style=flat-square&logo=playwright&logoColor=white)](https://playwright.dev/)
 <!-- Release -->
-[![Version](https://img.shields.io/badge/Version-0.1.0.0.40-informational?style=flat-square)](VERSION)
+[![Version](https://img.shields.io/badge/Version-0.1.0.0.41-informational?style=flat-square)](VERSION)
 <!-- Licence and status -->
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Early%20Development-orange?style=flat-square)](#)
@@ -33,7 +33,10 @@ with its tab row, the two side panels and a status bar. The folder list works
 (list and grid, sorting, selection, breadcrumb and location bar, live refresh).
 Files can be created, renamed in place, copied, cut and pasted (through the
 system clipboard, so other file managers can take part), moved to the Trash,
-deleted for good after a question, and dragged onto folders. Copies and moves
+deleted for good after a question, and dragged onto folders: a drag moves files
+that are on the same disk as the folder and copies the others, Ctrl copies and
+Shift moves, and a drop from another application follows what that application
+offers. Copies and moves
 run in the background with progress, a name-conflict prompt and a report of
 anything skipped or failed, and the last operations can be undone and redone.
 The strip beside it lists Places (Home and your user folders), Volumes (mount,

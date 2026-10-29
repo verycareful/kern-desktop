@@ -2,9 +2,19 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
-import type { OpDoneEvent, Settings, WireEntry, WireError, WirePath, WireReport } from "../ipc";
+import type {
+  DropPayload,
+  OpDoneEvent,
+  Settings,
+  WireEntry,
+  WireError,
+  WirePath,
+  WireReport,
+  WireSame,
+} from "../ipc";
 import { useShortcuts } from "../keys/useShortcuts";
 import { OpsHost } from "../ops/OpsHost";
+import { forgetSpentCuts } from "../ops/spent-cut";
 import { useOps } from "../ops/useOps";
 import { activeTab, useTabs, type FolderTab } from "../store/tabs";
 import { folderController } from "./folder-controller";
@@ -42,7 +52,7 @@ const ipc = vi.hoisted(() => ({
   clipGet: vi.fn(),
   dragOut: vi.fn(),
   clipClearIf: vi.fn(),
-  webviewWidth: vi.fn(),
+  sameFilesystem: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({
   ...(await orig<typeof import("../ipc")>()),
@@ -62,6 +72,8 @@ const err = (kind: string, message = kind): WireError => ({
 });
 
 let handlers: Record<string, (payload: unknown) => void>;
+/** Every handler subscribed to an event, in order; `handlers` keeps the last of each. */
+let subscribed: Record<string, ((payload: unknown) => void)[]>;
 let restoreLayout: () => void;
 let hasFocus: MockInstance<() => boolean>;
 
@@ -131,8 +143,10 @@ beforeEach(() => {
   restoreLayout = stubLayout();
   hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
   handlers = {};
+  subscribed = {};
   ipc.on.mockImplementation((name: string, h: (payload: unknown) => void) => {
     handlers[name] = h;
+    (subscribed[name] ??= []).push(h);
     return Promise.resolve(() => undefined);
   });
   ipc.watchDir.mockResolvedValue(undefined);
@@ -151,8 +165,11 @@ beforeEach(() => {
   ipc.clipClearIf.mockResolvedValue(true);
   ipc.answerConflict.mockResolvedValue(undefined);
   ipc.cancelOp.mockResolvedValue(undefined);
-  // One CSS pixel per physical pixel unless a test says otherwise.
-  ipc.webviewWidth.mockImplementation(() => Promise.resolve(window.innerWidth));
+  // Everything on one filesystem unless a test says otherwise.
+  ipc.sameFilesystem.mockImplementation((sources: WirePath[]) =>
+    Promise.resolve(sources.map((): WireSame => ({ state: "checked", same: true })))
+  );
+  forgetSpentCuts();
   useViewSettings.setState({ loaded: false, error: null });
   useFolderUi.setState({ sort: {} });
   useFolderStatus.setState({ byTab: {} });
@@ -161,6 +178,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   cleanup();
+  forgetSpentCuts();
   hasFocus.mockRestore();
   await Promise.resolve();
   restoreLayout();
@@ -632,20 +650,108 @@ test("ctrl_drag_onto_a_folder_copies_and_shift_drag_moves", async () => {
   pointer("pointerUp", window, { clientX: 40, clientY: 40, shiftKey: true });
   await waitFor(() => expect(ipc.startOp).toHaveBeenCalledTimes(2));
   expect(ipc.startOp).toHaveBeenLastCalledWith("move", [p("/d/a"), p("/d/b")], p("/d/sub"));
+  // The modifier decided: the filesystems were not asked.
+  expect(ipc.sameFilesystem).not.toHaveBeenCalled();
 });
 
-test("a_drag_with_no_modifier_asks_whether_to_move_or_copy_and_the_answer_decides", async () => {
-  await mount([dir("sub"), entry("a")]);
-  select("a");
+const same: WireSame = { state: "checked", same: true };
+const different: WireSame = { state: "checked", same: false };
+const unknown = (kind: string, message = kind): WireSame => ({
+  state: "failed",
+  error: err(kind, message),
+});
+
+/** Drags the rows named `names` (all selected) onto the folder row `sub` and lets go with `up`. */
+async function dragOntoSub(names: string[], up: PointerEventInit = {}) {
+  select(...names);
   hover(() => rowNamed("sub"));
-  pointer("pointerDown", rowNamed("a"), { clientX: 10, clientY: 10 });
+  pointer("pointerDown", rowNamed(names[0]!), { clientX: 10, clientY: 10 });
   pointer("pointerMove", window, { clientX: 40, clientY: 40 });
-  pointer("pointerUp", window, { clientX: 40, clientY: 40 });
-  const ask = await screen.findByRole("alertdialog", { name: "Copy or move" });
-  expect(ask).toHaveTextContent("Move or copy a into sub?");
+  pointer("pointerUp", window, { clientX: 40, clientY: 40, ...up });
+  await act(async () => {});
+}
+
+test("a_drag_with_no_modifier_asks_the_backend_once_and_moves_what_is_on_the_same_filesystem", async () => {
+  await mount([dir("sub"), entry("a"), entry("b")]);
+  ipc.sameFilesystem.mockResolvedValue([same, same]);
+  await dragOntoSub(["a", "b"]);
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledTimes(1));
+  expect(ipc.sameFilesystem).toHaveBeenCalledExactlyOnceWith([p("/d/a"), p("/d/b")], p("/d/sub"));
+  expect(ipc.startOp).toHaveBeenCalledWith("move", [p("/d/a"), p("/d/b")], p("/d/sub"));
+  // Nobody is asked anything.
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+});
+
+test("a_drag_with_no_modifier_copies_what_is_on_another_filesystem", async () => {
+  await mount([dir("sub"), entry("a"), entry("b")]);
+  ipc.sameFilesystem.mockResolvedValue([different, different]);
+  await dragOntoSub(["a", "b"]);
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledTimes(1));
+  expect(ipc.startOp).toHaveBeenCalledWith("copy", [p("/d/a"), p("/d/b")], p("/d/sub"));
+});
+
+test("mixed_sources_are_split_into_a_move_and_a_copy_each_for_its_own_items", async () => {
+  await mount([dir("sub"), entry("a"), entry("b"), entry("c")]);
+  ipc.sameFilesystem.mockResolvedValue([same, different, same]);
+  await dragOntoSub(["a", "b", "c"]);
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledTimes(2));
+  expect(ipc.sameFilesystem).toHaveBeenCalledTimes(1);
+  expect(ipc.startOp).toHaveBeenNthCalledWith(1, "move", [p("/d/a"), p("/d/c")], p("/d/sub"));
+  expect(ipc.startOp).toHaveBeenNthCalledWith(2, "copy", [p("/d/b")], p("/d/sub"));
+});
+
+test("an_item_whose_filesystem_cannot_be_told_is_shown_with_its_error_and_not_acted_on", async () => {
+  await mount([dir("sub"), entry("a"), entry("b"), entry("c")]);
+  ipc.sameFilesystem.mockResolvedValue([same, unknown("MountIdUnavailable"), different]);
+  await dragOntoSub(["a", "b", "c"]);
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledTimes(2));
+  // b is in no operation at all.
+  const touched = ipc.startOp.mock.calls.flatMap((c) => c[1] as WirePath[]);
+  expect(touched).toEqual([p("/d/a"), p("/d/c")]);
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("b");
+  expect(alert).toHaveTextContent(/Linux 5\.8/);
+});
+
+test("when_no_item_can_be_judged_nothing_starts", async () => {
+  await mount([dir("sub"), entry("a"), entry("b")]);
+  ipc.sameFilesystem.mockResolvedValue([unknown("NotFound", "gone: /d/a"), unknown("InvalidName")]);
+  await dragOntoSub(["a", "b"]);
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("NotFound: gone: /d/a");
+  expect(alert).toHaveTextContent(/no name/);
   expect(ipc.startOp).not.toHaveBeenCalled();
-  fireEvent.click(within(ask).getByRole("button", { name: "Copy here" }));
-  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledWith("copy", [p("/d/a")], p("/d/sub")));
+});
+
+test("a_filesystem_query_that_fails_as_a_whole_is_shown_and_nothing_starts", async () => {
+  await mount([dir("sub"), entry("a")]);
+  ipc.sameFilesystem.mockRejectedValue(err("Ipc", "same_filesystem not allowed"));
+  await dragOntoSub(["a"]);
+  expect(await screen.findByRole("alert")).toHaveTextContent("same_filesystem not allowed");
+  expect(ipc.startOp).not.toHaveBeenCalled();
+});
+
+test("both_halves_of_a_split_drop_are_reported_each_on_its_own", async () => {
+  await mount([dir("sub"), entry("a"), entry("b")], "/d", { ops: true });
+  ipc.sameFilesystem.mockResolvedValue([same, different]);
+  ipc.startOp.mockResolvedValueOnce(1).mockResolvedValueOnce(2);
+  await dragOntoSub(["a", "b"]);
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledTimes(2));
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  // The move ends cleanly; the copy leaves a failure. Each operation listens for its own end.
+  const end = (e: OpDoneEvent) =>
+    act(() => {
+      subscribed["kernkraft://op-done"]!.forEach((h) => h(e));
+    });
+  await end(done(1, { done: [{ source: p("/d/a"), dest: p("/d/sub/a") }] }));
+  await act(async () => {});
+  await end(done(2, { failed: [{ path: p("/d/b"), error: err("Io", "disk full") }] }));
+  await waitFor(() => expect(useOps.getState().reports).toHaveLength(1));
+  expect(useOps.getState().reports[0]!.outcome.title).toMatch(/cop/i);
+  expect(useOps.getState().notice?.text).toMatch(/mov/i);
+  expect(useOps.getState().ops).toEqual([]);
 });
 
 test("dragging_an_item_that_is_not_selected_drags_only_it", async () => {
@@ -724,50 +830,73 @@ test("the_press_on_the_name_field_while_renaming_starts_no_drag", async () => {
   expect(ipc.dragOut).not.toHaveBeenCalled();
 });
 
-test("a_drop_from_another_application_asks_and_lands_on_the_folder_under_it", async () => {
+/** A drop from another application as the backend sends it: a 1000 x 700 view of a 1000 x 700 page. */
+function dropOf(over: Partial<DropPayload> = {}): DropPayload {
+  return {
+    paths: [p("/x/f")],
+    position: { x: 40, y: 40 },
+    view: { width: window.innerWidth, height: window.innerHeight },
+    offered: ["copy", "move", "link"],
+    selected: "copy",
+    ...over,
+  };
+}
+const dropFromElsewhere = async (over: Partial<DropPayload> = {}) => {
+  await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
+  act(() => handlers["kern://drop"]!(dropOf(over)));
+  await act(async () => {});
+};
+
+test("an_application_that_offers_copy_alone_is_obeyed_without_asking_the_filesystems", async () => {
   await mount([dir("sub"), entry("a")]);
   hover(() => rowNamed("sub"));
-  await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
-  // The position is in physical pixels; the test's pixel ratio is 1 and the zoom 1.
-  act(() => {
-    handlers["kern://drop"]!({ paths: [p("/x/f"), p("/x/g")], position: { x: 40, y: 40 } });
-  });
-  const ask = await screen.findByRole("alertdialog", { name: "Copy or move" });
-  expect(ask).toHaveTextContent("Move or copy f, g into sub?");
-  fireEvent.click(within(ask).getByRole("button", { name: "Move here" }));
+  await dropFromElsewhere({ paths: [p("/x/f"), p("/x/g")], offered: ["copy"] });
   await waitFor(() =>
-    expect(ipc.startOp).toHaveBeenCalledWith("move", [p("/x/f"), p("/x/g")], p("/d/sub"))
+    expect(ipc.startOp).toHaveBeenCalledWith("copy", [p("/x/f"), p("/x/g")], p("/d/sub"))
   );
+  expect(ipc.sameFilesystem).not.toHaveBeenCalled();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+});
+
+test("an_application_that_offers_move_alone_is_obeyed_without_asking_the_filesystems", async () => {
+  await mount([dir("sub"), entry("a")]);
+  hover(() => rowNamed("sub"));
+  await dropFromElsewhere({ offered: ["move", "link"] });
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledWith("move", [p("/x/f")], p("/d/sub")));
+  expect(ipc.sameFilesystem).not.toHaveBeenCalled();
+});
+
+test("an_application_that_offers_both_leaves_it_to_the_filesystems_and_the_negotiated_action_is_not_the_rule", async () => {
+  await mount([dir("sub"), entry("a")]);
+  hover(() => rowNamed("sub"));
+  ipc.sameFilesystem.mockResolvedValue([different, same]);
+  // GTK's own choice cannot be told from the window's default, so it decides nothing.
+  await dropFromElsewhere({
+    paths: [p("/x/f"), p("/x/g")],
+    offered: ["copy", "move", "link"],
+    selected: "move",
+  });
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledTimes(2));
+  expect(ipc.sameFilesystem).toHaveBeenCalledExactlyOnceWith([p("/x/f"), p("/x/g")], p("/d/sub"));
+  expect(ipc.startOp).toHaveBeenCalledWith("move", [p("/x/g")], p("/d/sub"));
+  expect(ipc.startOp).toHaveBeenCalledWith("copy", [p("/x/f")], p("/d/sub"));
+});
+
+test("a_drop_that_offers_no_usable_action_follows_the_filesystem_rule", async () => {
+  await mount([dir("sub"), entry("a")]);
+  hover(() => rowNamed("sub"));
+  ipc.sameFilesystem.mockResolvedValue([different]);
+  await dropFromElsewhere({ offered: [], selected: null });
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledWith("copy", [p("/x/f")], p("/d/sub")));
 });
 
 test("a_drop_on_the_empty_part_of_the_view_lands_in_the_folder_itself", async () => {
   await mount([entry("a")]);
   hover(() => null);
-  await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
-  act(() => {
-    handlers["kern://drop"]!({ paths: [p("/x/f")], position: { x: 400, y: 400 } });
-  });
-  const ask = await screen.findByRole("alertdialog", { name: "Copy or move" });
-  expect(ask).toHaveTextContent("into d?");
-  fireEvent.click(within(ask).getByRole("button", { name: "Copy here" }));
+  ipc.sameFilesystem.mockResolvedValue([different]);
+  await dropFromElsewhere({ position: { x: 400, y: 400 } });
   await waitFor(() => expect(ipc.startOp).toHaveBeenCalledWith("copy", [p("/x/f")], p("/d")));
-});
-
-test("a_second_drop_replaces_the_question_and_the_answer_is_about_what_the_question_names", async () => {
-  await mount([entry("a")]);
-  hover(() => null);
-  await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
-  act(() => handlers["kern://drop"]!({ paths: [p("/x/f")], position: { x: 1, y: 1 } }));
-  expect(await screen.findByRole("alertdialog")).toHaveTextContent("Move or copy f into d?");
-  act(() => handlers["kern://drop"]!({ paths: [p("/x/other")], position: { x: 1, y: 1 } }));
-  await waitFor(() =>
-    expect(screen.getByRole("alertdialog")).toHaveTextContent("Move or copy other into d?")
-  );
-  fireEvent.click(
-    within(screen.getByRole("alertdialog")).getByRole("button", { name: "Copy here" })
-  );
-  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledTimes(1));
-  expect(ipc.startOp).toHaveBeenCalledWith("copy", [p("/x/other")], p("/d"));
+  expect(ipc.sameFilesystem).toHaveBeenCalledWith([p("/x/f")], p("/d"));
 });
 
 test("f2_edits_the_name_in_the_grid_too", async () => {
@@ -953,16 +1082,14 @@ test("a_report_of_another_operation_does_not_apply_a_half_typed_name", async () 
   expect(screen.getByRole("textbox", { name: /rename/i })).toHaveFocus();
 });
 
-test("a_drop_question_does_not_apply_a_half_typed_name_and_the_edit_comes_back", async () => {
-  await mount([entry("a")]);
-  hover(() => null);
+test("a_delete_question_does_not_apply_a_half_typed_name_and_the_edit_comes_back", async () => {
+  const tab = await mount([entry("a")]);
   select("a");
   key("F2");
   const input = await screen.findByRole("textbox", { name: /rename/i });
   fireEvent.change(input, { target: { value: "half" } });
-  await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
-  act(() => handlers["kern://drop"]!({ paths: [p("/x/f")], position: { x: 1, y: 1 } }));
-  const ask = await screen.findByRole("alertdialog", { name: "Copy or move" });
+  act(() => folderController(tab.id)!.askDelete());
+  const ask = await screen.findByRole("alertdialog", { name: "Delete permanently" });
   expect(ipc.rename).not.toHaveBeenCalled();
   fireEvent.click(within(ask).getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
@@ -1065,62 +1192,81 @@ test("a_copy_is_never_cleared", async () => {
   expect(ipc.clipClearIf).not.toHaveBeenCalled();
 });
 
-test("a_clipboard_that_cannot_be_cleared_is_shown", async () => {
-  ipc.clipClearIf.mockRejectedValue(err("NoFocus", "Kern's window does not have focus"));
+test("a_clipboard_that_cannot_be_cleared_is_reported", async () => {
+  ipc.clipClearIf.mockRejectedValue(err("Clipboard", "the owner did not answer"));
   await pasteCutThatEnds([p("/o/x")], { done: [{ source: p("/o/x"), dest: p("/d/x") }] });
-  expect(await screen.findByRole("alert")).toHaveTextContent("NoFocus");
+  await waitFor(() => expect(useOps.getState().reports).toHaveLength(1));
+  expect(useOps.getState().reports[0]!.outcome.error).toMatchObject({ kind: "Clipboard" });
+});
+
+test("a_move_that_ends_while_kern_is_in_the_background_is_not_an_error_and_clears_on_the_focus", async () => {
+  ipc.clipClearIf.mockRejectedValueOnce(err("NoFocus", "Kern's window does not have focus"));
+  await pasteCutThatEnds([p("/o/x")], { done: [{ source: p("/o/x"), dest: p("/d/x") }] });
+  await waitFor(() => expect(ipc.clipClearIf).toHaveBeenCalledTimes(1));
+  await act(async () => {});
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(useOps.getState().reports).toEqual([]);
+  ipc.clipClearIf.mockResolvedValue(true);
+  act(() => {
+    window.dispatchEvent(new Event("focus"));
+  });
+  await waitFor(() => expect(ipc.clipClearIf).toHaveBeenCalledTimes(2));
+  expect(ipc.clipClearIf).toHaveBeenLastCalledWith("cut", [p("/o/x")]);
 });
 
 // ---- where a drop from another application lands ----
 
-test("the_position_of_a_drop_is_scaled_by_the_webviews_own_size_against_the_window_width", async () => {
+test("the_position_of_a_drop_is_scaled_by_the_views_own_size_against_the_page_width", async () => {
   await mount([dir("sub"), entry("a")]);
-  // The webview is 1.25 times as many physical pixels wide as the page is CSS pixels wide.
-  ipc.webviewWidth.mockResolvedValue(window.innerWidth * 1.25);
+  // The view is 1.25 times as wide as the page in CSS pixels (a 125 % interface size).
   const at = vi.fn(() => rowNamed("sub"));
   hover(at);
-  await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
-  act(() => handlers["kern://drop"]!({ paths: [p("/x/f")], position: { x: 100, y: 50 } }));
-  await screen.findByRole("alertdialog", { name: "Copy or move" });
+  await dropFromElsewhere({
+    position: { x: 100, y: 50 },
+    view: { width: window.innerWidth * 1.25, height: window.innerHeight * 1.25 },
+  });
+  await waitFor(() => expect(ipc.sameFilesystem).toHaveBeenCalled());
   expect(at).toHaveBeenCalledWith(80, 40);
-  expect(screen.getByRole("alertdialog")).toHaveTextContent("into sub?");
+  expect(ipc.sameFilesystem).toHaveBeenCalledWith([p("/x/f")], p("/d/sub"));
 });
 
-test("a_drop_whose_scale_cannot_be_measured_says_so_and_lands_in_the_folder_not_on_a_guess", async () => {
+test("at_80_percent_the_view_is_smaller_than_the_page_and_the_point_grows", async () => {
   await mount([dir("sub"), entry("a")]);
-  ipc.webviewWidth.mockRejectedValue(err("Webview", "no size"));
+  const at = vi.fn(() => rowNamed("sub"));
+  hover(at);
+  await dropFromElsewhere({
+    position: { x: 100, y: 50 },
+    view: { width: window.innerWidth * 0.8, height: window.innerHeight * 0.8 },
+  });
+  await waitFor(() => expect(at).toHaveBeenCalled());
+  const [x, y] = at.mock.calls[0] as unknown as [number, number];
+  expect(x).toBeCloseTo(125, 9);
+  expect(y).toBeCloseTo(62.5, 9);
+});
+
+test("a_drop_whose_view_has_no_size_says_so_and_lands_in_the_folder_not_on_a_guess", async () => {
+  await mount([dir("sub"), entry("a")]);
   hover(() => rowNamed("sub"));
-  await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
-  act(() => handlers["kern://drop"]!({ paths: [p("/x/f")], position: { x: 100, y: 50 } }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Webview: no size");
-  const ask = await screen.findByRole("alertdialog", { name: "Copy or move" });
-  expect(ask).toHaveTextContent("into d?");
+  await dropFromElsewhere({ view: { width: 0, height: 0 } });
+  expect(await screen.findByRole("alert")).toHaveTextContent(/cannot tell the scale/);
+  await waitFor(() => expect(ipc.sameFilesystem).toHaveBeenCalled());
+  expect(ipc.sameFilesystem).toHaveBeenCalledWith([p("/x/f")], p("/d"));
 });
 
 // ---- a question that is replaced says so ----
 
-test("a_drop_that_replaces_an_open_question_says_so", async () => {
-  await mount([entry("a")]);
-  hover(() => null);
-  await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
-  act(() => handlers["kern://drop"]!({ paths: [p("/x/f")], position: { x: 1, y: 1 } }));
-  await screen.findByRole("alertdialog");
-  expect(useOps.getState().notice).toBeNull();
-  act(() => handlers["kern://drop"]!({ paths: [p("/x/g")], position: { x: 1, y: 1 } }));
-  await waitFor(() => expect(useOps.getState().notice?.text).toMatch(/replaced/i));
-  expect(useOps.getState().notice?.text).toContain("Move or copy f into d");
-});
-
-test("a_drop_that_replaces_a_delete_question_says_which_delete_was_dropped", async () => {
-  await mount([entry("a"), entry("b")]);
-  hover(() => null);
+test("a_delete_question_that_replaces_another_says_which_one_went", async () => {
+  const tab = await mount([entry("a"), entry("b")]);
   select("a");
   key("Delete", { shiftKey: true });
   await screen.findByRole("alertdialog", { name: "Delete permanently" });
-  await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
-  act(() => handlers["kern://drop"]!({ paths: [p("/x/g")], position: { x: 1, y: 1 } }));
+  expect(useOps.getState().notice).toBeNull();
+  // Another way to ask (the menu) while the first is open.
+  fireEvent.click(rowNamed("b"));
+  act(() => folderController(tab.id)!.askDelete());
   await waitFor(() => expect(useOps.getState().notice?.text).toMatch(/replaced/i));
   expect(useOps.getState().notice?.text).toContain("Delete a for good");
+  expect(screen.getByRole("alertdialog")).toHaveTextContent("b");
   expect(ipc.startOp).not.toHaveBeenCalled();
 });
 

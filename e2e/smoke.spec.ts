@@ -20,6 +20,7 @@ test("boots_with_mocked_ipc", async ({ page, mockTauri }) => {
     // The window reads the undo history once.
     "plugin:kernkraft-tauri|undo_state": { undo: null, redo: null },
     "plugin:kernkraft-tauri|volumes_list": { mounted: [], unmounted: [], problems: [] },
+    "plugin:kernkraft-tauri|volumes_problems_take": [],
     "plugin:kernkraft-tauri|user_dirs": { home: { k: "Utf8", v: "/home/tester/docs" }, dirs: [] },
     "plugin:kernkraft-tauri|theme_get": { css: ":root{}", tokens: {}, fallbacks: [], problems: [] },
   });

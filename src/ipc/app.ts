@@ -162,10 +162,22 @@ export interface ClipContents {
   paths: WirePath[];
 }
 
-/** A drop from another application, on kern://drop; position is in physical pixels. */
+/** One of GDK's drag actions, by name. */
+export type DragAction = "copy" | "move" | "link" | "ask";
+
+/**
+ * A drop from another application, on kern://drop (src-tauri/src/dnd.rs). `position` is where the
+ * pointer was and `view` the size of the webview, both in the webview's own units, so a point in
+ * CSS pixels is `position` times the page's size over `view`, whatever the interface size.
+ * `offered` is what the other application allows; `selected` is the action GTK negotiated, or null
+ * when it is not exactly one.
+ */
 export interface DropPayload {
   paths: WirePath[];
   position: { x: number; y: number };
+  view: { width: number; height: number };
+  offered: DragAction[];
+  selected: DragAction | null;
 }
 
 export const clipSet = (op: ClipOp, paths: WirePath[]) => invoke<void>("clip_set", { op, paths });

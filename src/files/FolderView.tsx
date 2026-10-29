@@ -9,7 +9,7 @@ import {
   on,
   pathKey,
   toWireError,
-  webviewWidth,
+  type DragAction,
   type DropPayload,
   type WireError,
   type WirePath,
@@ -17,14 +17,7 @@ import {
 import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
 import { actions, currentContext, getAction, runAction } from "../keys/actions";
 import { FILE_KEYS_ATTR } from "../keys/file-keys";
-import {
-  canDropOn,
-  decideDrop,
-  dropTargetAt,
-  physicalPerCssPixel,
-  toCssPoint,
-  type DragModifiers,
-} from "../ops/dnd";
+import { canDropOn, decideDrop, dropTargetAt, toCssPoint, type DragModifiers } from "../ops/dnd";
 import { useTabs, type FolderTab, type FolderViewState } from "../store/tabs";
 import { Breadcrumb } from "./Breadcrumb";
 import { ConfirmBanner } from "./ConfirmBanner";
@@ -286,21 +279,20 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   });
 
   // Something dropped on a folder (a pointer drag inside Kern, or a drop from another
-  // application): the modifier keys decide, and with none to go by the user is asked.
-  const { askDrop, drop: dropItems, fail } = fileOps;
+  // application): the modifier keys and what the other application offers decide when they
+  // can, and otherwise the filesystems do, item by item (use-file-ops.ts).
+  const { drop: dropItems, fail } = fileOps;
   const dropOn = useCallback(
-    (sources: WirePath[], dest: WirePath, mods: DragModifiers | null) => {
-      const choice = decideDrop(mods);
-      if (choice === "ask") askDrop(sources, dest);
-      else dropItems(choice, sources, dest);
+    (
+      sources: WirePath[],
+      dest: WirePath,
+      how: { mods: DragModifiers | null; offered?: readonly DragAction[] }
+    ) => {
+      void dropItems(decideDrop(how.mods, how.offered ?? null), sources, dest);
     },
-    [askDrop, dropItems]
+    [dropItems]
   );
   const drag = useItemDrag({
-    keyAt: (index) => {
-      const at = latest.current.entries[index];
-      return at ? pathKey(at.path) : null;
-    },
     itemsFor: (key) => {
       const { entries: es, sel: s } = latest.current;
       const at = es.findIndex((e) => pathKey(e.path) === key);
@@ -310,7 +302,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       dispatch((x) => click(x, at));
       return [only];
     },
-    onDrop: dropOn,
+    onDrop: (sources, dest, mods) => dropOn(sources, dest, { mods }),
     onLeave: (sources) => {
       dragOut(sources).catch(fail);
     },
@@ -325,11 +317,13 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     let live = true;
     let off: (() => void) | undefined;
     // The folder under the pointer, or the folder itself. When the scale of the page cannot be
-    // measured the position means nothing, and the drop goes to the folder shown, with the reason.
+    // told the position means nothing, and the drop goes to the folder shown, with the reason.
     const landing = async (drop: DropPayload, folder: WirePath): Promise<WirePath> => {
       try {
-        const ratio = physicalPerCssPixel(await webviewWidth(), window.innerWidth);
-        const at = toCssPoint(drop.position, ratio);
+        const at = toCssPoint(drop.position, drop.view, {
+          width: window.innerWidth,
+          height: window.innerHeight,
+        });
         const hit = dropTargetAt(at.x, at.y);
         return hit && canDropOn(drop.paths, hit.path) ? hit.path : folder;
       } catch (e) {
@@ -340,7 +334,9 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     on(EVENT_DROP, (drop: DropPayload) => {
       const now = dropState.current;
       if (!now.isActive || drop.paths.length === 0) return;
-      void landing(drop, now.path).then((dest) => live && dropOn(drop.paths, dest, null));
+      void landing(drop, now.path).then(
+        (dest) => live && dropOn(drop.paths, dest, { mods: null, offered: drop.offered })
+      );
     }).then(
       (u) => (live ? (off = u) : u()),
       (e: unknown) => live && fail(e)
