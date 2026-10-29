@@ -34,17 +34,39 @@ export async function installTauriMocks(page: Page, handlers: MockResponses = {}
       const calls: Array<{ cmd: string; args: Record<string, unknown> }> = [];
       (window as unknown as { __tauriCalls: typeof calls }).__tauriCalls = calls;
 
-      // Event subscriptions: the API calls plugin:event|listen and, to
-      // unsubscribe, unregisterListener on this object. No event is ever
-      // delivered, so a listener only needs an id.
+      // Event subscriptions: the API calls plugin:event|listen with the handler (transformCallback
+      // below returns it unchanged) and, to unsubscribe, unregisterListener on this object. Nothing
+      // is delivered by itself; a test or a mock command delivers one with window.__tauriEmit.
       let nextEventId = 1;
+      const listeners: Array<{ event: string; id: number; handler: (e: unknown) => void }> = [];
       (
         window as unknown as { __TAURI_EVENT_PLUGIN_INTERNALS__: unknown }
-      ).__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => undefined };
+      ).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+        unregisterListener: (event: string, id: number) => {
+          const at = listeners.findIndex((l) => l.event === event && l.id === id);
+          if (at >= 0) listeners.splice(at, 1);
+        },
+      };
+      (window as unknown as { __tauriEmit: unknown }).__tauriEmit = (
+        event: string,
+        payload: unknown
+      ) => {
+        for (const l of listeners.filter((x) => x.event === event)) {
+          l.handler({ event, id: l.id, payload });
+        }
+      };
 
       const invoke = (cmd: string, args: Record<string, unknown> = {}) => {
         calls.push({ cmd, args });
-        if (cmd === "plugin:event|listen") return Promise.resolve(nextEventId++);
+        if (cmd === "plugin:event|listen") {
+          const id = nextEventId++;
+          listeners.push({
+            event: args.event as string,
+            id,
+            handler: args.handler as (e: unknown) => void,
+          });
+          return Promise.resolve(id);
+        }
         if (cmd === "plugin:event|unlisten") return Promise.resolve(null);
         const handler = compiled[cmd];
         if (handler) return Promise.resolve(handler(args));
@@ -61,6 +83,18 @@ export async function installTauriMocks(page: Page, handlers: MockResponses = {}
       };
     },
     { literals, fns }
+  );
+}
+
+/** Delivers an event to the page's listeners, as the backend would. */
+export async function emitTauriEvent(page: Page, event: string, payload: unknown): Promise<void> {
+  await page.evaluate(
+    ([e, p]) =>
+      (window as unknown as { __tauriEmit: (e: string, p: unknown) => void }).__tauriEmit(
+        e as string,
+        p
+      ),
+    [event, payload] as const
   );
 }
 

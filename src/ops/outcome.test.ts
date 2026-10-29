@@ -26,4 +26,5 @@ test("every_way_an_operation_can_fall_short_needs_attention", () => {
   expect(needsAttention(outcome(report({ warnings: [{ path: p, error: err }] })))).toBe(true);
   expect(needsAttention(outcome(report({ cancelled: true })))).toBe(true);
   expect(needsAttention(outcome(report({ not_reached: [p] })))).toBe(true);
+  expect(needsAttention(outcome(report({ skipped: [p] })))).toBe(true);
 });

@@ -103,7 +103,7 @@ export function ActionMenu(props: {
                     onClose.current();
                   }}
                 >
-                  <span>{a.label}</span>
+                  <span>{a.menuLabel?.() ?? a.label}</span>
                   {a.keys[0] && <kbd>{a.keys[0]}</kbd>}
                 </button>
               </li>

@@ -24,6 +24,7 @@ import { actions, currentContext, getAction, runAction } from "../keys/actions";
 import { needsAttention, type Outcome } from "../ops/outcome";
 import { ReportPanel } from "../ops/ReportPanel";
 import { runOp, type RunningOp } from "../ops/run-op";
+import { useOps } from "../ops/useOps";
 import { useTabs, type TrashTab } from "../store/tabs";
 import { useVolumes } from "../shell/volumes-store";
 import { ConfirmBanner } from "./ConfirmBanner";
@@ -194,12 +195,15 @@ export function TrashView(props: { tab: TrashTab }) {
     };
   }, [refresh]);
   const epoch = useVolumes((s) => s.epoch);
-  const seenEpoch = useRef(epoch);
+  // An undo or redo of a trash puts items back or takes them out again.
+  const undone = useOps((s) => s.changes);
+  const seenEpoch = useRef(`${epoch}:${undone}`);
   useEffect(() => {
-    if (seenEpoch.current === epoch) return;
-    seenEpoch.current = epoch;
+    const now = `${epoch}:${undone}`;
+    if (seenEpoch.current === now) return;
+    seenEpoch.current = now;
     void refresh();
-  }, [epoch, refresh]);
+  }, [epoch, undone, refresh]);
 
   const report = (o: Outcome) => {
     if (alive.current && needsAttention(o))

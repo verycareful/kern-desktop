@@ -2,13 +2,26 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FolderOpen, LayoutGrid, List, X } from "lucide-react";
-import { displayPath, pathKey, toWireError, type WireError, type WirePath } from "../ipc";
+import {
+  EVENT_DROP,
+  displayPath,
+  dragOut,
+  on,
+  pathKey,
+  toWireError,
+  type DropPayload,
+  type WireError,
+  type WirePath,
+} from "../ipc";
 import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
 import { actions, currentContext, getAction, runAction } from "../keys/actions";
+import { canDropOn, decideDrop, dropTargetAt, toCssPoint, type DragModifiers } from "../ops/dnd";
+import { zoomFactor } from "../theme/interface-size";
 import { useTabs, type FolderTab, type FolderViewState } from "../store/tabs";
 import { Breadcrumb } from "./Breadcrumb";
 import { ConfirmBanner } from "./ConfirmBanner";
 import { FileGrid } from "./FileGrid";
+import { FileOpsUi } from "./FileOpsUi";
 import { FileList } from "./FileList";
 import { ROW_HEIGHT } from "./grid-layout";
 import { useFolderUi, DEFAULT_SORT } from "./folder-ui";
@@ -16,6 +29,8 @@ import { registerFolder, type MoveTo } from "./folder-controller";
 import { useFolderStatus } from "./folder-status";
 import { GoneBanner } from "./GoneBanner";
 import { LocationBar } from "./LocationBar";
+import { useFileOps } from "./use-file-ops";
+import { useItemDrag } from "./use-item-drag";
 import { useKeepKeyboard } from "./use-keep-keyboard";
 import { OPEN_CONFIRM_ABOVE, openEntries } from "./open-entries";
 import {
@@ -32,14 +47,17 @@ import {
 import { isFolder } from "./file-type";
 import { loadViewSettings, useViewSettings, useViewSettingsSync } from "./view-settings";
 import { useFolder } from "./useFolder";
+import "../ops/ops.css";
 import "./files.css";
 
 // The right-click menu is the folder actions of the table, grouped as the
 // main menu groups them (keyboard and right-click parity, design 4.5).
-const CONTEXT_MENU: MenuSection[] = (["Open", "Selection", "View"] as const).map((area) => ({
-  title: area,
-  actions: actions.filter((a) => a.when === "folder" && a.area === area),
-}));
+const CONTEXT_MENU: MenuSection[] = (["Open", "Edit", "Create", "Selection", "View"] as const).map(
+  (area) => ({
+    title: area,
+    actions: actions.filter((a) => a.when === "folder" && a.area === area),
+  })
+);
 
 function ErrorText(props: { error: WireError }) {
   return (
@@ -96,7 +114,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     sortDir: sort.dir,
     seed: keptHere,
   });
-  const { entries, sel, dispatch, refresh } = folder;
+  const { entries, sel, dispatch, refresh, relist, selectKeys } = folder;
   // Used up by the first listing (the list takes its scroll offset as it mounts)
   // or by a move to another folder, whichever comes first.
   useEffect(() => {
@@ -109,7 +127,6 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   const [selectNotes, setSelectNotes] = useState<WireError[]>([]);
   // Items another program asked to have selected here (kern://select), once listed.
   const selectRequest = useTabs((s) => s.selectRequests[tab.id]);
-  const { selectKeys } = folder;
   useEffect(() => {
     if (!selectRequest || folder.phase !== "ready") return;
     useTabs.getState().clearSelectRequest(tab.id);
@@ -170,10 +187,24 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   );
 
   // The controller reads the latest view state without being re-registered.
-  const latest = useRef({ entries, sel, viewMode, columns });
+  const latest = useRef({ entries, sel, viewMode, columns, phase: folder.phase });
   useEffect(() => {
-    latest.current = { entries, sel, viewMode, columns };
+    latest.current = { entries, sel, viewMode, columns, phase: folder.phase };
   });
+  // What the file operations act on: the selection, in list order, and nothing else. An item
+  // that is only outlined (the cursor) is not selected and is never copied, cut, trashed,
+  // deleted, renamed or dragged.
+  const selected = useCallback(() => {
+    const { entries: es, sel: s } = latest.current;
+    return [...s.selected].sort((a, b) => a - b).flatMap((i) => (es[i] ? [es[i]] : []));
+  }, []);
+  // What Enter opens: the selection, or else the outlined item.
+  const toOpen = useCallback(() => {
+    const picked = selected();
+    const { entries: es, sel: s } = latest.current;
+    const outlined = s.cursor === null ? undefined : es[s.cursor];
+    return picked.length === 0 && outlined ? [outlined] : picked;
+  }, [selected]);
 
   // The view state is saved as the view unmounts (a tab switch, or the
   // folder panel folding away), from refs because the DOM is gone by then.
@@ -232,14 +263,73 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     [open]
   );
 
-  useEffect(() => {
-    const selected = () => {
+  const fileOps = useFileOps({
+    folder: tab.path,
+    selected,
+    ready: () => latest.current.phase === "ready",
+    relist,
+    selectKeys,
+    reveal: () => setRevealTick((t) => t + 1),
+    focusList: () => keyboardTarget()?.focus(),
+  });
+
+  // Something dropped on a folder (a pointer drag inside Kern, or a drop from another
+  // application): the modifier keys decide, and with none to go by the user is asked.
+  const { askDrop, drop: dropItems, fail } = fileOps;
+  const dropOn = useCallback(
+    (sources: WirePath[], dest: WirePath, mods: DragModifiers | null) => {
+      const choice = decideDrop(mods);
+      if (choice === "ask") askDrop(sources, dest);
+      else dropItems(choice, sources, dest);
+    },
+    [askDrop, dropItems]
+  );
+  const drag = useItemDrag({
+    itemsFor: (index) => {
       const { entries: es, sel: s } = latest.current;
-      const picked = [...s.selected].sort((a, b) => a - b).flatMap((i) => (es[i] ? [es[i]] : []));
-      // Nothing selected: the item the view outlines (the cursor) is the one Enter means.
-      const outlined = s.cursor === null ? undefined : es[s.cursor];
-      return picked.length === 0 && outlined ? [outlined] : picked;
+      if (s.selected.has(index)) return selected();
+      const only = es[index];
+      if (!only) return [];
+      dispatch((x) => click(x, index));
+      return [only];
+    },
+    onDrop: dropOn,
+    onLeave: (sources) => {
+      dragOut(sources).catch(fail);
+    },
+  });
+
+  // A drop from another application lands where the pointer was.
+  const interfaceSize = useViewSettings((s) => s.interfaceSize);
+  const dropState = useRef({ isActive, path: tab.path, interfaceSize });
+  useEffect(() => {
+    dropState.current = { isActive, path: tab.path, interfaceSize };
+  });
+  useEffect(() => {
+    let live = true;
+    let off: (() => void) | undefined;
+    on(EVENT_DROP, (drop: DropPayload) => {
+      const now = dropState.current;
+      if (!now.isActive || drop.paths.length === 0) return;
+      const at = toCssPoint(
+        drop.position,
+        window.devicePixelRatio || 1,
+        zoomFactor(now.interfaceSize)
+      );
+      const hit = dropTargetAt(at.x, at.y);
+      const dest = hit && canDropOn(drop.paths, hit.path) ? hit.path : now.path;
+      dropOn(drop.paths, dest, null);
+    }).then(
+      (u) => (live ? (off = u) : u()),
+      (e: unknown) => live && fail(e)
+    );
+    return () => {
+      live = false;
+      off?.();
     };
+  }, [dropOn, fail]);
+
+  useEffect(() => {
     const step = (to: MoveTo): number => {
       const { viewMode: mode, columns: cols } = latest.current;
       const row = mode === "grid" ? cols : 1;
@@ -249,7 +339,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       selectAll: () => dispatch((s, n) => selectAll(s, n)),
       selectNone: () => dispatch((s) => selectNone(s)),
       hasSelection: () => latest.current.sel.selected.size > 0,
-      canOpen: () => selected().length > 0,
+      canOpen: () => toOpen().length > 0,
       canMove: (to) =>
         latest.current.entries.length > 0 &&
         (latest.current.viewMode === "grid" || (to !== "left" && to !== "right")),
@@ -257,11 +347,12 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         dispatch((s, n) => move(s, step(to), extend, n));
         setRevealTick((t) => t + 1);
       },
-      open: (newWindow) => openOrAsk(selected(), newWindow),
+      open: (newWindow) => openOrAsk(toOpen(), newWindow),
       refresh,
       editLocation: () => setEditing(true),
+      ...fileOps.controller,
     });
-  }, [tab.id, dispatch, openOrAsk, refresh]);
+  }, [tab.id, dispatch, openOrAsk, refresh, toOpen, fileOps.controller]);
 
   // The status bar's counts (design 4.1).
   useEffect(() => {
@@ -338,6 +429,14 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     onBand,
     onBackgroundClick,
     onSeedCursor,
+    rename: fileOps.renaming
+      ? {
+          state: fileOps.renaming,
+          onChange: fileOps.editRename,
+          onCommit: () => void fileOps.commitRename(),
+          onCancel: fileOps.cancelRename,
+        }
+      : null,
   };
 
   let body;
@@ -533,14 +632,20 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
           onCancel={cancelAsking}
         />
       )}
+      <FileOpsUi ops={fileOps} scope={files} active={isActive} />
       {folder.phase === "ready" && folder.sorting && (
         <p role="status" className="kern-note-body">
           Sorting…
         </p>
       )}
-      <div className="kern-files-body" onScrollCapture={onScrollCapture}>
+      <div
+        className="kern-files-body"
+        onScrollCapture={onScrollCapture}
+        onPointerDown={drag.onPointerDown}
+      >
         {body}
       </div>
+      <div ref={drag.ghost} className="kern-drag-ghost" aria-hidden hidden />
       {menu && (
         <ActionMenu
           sections={CONTEXT_MENU}

@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { WirePath } from "../ipc";
+import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 import { showFolder } from "./place-nav";
 import { placeKey, useCurrentPlace } from "./use-current-place";
 import { useUserDirs } from "./user-dirs-store";
@@ -106,7 +107,7 @@ export function PlacesList() {
       )}
       <ul className="kern-places-list">
         {places.map(({ key, label, path, Icon }) => (
-          <li key={key}>
+          <li key={key} {...{ [DROP_TARGET_ATTR]: dropTargetValue(path) }}>
             <button
               type="button"
               className="kern-place"

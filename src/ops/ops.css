@@ -1,0 +1,178 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (c) 2026 Sricharan Suresh (github.com/verycareful) */
+
+/* Dialogs over the window: conflicts, reports, new names (src/ops/Modal.tsx). */
+.kern-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--kern-density-gap);
+  /* Dims what is behind; a fixed scrim of the text colour at 40 % reads on light and dark themes. */
+  background: color-mix(in srgb, var(--kern-text) 40%, transparent);
+}
+
+.kern-modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kern-density-gap);
+  width: min(520px, 100%);
+  max-height: 100%;
+  padding: calc(var(--kern-density-gap) * 1.5);
+  overflow: auto;
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-large);
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--kern-text) 25%, transparent);
+}
+
+.kern-modal-wide {
+  width: min(760px, 100%);
+}
+
+.kern-modal-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.kern-modal-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--kern-text-dim);
+}
+
+.kern-modal-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--kern-text);
+  background: var(--kern-accent-soft);
+  padding: 6px 8px;
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-modal-input {
+  padding: 6px 8px;
+  font: inherit;
+  color: var(--kern-text);
+  background: var(--kern-bg);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-modal-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.kern-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.kern-conflict-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--kern-density-gap);
+}
+
+.kern-conflict-side p {
+  margin: 0 0 2px;
+}
+
+.kern-conflict-path {
+  overflow-wrap: anywhere;
+  font-family: var(--kern-font-mono);
+  font-size: 12px;
+}
+
+.kern-conflict-meta {
+  font-size: 12px;
+  color: var(--kern-text-dim);
+}
+
+/* The operations in flight, above the status bar (src/ops/ProgressPanel.tsx). */
+.kern-ops {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px var(--kern-density-gap);
+  font-size: 13px;
+  background: var(--kern-accent-soft);
+  border-top: 1px solid var(--kern-border);
+}
+
+.kern-op {
+  display: flex;
+  align-items: center;
+  gap: var(--kern-density-gap);
+}
+
+.kern-op-label {
+  flex: 0 1 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kern-op .kern-progress {
+  flex: 1;
+}
+
+.kern-op-count {
+  flex: none;
+  min-width: 9ch;
+  font-family: var(--kern-font-mono);
+  font-size: 11.5px;
+  color: var(--kern-text-dim);
+}
+
+/* Over the items a pointer drag is dropping on (src/ops/dnd.ts). */
+.kern-drop-over {
+  outline: 2px solid var(--kern-accent);
+  outline-offset: -2px;
+  background: var(--kern-accent-soft);
+}
+
+.kern-drag-ghost {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--kern-on-accent);
+  background: var(--kern-accent);
+  border-radius: var(--kern-radius-small);
+}
+
+/* The name being edited in place (F2). */
+.kern-rename-input {
+  min-width: 0;
+  flex: 1;
+  padding: 0 4px;
+  font: inherit;
+  color: var(--kern-text);
+  background: var(--kern-bg);
+  border: 1px solid var(--kern-accent);
+  border-radius: var(--kern-radius-small);
+  /* The rows around it are not selectable text, and WebKit would pass that on to the field. */
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* While an item is dragged, nothing under the pointer is selected as text. */
+.kern-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.kern-card-text .kern-rename-input {
+  box-sizing: border-box;
+  width: 100%;
+}

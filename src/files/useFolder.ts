@@ -90,10 +90,21 @@ const initial = (key: string): Core => ({
 export interface FolderApi extends Core {
   /** Applies a selection function (from selection.ts) to the current selection. */
   dispatch(op: (sel: Sel, count: number) => Sel): void;
-  /** Selects the entries with these path keys (those listed; the first becomes the cursor). */
-  selectKeys(keys: readonly string[]): void;
+  /**
+   * Selects the entries with these path keys (those listed; the first becomes
+   * the cursor). With `onlyIfListed`, a selection that none of them is part of
+   * is left as it is.
+   */
+  selectKeys(keys: readonly string[], onlyIfListed?: boolean): void;
   /** Lists the folder again now. */
   refresh(): void;
+  /**
+   * Lists the folder again and settles with whether a listing started after
+   * this call was applied (true), or the listing failed or the view went away
+   * first (false). A listing already in flight when it is called may predate
+   * what the caller just did and does not count.
+   */
+  relist(): Promise<boolean>;
 }
 
 /**
@@ -172,7 +183,7 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
   );
   const seed = useRef(opts.seed ?? null);
   const resortSeq = useRef(0);
-  const reload = useRef<() => void>(() => undefined);
+  const reload = useRef<() => Promise<boolean>>(() => Promise.resolve(false));
   // The last unwatch sent for this tab's key. Every watch and unwatch of the
   // key is chained after it, so the backend sees them in the order they were
   // meant (a late unwatch of the old folder must not remove the new watch).
@@ -185,6 +196,16 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
     let watching = false;
     let watchFailed = false;
     const unlisten: UnlistenFn[] = [];
+    // Callers of relist: each waits for a listing numbered `min` or later.
+    const waiting: { min: number; settle(ok: boolean): void }[] = [];
+    const settleWaiting = (upTo: number, ok: boolean) => {
+      for (let i = waiting.length - 1; i >= 0; i--) {
+        const w = waiting[i]!;
+        if (w.min > upTo) continue;
+        waiting.splice(i, 1);
+        w.settle(ok);
+      }
+    };
 
     const order = (raw: WireEntry[]) => sortEntries(raw, sort.current.by, sort.current.dir);
 
@@ -288,10 +309,12 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
           error: null,
           gone: null,
         }));
+        settleWaiting(mine, true);
         return true;
       } catch (e) {
         if (!alive || mine !== seq) return false;
         const error = toWireError(e);
+        settleWaiting(mine, false);
         if (error.kind === "NotFound") {
           // Known to be missing now; the search for a folder to offer follows.
           stopWatch();
@@ -306,8 +329,10 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
       }
     };
     reload.current = () => {
+      const settled = new Promise<boolean>((settle) => waiting.push({ min: seq + 1, settle }));
       if (watchFailed) void startWatch();
       void load();
+      return settled;
     };
 
     setCore(initial(folderKey));
@@ -350,7 +375,8 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
     return () => {
       alive = false;
       unlisten.forEach((u) => u());
-      reload.current = () => undefined;
+      reload.current = () => Promise.resolve(false);
+      settleWaiting(Infinity, false);
       stopWatch();
       // A sort of this folder's listing is of no use to the next folder: end the worker
       // (what waits is rejected and dropped as stale); the next sort starts a new one.
@@ -399,20 +425,21 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
     []
   );
   const selectKeys = useCallback(
-    (keys: readonly string[]) =>
-      setCore((c) => ({
-        ...c,
-        sel: seedSel(
+    (keys: readonly string[], onlyIfListed = false) =>
+      setCore((c) => {
+        const sel = seedSel(
           { pathKey: "", selected: keys, anchor: keys[0] ?? null, cursor: keys[0] ?? null },
           c.entries
-        ),
-      })),
+        );
+        return onlyIfListed && sel.selected.size === 0 ? c : { ...c, sel };
+      }),
     []
   );
-  const refresh = useCallback(() => reload.current(), []);
+  const refresh = useCallback(() => void reload.current(), []);
+  const relist = useCallback(() => reload.current(), []);
 
   // For the render in which the path has changed but its effect has not yet
   // run, the state is still the previous folder's: show nothing of it.
   const shown = core.key === folderKey ? core : initial(folderKey);
-  return { ...shown, dispatch, selectKeys, refresh };
+  return { ...shown, dispatch, selectKeys, refresh, relist };
 }

@@ -15,10 +15,13 @@ export function ConfirmBanner(props: {
   label: string;
   message: React.ReactNode;
   confirmLabel: string;
+  /** A second way to say yes, shown beside the first (copy where the first is move). */
+  alternateLabel?: string;
   scope: React.RefObject<HTMLElement | null>;
   /** True while the view the question sits in is the active tab. */
   active: boolean;
   onConfirm(): void;
+  onAlternate?(): void;
   onCancel(): void;
 }) {
   const { scope, onCancel, active } = props;
@@ -50,6 +53,13 @@ export function ConfirmBanner(props: {
         <button type="button" className="kern-button" onClick={props.onConfirm}>
           {props.confirmLabel}
         </button>{" "}
+        {props.alternateLabel && (
+          <>
+            <button type="button" className="kern-button" onClick={props.onAlternate}>
+              {props.alternateLabel}
+            </button>{" "}
+          </>
+        )}
         <button type="button" className="kern-button" autoFocus onClick={props.onCancel}>
           Cancel
         </button>

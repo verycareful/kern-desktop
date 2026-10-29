@@ -3,7 +3,8 @@
 import { useEffect, useId, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, Folder, Link2 } from "lucide-react";
-import type { WireEntry } from "../ipc";
+import { pathKey, type WireEntry } from "../ipc";
+import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 import type { Layout } from "./band";
 import { fileType, isFolder } from "./file-type";
 import { formatDate, formatSize } from "./format";
@@ -12,6 +13,7 @@ import type { SortBy, SortDir } from "./sort";
 import { useRestoredScroll } from "./restore-scroll";
 import { useRubberBand } from "./useRubberBand";
 import { useCurrentItem } from "./use-current-item";
+import { RenameInput, type RenameProps } from "./RenameInput";
 
 /** The column header's height. */
 const HEADER_HEIGHT = 32;
@@ -36,6 +38,8 @@ export interface ItemsProps {
   onBackgroundClick(): void;
   /** The view got the keyboard with no cursor: put it on the first item, selecting nothing. */
   onSeedCursor(): void;
+  /** The item whose name is being edited in place, if any. */
+  rename?: RenameProps | null;
 }
 
 export function FileBadge(props: { entry: WireEntry; size: number }) {
@@ -171,8 +175,10 @@ export function FileList(
                 aria-rowindex={v.index + 1}
                 aria-selected={selected}
                 data-item
+                data-index={v.index}
                 data-testid="file-row"
                 data-name={e.name}
+                {...(isFolder(e) ? { [DROP_TARGET_ATTR]: dropTargetValue(e.path) } : {})}
                 className={
                   "kern-row" +
                   (selected ? " kern-selected" : "") +
@@ -188,9 +194,13 @@ export function FileList(
               >
                 <div role="gridcell" className="kern-col kern-col-name">
                   <FileBadge entry={e} size={rowHeight - 12} />
-                  <span className="kern-name" title={e.name}>
-                    {e.name}
-                  </span>
+                  {props.rename?.state.key === pathKey(e.path) ? (
+                    <RenameInput {...props.rename} />
+                  ) : (
+                    <span className="kern-name" title={e.name}>
+                      {e.name}
+                    </span>
+                  )}
                 </div>
                 <div role="gridcell" className="kern-col kern-col-type">
                   {t.label}

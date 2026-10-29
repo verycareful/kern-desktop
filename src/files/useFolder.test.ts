@@ -577,3 +577,70 @@ test("refresh_places_again_a_watch_that_died_while_running", async () => {
   await waitFor(() => expect(ipc.watchDir).toHaveBeenCalledTimes(2));
   await waitFor(() => expect(result.current.watchError).toBeNull());
 });
+
+test("relist_settles_true_once_a_listing_started_after_the_call_is_applied", async () => {
+  ipc.listDir.mockResolvedValue([entry("a")]);
+  const { result } = renderHook(() => useFolder("tab-1", p("/d"), OPTS));
+  await waitFor(() => expect(result.current.phase).toBe("ready"));
+  let release!: (l: WireEntry[]) => void;
+  ipc.listDir.mockReturnValueOnce(new Promise<WireEntry[]>((r) => (release = r)));
+  let settled: boolean | null = null;
+  act(() => {
+    void result.current.relist().then((ok) => (settled = ok));
+  });
+  await act(async () => {});
+  expect(settled).toBeNull();
+  await act(async () => release([entry("a"), entry("new")]));
+  await waitFor(() => expect(settled).toBe(true));
+  // The listing it waited for is the one on show.
+  expect(names(result.current.entries)).toEqual(["a", "new"]);
+});
+
+test("relist_does_not_settle_on_a_listing_that_started_before_it", async () => {
+  ipc.listDir.mockResolvedValue([entry("a")]);
+  const { result } = renderHook(() => useFolder("tab-1", p("/d"), OPTS));
+  await waitFor(() => expect(result.current.phase).toBe("ready"));
+  // A listing is in flight when relist is called; it started before and may lack the new item.
+  let releaseOld!: (l: WireEntry[]) => void;
+  ipc.listDir.mockReturnValueOnce(new Promise<WireEntry[]>((r) => (releaseOld = r)));
+  act(() => {
+    void handlers["kernkraft://dir-changed"]!({ key: "tab-1" });
+  });
+  let releaseNew!: (l: WireEntry[]) => void;
+  ipc.listDir.mockReturnValueOnce(new Promise<WireEntry[]>((r) => (releaseNew = r)));
+  let settled: boolean | null = null;
+  act(() => {
+    void result.current.relist().then((ok) => (settled = ok));
+  });
+  await act(async () => releaseOld([entry("a")]));
+  expect(settled).toBeNull();
+  await act(async () => releaseNew([entry("a"), entry("new")]));
+  await waitFor(() => expect(settled).toBe(true));
+  expect(names(result.current.entries)).toEqual(["a", "new"]);
+});
+
+test("relist_settles_false_when_the_listing_fails", async () => {
+  ipc.listDir.mockResolvedValue([entry("a")]);
+  const { result } = renderHook(() => useFolder("tab-1", p("/d"), OPTS));
+  await waitFor(() => expect(result.current.phase).toBe("ready"));
+  ipc.listDir.mockRejectedValueOnce(denied);
+  let settled: boolean | null = null;
+  act(() => {
+    void result.current.relist().then((ok) => (settled = ok));
+  });
+  await waitFor(() => expect(settled).toBe(false));
+  expect(result.current.phase).toBe("error");
+});
+
+test("relist_settles_false_when_the_view_goes_away_first", async () => {
+  ipc.listDir.mockResolvedValue([entry("a")]);
+  const { result, unmount } = renderHook(() => useFolder("tab-1", p("/d"), OPTS));
+  await waitFor(() => expect(result.current.phase).toBe("ready"));
+  ipc.listDir.mockReturnValueOnce(new Promise<WireEntry[]>(() => undefined));
+  let settled: boolean | null = null;
+  act(() => {
+    void result.current.relist().then((ok) => (settled = ok));
+  });
+  unmount();
+  await waitFor(() => expect(settled).toBe(false));
+});

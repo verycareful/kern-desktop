@@ -4,6 +4,8 @@ import type { WirePath } from "../ipc";
 import { usePanelsStore } from "../store/panels";
 import { useTabs } from "../store/tabs";
 import { useVolumes } from "../shell/volumes-store";
+import { useOps } from "../ops/useOps";
+import { VOLUME_MENU } from "../shell/volume-menu";
 import { known } from "../shell/test-volumes";
 import {
   actions,
@@ -11,6 +13,7 @@ import {
   findDuplicateBindings,
   getAction,
   isEnabled,
+  menuSections,
   runAction,
 } from "./actions";
 
@@ -135,4 +138,81 @@ test("refresh_volumes_is_greyed_while_no_strip_follows_the_volumes", async () =>
   useVolumes.setState({ followers: 1 });
   expect(isEnabled(refresh, currentContext())).toBe(true);
   useVolumes.getState().reset();
+});
+
+test("every_action_is_in_a_menu", () => {
+  // The main menu of the tab kind the action applies to, or the volume's own menu.
+  useTabs.getState().openFolder(p("/a"), false);
+  useTabs.getState().openDoc(p("/a/n.md"));
+  useTabs.getState().openTrash();
+  const tabs = useTabs.getState().tabs;
+  const tabOf = (kind: string) => tabs.find((t) => t.kind === kind) ?? null;
+  const missing: string[] = [];
+  for (const a of actions) {
+    const inMenu =
+      a.when === "volume"
+        ? VOLUME_MENU.some((s) => s.actions.includes(a))
+        : menuSections(a.when === "any" ? null : tabOf(a.when)).some((s) => s.actions.includes(a));
+    if (!inMenu) missing.push(a.id);
+  }
+  expect(missing).toEqual([]);
+});
+
+test("the_file_operation_shortcuts_are_bound", () => {
+  const keys = (id: string) => getAction(id).keys;
+  expect(keys("folder.copy")).toEqual(["Ctrl+C"]);
+  expect(keys("folder.cut")).toEqual(["Ctrl+X"]);
+  expect(keys("folder.paste")).toEqual(["Ctrl+V"]);
+  expect(keys("folder.rename")).toEqual(["F2"]);
+  expect(keys("folder.trash")).toEqual(["Delete"]);
+  expect(keys("folder.delete")).toEqual(["Shift+Delete"]);
+  expect(keys("folder.new.folder")).toEqual(["Ctrl+Shift+N"]);
+  expect(keys("folder.undo")).toEqual(["Ctrl+Z"]);
+  expect(keys("folder.redo")).toEqual(["Ctrl+Y", "Ctrl+Shift+Z"]);
+});
+
+test("the_file_operations_are_folder_tab_actions_in_the_edit_and_create_groups", () => {
+  const ids = [
+    "undo",
+    "redo",
+    "cut",
+    "copy",
+    "paste",
+    "rename",
+    "trash",
+    "delete",
+    "new.folder",
+    "new.file",
+  ].map((s) => `folder.${s}`);
+  for (const id of ids) expect(getAction(id).when, id).toBe("folder");
+  expect(ids.slice(0, 8).map((id) => getAction(id).area)).toEqual(Array(8).fill("Edit"));
+  expect(ids.slice(8).map((id) => getAction(id).area)).toEqual(["Create", "Create"]);
+});
+
+test("the_undo_and_redo_labels_come_from_the_undo_state", () => {
+  useOps.getState().reset();
+  expect(getAction("folder.undo").menuLabel?.()).toBe("Undo");
+  expect(getAction("folder.redo").menuLabel?.()).toBe("Redo");
+  useOps.setState({ undoLabel: "Undo trash of a.txt", redoLabel: "Redo copy of 3 items" });
+  expect(getAction("folder.undo").menuLabel?.()).toBe("Undo trash of a.txt");
+  expect(getAction("folder.redo").menuLabel?.()).toBe("Redo copy of 3 items");
+  useOps.getState().reset();
+});
+
+test("undo_and_redo_are_enabled_only_when_there_is_something_to_undo_or_redo", () => {
+  useTabs.getState().openFolder(p("/a"), false);
+  useOps.getState().reset();
+  expect(isEnabled(getAction("folder.undo"), currentContext())).toBe(false);
+  expect(isEnabled(getAction("folder.redo"), currentContext())).toBe(false);
+  useOps.setState({ undoLabel: "Undo create of x" });
+  expect(isEnabled(getAction("folder.undo"), currentContext())).toBe(true);
+  expect(isEnabled(getAction("folder.redo"), currentContext())).toBe(false);
+  useOps.getState().reset();
+});
+
+test("a_document_tab_leaves_undo_to_its_editor", () => {
+  useTabs.getState().openDoc(p("/a/n.md"));
+  useOps.setState({ undoLabel: "Undo create of x" });
+  expect(isEnabled(getAction("folder.undo"), currentContext())).toBe(false);
+  useOps.getState().reset();
 });

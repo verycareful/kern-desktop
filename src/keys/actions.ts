@@ -16,6 +16,7 @@ import {
 import { DEFAULT_INTERFACE_SIZE, stepInterfaceSize } from "../theme/interface-size";
 import { trashController, type TrashMove } from "../files/trash-controller";
 import { useVolumes } from "../shell/volumes-store";
+import { useOps } from "../ops/useOps";
 
 // The single table of user-visible actions. Shortcuts (useShortcuts), the
 // main menu and the tab context menu (ActionMenu) all read it, so keyboard and
@@ -51,8 +52,20 @@ export type Action = {
   id: string;
   /** The menu label. */
   label: string;
+  /** The label a menu shows when it differs from `label` (Undo names what it would undo). */
+  menuLabel?(): string;
   /** The menu group heading. */
-  area: "Tabs" | "Navigation" | "Panels" | "Open" | "Selection" | "View" | "Trash" | "Volumes";
+  area:
+    | "Tabs"
+    | "Navigation"
+    | "Panels"
+    | "Open"
+    | "Edit"
+    | "Create"
+    | "Selection"
+    | "View"
+    | "Trash"
+    | "Volumes";
   keys: string[];
   /** The tab kind the action applies to. */
   when: ActionContextKind | "any";
@@ -208,6 +221,103 @@ const folderActions: Action[] = [
     when: "folder",
     enabled: (c) => controllerOf(c)?.canOpen() ?? false,
     run: (c) => controllerOf(c)?.open(true),
+  },
+  // ---- file operations (design 5.1, 5.7, 5.8) ----
+  // They act on the selection, never on an item that is only outlined. Ctrl+C, X and V
+  // are left to a text field that has the focus (no `inEditable`), as are Ctrl+Z and Y.
+  // Undo and redo are the file operations' own in a folder tab; the editor's come with the editor.
+  {
+    id: "folder.undo",
+    label: "Undo",
+    menuLabel: () => useOps.getState().undoLabel ?? "Undo",
+    area: "Edit",
+    keys: ["Ctrl+Z"],
+    when: "folder",
+    enabled: () => useOps.getState().undoLabel !== null,
+    run: () => void useOps.getState().runUndo("undo"),
+  },
+  {
+    id: "folder.redo",
+    label: "Redo",
+    menuLabel: () => useOps.getState().redoLabel ?? "Redo",
+    area: "Edit",
+    keys: ["Ctrl+Y", "Ctrl+Shift+Z"],
+    when: "folder",
+    enabled: () => useOps.getState().redoLabel !== null,
+    run: () => void useOps.getState().runUndo("redo"),
+  },
+  {
+    id: "folder.cut",
+    label: "Cut",
+    area: "Edit",
+    keys: ["Ctrl+X"],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.hasSelection() ?? false,
+    run: (c) => controllerOf(c)?.cut(),
+  },
+  {
+    id: "folder.copy",
+    label: "Copy",
+    area: "Edit",
+    keys: ["Ctrl+C"],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.hasSelection() ?? false,
+    run: (c) => controllerOf(c)?.copy(),
+  },
+  {
+    id: "folder.paste",
+    label: "Paste",
+    area: "Edit",
+    keys: ["Ctrl+V"],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.canCreate() ?? false,
+    run: (c) => controllerOf(c)?.paste(),
+  },
+  {
+    id: "folder.rename",
+    label: "Rename",
+    area: "Edit",
+    keys: ["F2"],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.canRename() ?? false,
+    run: (c) => controllerOf(c)?.rename(),
+  },
+  // Delete moves to the Trash (undoable); Shift+Delete deletes for good, after a question.
+  {
+    id: "folder.trash",
+    label: "Move to Trash",
+    area: "Edit",
+    keys: ["Delete"],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.hasSelection() ?? false,
+    run: (c) => controllerOf(c)?.trash(),
+  },
+  {
+    id: "folder.delete",
+    label: "Delete permanently",
+    area: "Edit",
+    keys: ["Shift+Delete"],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.hasSelection() ?? false,
+    run: (c) => controllerOf(c)?.askDelete(),
+  },
+  {
+    id: "folder.new.folder",
+    label: "New folder",
+    area: "Create",
+    keys: ["Ctrl+Shift+N"],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.canCreate() ?? false,
+    run: (c) => controllerOf(c)?.newFolder(),
+  },
+  {
+    id: "folder.new.file",
+    label: "New file",
+    area: "Create",
+    keys: [],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.canCreate() ?? false,
+    run: (c) => controllerOf(c)?.newFile(),
   },
   {
     id: "folder.select.all",

@@ -162,3 +162,12 @@ test("a_failed_reread_keeps_the_places_and_shows_the_error", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("gone away");
   expect(screen.getByRole("button", { name: "Documents" })).toBeInTheDocument();
 });
+
+test("every_place_is_a_drop_target_for_its_folder", async () => {
+  ipc.userDirs.mockResolvedValue(dirs(["documents"]));
+  render(<PlacesList />);
+  const home = (await screen.findByRole("button", { name: "Home" })).closest("[data-drop-target]");
+  expect(JSON.parse(home!.getAttribute("data-drop-target")!)).toEqual(p("/home/t"));
+  const docs = screen.getByRole("button", { name: "Documents" }).closest("[data-drop-target]");
+  expect(JSON.parse(docs!.getAttribute("data-drop-target")!)).toEqual(p("/home/t/documents"));
+});

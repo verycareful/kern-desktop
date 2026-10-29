@@ -701,8 +701,9 @@ test("the_confirmation_holds_only_the_keys_aimed_inside_its_folder_view", async 
   const probe = (e: Event) => seen.push(e.defaultPrevented);
   window.addEventListener("keydown", probe);
   try {
-    fireEvent.keyDown(outside, { key: "x", ctrlKey: true });
-    fireEvent.keyDown(screen.getByTestId("folder-list"), { key: "x", ctrlKey: true });
+    // Ctrl+Q is bound to nothing, so only the confirmation can hold it.
+    fireEvent.keyDown(outside, { key: "q", ctrlKey: true });
+    fireEvent.keyDown(screen.getByTestId("folder-list"), { key: "q", ctrlKey: true });
     expect(seen).toEqual([false]);
   } finally {
     window.removeEventListener("keydown", probe);

@@ -3,6 +3,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { ChevronRight } from "lucide-react";
 import { displayPath, parent, pathKey, type WirePath } from "../ipc";
+import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 
 // The folders from the root down to `path`, each a button that goes there
 // (design 5.1). The chain is built with parent(), which splits Bytes paths
@@ -45,7 +46,12 @@ export function Breadcrumb(props: {
       {segments.map((s, i) => {
         const last = i === segments.length - 1;
         return (
-          <span key={pathKey(s)} className="kern-crumb">
+          <span
+            key={pathKey(s)}
+            className="kern-crumb"
+            // The folders above this one take a drop; the one on show is where the items already are.
+            {...(last ? {} : { [DROP_TARGET_ATTR]: dropTargetValue(s) })}
+          >
             {i > 1 && <ChevronRight size={14} strokeWidth={2} aria-hidden />}
             <button
               type="button"

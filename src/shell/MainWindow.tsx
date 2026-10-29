@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useViewSettingsSync } from "../files/view-settings";
 import { useShortcuts } from "../keys/useShortcuts";
+import { OpsHost } from "../ops/OpsHost";
 import { usePanels } from "../store/panels";
 import { activeTab, useTabs } from "../store/tabs";
 import { PanelStub } from "./PanelStub";
@@ -61,6 +62,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
         <TabBar />
         {body}
       </div>
+      <OpsHost />
       <StatusBar />
     </div>
   );

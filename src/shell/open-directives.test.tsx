@@ -27,6 +27,7 @@ const ipc = vi.hoisted(() => ({
   openPaths: vi.fn(),
   confirmClose: vi.fn(),
   themeGet: vi.fn(),
+  undoState: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
@@ -59,6 +60,7 @@ beforeEach(() => {
   ipc.watchDir.mockResolvedValue(undefined);
   ipc.unwatchDir.mockResolvedValue(undefined);
   ipc.themeGet.mockResolvedValue({ css: ":root{}", fallbacks: [], problems: [] });
+  ipc.undoState.mockResolvedValue({ undo: null, redo: null });
   ipc.userDirs.mockResolvedValue({ home: p("/home/t"), dirs: [] });
   ipc.volumesList.mockResolvedValue({ mounted: [], unmounted: [], problems: [] });
   ipc.settingsGet.mockResolvedValue({

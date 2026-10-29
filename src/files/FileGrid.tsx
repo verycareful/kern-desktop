@@ -5,6 +5,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Folder, Link2 } from "lucide-react";
 import type { WireEntry } from "../ipc";
 import { pathKey } from "../ipc";
+import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 import type { Layout } from "./band";
 import { fileType, isFolder } from "./file-type";
 import { formatDate, formatSize } from "./format";
@@ -14,6 +15,7 @@ import { thumbSizeFor, useThumbnails, type ThumbState } from "./useThumbnails";
 import { useRestoredScroll } from "./restore-scroll";
 import { useRubberBand } from "./useRubberBand";
 import { useCurrentItem } from "./use-current-item";
+import { RenameInput } from "./RenameInput";
 import { useViewSettings } from "./view-settings";
 import { zoomFactor } from "../theme/interface-size";
 
@@ -163,8 +165,10 @@ export function FileGrid(
                     role="option"
                     aria-selected={selected}
                     data-item
+                    data-index={i}
                     data-testid="file-card"
                     data-name={e.name}
+                    {...(isFolder(e) ? { [DROP_TARGET_ATTR]: dropTargetValue(e.path) } : {})}
                     className={
                       "kern-card" +
                       (selected ? " kern-selected" : "") +
@@ -177,9 +181,13 @@ export function FileGrid(
                   >
                     <CardPicture entry={e} thumb={thumbs.get(pathKey(e.path))} />
                     <div className="kern-card-text">
-                      <div className="kern-name" title={e.name}>
-                        {e.name}
-                      </div>
+                      {props.rename?.state.key === pathKey(e.path) ? (
+                        <RenameInput {...props.rename} />
+                      ) : (
+                        <div className="kern-name" title={e.name}>
+                          {e.name}
+                        </div>
+                      )}
                       <div className="kern-card-meta">
                         {[isFolder(e) ? null : formatSize(e.len), formatDate(e.modified_ms)]
                           .filter(Boolean)

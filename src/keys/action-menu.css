@@ -5,6 +5,10 @@
   position: fixed;
   z-index: 50;
   min-width: 220px;
+  /* A menu with many entries scrolls inside the window instead of running off its bottom edge. */
+  max-height: 100vh;
+  overflow-y: auto;
+  box-sizing: border-box;
   margin: 0;
   padding: 4px;
   list-style: none;

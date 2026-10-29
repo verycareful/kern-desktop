@@ -9,6 +9,7 @@ export type MoveTo = "up" | "down" | "left" | "right" | "first" | "last";
 export interface FolderController {
   selectAll(): void;
   selectNone(): void;
+  /** True when something is selected. The outlined item alone is not a selection. */
   hasSelection(): boolean;
   /** False when the move has no meaning in the current view (left and right in the list). */
   canMove(to: MoveTo): boolean;
@@ -19,6 +20,23 @@ export interface FolderController {
   open(newWindow: boolean): void;
   refresh(): void;
   editLocation(): void;
+  // The file operations (design 5.1) act on the selection and on nothing else:
+  // an item that is only outlined is never copied, cut, trashed, deleted,
+  // renamed or dragged.
+  /** True when the folder is listed, so there is somewhere to create in and paste into. */
+  canCreate(): boolean;
+  newFolder(): void;
+  newFile(): void;
+  /** True when exactly one item is selected. */
+  canRename(): boolean;
+  rename(): void;
+  copy(): void;
+  cut(): void;
+  paste(): void;
+  /** Moves the selection to the Trash. */
+  trash(): void;
+  /** Asks to delete the selection for good; the delete runs on the answer. */
+  askDelete(): void;
 }
 
 const controllers = new Map<string, FolderController>();

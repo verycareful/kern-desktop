@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { beforeEach, expect, test, vi } from "vitest";
-import type { OpDoneEvent, OpProgressEvent } from "../ipc";
+import type { OpConflictEvent, OpDoneEvent, OpProgressEvent } from "../ipc";
 
 const ipc = vi.hoisted(() => ({ on: vi.fn(), cancelOp: vi.fn() }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
@@ -87,4 +87,58 @@ test("cancel_asks_for_the_operation_by_its_id", async () => {
   await vi.waitFor(() => expect(handlers["kernkraft://op-done"]).toBeDefined());
   handlers["kernkraft://op-done"]!(finished(9) as never);
   await run.done;
+});
+
+const asked = (op: number, conflict: number): OpConflictEvent => ({
+  op,
+  conflict,
+  source: { k: "Utf8", v: "/a/x" },
+  existing: { k: "Utf8", v: "/b/x" },
+  source_entry: null,
+  existing_entry: null,
+});
+
+test("conflicts_of_this_operation_are_passed_on_and_those_of_others_are_not", async () => {
+  const seen: number[] = [];
+  const run = runOp(
+    async () => 7,
+    () => undefined,
+    (c) => seen.push(c.conflict)
+  );
+  await vi.waitFor(() => expect(handlers["kernkraft://op-conflict"]).toBeDefined());
+  await new Promise((r) => setTimeout(r, 0));
+  handlers["kernkraft://op-conflict"]!(asked(8, 1) as never);
+  handlers["kernkraft://op-conflict"]!(asked(7, 2) as never);
+  handlers["kernkraft://op-done"]!(finished(7) as never);
+  await run.done;
+  expect(seen).toEqual([2]);
+  expect(unlistened).toContain("kernkraft://op-conflict");
+});
+
+test("a_conflict_that_arrives_before_the_id_is_known_is_kept", async () => {
+  const seen: number[] = [];
+  const run = runOp(
+    async () => {
+      // The worker asks before the start command has answered.
+      handlers["kernkraft://op-conflict"]!(asked(3, 1) as never);
+      handlers["kernkraft://op-conflict"]!(asked(4, 9) as never);
+      return 3;
+    },
+    () => undefined,
+    (c) => seen.push(c.conflict)
+  );
+  await vi.waitFor(() => expect(seen).toEqual([1]));
+  handlers["kernkraft://op-done"]!(finished(3) as never);
+  await run.done;
+});
+
+test("an_operation_without_a_conflict_handler_subscribes_to_no_conflicts", async () => {
+  const run = runOp(
+    async () => 2,
+    () => undefined
+  );
+  await vi.waitFor(() => expect(handlers["kernkraft://op-done"]).toBeDefined());
+  handlers["kernkraft://op-done"]!(finished(2) as never);
+  await run.done;
+  expect(handlers["kernkraft://op-conflict"]).toBeUndefined();
 });
