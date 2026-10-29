@@ -12,8 +12,9 @@ use std::path::PathBuf;
 
 use kern_lib::clipboard::{
     decode_gnome_copied, decode_uri_list, encode_gnome_copied, encode_uri_list, encode_utf8_text,
-    kde_cut_data, offered_targets, refuse_dot_segments, require_focus, try_decode_gnome_copied,
-    try_decode_uri_list, uri_list_op, ClipOp, TARGET_GNOME, TARGET_KDE_CUT, TARGET_URI_LIST,
+    holds_exactly, kde_cut_data, offered_targets, refuse_dot_segments, require_focus,
+    try_decode_gnome_copied, try_decode_uri_list, uri_list_op, ClipOp, TARGET_GNOME,
+    TARGET_KDE_CUT, TARGET_URI_LIST,
 };
 
 fn raw(bytes: &[u8]) -> PathBuf {
@@ -230,4 +231,55 @@ fn kde_marker_with_a_uri_list_round_trips_as_cut() {
     assert_eq!(decode_uri_list(&list), Some(paths));
     assert_eq!(uri_list_op(kde_cut_data(ClipOp::Cut)), ClipOp::Cut);
     assert_eq!(uri_list_op(kde_cut_data(ClipOp::Copy)), ClipOp::Copy);
+}
+
+#[test]
+fn a_cut_is_held_exactly_when_the_operation_and_every_path_in_order_are_the_same() {
+    let paths = awkward();
+    let held = Some((ClipOp::Cut, paths.clone()));
+    assert!(holds_exactly(held.as_ref(), ClipOp::Cut, &paths));
+}
+
+#[test]
+fn a_copy_is_not_the_cut_that_was_pasted() {
+    let paths = awkward();
+    let held = Some((ClipOp::Copy, paths.clone()));
+    assert!(!holds_exactly(held.as_ref(), ClipOp::Cut, &paths));
+}
+
+#[test]
+fn another_selection_is_not_the_cut_that_was_pasted() {
+    let paths = awkward();
+    // One path more, one fewer, a different one, and the same ones in another order.
+    let mut more = paths.clone();
+    more.push(PathBuf::from("/extra"));
+    let fewer = paths[..2].to_vec();
+    let mut other = paths.clone();
+    other[3] = PathBuf::from("/other");
+    let mut reordered = paths.clone();
+    reordered.reverse();
+    for held in [more, fewer, other, reordered] {
+        let held = Some((ClipOp::Cut, held));
+        assert!(!holds_exactly(held.as_ref(), ClipOp::Cut, &paths));
+    }
+}
+
+#[test]
+fn an_empty_clipboard_holds_nothing() {
+    assert!(!holds_exactly(None, ClipOp::Cut, &awkward()));
+}
+
+#[test]
+fn paths_that_differ_only_in_bytes_that_are_not_utf8_are_different() {
+    let held = Some((ClipOp::Cut, vec![raw(b"/tmp/\xff.bin")]));
+    assert!(holds_exactly(
+        held.as_ref(),
+        ClipOp::Cut,
+        &[raw(b"/tmp/\xff.bin")]
+    ));
+    assert!(!holds_exactly(
+        held.as_ref(),
+        ClipOp::Cut,
+        &[raw(b"/tmp/\xfe.bin")]
+    ));
 }

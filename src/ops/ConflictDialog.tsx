@@ -44,6 +44,8 @@ export function ConflictDialog(props: {
   operation: string;
   /** How many other operations wait for an answer after this one. */
   waiting: number;
+  /** How many other operations are in flight, asking or not. */
+  others: number;
   onAnswer(choice: ConflictChoice, applyToAll: boolean): void;
   onCancel(): void;
 }) {
@@ -83,8 +85,11 @@ export function ConflictDialog(props: {
           checked={all}
           onChange={(e) => setAll(e.target.checked)}
         />
-        Apply to all
+        {props.others > 0 ? "Apply to all in this operation" : "Apply to all"}
       </label>
+      <p id={`${id}-replace`} className="kern-modal-text">
+        Replace: the item already there is lost and cannot be undone.
+      </p>
       {props.waiting > 0 && (
         <p className="kern-modal-text" role="status">
           {props.waiting === 1
@@ -96,7 +101,12 @@ export function ConflictDialog(props: {
         <button ref={skip} type="button" className="kern-button" onClick={() => answer("skip")}>
           Skip
         </button>
-        <button type="button" className="kern-button" onClick={() => answer("replace")}>
+        <button
+          type="button"
+          className="kern-button"
+          aria-describedby={`${id}-replace`}
+          onClick={() => answer("replace")}
+        >
           Replace
         </button>
         <button type="button" className="kern-button" onClick={() => answer("keep_both")}>

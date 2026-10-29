@@ -4,8 +4,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import type { OpDoneEvent, Settings, WireEntry, WireError, WirePath, WireReport } from "../ipc";
 import { useShortcuts } from "../keys/useShortcuts";
+import { OpsHost } from "../ops/OpsHost";
 import { useOps } from "../ops/useOps";
 import { activeTab, useTabs, type FolderTab } from "../store/tabs";
+import { folderController } from "./folder-controller";
 import { useFolderStatus } from "./folder-status";
 import { useFolderUi } from "./folder-ui";
 import { useViewSettings } from "./view-settings";
@@ -39,6 +41,8 @@ const ipc = vi.hoisted(() => ({
   clipSet: vi.fn(),
   clipGet: vi.fn(),
   dragOut: vi.fn(),
+  clipClearIf: vi.fn(),
+  webviewWidth: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({
   ...(await orig<typeof import("../ipc")>()),
@@ -61,18 +65,33 @@ let handlers: Record<string, (payload: unknown) => void>;
 let restoreLayout: () => void;
 let hasFocus: MockInstance<() => boolean>;
 
-function Host(props: { tab: FolderTab }) {
+/** `ops` adds the window's dialogs for operations; `strip` a pane beside the view, like the Places strip. */
+function Host(props: { tab: FolderTab; ops?: boolean; strip?: boolean }) {
   useShortcuts();
   const tab = useTabs((s) => activeTab(s)) as FolderTab | null;
-  return <FolderView key={props.tab.id} tab={tab ?? props.tab} />;
+  return (
+    <>
+      {props.strip && (
+        <nav aria-label="Strip">
+          <button type="button">Strip button</button>
+        </nav>
+      )}
+      <FolderView key={props.tab.id} tab={tab ?? props.tab} />
+      {props.ops && <OpsHost />}
+    </>
+  );
 }
 
-async function mount(entries: WireEntry[], path: string | WirePath = "/d") {
+async function mount(
+  entries: WireEntry[],
+  path: string | WirePath = "/d",
+  extra: { ops?: boolean; strip?: boolean } = {}
+) {
   ipc.listDir.mockResolvedValue(entries);
   useTabs.setState({ tabs: [], activeId: null });
   useTabs.getState().openFolder(typeof path === "string" ? p(path) : path, false);
   const tab = activeTab(useTabs.getState()) as FolderTab;
-  render(<Host tab={tab} />);
+  render(<Host tab={tab} {...extra} />);
   await waitFor(() =>
     expect(
       screen.queryByTestId("folder-list") ?? screen.queryByTestId("folder-empty")
@@ -129,6 +148,11 @@ beforeEach(() => {
   ipc.startOp.mockResolvedValue(1);
   ipc.clipSet.mockResolvedValue(undefined);
   ipc.dragOut.mockResolvedValue(undefined);
+  ipc.clipClearIf.mockResolvedValue(true);
+  ipc.answerConflict.mockResolvedValue(undefined);
+  ipc.cancelOp.mockResolvedValue(undefined);
+  // One CSS pixel per physical pixel unless a test says otherwise.
+  ipc.webviewWidth.mockImplementation(() => Promise.resolve(window.innerWidth));
   useViewSettings.setState({ loaded: false, error: null });
   useFolderUi.setState({ sort: {} });
   useFolderStatus.setState({ byTab: {} });
@@ -798,5 +822,397 @@ test("an_item_dropped_on_a_breadcrumb_folder_goes_there", async () => {
   pointer("pointerUp", window, { clientX: 40, clientY: 40, shiftKey: true });
   await waitFor(() =>
     expect(ipc.startOp).toHaveBeenCalledWith("move", [p("/home/u/docs/a")], p("/home"))
+  );
+});
+
+// ---- the selection and nothing else, through the controller as well as the keys ----
+
+// A menu entry is greyed by the selection, but the controller is what runs: each of its file
+// operations must itself take the selection and never the outlined item.
+
+/** Focuses the list so the first row is outlined, with nothing selected. */
+async function outlineOnly(entries: WireEntry[]) {
+  const tab = await mount(entries);
+  act(() => screen.getByTestId("folder-list").focus());
+  expect(rows()[0]).toHaveClass("kern-cursor");
+  expect(rows()[0]).toHaveAttribute("aria-selected", "false");
+  return folderController(tab.id)!;
+}
+
+test("trash_takes_no_outlined_item", async () => {
+  const c = await outlineOnly([entry("a"), entry("b")]);
+  act(() => c.trash());
+  await act(async () => {});
+  expect(ipc.startOp).not.toHaveBeenCalled();
+});
+
+test("delete_for_good_asks_about_no_outlined_item", async () => {
+  const c = await outlineOnly([entry("a"), entry("b")]);
+  act(() => c.askDelete());
+  await act(async () => {});
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(ipc.startOp).not.toHaveBeenCalled();
+});
+
+test("copy_puts_no_outlined_item_on_the_clipboard", async () => {
+  const c = await outlineOnly([entry("a"), entry("b")]);
+  act(() => c.copy());
+  await act(async () => {});
+  expect(ipc.clipSet).not.toHaveBeenCalled();
+});
+
+test("cut_puts_no_outlined_item_on_the_clipboard", async () => {
+  const c = await outlineOnly([entry("a"), entry("b")]);
+  act(() => c.cut());
+  await act(async () => {});
+  expect(ipc.clipSet).not.toHaveBeenCalled();
+});
+
+test("rename_edits_no_outlined_item", async () => {
+  const c = await outlineOnly([entry("a"), entry("b")]);
+  expect(c.canRename()).toBe(false);
+  act(() => c.rename());
+  await act(async () => {});
+  expect(screen.queryByRole("textbox", { name: /rename/i })).toBeNull();
+});
+
+test("the_controller_acts_on_the_selection_when_there_is_one", async () => {
+  const tab = await mount([entry("a"), entry("b")]);
+  select("b");
+  const c = folderController(tab.id)!;
+  act(() => c.trash());
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledWith("trash", [p("/d/b")], undefined));
+  act(() => c.copy());
+  await waitFor(() => expect(ipc.clipSet).toHaveBeenCalledWith("copy", [p("/d/b")]));
+  act(() => c.cut());
+  await waitFor(() => expect(ipc.clipSet).toHaveBeenLastCalledWith("cut", [p("/d/b")]));
+  act(() => c.askDelete());
+  expect(await screen.findByRole("alertdialog")).toHaveTextContent("b");
+});
+
+// ---- a dialog that takes the focus does not apply a half-typed name ----
+
+/** A name conflict of another operation, delivered the way the plugin does. */
+async function conflictOfAnotherOperation() {
+  ipc.startOp.mockResolvedValueOnce(7);
+  act(() => {
+    void useOps.getState().start({ kind: "copy", sources: [p("/x/f")], dest: p("/e") });
+  });
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalled());
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  act(() =>
+    handlers["kernkraft://op-conflict"]!({
+      op: 7,
+      conflict: 1,
+      source: p("/x/f"),
+      existing: p("/e/f"),
+      source_entry: null,
+      existing_entry: null,
+    })
+  );
+  return screen.findByRole("alertdialog", { name: "Name already taken" });
+}
+
+test("a_conflict_of_another_operation_does_not_apply_a_half_typed_name_and_the_edit_comes_back", async () => {
+  await mount([entry("a"), entry("b")], "/d", { ops: true });
+  select("a");
+  key("F2");
+  const input = await screen.findByRole("textbox", { name: /rename/i });
+  fireEvent.change(input, { target: { value: "half" } });
+  const dialog = await conflictOfAnotherOperation();
+  expect(dialog).toBeInTheDocument();
+  expect(ipc.rename).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Skip" }));
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  const again = screen.getByRole("textbox", { name: /rename/i });
+  expect(again).toHaveValue("half");
+  expect(again).toHaveFocus();
+  expect(ipc.rename).not.toHaveBeenCalled();
+  // The edit is still the user's: Enter applies it now.
+  ipc.rename.mockResolvedValue(p("/d/half"));
+  fireEvent.keyDown(again, { key: "Enter" });
+  await waitFor(() => expect(ipc.rename).toHaveBeenCalledExactlyOnceWith(p("/d/a"), "half"));
+});
+
+test("a_report_of_another_operation_does_not_apply_a_half_typed_name", async () => {
+  await mount([entry("a")], "/d", { ops: true });
+  select("a");
+  key("F2");
+  const input = await screen.findByRole("textbox", { name: /rename/i });
+  fireEvent.change(input, { target: { value: "half" } });
+  act(() => {
+    useOps.getState().report({ title: "Copy of x", report: null, error: err("Io", "disk full") });
+  });
+  expect(await screen.findByRole("dialog", { name: /Report/ })).toBeInTheDocument();
+  expect(ipc.rename).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByRole("textbox", { name: /rename/i })).toHaveValue("half");
+  expect(screen.getByRole("textbox", { name: /rename/i })).toHaveFocus();
+});
+
+test("a_drop_question_does_not_apply_a_half_typed_name_and_the_edit_comes_back", async () => {
+  await mount([entry("a")]);
+  hover(() => null);
+  select("a");
+  key("F2");
+  const input = await screen.findByRole("textbox", { name: /rename/i });
+  fireEvent.change(input, { target: { value: "half" } });
+  await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
+  act(() => handlers["kern://drop"]!({ paths: [p("/x/f")], position: { x: 1, y: 1 } }));
+  const ask = await screen.findByRole("alertdialog", { name: "Copy or move" });
+  expect(ipc.rename).not.toHaveBeenCalled();
+  fireEvent.click(within(ask).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  expect(screen.getByRole("textbox", { name: /rename/i })).toHaveValue("half");
+  expect(screen.getByRole("textbox", { name: /rename/i })).toHaveFocus();
+  expect(ipc.rename).not.toHaveBeenCalled();
+});
+
+// ---- a drag follows the item that was pressed, not the index it had ----
+
+test("a_relist_between_the_press_and_the_drag_drags_the_pressed_item", async () => {
+  const tab = await mount([dir("sub"), entry("a"), entry("b"), entry("c")]);
+  hover(() => rowNamed("sub"));
+  pointer("pointerDown", rowNamed("c"), { clientX: 10, clientY: 10 });
+  // A file appears above the pressed one: every index after it moves by one.
+  ipc.listDir.mockResolvedValue([dir("sub"), entry("0new"), entry("a"), entry("b"), entry("c")]);
+  act(() => handlers["kernkraft://dir-changed"]!({ key: tab.id }));
+  await waitFor(() => expect(rowNamed("0new")).toBeDefined());
+  pointer("pointerMove", window, { clientX: 40, clientY: 40 });
+  pointer("pointerUp", window, { clientX: 40, clientY: 40, ctrlKey: true });
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledTimes(1));
+  expect(ipc.startOp).toHaveBeenCalledWith("copy", [p("/d/c")], p("/d/sub"));
+  expect(rowNamed("c")).toHaveAttribute("aria-selected", "true");
+});
+
+test("a_selected_item_is_found_by_its_path_when_the_indices_moved", async () => {
+  const tab = await mount([dir("sub"), entry("a"), entry("b"), entry("c")]);
+  select("a", "b");
+  hover(() => rowNamed("sub"));
+  pointer("pointerDown", rowNamed("a"), { clientX: 10, clientY: 10 });
+  ipc.listDir.mockResolvedValue([dir("sub"), entry("0new"), entry("a"), entry("b"), entry("c")]);
+  act(() => handlers["kernkraft://dir-changed"]!({ key: tab.id }));
+  await waitFor(() => expect(rowNamed("0new")).toBeDefined());
+  pointer("pointerMove", window, { clientX: 40, clientY: 40 });
+  pointer("pointerUp", window, { clientX: 40, clientY: 40, ctrlKey: true });
+  // The selection is a and b whatever their indices are now; the new file is not part of it.
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledTimes(1));
+  expect(ipc.startOp).toHaveBeenCalledWith("copy", [p("/d/a"), p("/d/b")], p("/d/sub"));
+});
+
+test("an_item_that_went_away_before_the_drag_began_drags_nothing", async () => {
+  const tab = await mount([dir("sub"), entry("a"), entry("b")]);
+  hover(() => rowNamed("sub"));
+  pointer("pointerDown", rowNamed("b"), { clientX: 10, clientY: 10 });
+  ipc.listDir.mockResolvedValue([dir("sub"), entry("a")]);
+  act(() => handlers["kernkraft://dir-changed"]!({ key: tab.id }));
+  await waitFor(() => expect(rows()).toHaveLength(2));
+  pointer("pointerMove", window, { clientX: 40, clientY: 40 });
+  pointer("pointerUp", window, { clientX: 40, clientY: 40, ctrlKey: true });
+  await act(async () => {});
+  expect(ipc.startOp).not.toHaveBeenCalled();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+});
+
+// ---- a cut that was pasted is cleared from the clipboard ----
+
+/** Pastes a cut of `paths` and ends the move with `report`. */
+async function pasteCutThatEnds(paths: WirePath[], report: Partial<WireReport>) {
+  await mount([entry("a")]);
+  ipc.clipGet.mockResolvedValue({ op: "cut", paths });
+  key("v", { ctrlKey: true });
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalled());
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  act(() => handlers["kernkraft://op-done"]!(done(1, report)));
+}
+
+test("a_cut_that_moved_everything_is_cleared_from_the_clipboard_if_it_is_still_that_cut", async () => {
+  const paths = [p("/o/x"), p("/o/y")];
+  await pasteCutThatEnds(paths, {
+    done: paths.map((s) => ({ source: s, dest: p(`/d/${s.v.slice(3)}`) })),
+  });
+  await waitFor(() => expect(ipc.clipClearIf).toHaveBeenCalledExactlyOnceWith("cut", paths));
+});
+
+test.each([
+  ["a_failure", { failed: [{ path: p("/o/y"), error: err("Io", "no") }] }],
+  ["a_skipped_item", { skipped: [p("/o/y")] }],
+  ["a_cancel", { cancelled: true, not_reached: [p("/o/y")] }],
+])("a_cut_that_left_%s_stays_on_the_clipboard_to_be_pasted_again", async (_name, report) => {
+  const paths = [p("/o/x"), p("/o/y")];
+  await pasteCutThatEnds(paths, { done: [{ source: p("/o/x"), dest: p("/d/x") }], ...report });
+  await act(async () => {});
+  expect(ipc.clipClearIf).not.toHaveBeenCalled();
+});
+
+test("a_copy_is_never_cleared", async () => {
+  await mount([entry("a")]);
+  ipc.clipGet.mockResolvedValue({ op: "copy", paths: [p("/o/x")] });
+  key("v", { ctrlKey: true });
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalled());
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  act(() =>
+    handlers["kernkraft://op-done"]!(done(1, { done: [{ source: p("/o/x"), dest: p("/d/x") }] }))
+  );
+  await act(async () => {});
+  expect(ipc.clipClearIf).not.toHaveBeenCalled();
+});
+
+test("a_clipboard_that_cannot_be_cleared_is_shown", async () => {
+  ipc.clipClearIf.mockRejectedValue(err("NoFocus", "Kern's window does not have focus"));
+  await pasteCutThatEnds([p("/o/x")], { done: [{ source: p("/o/x"), dest: p("/d/x") }] });
+  expect(await screen.findByRole("alert")).toHaveTextContent("NoFocus");
+});
+
+// ---- where a drop from another application lands ----
+
+test("the_position_of_a_drop_is_scaled_by_the_webviews_own_size_against_the_window_width", async () => {
+  await mount([dir("sub"), entry("a")]);
+  // The webview is 1.25 times as many physical pixels wide as the page is CSS pixels wide.
+  ipc.webviewWidth.mockResolvedValue(window.innerWidth * 1.25);
+  const at = vi.fn(() => rowNamed("sub"));
+  hover(at);
+  await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
+  act(() => handlers["kern://drop"]!({ paths: [p("/x/f")], position: { x: 100, y: 50 } }));
+  await screen.findByRole("alertdialog", { name: "Copy or move" });
+  expect(at).toHaveBeenCalledWith(80, 40);
+  expect(screen.getByRole("alertdialog")).toHaveTextContent("into sub?");
+});
+
+test("a_drop_whose_scale_cannot_be_measured_says_so_and_lands_in_the_folder_not_on_a_guess", async () => {
+  await mount([dir("sub"), entry("a")]);
+  ipc.webviewWidth.mockRejectedValue(err("Webview", "no size"));
+  hover(() => rowNamed("sub"));
+  await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
+  act(() => handlers["kern://drop"]!({ paths: [p("/x/f")], position: { x: 100, y: 50 } }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Webview: no size");
+  const ask = await screen.findByRole("alertdialog", { name: "Copy or move" });
+  expect(ask).toHaveTextContent("into d?");
+});
+
+// ---- a question that is replaced says so ----
+
+test("a_drop_that_replaces_an_open_question_says_so", async () => {
+  await mount([entry("a")]);
+  hover(() => null);
+  await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
+  act(() => handlers["kern://drop"]!({ paths: [p("/x/f")], position: { x: 1, y: 1 } }));
+  await screen.findByRole("alertdialog");
+  expect(useOps.getState().notice).toBeNull();
+  act(() => handlers["kern://drop"]!({ paths: [p("/x/g")], position: { x: 1, y: 1 } }));
+  await waitFor(() => expect(useOps.getState().notice?.text).toMatch(/replaced/i));
+  expect(useOps.getState().notice?.text).toContain("Move or copy f into d");
+});
+
+test("a_drop_that_replaces_a_delete_question_says_which_delete_was_dropped", async () => {
+  await mount([entry("a"), entry("b")]);
+  hover(() => null);
+  select("a");
+  key("Delete", { shiftKey: true });
+  await screen.findByRole("alertdialog", { name: "Delete permanently" });
+  await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
+  act(() => handlers["kern://drop"]!({ paths: [p("/x/g")], position: { x: 1, y: 1 } }));
+  await waitFor(() => expect(useOps.getState().notice?.text).toMatch(/replaced/i));
+  expect(useOps.getState().notice?.text).toContain("Delete a for good");
+  expect(ipc.startOp).not.toHaveBeenCalled();
+});
+
+test("the_first_question_leaves_no_notice", async () => {
+  await mount([entry("a")]);
+  select("a");
+  key("Delete", { shiftKey: true });
+  await screen.findByRole("alertdialog");
+  expect(useOps.getState().notice).toBeNull();
+});
+
+// ---- the file keys belong to the folder view ----
+
+test("file_keys_do_nothing_while_the_focus_is_in_a_pane_beside_the_view", async () => {
+  await mount([entry("a"), entry("b")], "/d", { strip: true });
+  select("a");
+  const strip = screen.getByRole("button", { name: "Strip button" });
+  strip.focus();
+  fireEvent.keyDown(strip, { key: "Delete" });
+  fireEvent.keyDown(strip, { key: "Delete", shiftKey: true });
+  fireEvent.keyDown(strip, { key: "c", ctrlKey: true });
+  fireEvent.keyDown(strip, { key: "x", ctrlKey: true });
+  fireEvent.keyDown(strip, { key: "v", ctrlKey: true });
+  fireEvent.keyDown(strip, { key: "F2" });
+  fireEvent.keyDown(strip, { key: "N", ctrlKey: true, shiftKey: true });
+  await act(async () => {});
+  expect(ipc.startOp).not.toHaveBeenCalled();
+  expect(ipc.clipSet).not.toHaveBeenCalled();
+  expect(ipc.clipGet).not.toHaveBeenCalled();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("textbox", { name: /rename/i })).toBeNull();
+  // The same keys act once the focus is in the view.
+  fireEvent.keyDown(screen.getByTestId("folder-list"), { key: "Delete" });
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledWith("trash", [p("/d/a")], undefined));
+});
+
+test("a_key_in_the_pane_is_left_to_the_pane", async () => {
+  await mount([entry("a")], "/d", { strip: true });
+  select("a");
+  const strip = screen.getByRole("button", { name: "Strip button" });
+  const event = new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true });
+  strip.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(false);
+});
+
+test("undo_and_redo_are_not_tied_to_the_view", async () => {
+  await mount([entry("a")], "/d", { strip: true });
+  useOps.setState({ undoLabel: "Undo trash of a" });
+  ipc.undo.mockResolvedValue({ done: [], warnings: [] });
+  const strip = screen.getByRole("button", { name: "Strip button" });
+  fireEvent.keyDown(strip, { key: "z", ctrlKey: true });
+  await waitFor(() => expect(ipc.undo).toHaveBeenCalledTimes(1));
+});
+
+// ---- Delete permanently lists every item it was asked about ----
+
+test("a_long_delete_question_has_a_show_all_that_lists_every_item", async () => {
+  const names = ["a", "b", "c", "d", "e"];
+  await mount(names.map((n) => entry(n)));
+  select(...names);
+  key("Delete", { shiftKey: true });
+  const ask = await screen.findByRole("alertdialog", { name: "Delete permanently" });
+  const summary = within(ask).getByText("Show all 5 items");
+  const details = summary.closest("details")!;
+  expect(details).not.toHaveAttribute("open");
+  expect(details.querySelectorAll("li")).toHaveLength(0);
+  details.open = true;
+  fireEvent(details, new Event("toggle"));
+  expect([...details.querySelectorAll("li")].map((li) => li.textContent)).toEqual(names);
+});
+
+test("a_short_delete_question_names_its_items_and_has_no_disclosure", async () => {
+  await mount([entry("a"), entry("b")]);
+  select("a", "b");
+  key("Delete", { shiftKey: true });
+  const ask = await screen.findByRole("alertdialog", { name: "Delete permanently" });
+  expect(ask.querySelector("details")).toBeNull();
+  expect(ask).toHaveTextContent("a, b");
+});
+
+test("the_disclosure_lists_the_frozen_items_not_the_current_selection", async () => {
+  const names = ["a", "b", "c", "d", "e", "f"];
+  await mount(names.map((n) => entry(n)));
+  select(...names.slice(0, 5));
+  key("Delete", { shiftKey: true });
+  const ask = await screen.findByRole("alertdialog");
+  fireEvent.click(rowNamed("f"));
+  const details = within(ask).getByText("Show all 5 items").closest("details")!;
+  details.open = true;
+  fireEvent(details, new Event("toggle"));
+  expect([...details.querySelectorAll("li")].map((li) => li.textContent)).toEqual(
+    names.slice(0, 5)
   );
 });

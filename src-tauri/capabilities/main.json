@@ -29,6 +29,7 @@
     "allow-make-default-fm",
     "allow-clip-set",
     "allow-clip-get",
+    "allow-clip-clear-if",
     "allow-clip-text",
     "allow-drag-out"
   ]

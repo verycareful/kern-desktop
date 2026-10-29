@@ -17,9 +17,12 @@
 //! it unwraps the pointer position. It would also add `gdkx11`.
 //!
 //! In: Tauri's own handling of a drop from another application is forwarded
-//! as [`EVENT_DROP`], `{ paths, position }`. The frontend decides copy or
-//! move (Ctrl copies, Shift moves, otherwise a move on the same filesystem
-//! and a copy across) and calls `start_op`.
+//! as [`EVENT_DROP`], `{ paths, position }`. The payload carries no modifier
+//! keys and no drag action: during a native drag the webview gets no key
+//! events, and nothing here reads the action GTK negotiated. The frontend
+//! therefore asks whether to copy or move such a drop (Ctrl and Shift decide
+//! only for a drag made inside Kern, where the pointer events carry them) and
+//! calls `start_op` with the answer.
 
 use std::cell::RefCell;
 use std::path::PathBuf;

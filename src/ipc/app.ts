@@ -171,4 +171,7 @@ export interface DropPayload {
 export const clipSet = (op: ClipOp, paths: WirePath[]) => invoke<void>("clip_set", { op, paths });
 export const clipText = (text: string) => invoke<void>("clip_text", { text });
 export const clipGet = () => invoke<ClipContents | null>("clip_get");
+/** Clears the clipboard only if it still holds exactly this operation on exactly these paths; resolves to whether it did. */
+export const clipClearIf = (op: ClipOp, paths: WirePath[]) =>
+  invoke<boolean>("clip_clear_if", { op, paths });
 export const dragOut = (paths: WirePath[]) => invoke<void>("drag_out", { paths });

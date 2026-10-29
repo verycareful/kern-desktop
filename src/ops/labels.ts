@@ -23,7 +23,7 @@ export function itemsText(paths: readonly WirePath[]): string {
 }
 
 /** Up to this many names are listed in a question; more are counted, with the first few named. */
-const NAMED_UP_TO = 3;
+export const NAMED_UP_TO = 3;
 
 /** `a, b, c` for a few names; `5 items, including a, b, c` for more. */
 export function namesText(names: readonly string[]): string {

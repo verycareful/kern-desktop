@@ -126,6 +126,17 @@
   border-bottom: 1px solid var(--kern-border);
 }
 
+/* The question of a confirmation banner and, under it, a list of what it is about. */
+.kern-confirm-message p {
+  margin: 0;
+}
+
+.kern-confirm-message details ul {
+  max-height: 30vh;
+  margin: 4px 0 0;
+  overflow-y: auto;
+}
+
 .kern-banner ul {
   margin: 0;
   padding-left: 16px;

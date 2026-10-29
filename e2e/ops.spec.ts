@@ -458,3 +458,26 @@ test("delete_with_only_an_outline_does_nothing", async ({ page, mockTauri }) => 
   expect(await startedOps(page)).toEqual([]);
   await expect(rows(page)).toHaveCount(2);
 });
+
+test("delete_in_the_places_strip_does_nothing_to_the_folders_selection", async ({
+  page,
+  mockTauri,
+}) => {
+  const home = "/home/tester";
+  await installFake(page, { [`Utf8:${home}`]: [file(home, "a.txt"), file(home, "b.txt")] });
+  await mockTauri(BACKEND);
+  await page.goto("/");
+  await rowNamed(page, "a.txt").click();
+  // The keyboard is in the strip now, with a.txt still selected in the folder.
+  await page.getByTestId("places-strip").getByRole("button", { name: "Trash" }).focus();
+  await page.keyboard.press("Delete");
+  await page.keyboard.press("Shift+Delete");
+  await page.keyboard.press("Control+x");
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  expect(await startedOps(page)).toEqual([]);
+  await expect(rows(page)).toHaveCount(2);
+  // The same key in the view does act.
+  await rowNamed(page, "a.txt").click();
+  await page.keyboard.press("Delete");
+  await expect(rows(page)).toHaveCount(1);
+});

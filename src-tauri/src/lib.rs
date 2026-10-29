@@ -109,6 +109,7 @@ pub fn run() {
             default_fm::make_default_fm,
             clipboard::clip_set,
             clipboard::clip_get,
+            clipboard::clip_clear_if,
             clipboard::clip_text,
             dnd::drag_out,
         ])

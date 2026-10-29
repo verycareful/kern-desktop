@@ -48,7 +48,7 @@ export function ConfirmBanner(props: {
 
   return (
     <div role="alertdialog" aria-label={props.label} className="kern-banner">
-      <span>{props.message}</span>
+      <div className="kern-confirm-message">{props.message}</div>
       <span>
         <button type="button" className="kern-button" onClick={props.onConfirm}>
           {props.confirmLabel}

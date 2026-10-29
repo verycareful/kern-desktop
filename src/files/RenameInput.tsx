@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useRef } from "react";
+import { focusGoesToADialog } from "../ops/modal-stack";
 import { selectedRange, type RenameState } from "./use-file-ops";
 
 // The name of an item edited where it is listed (F2, design 5.1). The text is
 // the hook's, so scrolling the row out of view and back does not lose it.
 // Enter and leaving the field apply it, Escape drops it. Focus leaving Kern's
-// window leaves the edit open, as the location bar does: the document has no
-// focus then.
+// window leaves the edit open, as the location bar does (the document has no
+// focus then), and so does focus going to a dialog.
 export interface RenameProps {
   state: RenameState;
   onChange(text: string): void;
@@ -43,8 +44,11 @@ export function RenameInput(props: RenameProps) {
       value={state.text}
       readOnly={state.busy}
       onChange={(e) => props.onChange(e.target.value)}
-      onBlur={() => {
-        if (!settled.current && document.hasFocus()) props.onCommit();
+      onBlur={(e) => {
+        // A dialog that takes the focus (a question from another operation) is not the user
+        // leaving the edit: it stays open, and the dialog gives the focus back when it closes.
+        if (settled.current || !document.hasFocus() || focusGoesToADialog(e.relatedTarget)) return;
+        props.onCommit();
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter") {

@@ -54,6 +54,7 @@ export function OpsHost() {
           conflict={first.conflict}
           operation={first.running}
           waiting={asking.length - 1}
+          others={ops.length - 1}
           onAnswer={(choice, all) => answer(first.key, choice, all)}
           onCancel={() => cancel(first.key)}
         />

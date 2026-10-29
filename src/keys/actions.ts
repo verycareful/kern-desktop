@@ -71,6 +71,8 @@ export type Action = {
   when: ActionContextKind | "any";
   /** True when the shortcut also fires while focus is in an editable field. */
   inEditable?: boolean;
+  /** "view": the shortcut acts only while the keyboard is in the folder view or the tab row (keys/file-keys.ts). Menus are not limited. */
+  scope?: "view";
   /** Absent means always enabled where `when` holds. A disabled menu entry is shown greyed. */
   enabled?(ctx: ActionContext): boolean;
   run(ctx: ActionContext): void;
@@ -248,6 +250,7 @@ const folderActions: Action[] = [
   },
   {
     id: "folder.cut",
+    scope: "view",
     label: "Cut",
     area: "Edit",
     keys: ["Ctrl+X"],
@@ -257,6 +260,7 @@ const folderActions: Action[] = [
   },
   {
     id: "folder.copy",
+    scope: "view",
     label: "Copy",
     area: "Edit",
     keys: ["Ctrl+C"],
@@ -266,6 +270,7 @@ const folderActions: Action[] = [
   },
   {
     id: "folder.paste",
+    scope: "view",
     label: "Paste",
     area: "Edit",
     keys: ["Ctrl+V"],
@@ -275,6 +280,7 @@ const folderActions: Action[] = [
   },
   {
     id: "folder.rename",
+    scope: "view",
     label: "Rename",
     area: "Edit",
     keys: ["F2"],
@@ -285,6 +291,7 @@ const folderActions: Action[] = [
   // Delete moves to the Trash (undoable); Shift+Delete deletes for good, after a question.
   {
     id: "folder.trash",
+    scope: "view",
     label: "Move to Trash",
     area: "Edit",
     keys: ["Delete"],
@@ -294,6 +301,7 @@ const folderActions: Action[] = [
   },
   {
     id: "folder.delete",
+    scope: "view",
     label: "Delete permanently",
     area: "Edit",
     keys: ["Shift+Delete"],
@@ -303,6 +311,7 @@ const folderActions: Action[] = [
   },
   {
     id: "folder.new.folder",
+    scope: "view",
     label: "New folder",
     area: "Create",
     keys: ["Ctrl+Shift+N"],
@@ -312,6 +321,7 @@ const folderActions: Action[] = [
   },
   {
     id: "folder.new.file",
+    scope: "view",
     label: "New file",
     area: "Create",
     keys: [],

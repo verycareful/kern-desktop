@@ -19,6 +19,7 @@ import {
   menuSections,
   runAction,
 } from "../keys/actions";
+import { FILE_KEYS_ATTR } from "../keys/file-keys";
 import { activeTab, tabTitle, useTabs } from "../store/tabs";
 
 const TAB_MENU: MenuSection[] = [{ actions: actions.filter((a) => a.id.startsWith("tab.")) }];
@@ -72,7 +73,7 @@ export function TabBar() {
   };
 
   return (
-    <header className="kern-tabbar" data-testid="tab-bar">
+    <header className="kern-tabbar" data-testid="tab-bar" {...{ [FILE_KEYS_ATTR]: "" }}>
       <div
         ref={list}
         role="tablist"

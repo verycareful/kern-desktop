@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { openModal } from "./modal-stack";
 import "./ops.css";
 
 // A dialog that owns the keyboard while it is open (WAI-ARIA Authoring
@@ -8,10 +9,6 @@ import "./ops.css";
 // shortcuts behind it do not fire, and the focus goes back to where it was
 // when it closes. Keys aimed at the page body, which is where the focus lands
 // if the element that held it is removed, are held back too.
-
-// The dialogs that are open, the one opened last on top: only it holds the keyboard, so a
-// dialog opened over another (a report over a question) is not shut out by the one below.
-const open: symbol[] = [];
 
 const FOCUSABLE =
   'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])';
@@ -36,13 +33,12 @@ export function Modal(props: {
 
   useEffect(() => {
     const opener = document.activeElement;
-    const me = Symbol("modal");
-    open.push(me);
+    const me = openModal();
     const first = initial?.current ?? root.current?.querySelector<HTMLElement>(FOCUSABLE);
     first?.focus();
     // Keys aimed outside the dialog never reach the shortcuts behind it.
     const onKey = (e: KeyboardEvent) => {
-      if (open[open.length - 1] !== me) return;
+      if (!me.isTop()) return;
       const target = e.target;
       if (!(target instanceof Node) || root.current?.contains(target)) return;
       e.preventDefault();
@@ -52,7 +48,7 @@ export function Modal(props: {
     window.addEventListener("keydown", onKey, true);
     return () => {
       window.removeEventListener("keydown", onKey, true);
-      open.splice(open.indexOf(me), 1);
+      me.close();
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
     };
   }, [initial]);

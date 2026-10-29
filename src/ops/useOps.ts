@@ -157,22 +157,41 @@ export const useOps = create<OpsState>()((set, get) => ({
   answer(key, choice, applyToAll) {
     const asked = get().ops.find((o) => o.key === key)?.conflict;
     if (!asked) return;
-    set((s) => ({ ops: s.ops.map((o) => (o.key === key ? { ...o, conflict: null } : o)) }));
-    answerConflict(asked.op, asked.conflict, choice, applyToAll).catch((e: unknown) =>
-      get().report({ title: "Answering a name conflict", report: null, error: toWireError(e) })
-    );
+    const patch = (fn: (o: OpView) => OpView) =>
+      set((s) => ({ ops: s.ops.map((o) => (o.key === key ? fn(o) : o)) }));
+    patch((o) => ({ ...o, conflict: null }));
+    answerConflict(asked.op, asked.conflict, choice, applyToAll).catch((e: unknown) => {
+      const error = toWireError(e);
+      const now = get().ops.find((o) => o.key === key);
+      if (error.kind === "UnknownConflict") {
+        // The question is not open any more: the operation moved on or was told to stop, and it
+        // says how it ended in its own report. Only a question that was not on its way out is news.
+        if (!now || now.cancelling) return;
+      } else if (now && !now.cancelling && now.conflict === null) {
+        // The answer did not arrive, so the worker still waits for it: ask again.
+        patch((o) => ({ ...o, conflict: asked }));
+      }
+      get().report({ title: "Answering a name conflict", report: null, error });
+    });
   },
 
   cancel(key) {
     const op = handles.get(key);
+    const asked = get().ops.find((o) => o.key === key)?.conflict ?? null;
     if (!op) return;
     // The question closes with the cancel: the backend releases the worker waiting on it.
     set((s) => ({
       ops: s.ops.map((o) => (o.key === key ? { ...o, cancelling: true, conflict: null } : o)),
     }));
-    op.cancel().catch((e: unknown) =>
-      get().report({ title: "Cancelling an operation", report: null, error: toWireError(e) })
-    );
+    op.cancel().catch((e: unknown) => {
+      // The worker was not told to stop: Cancel works again, and the question it waits on is asked again.
+      set((s) => ({
+        ops: s.ops.map((o) =>
+          o.key === key ? { ...o, cancelling: false, conflict: o.conflict ?? asked } : o
+        ),
+      }));
+      get().report({ title: "Cancelling an operation", report: null, error: toWireError(e) });
+    });
   },
 
   report(outcome) {
@@ -231,8 +250,14 @@ export const useOps = create<OpsState>()((set, get) => ({
       const state = await undoState();
       set({ undoLabel: state.undo, redoLabel: state.redo });
     } catch (e) {
-      const err = toWireError(e);
-      get().notify(`The undo history could not be read: ${err.kind}: ${err.message}`);
+      // A failure is kept until it is read: it means Undo and Redo may be wrong or missing, and it
+      // repeats with every operation, so one report stands for the same failure.
+      const error = toWireError(e);
+      const title = "The undo history could not be read";
+      const known = get().reports.some(
+        (r) => r.outcome.title === title && r.outcome.error?.message === error.message
+      );
+      if (!known) get().report({ title, report: null, error });
     }
   },
 

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  clipClearIf,
   clipGet,
   clipSet,
   createDir,
@@ -80,6 +81,27 @@ type FileOpsController = Pick<
 /** What a name's bytes that are not UTF-8 are shown as. */
 const REPLACEMENT = "\ufffd";
 
+/** What a question asked, in a few words. */
+function describeQuestion(q: Question): string {
+  return q.kind === "delete"
+    ? `Delete ${namesText(q.items.map((i) => i.name))} for good`
+    : `Move or copy ${q.names} into ${q.destName}`;
+}
+
+/** True when a move ended with every source moved: nothing failed, was skipped, cancelled or not reached. */
+function movedEverything(end: { report: WireReport | null; error: WireError | null }): boolean {
+  const r = end.report;
+  return (
+    end.error === null &&
+    r !== null &&
+    r.done.length > 0 &&
+    r.failed.length === 0 &&
+    r.skipped.length === 0 &&
+    r.not_reached.length === 0 &&
+    !r.cancelled
+  );
+}
+
 /** Where the extension starts, or -1: a leading dot is part of the name, not an extension. */
 function extensionStart(name: string): number {
   const dot = name.lastIndexOf(".");
@@ -112,6 +134,19 @@ export function useFileOps(args: FileOpsArgs) {
     renamingNow.current = renaming;
   });
   const [asking, setAsking] = useState<Question | null>(null);
+  const askingNow = useRef<Question | null>(null);
+  // A question that comes while another is open replaces it; the one that went is named, so it
+  // does not just vanish.
+  const ask = useCallback((q: Question | null) => {
+    const prior = askingNow.current;
+    askingNow.current = q;
+    setAsking(q);
+    if (q && prior) {
+      useOps
+        .getState()
+        .notify(`A new question replaced the one that was open (${describeQuestion(prior)}).`);
+    }
+  }, []);
   const [problems, setProblems] = useState<{ id: number; error: WireError }[]>([]);
   const nextProblem = useRef(0);
 
@@ -173,7 +208,15 @@ export function useFileOps(args: FileOpsArgs) {
         kind: clip.op === "cut" ? "move" : "copy",
         sources: clip.paths,
         dest,
-        onEnd: (end) => showDone(end.report),
+        onEnd: (end) => {
+          showDone(end.report);
+          // A cut that was fully moved is spent: the clipboard is cleared, if it still holds that
+          // cut. One that left anything behind (a failure, a skip, a cancel) stays, so it can be
+          // pasted again; what already moved is then reported as not found.
+          if (clip.op === "cut" && movedEverything(end)) {
+            clipClearIf("cut", clip.paths).catch(fail);
+          }
+        },
       });
     } catch (e) {
       fail(e);
@@ -256,18 +299,21 @@ export function useFileOps(args: FileOpsArgs) {
   const askDelete = useCallback(() => {
     const list = latest.current.selected();
     if (list.length === 0) return;
-    setAsking({ kind: "delete", items: list.map((e) => ({ path: e.path, name: e.name })) });
-  }, []);
+    ask({ kind: "delete", items: list.map((e) => ({ path: e.path, name: e.name })) });
+  }, [ask]);
 
-  const askDrop = useCallback((sources: WirePath[], dest: WirePath) => {
-    setAsking({
-      kind: "drop",
-      sources,
-      dest,
-      destName: baseName(dest),
-      names: namesText(sources.map(baseName)),
-    });
-  }, []);
+  const askDrop = useCallback(
+    (sources: WirePath[], dest: WirePath) => {
+      ask({
+        kind: "drop",
+        sources,
+        dest,
+        destName: baseName(dest),
+        names: namesText(sources.map(baseName)),
+      });
+    },
+    [ask]
+  );
 
   const drop = useCallback(
     (choice: "copy" | "move", sources: WirePath[], dest: WirePath) => {
@@ -286,7 +332,7 @@ export function useFileOps(args: FileOpsArgs) {
   const answer = useCallback(
     (alternate: boolean) => {
       const q = asking;
-      setAsking(null);
+      ask(null);
       latest.current.focusList();
       if (!q) return;
       if (q.kind === "delete") {
@@ -295,13 +341,13 @@ export function useFileOps(args: FileOpsArgs) {
         drop(alternate ? "copy" : "move", q.sources, q.dest);
       }
     },
-    [asking, drop]
+    [asking, ask, drop]
   );
 
   const cancelAsk = useCallback(() => {
-    setAsking(null);
+    ask(null);
     latest.current.focusList();
-  }, []);
+  }, [ask]);
 
   const controller = useMemo<FileOpsController>(
     () => ({

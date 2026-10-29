@@ -346,10 +346,93 @@ test("an_undo_that_stopped_partway_lists_what_was_and_was_not_done", async () =>
   expect(useOps.getState().reports[0]!.outcome.error).toMatchObject({ kind: "Partial" });
 });
 
-test("a_failure_to_read_the_undo_state_is_shown", async () => {
-  ipc.undoState.mockRejectedValueOnce(err("Internal", "journal poisoned"));
+test("a_failure_to_read_the_undo_history_stays_until_it_is_dismissed", async () => {
+  vi.useFakeTimers();
+  ipc.undoState.mockRejectedValue(err("Internal", "journal poisoned"));
   await useOps.getState().refreshUndo();
-  expect(useOps.getState().notice?.text).toMatch(/journal poisoned/);
+  expect(useOps.getState().notice).toBeNull();
+  const [shown] = useOps.getState().reports;
+  expect(shown!.outcome.title).toBe("The undo history could not be read");
+  expect(shown!.outcome.error).toMatchObject({ kind: "Internal", message: "journal poisoned" });
+  // It is still there long after a notice would have gone.
+  vi.advanceTimersByTime(10 * NOTICE_MS);
+  expect(useOps.getState().reports).toHaveLength(1);
+  useOps.getState().dismissReport(shown!.id);
+  expect(useOps.getState().reports).toEqual([]);
+});
+
+test("the_same_undo_history_failure_is_not_queued_twice", async () => {
+  ipc.undoState.mockRejectedValue(err("Internal", "journal poisoned"));
+  await useOps.getState().refreshUndo();
+  await useOps.getState().refreshUndo();
+  expect(useOps.getState().reports).toHaveLength(1);
+  ipc.undoState.mockRejectedValue(err("Internal", "something else"));
+  await useOps.getState().refreshUndo();
+  expect(useOps.getState().reports).toHaveLength(2);
+});
+
+test("a_failed_answer_asks_the_question_again_and_shows_the_error", async () => {
+  const { done } = await startCopy(5);
+  emit("kernkraft://op-conflict", conflict(5, 3));
+  ipc.answerConflict.mockRejectedValueOnce(err("Io", "the answer could not be delivered"));
+  useOps.getState().answer(useOps.getState().ops[0]!.key, "replace", true);
+  expect(useOps.getState().ops[0]!.conflict).toBeNull();
+  await vi.waitFor(() => expect(useOps.getState().reports).toHaveLength(1));
+  // The worker still waits, so the same question is open again, as it was asked.
+  expect(useOps.getState().ops[0]!.conflict).toMatchObject({ op: 5, conflict: 3 });
+  expect(useOps.getState().reports[0]!.outcome.error).toMatchObject({ kind: "Io" });
+  emit("kernkraft://op-done", end(5, report()));
+  await done;
+});
+
+test("an_answer_to_a_question_that_is_no_longer_open_does_not_open_it_again", async () => {
+  const { done } = await startCopy(5);
+  emit("kernkraft://op-conflict", conflict(5, 3));
+  ipc.answerConflict.mockRejectedValueOnce(err("UnknownConflict", "no open conflict 3"));
+  useOps.getState().answer(useOps.getState().ops[0]!.key, "skip", false);
+  await vi.waitFor(() => expect(useOps.getState().reports).toHaveLength(1));
+  expect(useOps.getState().ops[0]!.conflict).toBeNull();
+  emit("kernkraft://op-done", end(5, report()));
+  await done;
+});
+
+test("an_unknown_conflict_after_the_operation_began_to_cancel_gives_no_extra_report", async () => {
+  const { done } = await startCopy(5);
+  emit("kernkraft://op-conflict", conflict(5, 3));
+  const key = useOps.getState().ops[0]!.key;
+  let refuse!: (e: unknown) => void;
+  ipc.answerConflict.mockReturnValueOnce(new Promise((_, rej) => (refuse = rej)));
+  useOps.getState().answer(key, "skip", false);
+  // Cancel is pressed while the answer is on its way; the worker is released by the cancel,
+  // so the answer finds no open question.
+  useOps.getState().cancel(key);
+  refuse(err("UnknownConflict", "no open conflict 3"));
+  await new Promise((r) => setTimeout(r, 0));
+  expect(useOps.getState().reports).toEqual([]);
+  expect(useOps.getState().ops[0]!.conflict).toBeNull();
+  emit("kernkraft://op-done", end(5, report({ cancelled: true, not_reached: [p("/a/y")] })));
+  await done;
+  // Only the cancelled operation's own report.
+  expect(useOps.getState().reports).toHaveLength(1);
+});
+
+test("a_failed_cancel_can_be_pressed_again_and_the_open_question_is_asked_again", async () => {
+  const { done } = await startCopy(5);
+  emit("kernkraft://op-conflict", conflict(5, 3));
+  const key = useOps.getState().ops[0]!.key;
+  ipc.cancelOp.mockRejectedValueOnce(err("Ipc", "the call failed"));
+  useOps.getState().cancel(key);
+  expect(useOps.getState().ops[0]).toMatchObject({ cancelling: true, conflict: null });
+  await vi.waitFor(() => expect(useOps.getState().reports).toHaveLength(1));
+  // The operation was not told to stop: Cancel works again and its question is back.
+  expect(useOps.getState().ops[0]).toMatchObject({ cancelling: false });
+  expect(useOps.getState().ops[0]!.conflict).toMatchObject({ op: 5, conflict: 3 });
+  expect(useOps.getState().reports[0]!.outcome.error).toMatchObject({ kind: "Ipc" });
+  useOps.getState().cancel(key);
+  await vi.waitFor(() => expect(ipc.cancelOp).toHaveBeenCalledTimes(2));
+  expect(useOps.getState().ops[0]!.cancelling).toBe(true);
+  emit("kernkraft://op-done", end(5, report({ cancelled: true })));
+  await done;
 });
 
 test("a_report_is_dismissed_by_its_id", async () => {

@@ -79,15 +79,21 @@ export function leftWindow(x: number, y: number, width: number, height: number):
 }
 
 /**
- * kern://drop gives the pointer in physical pixels from the webview's corner.
- * One CSS pixel is taken to be `scale` physical pixels (devicePixelRatio)
- * times the page zoom (the interface size), which is a webview zoom that
- * devicePixelRatio is assumed not to include.
+ * How many physical pixels one CSS pixel of the page covers: the webview's
+ * width in physical pixels over the page's width in CSS pixels (the window's
+ * innerWidth). Measured, so it holds for any device scale and any interface
+ * size without a claim about what devicePixelRatio includes.
  */
-export function toCssPoint(
-  pos: { x: number; y: number },
-  scale: number,
-  zoom: number
-): { x: number; y: number } {
-  return { x: pos.x / (scale * zoom), y: pos.y / (scale * zoom) };
+export function physicalPerCssPixel(physicalWidth: number, cssWidth: number): number {
+  if (!(physicalWidth > 0) || !(cssWidth > 0) || !Number.isFinite(physicalWidth + cssWidth)) {
+    throw new RangeError(
+      `cannot tell the scale of the page from a width of ${physicalWidth} physical and ${cssWidth} CSS pixels`
+    );
+  }
+  return physicalWidth / cssWidth;
+}
+
+/** kern://drop gives the pointer in physical pixels from the webview's corner; `ratio` is `physicalPerCssPixel`. */
+export function toCssPoint(pos: { x: number; y: number }, ratio: number): { x: number; y: number } {
+  return { x: pos.x / ratio, y: pos.y / ratio };
 }

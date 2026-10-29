@@ -9,6 +9,7 @@ import {
   dropTargetValue,
   leftWindow,
   parseDropTarget,
+  physicalPerCssPixel,
   toCssPoint,
 } from "./dnd";
 
@@ -70,8 +71,25 @@ test("the_pointer_is_outside_the_window_beyond_any_edge", () => {
   expect(leftWindow(799, 599, 800, 600)).toBe(false);
 });
 
-test("a_drop_position_in_physical_pixels_becomes_css_pixels_by_the_scale_and_the_zoom", () => {
-  // 2 physical pixels per device-independent pixel, page zoomed to 125 %.
-  expect(toCssPoint({ x: 500, y: 250 }, 2, 1.25)).toEqual({ x: 200, y: 100 });
-  expect(toCssPoint({ x: 90, y: 45 }, 1, 0.9)).toEqual({ x: 100, y: 50 });
+test("a_drop_position_in_physical_pixels_becomes_css_pixels_by_the_measured_ratio", () => {
+  expect(toCssPoint({ x: 100, y: 50 }, 1.25)).toEqual({ x: 80, y: 40 });
+  expect(toCssPoint({ x: 500, y: 250 }, 2.5)).toEqual({ x: 200, y: 100 });
+  expect(toCssPoint({ x: 90, y: 45 }, 0.9)).toEqual({ x: 100, y: 50 });
+});
+
+test("the_ratio_is_the_webviews_physical_width_over_the_pages_css_width", () => {
+  // A 1.25 zoom on a 1.0 scale, or a 2.0 scale at 100 %: the ratio is whatever the two widths say.
+  expect(physicalPerCssPixel(1280, 1024)).toBe(1.25);
+  expect(physicalPerCssPixel(2000, 1000)).toBe(2);
+  expect(physicalPerCssPixel(1000, 1000)).toBe(1);
+});
+
+test.each([
+  [0, 1000],
+  [1000, 0],
+  [-5, 1000],
+  [Number.NaN, 1000],
+  [1000, Number.POSITIVE_INFINITY],
+])("widths_%s_and_%s_give_no_ratio", (physical, css) => {
+  expect(() => physicalPerCssPixel(physical, css)).toThrow(RangeError);
 });

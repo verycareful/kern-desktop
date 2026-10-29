@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect } from "react";
 import { actions, appliesTo, currentContext, candidateKeys, runAction, isEnabled } from "./actions";
+import { inFileKeysArea } from "./file-keys";
 
 /** True when keystrokes in `el` are text input: input, textarea, select or contenteditable. */
 export function isEditable(el: EventTarget | null): boolean {
@@ -40,7 +41,8 @@ function ownedByControl(e: KeyboardEvent): boolean {
 /**
  * One window-level keydown listener that looks the key up in the action
  * table. A matched key is claimed (default prevented) even when the action is
- * disabled, so the webview does not also act on it.
+ * disabled, so the webview does not also act on it. A key of an action with
+ * `scope: "view"` aimed at another pane is not matched: it is that pane's.
  */
 export function useShortcuts(): void {
   useEffect(() => {
@@ -53,7 +55,8 @@ export function useShortcuts(): void {
         (a) =>
           a.keys.some((k) => keys.includes(k)) &&
           appliesTo(a, ctx.active) &&
-          (!editable || a.inEditable)
+          (!editable || a.inEditable) &&
+          (a.scope !== "view" || inFileKeysArea(e.target))
       );
       if (!hit) return;
       e.preventDefault();

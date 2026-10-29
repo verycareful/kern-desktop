@@ -28,6 +28,7 @@ const COMMANDS: &[&str] = &[
     "make_default_fm",
     "clip_set",
     "clip_get",
+    "clip_clear_if",
     "clip_text",
     "drag_out",
 ];

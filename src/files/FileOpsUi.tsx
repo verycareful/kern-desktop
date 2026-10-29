@@ -2,9 +2,25 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { X } from "lucide-react";
 import { NameDialog } from "../ops/NameDialog";
-import { namesText, plural } from "../ops/labels";
+import { NAMED_UP_TO, namesText, plural } from "../ops/labels";
+import { Paged } from "../ops/ReportPanel";
+import { useState } from "react";
 import { ConfirmBanner } from "./ConfirmBanner";
 import type { FileOps } from "./use-file-ops";
+
+/** Every item a question was asked about, once opened, a page at a time. */
+function EveryItem(props: { names: readonly string[] }) {
+  // The rows are only drawn once opened: a question can be about a hundred thousand items.
+  const [open, setOpen] = useState(false);
+  return (
+    <details onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>Show all {plural(props.names.length, "item", "items")}</summary>
+      {open && (
+        <Paged items={props.names} row={(name, i) => <li key={`${i}\n${name}`}>{name}</li>} />
+      )}
+    </details>
+  );
+}
 
 // What a folder view shows for its file operations: the failures it has to
 // tell about, the question being asked, and the dialog that names something new.
@@ -46,7 +62,12 @@ export function FileOpsUi(props: {
       {q?.kind === "delete" && (
         <ConfirmBanner
           label="Delete permanently"
-          message={`Delete ${namesText(q.items.map((i) => i.name))} for good? It cannot be undone.`}
+          message={
+            <>
+              <p>Delete {namesText(q.items.map((i) => i.name))} for good? It cannot be undone.</p>
+              {q.items.length > NAMED_UP_TO && <EveryItem names={q.items.map((i) => i.name)} />}
+            </>
+          }
           confirmLabel={`Delete ${plural(q.items.length, "item", "items")}`}
           scope={scope}
           active={active}

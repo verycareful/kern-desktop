@@ -42,6 +42,7 @@ fn env(label: &str) -> Env {
             kern_lib::store_cmds::settings_get,
             kern_lib::store_cmds::settings_set,
             kern_lib::windows::open_pending_take,
+            kern_lib::clipboard::clip_clear_if,
         ])
         .build(tauri::generate_context!())
         .unwrap();
@@ -131,5 +132,31 @@ fn a_window_the_capability_does_not_name_is_refused() {
 fn a_command_no_capability_grants_is_refused() {
     let e = env("main");
     let err = invoke(&e, &kernkraft("no_such_command"), json!({})).unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+}
+
+#[test]
+fn the_main_window_may_clear_the_clipboard_if_it_still_holds_a_cut() {
+    // Reached: the command refuses a path with a dot segment before it looks at the clipboard,
+    // and that refusal is the command's own error, not the access control's.
+    let e = env("main");
+    let err = invoke(
+        &e,
+        "clip_clear_if",
+        json!({"op": "cut", "paths": [{"k": "Utf8", "v": "/a/../b"}]}),
+    )
+    .unwrap_err();
+    assert_eq!(err["kind"], "BadPath", "{err}");
+}
+
+#[test]
+fn a_window_the_capability_does_not_name_may_not_clear_the_clipboard() {
+    let e = env("stranger");
+    let err = invoke(
+        &e,
+        "clip_clear_if",
+        json!({"op": "cut", "paths": [{"k": "Utf8", "v": "/a/b"}]}),
+    )
+    .unwrap_err();
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
 }

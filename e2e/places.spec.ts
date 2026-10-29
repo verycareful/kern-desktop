@@ -16,6 +16,8 @@ const COMMON = {
   "plugin:kernkraft-tauri|theme_get": { css: ":root{}", tokens: {}, fallbacks: [], problems: [] },
   "plugin:kernkraft-tauri|watch_dir": null,
   "plugin:kernkraft-tauri|unwatch_dir": null,
+  // The window reads the undo history once.
+  "plugin:kernkraft-tauri|undo_state": { undo: null, redo: null },
   "plugin:kernkraft-tauri|list_dir": [],
   "plugin:kernkraft-tauri|user_dirs": {
     home: { k: "Utf8", v: "/home/tester" },

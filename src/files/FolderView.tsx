@@ -9,14 +9,22 @@ import {
   on,
   pathKey,
   toWireError,
+  webviewWidth,
   type DropPayload,
   type WireError,
   type WirePath,
 } from "../ipc";
 import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
 import { actions, currentContext, getAction, runAction } from "../keys/actions";
-import { canDropOn, decideDrop, dropTargetAt, toCssPoint, type DragModifiers } from "../ops/dnd";
-import { zoomFactor } from "../theme/interface-size";
+import { FILE_KEYS_ATTR } from "../keys/file-keys";
+import {
+  canDropOn,
+  decideDrop,
+  dropTargetAt,
+  physicalPerCssPixel,
+  toCssPoint,
+  type DragModifiers,
+} from "../ops/dnd";
 import { useTabs, type FolderTab, type FolderViewState } from "../store/tabs";
 import { Breadcrumb } from "./Breadcrumb";
 import { ConfirmBanner } from "./ConfirmBanner";
@@ -270,7 +278,11 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     relist,
     selectKeys,
     reveal: () => setRevealTick((t) => t + 1),
-    focusList: () => keyboardTarget()?.focus(),
+    // The keyboard goes back to a name being edited, else to the list.
+    focusList: () =>
+      (
+        files.current?.querySelector<HTMLElement>(".kern-rename-input") ?? keyboardTarget()
+      )?.focus(),
   });
 
   // Something dropped on a folder (a pointer drag inside Kern, or a drop from another
@@ -285,12 +297,17 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     [askDrop, dropItems]
   );
   const drag = useItemDrag({
-    itemsFor: (index) => {
+    keyAt: (index) => {
+      const at = latest.current.entries[index];
+      return at ? pathKey(at.path) : null;
+    },
+    itemsFor: (key) => {
       const { entries: es, sel: s } = latest.current;
-      if (s.selected.has(index)) return selected();
-      const only = es[index];
+      const at = es.findIndex((e) => pathKey(e.path) === key);
+      const only = es[at];
       if (!only) return [];
-      dispatch((x) => click(x, index));
+      if (s.selected.has(at)) return selected();
+      dispatch((x) => click(x, at));
       return [only];
     },
     onDrop: dropOn,
@@ -300,25 +317,30 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   });
 
   // A drop from another application lands where the pointer was.
-  const interfaceSize = useViewSettings((s) => s.interfaceSize);
-  const dropState = useRef({ isActive, path: tab.path, interfaceSize });
+  const dropState = useRef({ isActive, path: tab.path });
   useEffect(() => {
-    dropState.current = { isActive, path: tab.path, interfaceSize };
+    dropState.current = { isActive, path: tab.path };
   });
   useEffect(() => {
     let live = true;
     let off: (() => void) | undefined;
+    // The folder under the pointer, or the folder itself. When the scale of the page cannot be
+    // measured the position means nothing, and the drop goes to the folder shown, with the reason.
+    const landing = async (drop: DropPayload, folder: WirePath): Promise<WirePath> => {
+      try {
+        const ratio = physicalPerCssPixel(await webviewWidth(), window.innerWidth);
+        const at = toCssPoint(drop.position, ratio);
+        const hit = dropTargetAt(at.x, at.y);
+        return hit && canDropOn(drop.paths, hit.path) ? hit.path : folder;
+      } catch (e) {
+        fail(e);
+        return folder;
+      }
+    };
     on(EVENT_DROP, (drop: DropPayload) => {
       const now = dropState.current;
       if (!now.isActive || drop.paths.length === 0) return;
-      const at = toCssPoint(
-        drop.position,
-        window.devicePixelRatio || 1,
-        zoomFactor(now.interfaceSize)
-      );
-      const hit = dropTargetAt(at.x, at.y);
-      const dest = hit && canDropOn(drop.paths, hit.path) ? hit.path : now.path;
-      dropOn(drop.paths, dest, null);
+      void landing(drop, now.path).then((dest) => live && dropOn(drop.paths, dest, null));
     }).then(
       (u) => (live ? (off = u) : u()),
       (e: unknown) => live && fail(e)
@@ -534,6 +556,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       className="kern-files"
       data-testid="folder-view"
       data-view={viewMode}
+      {...{ [FILE_KEYS_ATTR]: "" }}
       onFocus={keep.onFocus}
       onBlur={keep.onBlur}
     >

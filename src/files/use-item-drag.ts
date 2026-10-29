@@ -24,12 +24,16 @@ const OVER = "kern-drop-over";
 const DRAGGING = "kern-dragging";
 
 export function useItemDrag(args: {
+  /** The path key of the item at `index` in the list shown now, or null if there is none. */
+  keyAt(index: number): string | null;
   /**
-   * The items to drag when the item at `index` is pressed: the selection when
-   * it holds that item, else just that item, which becomes the selection.
-   * Empty when there is nothing to drag.
+   * The items to drag when the item with this path key was pressed: the
+   * selection when it holds that item, else just that item, which becomes the
+   * selection. Empty when the item is no longer listed. The item is named by its
+   * key and not by where it was, because the list can change between the press
+   * and the moment the drag begins.
    */
-  itemsFor(index: number): readonly WireEntry[];
+  itemsFor(key: string): readonly WireEntry[];
   onDrop(sources: WirePath[], target: WirePath, mods: DragModifiers): void;
   onLeave(sources: WirePath[]): void;
 }) {
@@ -47,6 +51,8 @@ export function useItemDrag(args: {
     const item = target.closest("[data-item]");
     const index = Number(item?.getAttribute("data-index"));
     if (!item || !Number.isInteger(index)) return;
+    const pressed = latest.current.keyAt(index);
+    if (pressed === null) return;
     const start = { x: e.clientX, y: e.clientY };
     let sources: WirePath[] | null = null;
     let over: Element | null = null;
@@ -74,7 +80,7 @@ export function useItemDrag(args: {
     const onMove = (m: PointerEvent) => {
       if (sources === null) {
         if (Math.hypot(m.clientX - start.x, m.clientY - start.y) < ITEM_DRAG_THRESHOLD) return;
-        const entries = latest.current.itemsFor(index);
+        const entries = latest.current.itemsFor(pressed);
         if (entries.length === 0) {
           finish();
           return;

@@ -29,6 +29,9 @@
 //! encoder and decoder are in [`crate::cli`] and work on bytes, so a name
 //! that is not UTF-8 survives a round trip.
 //!
+//! After a cut has been pasted, [`clip_clear_if`] ends the offer of those
+//! files, but only if the clipboard still holds exactly that cut.
+//!
 //! A path with a `.` or `..` segment is refused: another application
 //! collapses such segments textually (RFC 3986, section 5.2.4), which names
 //! a different file when a symbolic link is involved.
@@ -474,34 +477,93 @@ fn contents(op: ClipOp, paths: &[PathBuf]) -> ClipContents {
     }
 }
 
-fn request_files(tx: Sender<Result<Option<ClipContents>, WireError>>) {
+/// What the clipboard holds for a paste: the operation and the paths, as
+/// [`clip_get`] reads them.
+type Held = Option<(ClipOp, Vec<PathBuf>)>;
+
+/// Reads what the clipboard holds for a paste (`x-special/gnome-copied-files`
+/// first, then `text/uri-list` with KDE's cut marker) and hands it to `done`.
+/// Runs on the GTK main thread: the requests are answered by the main loop,
+/// and `done` is called from it.
+fn read_held<F>(done: F)
+where
+    F: FnOnce(Result<Held, ClipError>) + 'static,
+{
     let clipboard = gtk::Clipboard::get(&gdk::SELECTION_CLIPBOARD);
     clipboard.request_contents(&gdk::Atom::intern(TARGET_GNOME), move |clipboard, data| {
         // A negative length is GTK's answer for a target the owner lacks.
         if data.length() >= 0 {
-            let r = try_decode_gnome_copied(&data.data())
-                .map(|(op, paths)| Some(contents(op, &paths)))
-                .map_err(|e| clip_error(&e));
-            let _ = tx.send(r);
+            done(try_decode_gnome_copied(&data.data()).map(Some));
             return;
         }
         clipboard.request_contents(
             &gdk::Atom::intern(TARGET_URI_LIST),
             move |clipboard, data| {
                 if data.length() < 0 {
-                    let _ = tx.send(Ok(None));
+                    done(Ok(None));
                     return;
                 }
                 let list = try_decode_uri_list(&data.data());
                 clipboard.request_contents(&gdk::Atom::intern(TARGET_KDE_CUT), move |_, marker| {
                     let kde = (marker.length() >= 0).then(|| marker.data());
                     let op = uri_list_op(kde.as_deref());
-                    let r = list
-                        .map(|paths| Some(contents(op, &paths)))
-                        .map_err(|e| clip_error(&e));
-                    let _ = tx.send(r);
+                    done(list.map(|paths| Some((op, paths))));
                 });
             },
         );
     });
+}
+
+fn request_files(tx: Sender<Result<Option<ClipContents>, WireError>>) {
+    read_held(move |held| {
+        let _ = tx.send(
+            held.map(|h| h.map(|(op, paths)| contents(op, &paths)))
+                .map_err(|e| clip_error(&e)),
+        );
+    });
+}
+
+/// True when the clipboard holds `op` on exactly `paths`: the same operation
+/// and the same paths in the same order.
+pub fn holds_exactly(held: Option<&(ClipOp, Vec<PathBuf>)>, op: ClipOp, paths: &[PathBuf]) -> bool {
+    matches!(held, Some((o, p)) if *o == op && p.as_slice() == paths)
+}
+
+/// Ends the offer of files: the clipboard is cleared when Kern owns it, and
+/// when another application does (a cut made in a file manager) Kern takes it
+/// over with empty text, since one application cannot release another's
+/// selection. Either way a paste finds no files.
+fn clear_files() {
+    let clipboard = gtk::Clipboard::get(&gdk::SELECTION_CLIPBOARD);
+    clipboard.clear();
+    clipboard.set_text("");
+    // Nothing of Kern's to hand to a clipboard manager at exit any more.
+    OWNED.store(false, Ordering::SeqCst);
+}
+
+/// Clears the clipboard only if it still holds `op` on exactly `paths`, and
+/// says whether it did. It is for a cut that has been pasted: the files are
+/// where they were pasted, and a second paste would only look for them in the
+/// old place. The check and the clear are one step on the GTK main thread, so
+/// nothing can be copied in between; what the user copied meanwhile is kept.
+/// A clipboard that holds something unreadable is not the cut, and is left.
+#[tauri::command]
+pub async fn clip_clear_if<R: Runtime>(
+    window: WebviewWindow<R>,
+    op: ClipOp,
+    paths: Vec<WirePath>,
+) -> Result<bool, WireError> {
+    let paths = decode_wire(paths)?;
+    focused(&window).await?;
+    let app = window.app_handle().clone();
+    on_main(&app, move |tx| {
+        read_held(move |held| {
+            let holds = held.is_ok_and(|h| holds_exactly(h.as_ref(), op, &paths));
+            if holds {
+                clear_files();
+            }
+            let _ = tx.send(Ok(holds));
+        });
+    })
+    .await
 }

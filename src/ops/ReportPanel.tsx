@@ -47,7 +47,7 @@ function PartialDetails(props: { error: WireError }) {
   );
 }
 
-function Paged<T>(props: { items: readonly T[]; row(item: T, i: number): React.ReactNode }) {
+export function Paged<T>(props: { items: readonly T[]; row(item: T, i: number): React.ReactNode }) {
   const [shown, setShown] = useState(REPORT_PAGE);
   const rest = props.items.length - shown;
   return (

@@ -150,3 +150,63 @@ test("shift_is_passed_to_the_action_as_extend", () => {
   }
   expect(seen).toEqual([false, true]);
 });
+
+test("a_view_scoped_key_runs_inside_the_view_or_aimed_at_nothing_and_is_left_alone_elsewhere", () => {
+  const run = vi.fn();
+  const scoped = {
+    id: "test.scoped",
+    label: "Scoped",
+    area: "Edit" as const,
+    keys: ["Ctrl+Q"],
+    when: "any" as const,
+    scope: "view" as const,
+    run,
+  };
+  actions.push(scoped);
+  try {
+    const { getByText } = render(
+      <>
+        <Host />
+        <div data-file-keys="">
+          <button>in the view</button>
+        </div>
+      </>
+    );
+    const press = (target: Element | Window) => {
+      const event = new KeyboardEvent("keydown", {
+        key: "q",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    // Another pane's key: not claimed, not run.
+    expect(press(getByText("plain"))).toBe(false);
+    expect(run).not.toHaveBeenCalled();
+    // The view, the page body (the keyboard is nowhere in particular) and the window itself.
+    expect(press(getByText("in the view"))).toBe(true);
+    expect(press(document.body)).toBe(true);
+    expect(press(window)).toBe(true);
+    expect(run).toHaveBeenCalledTimes(3);
+  } finally {
+    actions.splice(actions.indexOf(scoped), 1);
+  }
+});
+
+test("the_keys_of_the_file_operations_are_scoped_to_the_view_and_undo_is_not", () => {
+  const scoped = actions.filter((a) => a.scope === "view").map((a) => a.id);
+  expect(scoped.sort()).toEqual(
+    [
+      "folder.copy",
+      "folder.cut",
+      "folder.delete",
+      "folder.new.file",
+      "folder.new.folder",
+      "folder.paste",
+      "folder.rename",
+      "folder.trash",
+    ].sort()
+  );
+});
