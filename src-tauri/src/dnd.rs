@@ -58,9 +58,12 @@
 //!   list read at the first motion is sent as [`EVENT_DROP`] with the position,
 //!   the size of the webview, what the other application offers and the user's
 //!   modifier. An action the compositor selected that differs from the one Kern
-//!   showed is that modifier. The drop is finished with `delete` unset: Kern
-//!   moves or copies by itself, and the source is never asked to delete
-//!   anything.
+//!   showed is that modifier; any other selected action (a link, ask) is
+//!   refused. Kern moves or copies by itself. A copy is finished as a success;
+//!   a move is finished as a failure, because on Wayland a move finished as a
+//!   success lets the source delete its originals and the `delete` flag of
+//!   `gtk_drag_finish` is not carried by the protocol
+//!   ([`crate::drop_rule::finish_success`]). The source never deletes anything.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -81,8 +84,8 @@ use crate::clipboard::{
     encode_uri_list, on_main, refuse_dot_segments, try_decode_uri_list, TARGET_URI_LIST,
 };
 use crate::drop_rule::{
-    needs_filesystems, stance, standing, user_modifier, verdict, Gate, Listing, Stance, Throttle,
-    Verdict, Whereto, HOVER_INTERVAL,
+    finish_success, needs_filesystems, stance, standing, unsupported_choice, user_modifier,
+    verdict, Gate, Listing, Stance, Throttle, Verdict, Whereto, HOVER_INTERVAL,
 };
 use crate::windows::{wire_error, MAIN};
 
@@ -531,7 +534,19 @@ impl Target {
         if s.action.is_empty() {
             return self.refuse_drop(context, &d, s.refusal, time);
         }
-        let modifier = user_modifier(context.selected_action(), s.action);
+        let selected = context.selected_action();
+        if unsupported_choice(selected, s.action) {
+            return self.refuse_drop(
+                context,
+                &d,
+                Some(
+                    "Kern copies or moves files; it does not link them or ask, so nothing was done"
+                        .to_owned(),
+                ),
+                time,
+            );
+        }
+        let modifier = user_modifier(selected, s.action);
         let payload = drop_payload(paths, at, d.offered, modifier, d.id);
         let sent = match serde_json::to_value(&payload) {
             Ok(v) => self.send(EVENT_DROP, v),
@@ -544,7 +559,7 @@ impl Target {
                 false
             }
         };
-        context.drag_finish(sent, false, time);
+        context.drag_finish(finish_success(sent, selected), false, time);
     }
 
     fn refuse_drop(&self, context: &gdk::DragContext, d: &Drag, why: Option<String>, time: u32) {

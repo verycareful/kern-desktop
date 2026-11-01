@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 
 use gtk::gdk::DragAction;
 use kern_lib::drop_rule::{
-    navigation_allowed, needs_filesystems, stance, standing, user_modifier, Gate, Listing, Stance,
-    Throttle, Verdict, Whereto, HOVER_INTERVAL,
+    finish_success, navigation_allowed, needs_filesystems, stance, standing, unsupported_choice,
+    user_modifier, Gate, Listing, Stance, Throttle, Verdict, Whereto, HOVER_INTERVAL,
 };
 
 const BOTH: DragAction =
@@ -232,6 +232,53 @@ fn a_selected_action_that_is_not_exactly_copy_or_move_is_no_modifier() {
             "{selected:?}"
         );
     }
+}
+
+#[test]
+fn a_choice_kern_cannot_carry_out_is_refused() {
+    // Ctrl+Shift selects a link on Wayland; ask and a mix are no move or copy either.
+    for selected in [DragAction::LINK, DragAction::ASK, BOTH] {
+        assert!(
+            unsupported_choice(selected, DragAction::MOVE),
+            "{selected:?}"
+        );
+        assert!(
+            unsupported_choice(selected, DragAction::COPY),
+            "{selected:?}"
+        );
+    }
+}
+
+#[test]
+fn kerns_own_answer_and_a_plain_copy_or_move_are_carried_out() {
+    for (selected, shown) in [
+        (DragAction::MOVE, DragAction::MOVE),
+        (DragAction::COPY, DragAction::MOVE),
+        (DragAction::MOVE, DragAction::COPY),
+        (DragAction::empty(), DragAction::MOVE),
+        (DragAction::LINK, DragAction::empty()),
+    ] {
+        assert!(
+            !unsupported_choice(selected, shown),
+            "{selected:?} {shown:?}"
+        );
+    }
+}
+
+#[test]
+fn only_a_copy_is_finished_as_a_success() {
+    // A move finished as a success lets a Wayland source delete its originals,
+    // whatever Kern then does with them.
+    assert!(finish_success(true, DragAction::COPY));
+    for selected in [
+        DragAction::MOVE,
+        BOTH,
+        DragAction::LINK,
+        DragAction::empty(),
+    ] {
+        assert!(!finish_success(true, selected), "{selected:?}");
+    }
+    assert!(!finish_success(false, DragAction::COPY));
 }
 
 #[test]

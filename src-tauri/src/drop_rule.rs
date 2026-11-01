@@ -198,6 +198,28 @@ pub fn user_modifier(selected: DragAction, shown: DragAction) -> Option<&'static
     }
 }
 
+/// Whether the compositor selected something other than Kern's answer that is
+/// neither a plain copy nor a plain move (Ctrl+Shift selects a link on
+/// Wayland). Kern carries out only copies and moves, so such a drop is refused
+/// rather than given Kern's default, which may move the files.
+pub fn unsupported_choice(selected: DragAction, shown: DragAction) -> bool {
+    !shown.is_empty()
+        && !selected.is_empty()
+        && selected != shown
+        && selected != DragAction::COPY
+        && selected != DragAction::MOVE
+}
+
+/// Whether a drop that was passed on (`sent`) is finished as a success. Only a
+/// copy is: on Wayland, finishing a drop whose final action is a move tells the
+/// source it may delete its data, and the `delete` flag of `gtk_drag_finish`
+/// is not carried by the protocol. Kern moves the files itself, and a move it
+/// skips, cancels or fails must leave the originals where they are, so a move
+/// is finished as a failure and the source deletes nothing.
+pub fn finish_success(sent: bool, selected: DragAction) -> bool {
+    sent && selected == DragAction::COPY
+}
+
 /// What a throttle says about a position.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Gate {

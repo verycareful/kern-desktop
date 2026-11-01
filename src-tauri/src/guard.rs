@@ -4,7 +4,10 @@
 //! Keeps every webview on Kern's own page. A file dropped where the page does
 //! not take it, or a link that is followed, would otherwise make the webview
 //! navigate away from the application to that file or site. The rule is
-//! [`crate::drop_rule::navigation_allowed`]; a refused navigation does nothing.
+//! [`crate::drop_rule::navigation_allowed`]; a refused navigation does nothing
+//! and is written to standard error. Frame loads pass this guard too, so a
+//! page that shows content in a frame must load it from the application's own
+//! origin: `blob:`, `data:` and `about:srcdoc` frames are refused.
 
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Manager, Runtime};
@@ -22,7 +25,13 @@ pub fn plugin<R: Runtime>() -> TauriPlugin<R> {
             } else {
                 None
             };
-            navigation_allowed(url, dev.as_ref())
+            let allowed = navigation_allowed(url, dev.as_ref());
+            if !allowed {
+                // No page is shown for a refused navigation; this line is the
+                // only trace of it, and of a window left blank by it.
+                eprintln!("kern: navigation refused in {}: {url}", webview.label());
+            }
+            allowed
         })
         .build()
 }
