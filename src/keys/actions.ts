@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { parent } from "../ipc";
+import { parent, pathKey } from "../ipc";
 import { activeTab, useTabs, type Tab, type TabsState } from "../store/tabs";
 import { usePanelsStore } from "../store/panels";
 import { folderController, type MoveTo } from "../files/folder-controller";
@@ -16,6 +16,7 @@ import {
 import { DEFAULT_INTERFACE_SIZE, stepInterfaceSize } from "../theme/interface-size";
 import { trashController, type TrashMove } from "../files/trash-controller";
 import { useVolumes } from "../shell/volumes-store";
+import { usePinnedRecent } from "../shell/pinned-recent-store";
 import { useOps } from "../ops/useOps";
 
 // The single table of user-visible actions. Shortcuts (useShortcuts), the
@@ -34,9 +35,9 @@ import { useOps } from "../ops/useOps";
 // for the physical key (KeyboardEvent.code KeyW / Digit1), so Ctrl+W still
 // works there.
 
-// "volume" actions are aimed at a volume of the places strip, not at a tab: they run from the
-// volume's own menu and are not part of the main menu.
-export type ActionContextKind = "folder" | "doc" | "trash" | "volume";
+// "volume" actions are aimed at a volume of the places strip, and "entry" actions at an entry of
+// Pinned or Recent, not at a tab: they run from that item's own menu and are not part of the main menu.
+export type ActionContextKind = "folder" | "doc" | "trash" | "volume" | "entry";
 
 export type ActionContext = {
   tabs: TabsState;
@@ -65,7 +66,8 @@ export type Action = {
     | "Selection"
     | "View"
     | "Trash"
-    | "Volumes";
+    | "Volumes"
+    | "Pinned";
   keys: string[];
   /** The tab kind the action applies to. */
   when: ActionContextKind | "any";
@@ -598,7 +600,102 @@ const placeActions: Action[] = [
   },
 ];
 
-actions.push(...trashActions, ...placeActions);
+// ---- Pinned and Recent (design 4.2) ----
+
+function currentEntry() {
+  return usePinnedRecent.getState().current;
+}
+
+/** The place of the entry a menu was opened on among the pins, or -1. */
+function pinIndex(): number {
+  const e = currentEntry();
+  const pins = usePinnedRecent.getState().pins ?? [];
+  return e ? pins.findIndex((p) => pathKey(p) === pathKey(e.path)) : -1;
+}
+
+const pinnedActions: Action[] = [
+  // Ctrl+D: design 4.5.
+  {
+    id: "folder.pin",
+    scope: "view",
+    label: "Pin",
+    area: "Pinned",
+    keys: ["Ctrl+D"],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.hasSelection() ?? false,
+    run: (c) => {
+      const paths = controllerOf(c)?.selectedPaths() ?? [];
+      void usePinnedRecent.getState().pinPaths(paths);
+    },
+  },
+  {
+    id: "entry.open",
+    label: "Open",
+    area: "Pinned",
+    keys: [],
+    when: "entry",
+    enabled: () => currentEntry() !== null,
+    run: () => {
+      const e = currentEntry();
+      if (e) void usePinnedRecent.getState().open(e.path);
+    },
+  },
+  {
+    id: "entry.pin",
+    label: "Pin",
+    area: "Pinned",
+    keys: [],
+    when: "entry",
+    enabled: () => currentEntry() !== null && pinIndex() < 0,
+    run: () => {
+      const e = currentEntry();
+      if (e) void usePinnedRecent.getState().pinPaths([e.path]);
+    },
+  },
+  {
+    id: "entry.unpin",
+    label: "Unpin",
+    area: "Pinned",
+    keys: [],
+    when: "entry",
+    enabled: () => pinIndex() >= 0,
+    run: () => {
+      const e = currentEntry();
+      if (e) void usePinnedRecent.getState().unpin(e.path);
+    },
+  },
+  // Reordering by drag has these as its keyboard and menu form.
+  {
+    id: "entry.up",
+    label: "Move up",
+    area: "Pinned",
+    keys: [],
+    when: "entry",
+    enabled: () => currentEntry()?.list === "pinned" && pinIndex() > 0,
+    run: () => {
+      const e = currentEntry();
+      if (e) void usePinnedRecent.getState().shift(e.path, -1);
+    },
+  },
+  {
+    id: "entry.down",
+    label: "Move down",
+    area: "Pinned",
+    keys: [],
+    when: "entry",
+    enabled: () => {
+      const i = pinIndex();
+      const n = usePinnedRecent.getState().pins?.length ?? 0;
+      return currentEntry()?.list === "pinned" && i >= 0 && i < n - 1;
+    },
+    run: () => {
+      const e = currentEntry();
+      if (e) void usePinnedRecent.getState().shift(e.path, 1);
+    },
+  },
+];
+
+actions.push(...trashActions, ...placeActions, ...pinnedActions);
 
 export function getAction(id: string): Action {
   const a = actions.find((x) => x.id === id);
@@ -607,7 +704,7 @@ export function getAction(id: string): Action {
 }
 
 export function appliesTo(a: Action, tab: Tab | null): boolean {
-  return a.when === "any" || a.when === "volume" || a.when === tab?.kind;
+  return a.when === "any" || a.when === "volume" || a.when === "entry" || a.when === tab?.kind;
 }
 
 export function isEnabled(a: Action, ctx: ActionContext): boolean {
@@ -624,7 +721,9 @@ export function runAction(a: Action, ctx: ActionContext): boolean {
 /** The actions that apply to a tab, grouped by area in table order. */
 export function menuSections(tab: Tab | null): { title: string; actions: Action[] }[] {
   const sections: { title: string; actions: Action[] }[] = [];
-  for (const a of actions.filter((x) => x.when !== "volume" && appliesTo(x, tab))) {
+  for (const a of actions.filter(
+    (x) => x.when !== "volume" && x.when !== "entry" && appliesTo(x, tab)
+  )) {
     const s = sections.find((x) => x.title === a.area);
     if (s) s.actions.push(a);
     else sections.push({ title: a.area, actions: [a] });

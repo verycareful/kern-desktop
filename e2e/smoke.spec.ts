@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { test, expect } from "./support/mockInvoke";
+import { test, expect, EMPTY_PINNED_RECENT } from "./support/mockInvoke";
 
 test("boots_with_mocked_ipc", async ({ page, mockTauri }) => {
   // The theme the shell asks for at startup.
@@ -21,6 +21,7 @@ test("boots_with_mocked_ipc", async ({ page, mockTauri }) => {
     "plugin:kernkraft-tauri|undo_state": { undo: null, redo: null },
     "plugin:kernkraft-tauri|volumes_list": { mounted: [], unmounted: [], problems: [] },
     "plugin:kernkraft-tauri|volumes_problems_take": [],
+    ...EMPTY_PINNED_RECENT,
     "plugin:kernkraft-tauri|user_dirs": { home: { k: "Utf8", v: "/home/tester/docs" }, dirs: [] },
     "plugin:kernkraft-tauri|theme_get": { css: ":root{}", tokens: {}, fallbacks: [], problems: [] },
   });

@@ -10,6 +10,19 @@ import type { Page } from "@playwright/test";
  */
 export type MockResponses = Record<string, unknown | ((args: Record<string, unknown>) => unknown)>;
 
+/** Kern's own store commands with nothing pinned or recent, for the Pinned and Recent panel. */
+export const EMPTY_PINNED_RECENT: MockResponses = {
+  prune: {
+    pins_removed: [],
+    recents_removed: [],
+    errors: [],
+    corrupt: [],
+    pins: { entries: [] },
+    recents: { entries: [] },
+  },
+  store_errors_take: [],
+};
+
 export type InvokeCall = { cmd: string; args: Record<string, unknown> };
 
 /**

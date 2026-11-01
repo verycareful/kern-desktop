@@ -205,6 +205,7 @@ test("the_keys_of_the_file_operations_are_scoped_to_the_view_and_undo_is_not", (
       "folder.new.file",
       "folder.new.folder",
       "folder.paste",
+      "folder.pin",
       "folder.rename",
       "folder.trash",
     ].sort()

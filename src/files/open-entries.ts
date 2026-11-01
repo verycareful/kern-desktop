@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { openPaths, toWireError, type WireEntry, type WireError } from "../ipc";
+import { openPaths, toWireError, type WireEntry, type WireError, type WirePath } from "../ipc";
 import { useTabs } from "../store/tabs";
 import { isFolder } from "./file-type";
 
@@ -38,14 +38,25 @@ export async function openEntries(
     else tabs.navigateTab(tabId, f.path);
   }
   if (files.length === 0) return [];
+  return openFiles(
+    files.map((f) => f.path),
+    newWindow
+  );
+}
 
+/**
+ * Sends files to the open command with origin "inside" (design 4.3): text
+ * becomes a document tab or, with the new-window gesture, a window; anything
+ * else goes to its default application. Resolves to the errors to show, one
+ * per failure.
+ */
+export async function openFiles(
+  paths: readonly WirePath[],
+  newWindow: boolean
+): Promise<WireError[]> {
   const errors: WireError[] = [];
   try {
-    const outcomes = await openPaths(
-      files.map((f) => f.path),
-      "inside",
-      newWindow ? "new_window" : "default"
-    );
+    const outcomes = await openPaths([...paths], "inside", newWindow ? "new_window" : "default");
     for (const o of outcomes) {
       if (o.error) errors.push(o.error);
       else if (o.action === "failed") {

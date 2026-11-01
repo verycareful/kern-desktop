@@ -60,12 +60,12 @@ import "./files.css";
 
 // The right-click menu is the folder actions of the table, grouped as the
 // main menu groups them (keyboard and right-click parity, design 4.5).
-const CONTEXT_MENU: MenuSection[] = (["Open", "Edit", "Create", "Selection", "View"] as const).map(
-  (area) => ({
-    title: area,
-    actions: actions.filter((a) => a.when === "folder" && a.area === area),
-  })
-);
+const CONTEXT_MENU: MenuSection[] = (
+  ["Open", "Pinned", "Edit", "Create", "Selection", "View"] as const
+).map((area) => ({
+  title: area,
+  actions: actions.filter((a) => a.when === "folder" && a.area === area),
+}));
 
 function ErrorText(props: { error: WireError }) {
   return (
@@ -358,6 +358,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       selectAll: () => dispatch((s, n) => selectAll(s, n)),
       selectNone: () => dispatch((s) => selectNone(s)),
       hasSelection: () => latest.current.sel.selected.size > 0,
+      selectedPaths: () => selected().map((e) => e.path),
       canOpen: () => toOpen().length > 0,
       canMove: (to) =>
         latest.current.entries.length > 0 &&
@@ -371,7 +372,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       editLocation: () => setEditing(true),
       ...fileOps.controller,
     });
-  }, [tab.id, dispatch, openOrAsk, refresh, toOpen, fileOps.controller]);
+  }, [tab.id, dispatch, openOrAsk, refresh, selected, toOpen, fileOps.controller]);
 
   // The status bar's counts (design 4.1).
   useEffect(() => {

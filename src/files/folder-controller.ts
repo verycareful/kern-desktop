@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import type { WirePath } from "../ipc";
 
 // What the actions of the table (src/keys/actions.ts) can ask of the folder
 // view that is showing a tab. The view registers itself while mounted, so an
@@ -11,6 +12,8 @@ export interface FolderController {
   selectNone(): void;
   /** True when something is selected. The outlined item alone is not a selection. */
   hasSelection(): boolean;
+  /** The selected items' paths in list order; never the outlined item. */
+  selectedPaths(): WirePath[];
   /** False when the move has no meaning in the current view (left and right in the list). */
   canMove(to: MoveTo): boolean;
   move(to: MoveTo, extend: boolean): void;

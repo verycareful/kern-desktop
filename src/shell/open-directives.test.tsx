@@ -29,10 +29,14 @@ const ipc = vi.hoisted(() => ({
   confirmClose: vi.fn(),
   themeGet: vi.fn(),
   undoState: vi.fn(),
+  prune: vi.fn(),
+  storeErrorsTake: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
 import App from "../App";
+import { usePinnedRecent } from "./pinned-recent-store";
+import { EMPTY_PRUNE } from "./test-pinned-recent";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 let handlers: Record<string, (payload: unknown) => void>;
@@ -56,6 +60,9 @@ beforeEach(() => {
     return Promise.resolve(queued);
   });
   ipc.openPaths.mockResolvedValue([]);
+  ipc.prune.mockResolvedValue(EMPTY_PRUNE);
+  ipc.storeErrorsTake.mockResolvedValue([]);
+  usePinnedRecent.getState().reset();
   ipc.confirmClose.mockResolvedValue(undefined);
   delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   ipc.watchDir.mockResolvedValue(undefined);

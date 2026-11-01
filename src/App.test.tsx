@@ -58,6 +58,12 @@ vi.mock("./ipc", async () => ({
   userDirs,
   volumesList: () => Promise.resolve({ mounted: [], unmounted: [], problems: [] }),
   volumesProblemsTake: () => Promise.resolve([]),
+  // Pinned and Recent: nothing pinned or recent.
+  EVENT_PINS_CHANGED: "kern://pins-changed",
+  EVENT_RECENTS_CHANGED: "kern://recents-changed",
+  EVENT_STORE_ERROR: "kern://store-error",
+  prune: async () => (await import("./shell/test-pinned-recent")).EMPTY_PRUNE,
+  storeErrorsTake: () => Promise.resolve([]),
   toWireError: (e: unknown) => e,
 }));
 

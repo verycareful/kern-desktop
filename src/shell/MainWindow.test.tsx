@@ -13,17 +13,23 @@ vi.mock("../ipc", async (orig) => ({
   on: () => Promise.resolve(() => undefined),
   // The window reads the undo history once.
   undoState: () => Promise.resolve({ undo: null, redo: null }),
+  // Pinned and Recent read the pins and recents.
+  prune: async () => (await import("./test-pinned-recent")).EMPTY_PRUNE,
+  storeErrorsTake: () => Promise.resolve([]),
 }));
 import { actions, appliesTo } from "../keys/actions";
 import { usePanelsStore } from "../store/panels";
 import { useTabs } from "../store/tabs";
 import MainWindow from "./MainWindow";
 import { VOLUME_MENU } from "./volume-menu";
+import { ENTRY_MENU } from "./entry-menu";
+import { usePinnedRecent } from "./pinned-recent-store";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 
 beforeEach(() => {
   useUserDirs.getState().reset();
+  usePinnedRecent.getState().reset();
   useTabs.setState({ tabs: [], activeId: null });
   usePanelsStore.setState({ leftSlid: false, rightSlid: false });
 });
@@ -181,7 +187,9 @@ test("every_action_appears_in_a_menu", () => {
     collect();
     // Exactly the actions that apply here, each showing its shortcut, grouped by area.
     const active = useTabs.getState().tabs.find((t) => t.id === useTabs.getState().activeId)!;
-    const applicable = actions.filter((a) => a.when !== "volume" && appliesTo(a, active));
+    const applicable = actions.filter(
+      (a) => a.when !== "volume" && a.when !== "entry" && appliesTo(a, active)
+    );
     expect(within(menu).getAllByRole("menuitem")).toHaveLength(applicable.length);
     for (const a of applicable) {
       const item = menu.querySelector(`[data-action-id="${a.id}"]`);
@@ -193,6 +201,8 @@ test("every_action_appears_in_a_menu", () => {
   }
   // The volume actions are in the volume's own menu (right-click, Menu key), not the main one.
   for (const section of VOLUME_MENU) for (const a of section.actions) seen.add(a.id);
+  // The entry actions are in the menu of an entry of Pinned or Recent.
+  for (const section of ENTRY_MENU) for (const a of section.actions) seen.add(a.id);
   expect([...seen].sort()).toEqual(actions.map((a) => a.id).sort());
 });
 

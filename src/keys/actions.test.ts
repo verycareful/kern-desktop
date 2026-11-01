@@ -6,6 +6,9 @@ import { useTabs } from "../store/tabs";
 import { useVolumes } from "../shell/volumes-store";
 import { useOps } from "../ops/useOps";
 import { VOLUME_MENU } from "../shell/volume-menu";
+import { ENTRY_MENU } from "../shell/entry-menu";
+import { usePinnedRecent } from "../shell/pinned-recent-store";
+import { registerFolder, type FolderController } from "../files/folder-controller";
 import { known } from "../shell/test-volumes";
 import {
   actions,
@@ -141,7 +144,7 @@ test("refresh_volumes_is_greyed_while_no_strip_follows_the_volumes", async () =>
 });
 
 test("every_action_is_in_a_menu", () => {
-  // The main menu of the tab kind the action applies to, or the volume's own menu.
+  // The main menu of the tab kind the action applies to, or the volume's or entry's own menu.
   useTabs.getState().openFolder(p("/a"), false);
   useTabs.getState().openDoc(p("/a/n.md"));
   useTabs.getState().openTrash();
@@ -152,7 +155,11 @@ test("every_action_is_in_a_menu", () => {
     const inMenu =
       a.when === "volume"
         ? VOLUME_MENU.some((s) => s.actions.includes(a))
-        : menuSections(a.when === "any" ? null : tabOf(a.when)).some((s) => s.actions.includes(a));
+        : a.when === "entry"
+          ? ENTRY_MENU.some((s) => s.actions.includes(a))
+          : menuSections(a.when === "any" ? null : tabOf(a.when)).some((s) =>
+              s.actions.includes(a)
+            );
     if (!inMenu) missing.push(a.id);
   }
   expect(missing).toEqual([]);
@@ -215,4 +222,48 @@ test("a_document_tab_leaves_undo_to_its_editor", () => {
   useOps.setState({ undoLabel: "Undo create of x" });
   expect(isEnabled(getAction("folder.undo"), currentContext())).toBe(false);
   useOps.getState().reset();
+});
+
+test("ctrl_d_pins_the_selection_and_nothing_else", () => {
+  expect(getAction("folder.pin").keys).toContain("Ctrl+D");
+  useTabs.getState().openFolder(p("/a"), false);
+  const tab = useTabs.getState().tabs[0]!;
+  const pinPaths = vi.fn(() => Promise.resolve());
+  const original = usePinnedRecent.getState().pinPaths;
+  usePinnedRecent.setState({ pinPaths });
+  let selection: WirePath[] = [];
+  const off = registerFolder(tab.id, {
+    hasSelection: () => selection.length > 0,
+    selectedPaths: () => selection,
+  } as Partial<FolderController> as FolderController);
+  try {
+    // An outlined item alone is not a selection: nothing to pin.
+    expect(runAction(getAction("folder.pin"), currentContext())).toBe(false);
+    selection = [p("/a/x"), p("/a/y")];
+    expect(runAction(getAction("folder.pin"), currentContext())).toBe(true);
+    expect(pinPaths).toHaveBeenCalledExactlyOnceWith([p("/a/x"), p("/a/y")]);
+  } finally {
+    off();
+    usePinnedRecent.setState({ pinPaths: original });
+  }
+});
+
+test("entry_actions_follow_the_entry_the_menu_was_opened_on", () => {
+  const ctx = currentContext();
+  const enabled = () => ENTRY_MENU[0]!.actions.filter((a) => isEnabled(a, ctx)).map((a) => a.id);
+  usePinnedRecent.setState({ pins: [p("/a"), p("/b")], current: null });
+  try {
+    expect(enabled()).toEqual([]);
+    usePinnedRecent.setState({ current: { list: "pinned", path: p("/a") } });
+    expect(enabled()).toEqual(["entry.open", "entry.unpin", "entry.down"]);
+    usePinnedRecent.setState({ current: { list: "pinned", path: p("/b") } });
+    expect(enabled()).toEqual(["entry.open", "entry.unpin", "entry.up"]);
+    // A recent entry that is also pinned can be unpinned there, not moved.
+    usePinnedRecent.setState({ current: { list: "recent", path: p("/b") } });
+    expect(enabled()).toEqual(["entry.open", "entry.unpin"]);
+    usePinnedRecent.setState({ current: { list: "recent", path: p("/c") } });
+    expect(enabled()).toEqual(["entry.open", "entry.pin"]);
+  } finally {
+    usePinnedRecent.getState().reset();
+  }
 });

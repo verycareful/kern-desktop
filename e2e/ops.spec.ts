@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import type { Page } from "@playwright/test";
-import { test, expect, emitTauriEvent, getInvokeCalls } from "./support/mockInvoke";
+import {
+  test,
+  expect,
+  emitTauriEvent,
+  getInvokeCalls,
+  EMPTY_PINNED_RECENT,
+} from "./support/mockInvoke";
 
 // File operations through the production build with an in-page stand-in for the
 // backend (design 5.1, 5.7). The stand-in keeps folders as lists of entries,
@@ -145,6 +151,7 @@ const BACKEND = {
   }),
   [`${K}volumes_list`]: { mounted: [], unmounted: [], problems: [] },
   [`${K}volumes_problems_take`]: [],
+  ...EMPTY_PINNED_RECENT,
   // Anything under /mnt is another filesystem than the folders shown; "unreadable" cannot be told.
   [`${K}same_filesystem`]: (args: Record<string, unknown>) =>
     (args.sources as WirePath[]).map((s) => {

@@ -7,7 +7,7 @@ import { usePanels } from "../store/panels";
 import { activeTab, useTabs } from "../store/tabs";
 import { PanelStub } from "./PanelStub";
 import { PlacesPanel } from "./PlacesPanel";
-import { SidePanel } from "./SidePanel";
+import { PinnedRecentPanel } from "./PinnedRecentPanel";
 import { StatusBar } from "./StatusBar";
 import { TabBar } from "./TabBar";
 import "./shell.css";
@@ -40,7 +40,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
     body = (
       <>
         <PlacesPanel />
-        <SidePanel />
+        <PinnedRecentPanel />
       </>
     );
   } else {
@@ -51,7 +51,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
         <main className="kern-doc-area" data-testid="doc-area" />
         <PanelStub side="right" expanded={rightOpen} />
         {leftOpen && <PlacesPanel overlay />}
-        {rightOpen && <SidePanel overlay />}
+        {rightOpen && <PinnedRecentPanel overlay />}
       </div>
     );
   }
