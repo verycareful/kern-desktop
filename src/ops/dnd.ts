@@ -8,20 +8,30 @@ import { pathKey, type DragAction, type WireError, type WirePath, type WireSame 
 // When the pointer leaves the window the drag becomes a native one (`dragOut`)
 // that other applications can take. A drop from another application arrives as
 // kern://drop with a position, the size of the view it is measured in, and the
-// actions the other application offers; it carries no modifier state, because
-// during a native drag the webview gets no key events.
+// actions the other application offers. During a native drag the webview gets no
+// key events, so the backend reports a modifier the user held (Ctrl copies, Shift
+// moves) as the `modifier` of the drop.
 //
 // What a drop does: Ctrl copies and Shift moves. Without one, an application that
 // offers exactly one of copy and move is obeyed. Otherwise a move is what the
 // source and the destination allow: the item is moved when it is on the same
 // filesystem as the folder it goes to (a move is then a rename) and copied when it
 // is not, item by item.
+//
+// Where a drop from another application lands is decided here, from the element under
+// the pointer, both while the pointer passes over (kern://drag-over, answered with
+// `dndTarget`) and at the drop: a folder row or Places folder entry (`data-drop-target`),
+// or the body of a folder view (`data-drop-area`), and nowhere else. A point that cannot
+// be resolved is refused with the reason and never sent to the folder on show.
 
 /** Pointer travel before a press on an item becomes a drag, in CSS pixels: GTK's gtk-dnd-drag-threshold default. */
 export const ITEM_DRAG_THRESHOLD = 8;
 
 /** The attribute that makes an element a drop target; its value is the folder as `dropTargetValue` writes it. */
 export const DROP_TARGET_ATTR = "data-drop-target";
+
+/** The attribute of the body of a folder view; its value is the folder as `dropTargetValue` writes it. */
+export const DROP_AREA_ATTR = "data-drop-area";
 
 /** `by_filesystem`: the backend says per item whether the move would be a rename. */
 export type DropChoice = "copy" | "move" | "by_filesystem";
@@ -85,6 +95,13 @@ export function planDrop(sources: readonly WirePath[], answers: readonly WireSam
     else plan.copy.push(path);
   });
   return plan;
+}
+
+/** The keys a drop's `modifier` stands for: Ctrl copies, Shift moves. */
+export function modsOf(modifier: "copy" | "move" | null): DragModifiers | null {
+  if (modifier === "copy") return { ctrl: true, shift: false };
+  if (modifier === "move") return { ctrl: false, shift: true };
+  return null;
 }
 
 export function dropTargetValue(path: WirePath): string {
@@ -152,4 +169,63 @@ export function toCssPoint(
     );
   }
   return { x: (pos.x * page.width) / view.width, y: (pos.y * page.height) / view.height };
+}
+
+/** A reason from the backend (a fragment such as "it names no files") as a sentence. */
+export function sentence(reason: string): string {
+  if (reason === "") return "";
+  const first = reason.charAt(0).toUpperCase() + reason.slice(1);
+  return /[.!?]$/.test(first) ? first : `${first}.`;
+}
+
+/** Where a drop from another application would land. */
+export type Landing =
+  | {
+      ok: true;
+      path: WirePath;
+      /** The element to light up: the row or entry, or the body of the view. */
+      el: Element;
+      kind: "item" | "area";
+    }
+  | { ok: false; reason: string };
+
+export const REASON_NOWHERE =
+  "Files can be dropped on a folder, on the list of a folder tab or on a folder under Places, and not here.";
+export const REASON_NO_FOLDER = "That place has no folder of its own to drop files into.";
+export const REASON_UNMEASURED =
+  "Kern could not tell where on the window the files are, so it cannot drop them anywhere.";
+export const REASON_ITSELF = "A folder cannot be dropped into itself.";
+export const REASON_NOT_A_FOLDER_TAB =
+  "Files can only be dropped on a folder tab; this tab cannot take them.";
+
+/**
+ * The place a pointer at `point` (in the webview's own units, `view` big) is over, found from
+ * the element under it in the page (`page` big, in CSS pixels). `sources` are the files being
+ * dragged when they are known: none is dropped into itself. A point that cannot be resolved,
+ * a place that takes no drop and a place whose folder cannot be read are all refused, each
+ * with its own reason; nothing falls back to the folder on show.
+ */
+export function landingAt(
+  point: { x: number; y: number },
+  view: Size,
+  page: Size,
+  sources: readonly WirePath[] | null,
+  elementAt: (x: number, y: number) => Element | null = (px, py) =>
+    document.elementFromPoint(px, py)
+): Landing {
+  let at: { x: number; y: number };
+  try {
+    at = toCssPoint(point, view, page);
+  } catch {
+    return { ok: false, reason: REASON_UNMEASURED };
+  }
+  const hit = elementAt(at.x, at.y)?.closest(`[${DROP_TARGET_ATTR}], [${DROP_AREA_ATTR}]`);
+  if (!hit) return { ok: false, reason: REASON_NOWHERE };
+  const kind = hit.hasAttribute(DROP_TARGET_ATTR) ? "item" : "area";
+  const path = parseDropTarget(
+    hit.getAttribute(kind === "item" ? DROP_TARGET_ATTR : DROP_AREA_ATTR)
+  );
+  if (!path) return { ok: false, reason: REASON_NO_FOLDER };
+  if (sources && !canDropOn(sources, path)) return { ok: false, reason: REASON_ITSELF };
+  return { ok: true, path, el: hit, kind };
 }

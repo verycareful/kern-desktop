@@ -2,18 +2,16 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
 //! The pieces of the drop from another application that do not need a
-//! display: which actions are reported and accepted, the payload sent to the
-//! window, and the data read from the drag. The GTK signals around them are
-//! checked by hand.
+//! display: which actions are reported, the payload sent to the window, and
+//! the data read from the drag. The GTK signals around them are checked by
+//! hand; what is answered to a drag is in `drop_rule.rs`.
 
 use std::ffi::OsString;
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 
 use gtk::gdk::DragAction;
-use kern_lib::dnd::{
-    accept_action, action_names, drop_payload, offers_files, uri_list_paths, DropGeometry,
-};
+use kern_lib::dnd::{action_names, drop_payload, offers_files, uri_list_paths, DropGeometry};
 use kernkraft_tauri::WirePath;
 
 fn raw(bytes: &[u8]) -> PathBuf {
@@ -48,46 +46,6 @@ fn no_actions_have_no_names() {
 }
 
 #[test]
-fn a_suggested_copy_or_move_is_accepted_when_the_source_offers_it() {
-    let both = DragAction::COPY | DragAction::MOVE | DragAction::LINK;
-    assert_eq!(accept_action(both, DragAction::COPY), DragAction::COPY);
-    assert_eq!(accept_action(both, DragAction::MOVE), DragAction::MOVE);
-}
-
-#[test]
-fn a_suggestion_that_is_not_copy_or_move_gives_copy_then_move() {
-    let both = DragAction::COPY | DragAction::MOVE;
-    for suggested in [DragAction::ASK, DragAction::LINK, DragAction::empty()] {
-        assert_eq!(accept_action(both, suggested), DragAction::COPY);
-        assert_eq!(accept_action(DragAction::MOVE, suggested), DragAction::MOVE);
-    }
-}
-
-#[test]
-fn a_suggestion_the_source_does_not_offer_is_not_accepted() {
-    assert_eq!(
-        accept_action(DragAction::COPY, DragAction::MOVE),
-        DragAction::COPY
-    );
-    assert_eq!(
-        accept_action(DragAction::MOVE, DragAction::COPY),
-        DragAction::MOVE
-    );
-}
-
-#[test]
-fn a_drag_that_offers_neither_copy_nor_move_is_declined() {
-    assert_eq!(
-        accept_action(DragAction::LINK, DragAction::LINK),
-        DragAction::empty()
-    );
-    assert_eq!(
-        accept_action(DragAction::empty(), DragAction::COPY),
-        DragAction::empty()
-    );
-}
-
-#[test]
 fn only_a_uri_list_is_a_drop_of_files() {
     assert!(offers_files(["text/plain", "text/uri-list"]));
     assert!(!offers_files(["text/plain", "text/html"]));
@@ -103,7 +61,8 @@ fn the_payload_carries_paths_losslessly_and_where_and_how_big() {
         &paths,
         geometry(),
         DragAction::COPY | DragAction::MOVE,
-        DragAction::MOVE,
+        Some("move"),
+        7,
     );
     assert_eq!(p.paths[0], WirePath::Utf8("/home/a b/x.txt".to_owned()));
     // The name that is not UTF-8 travels as bytes and decodes to itself.
@@ -115,27 +74,23 @@ fn the_payload_carries_paths_losslessly_and_where_and_how_big() {
     assert_eq!(json["view"]["width"], 1280.0);
     assert_eq!(json["view"]["height"], 800.0);
     assert_eq!(json["offered"], serde_json::json!(["copy", "move"]));
-    assert_eq!(json["selected"], "move");
+    assert_eq!(json["modifier"], "move");
+    assert_eq!(json["drag"], 7);
 }
 
 #[test]
-fn a_selected_action_that_is_not_exactly_one_is_null() {
-    for selected in [
-        DragAction::empty(),
-        DragAction::COPY | DragAction::MOVE,
-        DragAction::DEFAULT,
-    ] {
-        let p = drop_payload(
-            &[PathBuf::from("/a")],
-            geometry(),
-            DragAction::COPY,
-            selected,
-        );
-        assert_eq!(
-            serde_json::to_value(&p).unwrap()["selected"],
-            serde_json::Value::Null
-        );
-    }
+fn no_modifier_is_null() {
+    let p = drop_payload(
+        &[PathBuf::from("/a")],
+        geometry(),
+        DragAction::COPY,
+        None,
+        1,
+    );
+    assert_eq!(
+        serde_json::to_value(&p).unwrap()["modifier"],
+        serde_json::Value::Null
+    );
 }
 
 // ---- the data ----
@@ -164,10 +119,18 @@ fn a_drag_that_names_no_file_is_an_error() {
 }
 
 #[test]
-fn dot_segments_in_a_uri_mean_what_rfc_3986_says() {
-    // RFC 3986 section 5.2.4: the URI names /home/v/x, whatever a symlink at /home/u would do.
-    let paths = uri_list_paths(b"file:///home/u/../v/./x\r\n").unwrap();
-    assert_eq!(paths, [PathBuf::from("/home/v/x")]);
+fn a_dot_segment_in_a_dropped_uri_is_refused_as_it_is_for_the_clipboard() {
+    // The application that made the list may have meant the path RFC 3986 section 5.2.4 gives,
+    // while a symbolic link would make the filesystem mean another one. Neither is guessed.
+    for list in [
+        &b"file:///home/u/../v/x\r\n"[..],
+        b"file:///home/u/./x\r\n",
+        b"file:///home/ok\r\nfile:///a/%2E%2E/b\r\n",
+    ] {
+        let e = uri_list_paths(list).unwrap_err();
+        assert_eq!(e.kind, "BadPath", "{}", String::from_utf8_lossy(list));
+        assert!(e.message.contains("segment"), "{}", e.message);
+    }
 }
 
 // ---- Kern takes the drop itself ----

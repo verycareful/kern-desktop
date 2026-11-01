@@ -169,16 +169,51 @@ export type DragAction = "copy" | "move" | "link" | "ask";
  * A drop from another application, on kern://drop (src-tauri/src/dnd.rs). `position` is where the
  * pointer was and `view` the size of the webview, both in the webview's own units, so a point in
  * CSS pixels is `position` times the page's size over `view`, whatever the interface size.
- * `offered` is what the other application allows; `selected` is the action GTK negotiated, or null
- * when it is not exactly one.
+ * `offered` is what the other application allows. `modifier` is `copy` or `move` when the user
+ * chose it with a modifier key during the drag (the action the window system selected was not the
+ * one Kern showed), else null. `drag` names the drag, as in the events before the drop.
  */
 export interface DropPayload {
   paths: WirePath[];
   position: { x: number; y: number };
   view: { width: number; height: number };
   offered: DragAction[];
-  selected: DragAction | null;
+  modifier: "copy" | "move" | null;
+  drag: number;
 }
+
+/** kern://drop-refused: Kern declined a drop and says why. */
+export interface DropRefused {
+  drag: number;
+  reason: string;
+}
+
+/** kern://drag-over: the pointer of a drag from another application, at most every 50 ms. Same units as a drop. */
+export interface DragOver {
+  drag: number;
+  position: { x: number; y: number };
+  view: { width: number; height: number };
+}
+
+/** kern://drag-files: the files of the drag have been read. */
+export interface DragFiles {
+  drag: number;
+  paths: WirePath[];
+}
+
+/** kern://drag-refusal: why Kern declines the drag now, or null when it does not. */
+export interface DragRefusal {
+  drag: number;
+  refusal: string | null;
+}
+
+/** kern://drag-leave: the pointer left the window (a drop may follow). */
+export interface DragLeave {
+  drag: number;
+}
+
+/** What the page tells the backend about where a drag's pointer is: over a folder that takes the files, or why there is none. */
+export type DragTarget = { state: "folder"; path: WirePath } | { state: "refused"; reason: string };
 
 export const clipSet = (op: ClipOp, paths: WirePath[]) => invoke<void>("clip_set", { op, paths });
 export const clipText = (text: string) => invoke<void>("clip_text", { text });
@@ -187,3 +222,6 @@ export const clipGet = () => invoke<ClipContents | null>("clip_get");
 export const clipClearIf = (op: ClipOp, paths: WirePath[]) =>
   invoke<boolean>("clip_clear_if", { op, paths });
 export const dragOut = (paths: WirePath[]) => invoke<void>("drag_out", { paths });
+/** Answers kern://drag-over: the backend then shows the pointer what Kern will do at that place. */
+export const dndTarget = (drag: number, target: DragTarget) =>
+  invoke<void>("dnd_target", { drag, target });

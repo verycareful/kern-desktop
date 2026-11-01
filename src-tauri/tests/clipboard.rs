@@ -274,7 +274,7 @@ fn paths_that_differ_only_in_bytes_that_are_not_utf8_are_different() {
 fn a_clipboard_that_is_not_the_pasted_cut_is_left_alone_whoever_owns_it() {
     for kern_owns in [true, false] {
         for changed in [true, false] {
-            assert_eq!(clear_plan(false, changed, kern_owns), Clear::Keep);
+            assert_eq!(clear_plan(false, changed, kern_owns, false), Clear::Keep);
         }
     }
 }
@@ -282,18 +282,26 @@ fn a_clipboard_that_is_not_the_pasted_cut_is_left_alone_whoever_owns_it() {
 #[test]
 fn a_clipboard_that_changed_since_it_was_read_is_left_alone() {
     // The cut was read, then something else was copied before the clear: that copy is kept.
-    assert_eq!(clear_plan(true, true, true), Clear::Keep);
-    assert_eq!(clear_plan(true, true, false), Clear::Keep);
+    assert_eq!(clear_plan(true, true, true, false), Clear::Keep);
+    assert_eq!(clear_plan(true, true, false, false), Clear::Keep);
 }
 
 #[test]
 fn kerns_own_offer_is_released_and_not_replaced_by_empty_text() {
-    assert_eq!(clear_plan(true, false, true), Clear::Release);
+    assert_eq!(clear_plan(true, false, true, false), Clear::Release);
 }
 
 #[test]
 fn another_applications_cut_is_taken_over_since_it_cannot_be_released() {
-    assert_eq!(clear_plan(true, false, false), Clear::TakeOver);
+    assert_eq!(clear_plan(true, false, false, false), Clear::TakeOver);
+}
+
+#[test]
+fn a_clear_the_page_was_told_failed_never_happens() {
+    // The command timed out and said so; the clipboard that answers later is left as it is.
+    for kern_owns in [true, false] {
+        assert_eq!(clear_plan(true, false, kern_owns, true), Clear::Keep);
+    }
 }
 
 #[test]

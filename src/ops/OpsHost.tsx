@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect } from "react";
-import { EVENT_DROP, on, toWireError } from "../ipc";
-import { activeTab, useTabs } from "../store/tabs";
 import { ConflictDialog } from "./ConflictDialog";
+import { DropHover } from "./DropHover";
 import { ProgressPanel } from "./ProgressPanel";
 import { ReportDialog } from "./ReportDialog";
 import { UndoBanner } from "./UndoBanner";
@@ -20,35 +19,13 @@ export function OpsHost() {
   useEffect(() => {
     void useOps.getState().refreshUndo();
   }, []);
-  // A folder tab's view takes a drop on itself; a drop on any other tab is told it has nowhere to go.
-  useEffect(() => {
-    let live = true;
-    let off: (() => void) | undefined;
-    on(EVENT_DROP, () => {
-      if (activeTab(useTabs.getState())?.kind !== "folder") {
-        useOps
-          .getState()
-          .notify("Files can only be dropped on a folder tab; this tab cannot take them.");
-      }
-    }).then(
-      (u) => (live ? (off = u) : u()),
-      (e: unknown) => {
-        if (live) {
-          useOps.getState().report({ title: "Drop", report: null, error: toWireError(e) });
-        }
-      }
-    );
-    return () => {
-      live = false;
-      off?.();
-    };
-  }, []);
   // The oldest question is asked first; the other operations stay blocked until their turn.
   const asking = ops.filter((o) => o.conflict !== null).sort((a, b) => a.askedAt - b.askedAt);
   const first = asking[0];
   return (
     <>
       <UndoBanner />
+      <DropHover />
       <ProgressPanel />
       {first?.conflict && (
         <ConflictDialog

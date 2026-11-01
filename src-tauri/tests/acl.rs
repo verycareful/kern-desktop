@@ -43,6 +43,7 @@ fn env(label: &str) -> Env {
             kern_lib::store_cmds::settings_set,
             kern_lib::windows::open_pending_take,
             kern_lib::clipboard::clip_clear_if,
+            kern_lib::dnd::dnd_target,
         ])
         .build(tauri::generate_context!())
         .unwrap();
@@ -156,6 +157,32 @@ fn a_window_the_capability_does_not_name_may_not_clear_the_clipboard() {
         &e,
         "clip_clear_if",
         json!({"op": "cut", "paths": [{"k": "Utf8", "v": "/a/b"}]}),
+    )
+    .unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+}
+
+#[test]
+fn the_main_window_may_say_where_a_drag_is() {
+    // Reached: the command refuses a path with a dot segment before it looks for a drag, and
+    // that refusal is the command's own error, not the access control's.
+    let e = env("main");
+    let err = invoke(
+        &e,
+        "dnd_target",
+        json!({"drag": 1, "target": {"state": "folder", "path": {"k": "Utf8", "v": "/a/../b"}}}),
+    )
+    .unwrap_err();
+    assert_eq!(err["kind"], "BadPath", "{err}");
+}
+
+#[test]
+fn a_window_the_capability_does_not_name_may_not_say_where_a_drag_is() {
+    let e = env("stranger");
+    let err = invoke(
+        &e,
+        "dnd_target",
+        json!({"drag": 1, "target": {"state": "refused", "reason": "x"}}),
     )
     .unwrap_err();
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");

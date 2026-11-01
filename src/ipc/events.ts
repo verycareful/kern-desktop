@@ -13,7 +13,19 @@ import type {
   VolumesChanged,
   WireTheme,
 } from "./kernkraft";
-import type { CorruptReport, DropPayload, Directive, Pins, Recents, Settings } from "./app";
+import type {
+  CorruptReport,
+  DragFiles,
+  DragLeave,
+  DragOver,
+  DragRefusal,
+  DropPayload,
+  DropRefused,
+  Directive,
+  Pins,
+  Recents,
+  Settings,
+} from "./app";
 
 export type { UnlistenFn };
 
@@ -34,6 +46,11 @@ export const EVENT_PINS_CHANGED = "kern://pins-changed";
 export const EVENT_RECENTS_CHANGED = "kern://recents-changed";
 export const EVENT_STORE_ERROR = "kern://store-error";
 export const EVENT_DROP = "kern://drop";
+export const EVENT_DROP_REFUSED = "kern://drop-refused";
+export const EVENT_DRAG_OVER = "kern://drag-over";
+export const EVENT_DRAG_FILES = "kern://drag-files";
+export const EVENT_DRAG_REFUSAL = "kern://drag-refusal";
+export const EVENT_DRAG_LEAVE = "kern://drag-leave";
 export const EVENT_OPEN = "kern://open";
 export const EVENT_ADOPT_DOC = "kern://adopt-doc";
 export const EVENT_ADOPT_CANCELLED = "kern://adopt-cancelled";
@@ -60,6 +77,11 @@ export interface EventPayloads {
   "kern://recents-changed": Recents;
   "kern://store-error": CorruptReport;
   "kern://drop": DropPayload;
+  "kern://drop-refused": DropRefused;
+  "kern://drag-over": DragOver;
+  "kern://drag-files": DragFiles;
+  "kern://drag-refusal": DragRefusal;
+  "kern://drag-leave": DragLeave;
   "kern://open": Directive;
   "kern://adopt-doc": { path: WirePath; text_state: unknown; from: string };
   "kern://adopt-cancelled": { label: string };

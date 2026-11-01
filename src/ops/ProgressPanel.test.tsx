@@ -12,6 +12,7 @@ const ipc = vi.hoisted(() => ({
   undo: vi.fn(),
   redo: vi.fn(),
   undoState: vi.fn(),
+  dndTarget: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
@@ -72,6 +73,7 @@ beforeEach(() => {
   });
   ipc.undoState.mockResolvedValue({ undo: null, redo: null });
   ipc.answerConflict.mockResolvedValue(undefined);
+  ipc.dndTarget.mockResolvedValue(undefined);
   ipc.cancelOp.mockResolvedValue(undefined);
   useOps.getState().reset();
 });
@@ -214,20 +216,15 @@ test("the_undo_history_is_read_once_at_the_start", async () => {
   await vi.waitFor(() => expect(ipc.undoState).toHaveBeenCalledTimes(1));
 });
 
-test("a_drop_on_a_tab_that_is_not_a_folder_says_there_is_nowhere_to_put_it", async () => {
+test("the_host_says_why_a_drag_from_another_application_cannot_land_where_it_is", async () => {
   render(<OpsHost />);
-  await vi.waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
+  await vi.waitFor(() => expect(handlers["kern://drag-over"]).toBeDefined());
   useTabs.setState({ tabs: [], activeId: null });
   useTabs.getState().openTrash();
-  emit("kern://drop", { paths: [p("/x/f")], position: { x: 1, y: 1 } });
-  expect(useOps.getState().notice?.text).toMatch(/only be dropped on a folder tab/);
-});
-
-test("a_drop_on_a_folder_tab_is_left_to_its_view", async () => {
-  render(<OpsHost />);
-  await vi.waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
-  useTabs.setState({ tabs: [], activeId: null });
-  useTabs.getState().openFolder(p("/d"), false);
-  emit("kern://drop", { paths: [p("/x/f")], position: { x: 1, y: 1 } });
-  expect(useOps.getState().notice).toBeNull();
+  emit("kern://drag-over", {
+    drag: 1,
+    position: { x: 1, y: 1 },
+    view: { width: window.innerWidth, height: window.innerHeight },
+  });
+  expect(screen.getByRole("status")).toHaveTextContent(/only be dropped on a folder tab/);
 });

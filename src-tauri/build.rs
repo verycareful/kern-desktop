@@ -31,6 +31,7 @@ const COMMANDS: &[&str] = &[
     "clip_clear_if",
     "clip_text",
     "drag_out",
+    "dnd_target",
 ];
 
 fn main() {

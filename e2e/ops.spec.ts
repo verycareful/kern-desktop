@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import type { Page } from "@playwright/test";
-import { test, expect, emitTauriEvent } from "./support/mockInvoke";
+import { test, expect, emitTauriEvent, getInvokeCalls } from "./support/mockInvoke";
 
 // File operations through the production build with an in-page stand-in for the
 // backend (design 5.1, 5.7). The stand-in keeps folders as lists of entries,
@@ -170,6 +170,7 @@ const BACKEND = {
     return null;
   },
   clip_get: () => window.__fake.clip,
+  dnd_target: null,
   [`${K}undo_state`]: () => {
     const f = window.__fake;
     const top = f.journal[f.journal.length - 1];
@@ -519,7 +520,8 @@ for (const zoom of [0.8, 1, 1.25]) {
       position: { x: (box.x + box.width / 2) * zoom, y: (box.y + box.height / 2) * zoom },
       view: { width: page_.w * zoom, height: page_.h * zoom },
       offered: ["copy", "move", "link"],
-      selected: "copy",
+      modifier: null,
+      drag: 1,
     });
     // a.txt is on the folder's filesystem: moved. b.txt is not: copied. The third could not be
     // judged: shown, and in no operation.
@@ -540,3 +542,102 @@ for (const zoom of [0.8, 1, 1.25]) {
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
   });
 }
+
+// ---- the pointer of a drag from another application passing over the window ----
+
+/** kern://drag-over for the middle of `box`, as the backend sends it at 100 % zoom. */
+async function dragOver(page: Page, at: { x: number; y: number }, drag = 1) {
+  const size = await page.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  await emitTauriEvent(page, "kern://drag-over", {
+    drag,
+    position: at,
+    view: { width: size.w, height: size.h },
+  });
+}
+const centre = (b: { x: number; y: number; width: number; height: number }) => ({
+  x: b.x + b.width / 2,
+  y: b.y + b.height / 2,
+});
+const answers = async (page: Page) =>
+  (await getInvokeCalls(page)).filter((c) => c.cmd === "dnd_target").map((c) => c.args);
+
+test("a_drag_passing_over_a_folder_row_lights_it_and_the_backend_is_told_the_folder", async ({
+  page,
+  mockTauri,
+}) => {
+  const home = "/home/tester";
+  await installFake(page, {
+    [`Utf8:${home}`]: [folder(home, "other"), folder(home, "sub"), file(home, "a.txt")],
+  });
+  await mockTauri(BACKEND);
+  await page.goto("/");
+  await expect(rows(page)).toHaveCount(3);
+  await dragOver(page, centre((await rowNamed(page, "sub").boundingBox())!));
+  await expect(rowNamed(page, "sub")).toHaveClass(/kern-drop-over/);
+  await expect(rowNamed(page, "other")).not.toHaveClass(/kern-drop-over/);
+  expect(await answers(page)).toEqual([
+    { drag: 1, target: { state: "folder", path: { k: "Utf8", v: `${home}/sub` } } },
+  ]);
+  // On to a file row: the folder itself is what a drop lands on, and its body lights up.
+  await dragOver(page, centre((await rowNamed(page, "a.txt").boundingBox())!));
+  await expect(rowNamed(page, "sub")).not.toHaveClass(/kern-drop-over/);
+  await expect(page.locator("[data-drop-area]")).toHaveClass(/kern-drop-over/);
+  expect((await answers(page))[1]).toEqual({
+    drag: 1,
+    target: { state: "folder", path: { k: "Utf8", v: home } },
+  });
+  // Out of the window: nothing stays lit.
+  await emitTauriEvent(page, "kern://drag-leave", { drag: 1 });
+  await expect(page.locator(".kern-drop-over")).toHaveCount(0);
+});
+
+test("a_drag_over_a_place_that_takes_no_files_lights_nothing_and_says_why", async ({
+  page,
+  mockTauri,
+}) => {
+  const home = "/home/tester";
+  await installFake(page, { [`Utf8:${home}`]: [file(home, "a.txt")] });
+  await mockTauri(BACKEND);
+  await page.goto("/");
+  await expect(rows(page)).toHaveCount(1);
+  const bar = (await page.getByRole("group", { name: "View" }).boundingBox())!;
+  await dragOver(page, centre(bar));
+  await expect(page.locator(".kern-drop-over")).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: "Places" })).toBeVisible();
+  const [refused] = await answers(page);
+  expect(refused).toMatchObject({ drag: 1, target: { state: "refused" } });
+  // Leaving takes the message away.
+  await emitTauriEvent(page, "kern://drag-leave", { drag: 1 });
+  await expect(page.getByRole("status").filter({ hasText: "Places" })).toHaveCount(0);
+});
+
+test("a_drop_the_backend_declines_is_said_in_the_window", async ({ page, mockTauri }) => {
+  const home = "/home/tester";
+  await installFake(page, { [`Utf8:${home}`]: [file(home, "a.txt")] });
+  await mockTauri(BACKEND);
+  await page.goto("/");
+  await expect(rows(page)).toHaveCount(1);
+  await emitTauriEvent(page, "kern://drop-refused", { drag: 1, reason: "it names no files" });
+  await expect(page.getByText("It names no files.")).toBeVisible();
+  expect(await startedOps(page)).toEqual([]);
+});
+
+test("a_drop_on_the_toolbar_does_nothing_and_says_why", async ({ page, mockTauri }) => {
+  const home = "/home/tester";
+  await installFake(page, { [`Utf8:${home}`]: [file(home, "a.txt")] });
+  await mockTauri(BACKEND);
+  await page.goto("/");
+  await expect(rows(page)).toHaveCount(1);
+  const bar = (await page.getByRole("group", { name: "View" }).boundingBox())!;
+  const size = await page.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  await emitTauriEvent(page, "kern://drop", {
+    paths: [{ k: "Utf8", v: "/mnt/usb/b.txt" }],
+    position: centre(bar),
+    view: { width: size.w, height: size.h },
+    offered: ["copy", "move"],
+    modifier: null,
+    drag: 1,
+  });
+  await expect(page.getByText(/not here/)).toBeVisible();
+  expect(await startedOps(page)).toEqual([]);
+});

@@ -4,12 +4,16 @@ import { expect, test } from "vitest";
 import type { WireError, WirePath, WireSame } from "../ipc";
 import {
   canDropOn,
+  DROP_AREA_ATTR,
   decideDrop,
   dropTargetAt,
   dropTargetValue,
+  landingAt,
   leftWindow,
+  modsOf,
   parseDropTarget,
   planDrop,
+  sentence,
   toCssPoint,
 } from "./dnd";
 
@@ -168,4 +172,109 @@ test.each([
   expect(() =>
     toCssPoint({ x: 1, y: 1 }, { width: vw, height: vh }, { width: cw, height: ch })
   ).toThrow(RangeError);
+});
+
+test("the_modifier_a_drop_carries_becomes_the_keys_that_decide", () => {
+  expect(modsOf("copy")).toEqual({ ctrl: true, shift: false });
+  expect(modsOf("move")).toEqual({ ctrl: false, shift: true });
+  expect(modsOf(null)).toBeNull();
+  expect(decideDrop(modsOf("copy"), ["move"])).toBe("copy");
+  expect(decideDrop(modsOf("move"), ["copy"])).toBe("move");
+  expect(decideDrop(modsOf(null), ["copy", "move"])).toBe("by_filesystem");
+});
+
+// ---- where a drop from another application lands ----
+
+const page = { width: 1000, height: 700 };
+const view = { width: 1000, height: 700 };
+
+function dom(html: string) {
+  document.body.innerHTML = html;
+}
+const area = (folder: WirePath) => `${DROP_AREA_ATTR}='${dropTargetValue(folder)}'`;
+const target = (folder: WirePath) => `data-drop-target='${dropTargetValue(folder)}'`;
+const find = (id: string) => () => document.getElementById(id);
+
+test("a_folder_row_under_the_pointer_is_where_the_drop_lands", () => {
+  dom(
+    `<div ${area(p("/d"))}><div id="row" ${target(p("/d/sub"))}><span id="n">sub</span></div></div>`
+  );
+  const l = landingAt({ x: 5, y: 5 }, view, page, null, find("n"));
+  expect(l).toMatchObject({ ok: true, path: p("/d/sub"), kind: "item" });
+  expect(l.ok && l.el.id).toBe("row");
+});
+
+test("a_folder_in_places_is_where_the_drop_lands", () => {
+  dom(`<ul><li id="place" ${target(p("/home/u/Music"))}><button id="b">Music</button></li></ul>`);
+  expect(landingAt({ x: 5, y: 5 }, view, page, null, find("b"))).toMatchObject({
+    ok: true,
+    path: p("/home/u/Music"),
+  });
+});
+
+test("the_body_of_a_folder_view_is_the_folder_itself", () => {
+  dom(`<div id="body" ${area(p("/d"))}><div id="gap"></div><div id="file">a</div></div>`);
+  // A file row is not a drop target, so a drop on it is a drop on the body that holds it.
+  for (const id of ["gap", "file", "body"]) {
+    expect(landingAt({ x: 5, y: 5 }, view, page, null, find(id)), id).toMatchObject({
+      ok: true,
+      path: p("/d"),
+      kind: "area",
+    });
+  }
+});
+
+test("anywhere_else_is_refused_with_a_reason_that_names_the_places_that_take_files", () => {
+  dom(`<div id="bar">toolbar</div>`);
+  const l = landingAt({ x: 5, y: 5 }, view, page, null, find("bar"));
+  expect(l.ok).toBe(false);
+  expect(!l.ok && l.reason).toMatch(/folder/);
+  expect(!l.ok && l.reason).toMatch(/Places/);
+  // Nothing at all under the point (outside the page) is the same.
+  expect(landingAt({ x: 5, y: 5 }, view, page, null, () => null).ok).toBe(false);
+});
+
+test("a_place_whose_folder_cannot_be_read_is_refused_and_not_replaced_by_another", () => {
+  dom(`<div ${area(p("/d"))}><div id="x" data-drop-target="{broken"></div></div>`);
+  const l = landingAt({ x: 5, y: 5 }, view, page, null, find("x"));
+  expect(l.ok).toBe(false);
+  expect(!l.ok && l.reason).toMatch(/no folder of its own/);
+});
+
+test("a_view_whose_size_cannot_be_measured_refuses_and_says_so", () => {
+  dom(`<div id="body" ${area(p("/d"))}></div>`);
+  for (const bad of [
+    { width: 0, height: 700 },
+    { width: 1000, height: Number.NaN },
+  ]) {
+    const l = landingAt({ x: 5, y: 5 }, bad, page, null, find("body"));
+    expect(l.ok).toBe(false);
+    expect(!l.ok && l.reason).toMatch(/could not tell where/);
+  }
+});
+
+test("the_point_is_found_in_css_pixels_at_any_interface_size", () => {
+  dom(`<div ${area(p("/d"))}><div id="row" ${target(p("/d/sub"))}></div></div>`);
+  const seen: Array<[number, number]> = [];
+  const at = (x: number, y: number) => {
+    seen.push([x, y]);
+    return document.getElementById("row");
+  };
+  landingAt({ x: 375, y: 250 }, { width: 1250, height: 875 }, page, null, at);
+  expect(seen).toEqual([[300, 200]]);
+});
+
+test("a_folder_cannot_be_dropped_into_itself_and_the_reason_says_so", () => {
+  dom(`<div ${area(p("/d"))}><div id="row" ${target(p("/d/sub"))}></div></div>`);
+  const l = landingAt({ x: 5, y: 5 }, view, page, [p("/d/sub")], find("row"));
+  expect(l.ok).toBe(false);
+  expect(!l.ok && l.reason).toMatch(/into itself/);
+  expect(landingAt({ x: 5, y: 5 }, view, page, [p("/d/other")], find("row")).ok).toBe(true);
+});
+
+test("a_reason_from_the_backend_is_made_a_sentence", () => {
+  expect(sentence("it names no files")).toBe("It names no files.");
+  expect(sentence("Already a sentence.")).toBe("Already a sentence.");
+  expect(sentence("ends with a question?")).toBe("Ends with a question?");
+  expect(sentence("")).toBe("");
 });

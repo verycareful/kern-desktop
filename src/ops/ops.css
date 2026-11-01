@@ -140,6 +140,24 @@
   background: var(--kern-accent-soft);
 }
 
+/* Why the place under a drag from another application takes no files. */
+.kern-drop-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 40px;
+  z-index: 60;
+  max-width: min(90vw, 60ch);
+  margin: 0;
+  padding: 6px 12px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  font-size: 13px;
+  color: var(--kern-text);
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+}
+
 .kern-drag-ghost {
   position: fixed;
   z-index: 60;

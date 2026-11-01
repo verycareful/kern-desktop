@@ -23,6 +23,11 @@ vi.mock("./ipc", async () => ({
   EVENT_DIR_GONE: "kernkraft://dir-gone",
   EVENT_VOLUMES_CHANGED: "kernkraft://volumes-changed",
   EVENT_DROP: "kern://drop",
+  EVENT_DROP_REFUSED: "kern://drop-refused",
+  EVENT_DRAG_OVER: "kern://drag-over",
+  EVENT_DRAG_FILES: "kern://drag-files",
+  EVENT_DRAG_REFUSAL: "kern://drag-refusal",
+  EVENT_DRAG_LEAVE: "kern://drag-leave",
   // The file operations host reads the undo history once.
   undoState: () => Promise.resolve({ undo: null, redo: null }),
   // The folder view of the Home tab: an empty folder.

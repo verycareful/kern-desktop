@@ -837,13 +837,15 @@ function dropOf(over: Partial<DropPayload> = {}): DropPayload {
     position: { x: 40, y: 40 },
     view: { width: window.innerWidth, height: window.innerHeight },
     offered: ["copy", "move", "link"],
-    selected: "copy",
+    modifier: null,
+    drag: 1,
     ...over,
   };
 }
 const dropFromElsewhere = async (over: Partial<DropPayload> = {}) => {
   await waitFor(() => expect(handlers["kern://drop"]).toBeDefined());
-  act(() => handlers["kern://drop"]!(dropOf(over)));
+  // Every subscriber gets it: the view that acts and the host that says why it could not.
+  act(() => subscribed["kern://drop"]!.forEach((h) => h(dropOf(over))));
   await act(async () => {});
 };
 
@@ -866,37 +868,81 @@ test("an_application_that_offers_move_alone_is_obeyed_without_asking_the_filesys
   expect(ipc.sameFilesystem).not.toHaveBeenCalled();
 });
 
-test("an_application_that_offers_both_leaves_it_to_the_filesystems_and_the_negotiated_action_is_not_the_rule", async () => {
+test("an_application_that_offers_both_leaves_it_to_the_filesystems", async () => {
   await mount([dir("sub"), entry("a")]);
   hover(() => rowNamed("sub"));
   ipc.sameFilesystem.mockResolvedValue([different, same]);
-  // GTK's own choice cannot be told from the window's default, so it decides nothing.
-  await dropFromElsewhere({
-    paths: [p("/x/f"), p("/x/g")],
-    offered: ["copy", "move", "link"],
-    selected: "move",
-  });
+  await dropFromElsewhere({ paths: [p("/x/f"), p("/x/g")], offered: ["copy", "move", "link"] });
   await waitFor(() => expect(ipc.startOp).toHaveBeenCalledTimes(2));
   expect(ipc.sameFilesystem).toHaveBeenCalledExactlyOnceWith([p("/x/f"), p("/x/g")], p("/d/sub"));
   expect(ipc.startOp).toHaveBeenCalledWith("move", [p("/x/g")], p("/d/sub"));
   expect(ipc.startOp).toHaveBeenCalledWith("copy", [p("/x/f")], p("/d/sub"));
 });
 
+test("a_modifier_the_user_held_during_the_drag_copies_what_the_filesystems_would_move", async () => {
+  await mount([dir("sub"), entry("a")]);
+  hover(() => rowNamed("sub"));
+  await dropFromElsewhere({ paths: [p("/x/f"), p("/x/g")], modifier: "copy" });
+  await waitFor(() =>
+    expect(ipc.startOp).toHaveBeenCalledExactlyOnceWith("copy", [p("/x/f"), p("/x/g")], p("/d/sub"))
+  );
+  expect(ipc.sameFilesystem).not.toHaveBeenCalled();
+});
+
+test("a_modifier_the_user_held_during_the_drag_moves_what_the_filesystems_would_copy", async () => {
+  await mount([dir("sub"), entry("a")]);
+  hover(() => rowNamed("sub"));
+  await dropFromElsewhere({ modifier: "move" });
+  await waitFor(() =>
+    expect(ipc.startOp).toHaveBeenCalledExactlyOnceWith("move", [p("/x/f")], p("/d/sub"))
+  );
+  expect(ipc.sameFilesystem).not.toHaveBeenCalled();
+});
+
 test("a_drop_that_offers_no_usable_action_follows_the_filesystem_rule", async () => {
   await mount([dir("sub"), entry("a")]);
   hover(() => rowNamed("sub"));
   ipc.sameFilesystem.mockResolvedValue([different]);
-  await dropFromElsewhere({ offered: [], selected: null });
+  await dropFromElsewhere({ offered: [] });
   await waitFor(() => expect(ipc.startOp).toHaveBeenCalledWith("copy", [p("/x/f")], p("/d/sub")));
 });
 
-test("a_drop_on_the_empty_part_of_the_view_lands_in_the_folder_itself", async () => {
+/** The body of the folder view, which is what a drop on the list itself lands on. */
+const viewBody = () => document.querySelector("[data-drop-area]");
+
+test("the_body_of_a_listed_view_carries_its_folder", async () => {
   await mount([entry("a")]);
-  hover(() => null);
+  expect(viewBody()?.getAttribute("data-drop-area")).toBe(JSON.stringify(p("/d")));
+});
+
+test("a_drop_on_the_body_of_the_view_lands_in_the_folder_itself", async () => {
+  await mount([entry("a")]);
+  expect(viewBody()).not.toBeNull();
+  hover(() => viewBody());
   ipc.sameFilesystem.mockResolvedValue([different]);
   await dropFromElsewhere({ position: { x: 400, y: 400 } });
   await waitFor(() => expect(ipc.startOp).toHaveBeenCalledWith("copy", [p("/x/f")], p("/d")));
   expect(ipc.sameFilesystem).toHaveBeenCalledWith([p("/x/f")], p("/d"));
+});
+
+test("the_body_of_a_view_that_is_not_listed_takes_no_drop", async () => {
+  ipc.listDir.mockReturnValue(new Promise(() => undefined));
+  useTabs.setState({ tabs: [], activeId: null });
+  useTabs.getState().openFolder(p("/d"), false);
+  render(<Host tab={activeTab(useTabs.getState()) as FolderTab} />);
+  await screen.findByRole("status");
+  expect(document.querySelector("[data-drop-area]")).toBeNull();
+});
+
+test("a_drop_anywhere_else_does_nothing_here_and_is_not_sent_to_the_folder_shown", async () => {
+  await mount([dir("sub"), entry("a")], "/d", { ops: true });
+  hover(() => document.body);
+  ipc.sameFilesystem.mockResolvedValue([different]);
+  await dropFromElsewhere();
+  await act(async () => {});
+  expect(ipc.sameFilesystem).not.toHaveBeenCalled();
+  expect(ipc.startOp).not.toHaveBeenCalled();
+  expect(useOps.getState().notice?.text).toMatch(/not here/);
 });
 
 test("f2_edits_the_name_in_the_grid_too", async () => {
@@ -1244,13 +1290,23 @@ test("at_80_percent_the_view_is_smaller_than_the_page_and_the_point_grows", asyn
   expect(y).toBeCloseTo(62.5, 9);
 });
 
-test("a_drop_whose_view_has_no_size_says_so_and_lands_in_the_folder_not_on_a_guess", async () => {
-  await mount([dir("sub"), entry("a")]);
+test("a_drop_whose_view_has_no_size_says_so_and_goes_nowhere", async () => {
+  await mount([dir("sub"), entry("a")], "/d", { ops: true });
   hover(() => rowNamed("sub"));
   await dropFromElsewhere({ view: { width: 0, height: 0 } });
-  expect(await screen.findByRole("alert")).toHaveTextContent(/cannot tell the scale/);
-  await waitFor(() => expect(ipc.sameFilesystem).toHaveBeenCalled());
-  expect(ipc.sameFilesystem).toHaveBeenCalledWith([p("/x/f")], p("/d"));
+  await act(async () => {});
+  expect(useOps.getState().notice?.text).toMatch(/could not tell where/);
+  expect(ipc.sameFilesystem).not.toHaveBeenCalled();
+  expect(ipc.startOp).not.toHaveBeenCalled();
+});
+
+test("a_drop_into_one_of_the_dropped_folders_does_nothing", async () => {
+  await mount([dir("sub"), entry("a")], "/d", { ops: true });
+  hover(() => rowNamed("sub"));
+  await dropFromElsewhere({ paths: [p("/d/sub")] });
+  await act(async () => {});
+  expect(ipc.startOp).not.toHaveBeenCalled();
+  expect(useOps.getState().notice?.text).toMatch(/into itself/);
 });
 
 // ---- a question that is replaced says so ----

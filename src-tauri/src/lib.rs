@@ -5,7 +5,9 @@ pub mod cli;
 pub mod clipboard;
 pub mod default_fm;
 pub mod dnd;
+pub mod drop_rule;
 pub mod filemanager1;
+pub mod guard;
 pub mod instance;
 pub mod open;
 pub mod prelaunch;
@@ -45,6 +47,7 @@ pub fn run() {
         )
         .plugin(kernkraft_tauri::init())
         .plugin(zoom::plugin())
+        .plugin(guard::plugin())
         .plugin(dnd::plugin())
         .on_window_event(windows::on_window_event)
         .on_page_load(windows::on_page_load)
@@ -113,6 +116,7 @@ pub fn run() {
             clipboard::clip_clear_if,
             clipboard::clip_text,
             dnd::drag_out,
+            dnd::dnd_target,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Kern")

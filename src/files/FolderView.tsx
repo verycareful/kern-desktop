@@ -17,7 +17,14 @@ import {
 import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
 import { actions, currentContext, getAction, runAction } from "../keys/actions";
 import { FILE_KEYS_ATTR } from "../keys/file-keys";
-import { canDropOn, decideDrop, dropTargetAt, toCssPoint, type DragModifiers } from "../ops/dnd";
+import {
+  DROP_AREA_ATTR,
+  decideDrop,
+  dropTargetValue,
+  landingAt,
+  modsOf,
+  type DragModifiers,
+} from "../ops/dnd";
 import { useTabs, type FolderTab, type FolderViewState } from "../store/tabs";
 import { Breadcrumb } from "./Breadcrumb";
 import { ConfirmBanner } from "./ConfirmBanner";
@@ -308,35 +315,29 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     },
   });
 
-  // A drop from another application lands where the pointer was.
-  const dropState = useRef({ isActive, path: tab.path });
+  // A drop from another application lands where the pointer was: on the folder row or Places
+  // entry under it, or on the body of the view. A place that takes nothing, or a point that
+  // cannot be resolved, is not this view's to act on; the window says why (ops/DropHover.tsx).
+  const dropState = useRef({ isActive });
   useEffect(() => {
-    dropState.current = { isActive, path: tab.path };
+    dropState.current = { isActive };
   });
   useEffect(() => {
     let live = true;
     let off: (() => void) | undefined;
-    // The folder under the pointer, or the folder itself. When the scale of the page cannot be
-    // told the position means nothing, and the drop goes to the folder shown, with the reason.
-    const landing = async (drop: DropPayload, folder: WirePath): Promise<WirePath> => {
-      try {
-        const at = toCssPoint(drop.position, drop.view, {
+    on(EVENT_DROP, (drop: DropPayload) => {
+      if (!dropState.current.isActive || drop.paths.length === 0) return;
+      const landing = landingAt(
+        drop.position,
+        drop.view,
+        {
           width: window.innerWidth,
           height: window.innerHeight,
-        });
-        const hit = dropTargetAt(at.x, at.y);
-        return hit && canDropOn(drop.paths, hit.path) ? hit.path : folder;
-      } catch (e) {
-        fail(e);
-        return folder;
-      }
-    };
-    on(EVENT_DROP, (drop: DropPayload) => {
-      const now = dropState.current;
-      if (!now.isActive || drop.paths.length === 0) return;
-      void landing(drop, now.path).then(
-        (dest) => live && dropOn(drop.paths, dest, { mods: null, offered: drop.offered })
+        },
+        drop.paths
       );
+      if (!landing.ok) return;
+      dropOn(drop.paths, landing.path, { mods: modsOf(drop.modifier), offered: drop.offered });
     }).then(
       (u) => (live ? (off = u) : u()),
       (e: unknown) => live && fail(e)
@@ -659,6 +660,8 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       )}
       <div
         className="kern-files-body"
+        // Where a drop from another application on the list itself lands (ops/dnd.ts).
+        {...(folder.phase === "ready" ? { [DROP_AREA_ATTR]: dropTargetValue(tab.path) } : {})}
         onScrollCapture={onScrollCapture}
         onPointerDown={drag.onPointerDown}
       >

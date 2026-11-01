@@ -50,7 +50,7 @@
 //! a write still returns success), so every command first requires that the
 //! calling window is focused and fails with `NoFocus` otherwise.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
@@ -61,7 +61,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gtk::gdk;
-use gtk::glib::ObjectExt;
+use gtk::glib::{self, ObjectExt};
 use kernkraft_tauri::{WireError, WirePath};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
@@ -235,12 +235,26 @@ where
     T: Send + 'static,
     F: FnOnce(Sender<Result<T, WireError>>) + Send + 'static,
 {
+    on_main_with(app, |tx, _| f(tx)).await
+}
+
+/// [`on_main`] for work that can still be running when the budget runs out: `f` also gets
+/// a flag that is set the moment the caller gives up and reports the timeout. Work that
+/// finishes later must check it before it changes anything, since the caller has already
+/// been told it did not happen.
+pub(crate) async fn on_main_with<R, T, F>(app: &AppHandle<R>, f: F) -> Result<T, WireError>
+where
+    R: Runtime,
+    T: Send + 'static,
+    F: FnOnce(Sender<Result<T, WireError>>, Arc<AtomicBool>) + Send + 'static,
+{
     let (tx, rx) = mpsc::channel();
     let cancelled = Arc::new(AtomicBool::new(false));
     let flag = cancelled.clone();
+    let abandoned = cancelled.clone();
     app.run_on_main_thread(move || {
         if !flag.load(Ordering::SeqCst) {
-            f(tx);
+            f(tx, abandoned);
         }
     })
     .map_err(|e| wire_error("Clipboard", format!("the main thread is gone: {e}"), None))?;
@@ -628,10 +642,17 @@ pub enum Clear {
 
 /// What to do about a cut that was pasted, given what was found: whether the clipboard
 /// held exactly that cut when it was read, whether the clipboard's owner changed since,
-/// and whether Kern holds an offer of files now. Anything but a clipboard that is still
-/// the cut that was read is left alone.
-pub fn clear_plan(holds_cut: bool, changed_since_read: bool, kern_owns: bool) -> Clear {
-    if !holds_cut || changed_since_read {
+/// whether Kern holds an offer of files now, and whether the caller was already told
+/// that the clear failed (it ran out of time). Anything but a clipboard that is still
+/// the cut that was read is left alone, and nothing is cleared after a failure was
+/// reported.
+pub fn clear_plan(
+    holds_cut: bool,
+    changed_since_read: bool,
+    kern_owns: bool,
+    told_failed: bool,
+) -> Clear {
+    if !holds_cut || changed_since_read || told_failed {
         Clear::Keep
     } else if kern_owns {
         Clear::Release
@@ -664,6 +685,10 @@ fn apply(clipboard: &gtk::Clipboard, plan: Clear) {
 /// application's is taken over with empty text, since one application cannot
 /// release another's selection. A clipboard that holds something unreadable
 /// is not the cut, and is left.
+///
+/// An owner that never answers ends in a `Timeout` error after [`TIMEOUT`]. From then on
+/// the `owner-change` watch is disconnected and a late answer clears nothing, because
+/// the caller has been told the clear did not happen.
 #[tauri::command]
 pub async fn clip_clear_if<R: Runtime>(
     window: WebviewWindow<R>,
@@ -673,22 +698,42 @@ pub async fn clip_clear_if<R: Runtime>(
     let paths = decode_wire(paths)?;
     focused(&window).await?;
     let app = window.app_handle().clone();
-    on_main(&app, move |tx| {
+    on_main_with(&app, move |tx, abandoned| {
         let clipboard = gtk::Clipboard::get(&gdk::SELECTION_CLIPBOARD);
         let offer_at_read = OWNERSHIP.current();
         let changed = Rc::new(Cell::new(false));
-        let watch = clipboard.connect_local("owner-change", false, {
-            let changed = changed.clone();
-            move |_| {
-                changed.set(true);
-                None
+        let watch = Rc::new(RefCell::new(Some(clipboard.connect_local(
+            "owner-change",
+            false,
+            {
+                let changed = changed.clone();
+                move |_| {
+                    changed.set(true);
+                    None
+                }
+            },
+        ))));
+        // However the read ends, the watch ends with it: when it answers, or when the caller
+        // has given up and the owner has still not answered.
+        let unwatch = {
+            let (clipboard, watch) = (clipboard.clone(), watch.clone());
+            move || {
+                if let Some(id) = watch.borrow_mut().take() {
+                    clipboard.disconnect(id);
+                }
             }
-        });
+        };
+        glib::timeout_add_local_once(TIMEOUT, unwatch.clone());
         read_held(move |held| {
-            clipboard.disconnect(watch);
+            unwatch();
             let holds = held.is_ok_and(|h| holds_exactly(h.as_ref(), op, &paths));
             let moved_on = changed.get() || OWNERSHIP.current() != offer_at_read;
-            let plan = clear_plan(holds, moved_on, OWNERSHIP.current() != 0);
+            let plan = clear_plan(
+                holds,
+                moved_on,
+                OWNERSHIP.current() != 0,
+                abandoned.load(Ordering::SeqCst),
+            );
             apply(&clipboard, plan);
             let _ = tx.send(Ok(plan != Clear::Keep));
         });
