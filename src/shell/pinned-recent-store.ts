@@ -4,17 +4,16 @@ import { create } from "zustand";
 import {
   EVENT_PINS_CHANGED,
   EVENT_RECENTS_CHANGED,
-  EVENT_STORE_ERROR,
   mimeOf,
   on,
   pathKey,
   pin,
   pinsReorder,
   prune,
-  storeErrorsTake,
   toWireError,
   unpin,
   type CorruptReport,
+  type Pins,
   type RecentEntry,
   type WireError,
   type WirePath,
@@ -22,6 +21,7 @@ import {
 import { openFiles } from "../files/open-entries";
 import { errorText } from "../ops/error-text";
 import { baseName, namesText } from "../ops/labels";
+import { useStoreErrors } from "../store/store-errors";
 import { showFolder } from "./place-nav";
 
 // Design 4.2: the pins and recents of the right-hand panel, kept by the
@@ -31,12 +31,20 @@ import { showFolder } from "./place-nav";
 // the window regains focus and when opening one fails. Nothing goes wrong
 // quietly: a failure, an entry that could not be checked, a pin removed
 // because its target is gone and an unreadable pins or recents file each
-// leave a notice in the panel until it is dismissed.
+// leave a notice in the panel until it is dismissed. A recent entry removed
+// because its file is gone leaves none: a file deleted is the usual reason,
+// and the user did not choose the entry the way they chose a pin.
+//
+// The lists come from three places: the events, the answers of pin, unpin and
+// pins_reorder, and the answer of prune. Events arrive in the order the backend
+// changed the lists, so they are always applied; an answer is applied only if
+// no event for that list arrived while it was awaited, since that event
+// describes the list at the time of the change or later.
 
 /** The MIME type the backend gives a folder (kernkraft-xdg-apps, through links). */
 const FOLDER_MIME = "inode/directory";
 
-/** The files of the backend's store that this panel shows (store.rs). */
+/** The files of the backend's store that this panel reports on (store.rs). */
 export const PANEL_FILES = ["pins.json", "recents.json"];
 
 export type EntryKind = "folder" | "file";
@@ -52,16 +60,20 @@ interface PinnedRecentState {
   recents: RecentEntry[] | null;
   /** What each listed path is, by path key, once looked up; for its icon only. */
   kinds: Record<string, EntryKind>;
+  /** Why a path's kind could not be looked up, by path key; shown on its row. */
+  kindErrors: Record<string, string>;
   loadError: WireError | null;
   notices: Notice[];
-  /** Every unreadable store file reported since the start, settings.json included. */
-  corrupt: CorruptReport[];
   /** The entry a menu was opened on. */
   current: { list: EntryList; path: WirePath } | null;
   /** Follows the backend's events and prunes; the returned function stops following. */
   follow(): Promise<() => void>;
-  /** Drops entries whose target is gone; calls made meanwhile share one prune. */
-  prune(): Promise<void>;
+  /**
+   * Drops entries whose target is gone. Calls made meanwhile share one prune; with `fresh`, a
+   * call made while one runs waits for it and then prunes again, so the targets are checked
+   * after the call.
+   */
+  prune(fresh?: boolean): Promise<void>;
   pinPaths(paths: readonly WirePath[]): Promise<void>;
   unpin(path: WirePath): Promise<void>;
   /** Puts the pins in this order. */
@@ -71,14 +83,22 @@ interface PinnedRecentState {
   /** A folder shows in the current folder tab; a file goes to the open command (design 4.2). */
   open(path: WirePath): Promise<void>;
   setCurrent(current: { list: EntryList; path: WirePath } | null): void;
+  /** Leaves a notice, unless one with the same text is already shown. */
+  notify(text: string): void;
   dismiss(id: number): void;
   reset(): void;
 }
 
 let nextNotice = 1;
 let pruning: Promise<void> | null = null;
-/** Counts the list events, so a prune answer older than an event does not replace what it said. */
-let events = 0;
+/** Counts the events of each list, so an answer older than an event does not replace what it said. */
+const events = { pins: 0, recents: 0 };
+/** The paths whose kind is being looked up. */
+const looking = new Set<string>();
+/** How many of the store-error reports have been turned into notices. */
+let reportsSeen = 0;
+/** The failed take last turned into a notice. */
+let lastError: WireError | null = null;
 /** Bumped by reset, so work begun before it does not write into the fresh state. */
 let epoch = 0;
 
@@ -86,17 +106,21 @@ const initial = {
   pins: null,
   recents: null,
   kinds: {},
+  kindErrors: {},
   loadError: null,
   notices: [],
-  corrupt: [],
   current: null,
 };
 
 export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
-  const notify = (text: string) =>
-    set((s) => ({ notices: [...s.notices, { id: nextNotice++, text }] }));
+  const fail = (what: string, e: unknown) => get().notify(`${what}: ${errorText(toWireError(e))}`);
 
-  const fail = (what: string, e: unknown) => notify(`${what}: ${errorText(toWireError(e))}`);
+  /** Applies the pins an answer gave, if no pins event arrived since `seen`. */
+  const answerPins = (value: Pins, seen: number) => {
+    if (events.pins !== seen) return;
+    set({ pins: value.entries });
+    lookKinds();
+  };
 
   /** Looks up what the listed paths are that are not known yet. */
   const lookKinds = () => {
@@ -105,31 +129,41 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
     const mine = epoch;
     for (const p of paths) {
       const key = pathKey(p);
-      if (key in kinds) continue;
-      // An entry whose kind could not be looked up keeps the neutral icon; opening it
-      // looks again and reports what went wrong.
+      if (key in kinds || looking.has(key)) continue;
+      looking.add(key);
       mimeOf(p).then(
         (m) => {
+          looking.delete(key);
           if (mine !== epoch) return;
           const kind: EntryKind = m.mime === FOLDER_MIME ? "folder" : "file";
-          set((s) => ({ kinds: { ...s.kinds, [key]: kind } }));
+          set((s) => {
+            const kindErrors = { ...s.kindErrors };
+            delete kindErrors[key];
+            return { kinds: { ...s.kinds, [key]: kind }, kindErrors };
+          });
         },
-        () => undefined
+        (e: unknown) => {
+          looking.delete(key);
+          if (mine !== epoch) return;
+          set((s) => ({ kindErrors: { ...s.kindErrors, [key]: errorText(toWireError(e)) } }));
+        }
       );
     }
   };
 
-  const takeCorrupt = async () => {
-    const mine = epoch;
-    try {
-      const reports = await storeErrorsTake();
-      if (mine !== epoch || reports.length === 0) return;
-      set((s) => ({ corrupt: [...s.corrupt, ...reports] }));
-      for (const r of reports.filter((x) => PANEL_FILES.includes(x.file))) {
-        notify(corruptText(r));
-      }
-    } catch (e) {
-      fail("The reports of unreadable settings files could not be read", e);
+  /** Notices for the reports of pins.json and recents.json not shown yet, and for a failed take. */
+  const showReports = (r: { reports: CorruptReport[]; error: WireError | null }) => {
+    const fresh = r.reports.slice(reportsSeen);
+    reportsSeen = r.reports.length;
+    const errorSeen = lastError;
+    lastError = r.error;
+    for (const report of fresh.filter((x) => PANEL_FILES.includes(x.file))) {
+      get().notify(corruptText(report));
+    }
+    if (r.error && r.error !== errorSeen) {
+      get().notify(
+        `The reports of unreadable settings files could not be read: ${errorText(r.error)}`
+      );
     }
   };
 
@@ -139,56 +173,62 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
       const mine = epoch;
       const subscribed = await Promise.allSettled([
         on(EVENT_PINS_CHANGED, (p) => {
-          events++;
+          events.pins++;
           set({ pins: p.entries });
           lookKinds();
         }),
         on(EVENT_RECENTS_CHANGED, (r) => {
-          events++;
+          events.recents++;
           set({ recents: r.entries });
           lookKinds();
         }),
-        on(EVENT_STORE_ERROR, () => void takeCorrupt()),
       ]);
       const offs = subscribed.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
-      const stop = () => offs.forEach((off) => off());
       const refused = subscribed.find((r) => r.status === "rejected");
-      // The lists are still read; they show what was there when the panel appeared.
+      // The lists are still read, and the answers to Kern's own changes still show.
       if (refused && mine === epoch) {
         fail(
-          "Pinned and Recent will not follow changes",
+          "Pinned and Recent will not follow changes made elsewhere",
           (refused as PromiseRejectedResult).reason
         );
       }
+      const unwatchReports = useStoreErrors.subscribe(showReports);
+      const stopReports = await useStoreErrors.getState().follow();
+      const stop = () => {
+        offs.forEach((off) => off());
+        unwatchReports();
+        stopReports();
+      };
       if (mine !== epoch) {
         stop();
         return () => undefined;
       }
+      showReports(useStoreErrors.getState());
       await get().prune();
-      await takeCorrupt();
       return stop;
     },
-    prune() {
+    async prune(fresh = false) {
+      if (fresh && pruning) await pruning;
       pruning ??= (async () => {
         const mine = epoch;
-        const seen = events;
+        const seen = { ...events };
         try {
           const report = await prune();
           if (mine !== epoch) return;
           set((s) => ({
             loadError: null,
-            kinds: {},
-            ...(seen === events || s.pins === null
-              ? { pins: report.pins.entries, recents: report.recents.entries }
+            ...(seen.pins === events.pins || s.pins === null ? { pins: report.pins.entries } : {}),
+            ...(seen.recents === events.recents || s.recents === null
+              ? { recents: report.recents.entries }
               : {}),
           }));
           if (report.pins_removed.length > 0) {
-            notify(
+            get().notify(
               `Removed from Pinned, since it no longer exists: ${namesText(report.pins_removed.map(baseName))}`
             );
           }
           for (const e of report.errors) {
-            notify(
+            get().notify(
               `Kern could not check whether ${baseName(e.path)} still exists: ${errorText(e.error)}`
             );
           }
@@ -205,23 +245,26 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
     },
     async pinPaths(paths) {
       for (const p of paths) {
+        const seen = events.pins;
         try {
-          await pin(p);
+          answerPins(await pin(p), seen);
         } catch (e) {
           fail(`${baseName(p)} could not be pinned`, e);
         }
       }
     },
     async unpin(path) {
+      const seen = events.pins;
       try {
-        await unpin(path);
+        answerPins(await unpin(path), seen);
       } catch (e) {
         fail(`${baseName(path)} could not be unpinned`, e);
       }
     },
     async reorder(paths) {
+      const seen = events.pins;
       try {
-        await pinsReorder([...paths]);
+        answerPins(await pinsReorder([...paths]), seen);
       } catch (e) {
         fail("The pins could not be reordered", e);
       }
@@ -247,12 +290,22 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
       }
       const errors = await openFiles([path], false);
       if (errors.length === 0) return;
-      for (const e of errors) notify(`${baseName(path)} could not be opened: ${errorText(e)}`);
-      // Design 4.2: an entry whose open failed is pruned, if its target is gone.
-      await get().prune();
+      for (const e of errors) {
+        get().notify(`${baseName(path)} could not be opened: ${errorText(e)}`);
+      }
+      // Design 4.2: an entry whose open failed is pruned, if its target is gone. A prune that
+      // began before the failure may have found it still there, so this one starts after it.
+      await get().prune(true);
     },
     setCurrent(current) {
       set({ current });
+    },
+    notify(text) {
+      set((s) =>
+        s.notices.some((n) => n.text === text)
+          ? s
+          : { notices: [...s.notices, { id: nextNotice++, text }] }
+      );
     },
     dismiss(id) {
       set((s) => ({ notices: s.notices.filter((n) => n.id !== id) }));
@@ -260,7 +313,11 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
     reset() {
       epoch++;
       pruning = null;
-      events = 0;
+      events.pins = 0;
+      events.recents = 0;
+      looking.clear();
+      reportsSeen = 0;
+      lastError = null;
       set(initial);
     },
   };

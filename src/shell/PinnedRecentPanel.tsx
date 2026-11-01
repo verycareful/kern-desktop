@@ -60,7 +60,8 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
       .getState()
       .follow()
       .then((off) => (live ? (stop = off) : off()));
-    // The pins are shown with ~ for the home folder; a failed lookup shows them whole.
+    // The pins are shown with ~ for the home folder; a failed lookup shows them whole, and
+    // the places strip, which reads the same store, shows the failure with Retry.
     useUserDirs
       .getState()
       .load()
@@ -108,6 +109,12 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
     const start = { x: e.clientX, y: e.clientY };
     let slot: number | null = null;
     const move = (m: PointerEvent) => {
+      // No button held: the release was not seen (it happened outside the window), so the
+      // drag ends where it is, with nothing moved.
+      if (m.buttons === 0) {
+        stop();
+        return;
+      }
       if (
         slot === null &&
         Math.hypot(m.clientX - start.x, m.clientY - start.y) < ITEM_DRAG_THRESHOLD
@@ -125,8 +132,13 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
       window.setTimeout(() => window.removeEventListener("click", swallow, true), 0);
       const pins = usePinnedRecent.getState().pins ?? [];
       const from = pins.findIndex((p) => pathKey(p) === key);
-      if (from >= 0 && from !== slot)
+      if (from < 0) {
+        usePinnedRecent
+          .getState()
+          .notify("The pin was removed while it was dragged, so nothing was moved.");
+      } else if (from !== slot) {
         void usePinnedRecent.getState().reorder(moveItem(pins, from, slot));
+      }
     };
     const stop = () => {
       window.removeEventListener("pointermove", move);
@@ -139,6 +151,12 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", stop);
     stopDrag.current = stop;
+  };
+
+  /** The full path, and why its icon may be wrong when its kind could not be looked up. */
+  const title = (path: WirePath) => {
+    const why = s.kindErrors[pathKey(path)];
+    return why ? `${displayPath(path)} (its type could not be read: ${why})` : displayPath(path);
   };
 
   const pins = s.pins ?? [];
@@ -201,7 +219,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
         {s.pins?.length === 0 && (
           <p className="kern-places-none">Nothing pinned. Select items and press Ctrl+D.</p>
         )}
-        <ul ref={list} className="kern-places-list">
+        <ul ref={list} className="kern-places-list kern-pins">
           {pins.map((p) => {
             const key = pathKey(p);
             const where = parent(p);
@@ -215,7 +233,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
                 <button
                   type="button"
                   className="kern-place"
-                  title={displayPath(p)}
+                  title={title(p)}
                   onClick={() => void s.open(p)}
                   onPointerDown={onPinPointerDown(key)}
                   {...menuHandlers("pinned", p)}
@@ -240,7 +258,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
               <button
                 type="button"
                 className="kern-place"
-                title={displayPath(r.path)}
+                title={title(r.path)}
                 onClick={() => void s.open(r.path)}
                 {...menuHandlers("recent", r.path)}
               >

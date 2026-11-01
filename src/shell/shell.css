@@ -372,6 +372,12 @@
   white-space: nowrap;
 }
 
+/* A press on a pin may become a drag: no text is selected meanwhile. */
+.kern-pins {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* A pin being dragged, and the line where it will land. */
 .kern-entry-dragged {
   opacity: 0.5;

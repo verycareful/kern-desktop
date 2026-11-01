@@ -21,6 +21,7 @@ vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()),
 import { PinnedRecentPanel } from "./PinnedRecentPanel";
 import { usePinnedRecent } from "./pinned-recent-store";
 import { useUserDirs } from "./user-dirs-store";
+import { useStoreErrors } from "../store/store-errors";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 const FOLDERS = new Set(["/home/t/Invoices", "/home/t/Work"]);
@@ -63,6 +64,7 @@ beforeEach(() => {
     Promise.resolve({ entries: paths } satisfies Pins)
   );
   usePinnedRecent.getState().reset();
+  useStoreErrors.getState().reset();
   useUserDirs.getState().reset();
   useTabs.setState({ tabs: [], activeId: null });
 });
@@ -124,20 +126,18 @@ test("reorder_persists", async () => {
   });
   const a = within(rows[0]!).getByRole("button");
   fireEvent.pointerDown(a, { button: 0, clientX: 5, clientY: 10 });
-  fireEvent.pointerMove(window, { clientX: 5, clientY: 55 });
+  fireEvent.pointerMove(window, { clientX: 5, clientY: 55, buttons: 1 });
   expect(rows[2]!.className).toContain("kern-insert-after");
   fireEvent.pointerUp(window, { clientX: 5, clientY: 55 });
+  const looked = ipc.mimeOf.mock.calls.length;
   fireEvent.click(a);
   expect(ipc.pinsReorder).toHaveBeenCalledExactlyOnceWith([
     p("/home/t/b.txt"),
     p("/home/t/c.txt"),
     p("/home/t/a.txt"),
   ]);
-  // The click that ended the drag opened nothing.
-  await act(async () => {
-    await Promise.resolve();
-  });
-  expect(ipc.openPaths).not.toHaveBeenCalled();
+  // The click that ended the drag opened nothing: opening asks mime_of first, at once.
+  expect(ipc.mimeOf.mock.calls.length).toBe(looked);
   // The backend's event is what the list shows.
   act(() => handlers["kern://pins-changed"]!({ entries: ipc.pinsReorder.mock.calls[0]![0] }));
   expect(pinRows()).toEqual(["b.txt", "c.txt", "a.txt"]);
@@ -147,7 +147,7 @@ test("a_press_that_does_not_travel_opens_and_does_not_reorder", async () => {
   await shown(["/home/t/a.txt", "/home/t/b.txt"]);
   const a = within(screen.getByTestId("pinned")).getByText("a.txt").closest("button")!;
   fireEvent.pointerDown(a, { button: 0, clientX: 5, clientY: 10 });
-  fireEvent.pointerMove(window, { clientX: 7, clientY: 13 });
+  fireEvent.pointerMove(window, { clientX: 7, clientY: 13, buttons: 1 });
   fireEvent.pointerUp(window, { clientX: 7, clientY: 13 });
   fireEvent.click(a);
   await waitFor(() => expect(ipc.openPaths).toHaveBeenCalled());
@@ -239,7 +239,8 @@ test("an_unreadable_pins_file_is_reported", async () => {
     )
   ).toBeTruthy();
   expect(screen.queryByText(/settings\.json/)).toBeNull();
-  expect(usePinnedRecent.getState().corrupt).toHaveLength(2);
+  // Every report stays where the settings view reads them, settings.json's included.
+  expect(useStoreErrors.getState().reports).toHaveLength(2);
 });
 
 test("a_failed_first_read_offers_retry", async () => {
@@ -261,4 +262,127 @@ test("an_event_newer_than_the_prune_answer_wins", async () => {
   act(() => handlers["kern://recents-changed"]!({ entries: [] } satisfies Recents));
   await act(async () => answer(report(["/home/t/old.txt"])));
   expect(pinRows()).toEqual(["new.txt"]);
+});
+
+/** Renders the panel with prune held open; resolves the answer when called. */
+async function heldPrune() {
+  let answer!: (r: PruneReport) => void;
+  ipc.prune.mockReturnValueOnce(new Promise<PruneReport>((r) => (answer = r)));
+  render(<PinnedRecentPanel />);
+  await waitFor(() => expect(ipc.prune).toHaveBeenCalled());
+  return (r: PruneReport) => act(async () => answer(r));
+}
+
+test("a_pins_event_before_the_prune_answer_keeps_the_answers_recents", async () => {
+  const answer = await heldPrune();
+  act(() => handlers["kern://pins-changed"]!({ entries: [p("/home/t/new.txt")] } satisfies Pins));
+  await answer(report(["/home/t/old.txt"], [["/home/t/r.md", NOW]]));
+  expect(pinRows()).toEqual(["new.txt"]);
+  expect(within(screen.getByTestId("recent")).getByText("r.md")).toBeTruthy();
+});
+
+test("a_recents_event_before_the_prune_answer_is_kept", async () => {
+  const answer = await heldPrune();
+  act(() =>
+    handlers["kern://recents-changed"]!({
+      entries: [{ path: p("/home/t/new.md"), opened_ms: NOW }],
+    } satisfies Recents)
+  );
+  await answer(report(["/home/t/a.txt"], [["/home/t/old.md", NOW]]));
+  const recent = screen.getByTestId("recent");
+  expect(within(recent).getByText("new.md")).toBeTruthy();
+  expect(within(recent).queryByText("old.md")).toBeNull();
+  expect(pinRows()).toEqual(["a.txt"]);
+});
+
+test("a_pin_shows_from_the_answer_when_events_are_refused", async () => {
+  ipc.on.mockImplementation((name: string) =>
+    name === "kern://store-error"
+      ? Promise.resolve(() => undefined)
+      : Promise.reject({ kind: "Ipc", message: "listen refused", path: null, details: null })
+  );
+  ipc.prune.mockResolvedValue(report([]));
+  ipc.pin.mockResolvedValue({ entries: [p("/home/t/a.txt")] } satisfies Pins);
+  render(<PinnedRecentPanel />);
+  expect(
+    await screen.findByText(
+      "Pinned and Recent will not follow changes made elsewhere: Ipc: listen refused"
+    )
+  ).toBeTruthy();
+  await act(() => usePinnedRecent.getState().pinPaths([p("/home/t/a.txt")]));
+  expect(pinRows()).toEqual(["a.txt"]);
+});
+
+test("a_failed_open_during_a_prune_prunes_again_after_it", async () => {
+  const { recent } = await shown([], [["/home/t/gone.md", NOW]]);
+  let focusAnswer!: (r: PruneReport) => void;
+  ipc.prune.mockReturnValueOnce(new Promise<PruneReport>((r) => (focusAnswer = r)));
+  act(() => {
+    window.dispatchEvent(new Event("focus"));
+  });
+  ipc.openPaths.mockResolvedValue([
+    {
+      path: p("/home/t/gone.md"),
+      action: "failed",
+      location: null,
+      error: { kind: "NotFound", message: "no such file", path: null, details: null },
+    },
+  ]);
+  fireEvent.click(within(recent).getByText("gone.md"));
+  await screen.findByText(/gone\.md could not be opened/);
+  expect(ipc.prune).toHaveBeenCalledTimes(2);
+  ipc.prune.mockResolvedValue(report([]));
+  await act(async () => focusAnswer(report([], [["/home/t/gone.md", NOW]])));
+  await waitFor(() => expect(ipc.prune).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(within(recent).queryByText("gone.md")).toBeNull());
+});
+
+test("a_drag_with_no_button_held_ends_without_moving", async () => {
+  await shown(["/home/t/a.txt", "/home/t/b.txt"]);
+  const rows = [...document.querySelectorAll<HTMLElement>("[data-pin]")];
+  rows.forEach((row, i) => {
+    row.getBoundingClientRect = () =>
+      ({
+        top: i * 20,
+        height: 20,
+        bottom: i * 20 + 20,
+        left: 0,
+        right: 100,
+        width: 100,
+      }) as DOMRect;
+  });
+  fireEvent.pointerDown(within(rows[0]!).getByRole("button"), {
+    button: 0,
+    clientX: 5,
+    clientY: 10,
+  });
+  fireEvent.pointerMove(window, { clientX: 5, clientY: 35, buttons: 1 });
+  expect(rows[0]!.className).toContain("kern-entry-dragged");
+  // The release happened outside the window; the next move has no button held.
+  fireEvent.pointerMove(window, { clientX: 5, clientY: 35, buttons: 0 });
+  expect(rows[0]!.className).not.toContain("kern-entry-dragged");
+  fireEvent.pointerUp(window, { clientX: 5, clientY: 35 });
+  expect(ipc.pinsReorder).not.toHaveBeenCalled();
+});
+
+test("a_kind_that_could_not_be_looked_up_is_said_on_the_row", async () => {
+  ipc.mimeOf.mockRejectedValue({ kind: "Io", message: "stale handle", path: null, details: null });
+  const { pinned } = await shown(["/home/t/a.txt"]);
+  const row = within(pinned).getByText("a.txt").closest("button")!;
+  await waitFor(() =>
+    expect(row.title).toBe("/home/t/a.txt (its type could not be read: Io: stale handle)")
+  );
+});
+
+test("the_same_notice_is_shown_once", async () => {
+  await shown(["/home/t/a.txt"]);
+  ipc.prune.mockRejectedValue({ kind: "Io", message: "denied", path: null, details: null });
+  for (let i = 0; i < 2; i++) {
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      await Promise.resolve();
+    });
+  }
+  await waitFor(() => expect(ipc.prune).toHaveBeenCalledTimes(3));
+  expect(screen.getAllByText("Pinned and Recent could not be checked: Io: denied")).toHaveLength(1);
 });
