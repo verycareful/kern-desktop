@@ -107,6 +107,7 @@ pub fn run() {
             windows::detach_doc,
             windows::move_doc_to_main,
             windows::adopted,
+            windows::refuse_adoption,
             windows::confirm_close,
             filemanager1::fm1_status,
             default_fm::default_fm_status,

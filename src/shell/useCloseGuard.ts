@@ -77,17 +77,24 @@ function atRisk(ids: readonly string[]): AtRisk[] {
  */
 export async function mayClose(ids: readonly string[], what: "tab" | "window"): Promise<boolean> {
   const items = atRisk(ids);
-  return items.length === 0 || ask(items, what);
+  return items.length === 0 || (await ask(items, what)) !== "stop";
 }
 
-async function ask(items: AtRisk[], what: "tab" | "window"): Promise<boolean> {
-  if (useCloseGuard.getState().question) return false;
+/** "saved": each was written; "discard": the user gave them up; "stop": nothing may close. */
+type Outcome = "saved" | "discard" | "stop";
+
+async function ask(items: AtRisk[], what: "tab" | "window"): Promise<Outcome> {
+  if (useCloseGuard.getState().question) {
+    say("Kern is already asking about closing. Answer that question first.");
+    return "stop";
+  }
   const choice = await new Promise<CloseChoice>((resolve) => {
     pending = resolve;
     useCloseGuard.setState({ question: { items, what, saving: false } });
   });
   // answer() has ended the question already: a question asked since is another close's own.
-  if (choice !== "save") return choice === "discard";
+  if (choice === "cancel") return "stop";
+  if (choice === "discard") return "discard";
   const saving: CloseQuestion = { items, what, saving: true };
   useCloseGuard.setState({ question: saving });
   try {
@@ -99,10 +106,10 @@ async function ask(items: AtRisk[], what: "tab" | "window"): Promise<boolean> {
         // taken there and nothing closes.
         useTabs.getState().activate(item.id);
         say(`${item.name} was not saved, so nothing was closed.`);
-        return false;
+        return "stop";
       }
     }
-    return true;
+    return "saved";
   } finally {
     if (useCloseGuard.getState().question === saving) useCloseGuard.setState({ question: null });
   }
@@ -119,16 +126,29 @@ export function closeTab(id: string): void {
   }
   const items = atRisk([id]);
   if (items.length === 0) useTabs.getState().close(id);
-  else void ask(items, "tab").then((ok) => ok && useTabs.getState().close(id));
+  else void ask(items, "tab").then((o) => o !== "stop" && useTabs.getState().close(id));
 }
 
-/** Closes this window once nothing in any of its documents would be lost. */
+/**
+ * Closes this window once nothing in any of its documents would be lost. A document that arrives
+ * while the question is open (moved here from another window) was not in it: the window looks
+ * again after each answer and asks about what is new, and closes only when nothing it has not
+ * asked about is at risk. The last look and the close follow each other with nothing between.
+ */
 export async function closeWindow(): Promise<void> {
-  const ids = useTabs
-    .getState()
-    .tabs.filter((t) => t.kind === "doc")
-    .map((t) => t.id);
-  if (!(await mayClose(ids, "window"))) return;
+  /** The documents the user chose to close without saving. */
+  const givenUp = new Set<string>();
+  for (;;) {
+    const ids = useTabs
+      .getState()
+      .tabs.filter((t) => t.kind === "doc" && !givenUp.has(t.id))
+      .map((t) => t.id);
+    const items = atRisk(ids);
+    if (items.length === 0) break;
+    const outcome = await ask(items, "window");
+    if (outcome === "stop") return;
+    if (outcome === "discard") items.forEach((i) => givenUp.add(i.id));
+  }
   try {
     await confirmClose();
   } catch (e) {

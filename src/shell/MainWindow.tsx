@@ -84,6 +84,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
             path={d.path}
             active={d.id === tab?.id}
             handed={d.handed}
+            registered={d.registered}
           />
         ))}
       </main>

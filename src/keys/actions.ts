@@ -146,7 +146,8 @@ export const actions: Action[] = [
     area: "Tabs",
     keys: [],
     when: "any",
-    enabled: (c) => c.target?.kind === "doc" && isMainWindow(),
+    enabled: (c) =>
+      c.target?.kind === "doc" && isMainWindow() && !docController(c.target.id)?.busy(),
     run: (c) => {
       if (c.target?.kind === "doc") void moveTabToWindow(c.target.id);
     },

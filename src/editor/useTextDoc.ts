@@ -53,9 +53,11 @@ import type { HandedDoc } from "./handed-doc";
 // there, unsaved edits included, and is checked against the disk at once.
 //
 // A write over what is on disk without the stamp of the text as opened is made
-// in exactly three places, each after the user said so: the confirmed
-// Overwrite after ExternalModification, the confirmed recreate of a deleted
-// file, and Save As (which first asks to Replace when something is there).
+// only after the user said so: the confirmed Overwrite after
+// ExternalModification, Save As (which first asks to Replace when something is
+// there), and the creation again of a deleted file, confirmed in its own
+// question or with Save in the close question, and made only while a fresh
+// check finds the file still gone.
 
 /** What a pending question to the user is about. */
 export type DocPrompt =
@@ -187,6 +189,8 @@ export interface TextDocOptions {
   location?: Location;
   /** The document as another window handed it over; read once, when the hook opens it. */
   handed?: HandedDoc | null;
+  /** The caller registered the document as open here already (an adopted tab): not again. */
+  registered?: boolean;
 }
 
 export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions = {}): TextDoc {
@@ -209,6 +213,8 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
   // The handed document belongs to the path it came with: an effect run again for that path
   // (StrictMode runs each twice) starts from it again, never from the file.
   const handed = useRef({ key, doc: opts.handed ?? null });
+  // The path the caller registered already, until this hook's first registration would repeat it.
+  const preRegistered = useRef(opts.registered ? key : null);
   const location = opts.location ?? null;
   const locationKey = location
     ? location.kind === "tab"
@@ -364,8 +370,12 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
 
     // Registrations and releases go to the backend in order, so a release that follows an
     // earlier open of the same document never lands after the next open and removes it.
+    // Registered by the caller already: repeating it could land after the backend gave the
+    // document back to another window, and take the path from it.
+    const skip = preRegistered.current === key;
+    preRegistered.current = null;
     const registered = registration.current
-      .then(() => docOpened(target, where))
+      .then(() => (skip ? undefined : docOpened(target, where)))
       .then(
         () => true,
         (e: unknown) => {
@@ -778,6 +788,7 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
         saveForClose,
         snapshot,
         setMoving: (moving: boolean) => patch({ moving }),
+        busy: () => st.current.saving || st.current.moving,
         // Only a document that opened holds anything; one still loading or that failed holds nothing.
         closeRisk: () =>
           st.current.phase === "ready" && (st.current.dirty || st.current.deletedOnDisk)

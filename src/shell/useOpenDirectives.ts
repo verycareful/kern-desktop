@@ -11,6 +11,7 @@ import {
   EVENT_SELECT,
   adopted,
   currentWindowLabel,
+  refuseAdoption,
   displayPath,
   docOpened,
   on,
@@ -116,18 +117,32 @@ export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
       let handed = undefined;
       if (state !== undefined && state !== null) {
         const parsed = parseHanded(state);
+        // The file on disk is not shown instead: it may lack what the text held, and showing it
+        // as the document would hide that the text did not arrive.
         if (!parsed) {
           addError({
             kind: "Ipc",
             message:
-              "the text of this document did not arrive in a form Kern can read, so the file is shown as it is on disk",
+              "the text of this document did not arrive in a form Kern can read, so it is not shown",
             path,
             details: null,
           });
-        } else handed = parsed;
+          return;
+        }
+        handed = parsed;
       }
       if (!tabs().openDocAs(label, path, handed)) {
         notice(`This window already shows a document; ${displayPath(path)} was not opened here.`);
+      }
+    };
+
+    /** The main window will not take the document: the window that sent it keeps it and is told why. */
+    const refuse = async (from: string, reason: string) => {
+      try {
+        await refuseAdoption(from, reason);
+      } catch (e) {
+        // The window still keeps it: its move ends when the backend stops waiting.
+        addError(toWireError(e));
       }
     };
 
@@ -137,26 +152,19 @@ export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
       let handed = undefined;
       if (text_state !== undefined && text_state !== null) {
         const parsed = parseHanded(text_state);
-        // Not acknowledged: the backend leaves the document in its window.
         if (!parsed) {
-          addError({
-            kind: "Ipc",
-            message: `the document of window ${from} did not arrive in a form Kern can read, so it stays in its window`,
-            path,
-            details: null,
-          });
+          await refuse(
+            from,
+            "the main window could not read the document's text, so it stays here"
+          );
           return;
         }
         handed = parsed;
       }
       const id = crypto.randomUUID();
-      if (!tabs().openDocAs(id, path, handed)) {
-        addError({
-          kind: "AlreadyOpen",
-          message: `${displayPath(path)} is already open in a tab, so it stays in its window`,
-          path,
-          details: null,
-        });
+      // Registered here, before it is acknowledged; the tab's editor does not register it again.
+      if (!tabs().openDocAs(id, path, handed, true)) {
+        await refuse(from, `${displayPath(path)} is already open in a tab of the main window`);
         return;
       }
       try {
@@ -164,9 +172,13 @@ export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
         await adopted(from);
         adoptions.set(from, id);
       } catch (e) {
-        // The window keeps the document; the tab made for it goes, with nothing asked.
+        // The backend took the move back (or never had it): the window keeps the document, so
+        // it is registered there again, and the tab made for it goes with nothing asked.
         tabs().close(id);
         addError(toWireError(e));
+        await docOpened(path, { kind: "window", label: from }).catch((err: unknown) =>
+          addError(toWireError(err))
+        );
       }
     };
 
@@ -219,9 +231,11 @@ export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
           const { label } = item.payload as { label: string };
           const id = adoptions.get(label);
           adoptions.delete(label);
-          if (id && tabs().tabs.some((t) => t.id === id)) {
+          const tab = id ? tabs().tabs.find((t) => t.id === id) : undefined;
+          if (tab?.kind === "doc") {
             // The document stays in its window, which still has it; this tab was a second copy.
-            tabs().close(id);
+            // The backend registered the window again; the tab's release does not touch that.
+            tabs().close(tab.id);
             notice("A document could not move to this window, so it stays in its own window.");
           }
           return;

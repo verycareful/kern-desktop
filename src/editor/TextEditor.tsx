@@ -47,9 +47,15 @@ export function TextEditor(props: {
   location?: Location;
   /** The document as another window handed it over. */
   handed?: HandedDoc;
+  /** Registered as open here before the editor mounted. */
+  registered?: boolean;
 }) {
   const { tabId, path, active } = props;
-  const doc = useTextDoc(tabId, path, { location: props.location, handed: props.handed });
+  const doc = useTextDoc(tabId, path, {
+    location: props.location,
+    handed: props.handed,
+    registered: props.registered,
+  });
   const wordWrap = useViewSettings((s) => s.wordWrap);
   const zoom = safeZoom(useViewSettings((s) => s.editorZoom));
   const host = useRef<HTMLDivElement>(null);

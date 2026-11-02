@@ -24,6 +24,7 @@ const doc = (over: Partial<DocController>): DocController => ({
   saveForClose: vi.fn(() => Promise.resolve(true)),
   snapshot: () => null,
   setMoving: vi.fn(),
+  busy: () => false,
   ...over,
 });
 /** Registrations made by a test, removed after it. */
@@ -170,4 +171,17 @@ test("a_window_whose_close_fails_says_why", async () => {
   ipc.confirmClose.mockRejectedValue({ kind: "Io", message: "busy", path: null, details: null });
   await closeWindow();
   expect(useOps.getState().notice?.text).toMatch(/The window could not be closed: .*busy/);
+});
+
+test("a_close_asked_for_while_a_question_is_open_says_so", async () => {
+  registerDoc("a", doc({ closeRisk: () => dirty }));
+  registerDoc("b", doc({ closeRisk: () => dirty }));
+  act(() => closeTab("a"));
+  act(() => closeTab("b"));
+  await act(async () => {});
+  expect(useCloseGuard.getState().question?.items.map((i) => i.id)).toEqual(["a"]);
+  expect(useOps.getState().notice?.text).toBe(
+    "Kern is already asking about closing. Answer that question first."
+  );
+  expect(useTabs.getState().tabs).toHaveLength(3);
 });

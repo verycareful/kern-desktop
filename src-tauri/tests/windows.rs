@@ -362,6 +362,52 @@ fn adopt_timeout_gives_the_document_back_to_its_window() {
 }
 
 #[test]
+fn a_refused_adoption_ends_at_once_with_the_reason_and_the_window_keeps_it() {
+    // Long enough that only the refusal can end the move in time.
+    let e = env(Duration::from_secs(30));
+    let f = e.text("a.txt");
+    e.open(&[&f], "outside", "default");
+    std::thread::scope(|s| {
+        let handle = e.handle.clone();
+        let mover = s.spawn(move || {
+            invoke(
+                &handle,
+                "probe",
+                "move_doc_to_main",
+                json!({"label": "doc-1", "textState": null}),
+            )
+        });
+        wait_for("main to be created", || e.exists("main"));
+        let refused = || {
+            e.call_from(
+                "main",
+                "refuse_adoption",
+                json!({"label": "doc-1", "reason": "it is already open in a tab"}),
+            )
+        };
+        wait_for("the move to wait for an answer", || refused().is_ok());
+        let err = mover.join().unwrap().unwrap_err();
+        assert_eq!(err["kind"], json!("AdoptRefused"));
+        assert_eq!(err["message"], json!("it is already open in a tab"));
+    });
+    let out = e.open(&[&f], "outside", "default");
+    assert_eq!(
+        out[0]["location"],
+        json!({"kind": "window", "label": "doc-1"})
+    );
+    // Only main answers for itself.
+    assert_eq!(
+        e.call_from(
+            "doc-1",
+            "refuse_adoption",
+            json!({"label": "doc-1", "reason": "x"})
+        )
+        .unwrap_err()["kind"],
+        json!("Denied")
+    );
+}
+
+#[test]
 fn a_window_is_built_outside_the_gate_so_a_second_open_focuses_it() {
     use std::sync::mpsc;
     // A plugin that holds the creation of doc-1 until told to go on.

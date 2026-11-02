@@ -22,6 +22,7 @@ const COMMANDS: &[&str] = &[
     "detach_doc",
     "move_doc_to_main",
     "adopted",
+    "refuse_adoption",
     "confirm_close",
     "fm1_status",
     "default_fm_status",

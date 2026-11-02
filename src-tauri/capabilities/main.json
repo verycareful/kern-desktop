@@ -23,6 +23,7 @@
     "allow-detach-doc",
     "allow-move-doc-to-main",
     "allow-adopted",
+    "allow-refuse-adoption",
     "allow-confirm-close",
     "allow-fm1-status",
     "allow-default-fm-status",

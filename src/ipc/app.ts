@@ -132,6 +132,10 @@ export const moveDocToMain = (label: string, textState?: unknown) =>
 /** Main acknowledges that it took the document of window `label`. */
 export const adopted = (label: string) => invoke<void>("adopted", { label });
 
+/** Main will not take the document of window `label`; the move there ends with `reason`. */
+export const refuseAdoption = (label: string, reason: string) =>
+  invoke<void>("refuse_adoption", { label, reason });
+
 /** Closes the calling window, after the user's save, discard or cancel choice. */
 export const confirmClose = () => invoke<void>("confirm_close");
 

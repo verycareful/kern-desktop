@@ -21,6 +21,8 @@ export type DocTab = {
   dirty: boolean;
   /** The document as another window handed it over, which the editor starts from. */
   handed?: HandedDoc;
+  /** Registered with the backend as open in this tab before the tab opened (an adopted document). */
+  registered?: boolean;
 };
 /**
  * The Trash (design 5.2). A place of its own rather than a folder: it lists the
@@ -83,9 +85,9 @@ export interface TabsState {
   /**
    * Opens document tab `id` on `path`, starting from `handed` when given (a document moved from
    * another window), and shows it. False, and nothing opened, when a tab already shows `path`
-   * (4.5: never opened twice) or the id is taken.
+   * (4.5: never opened twice) or the id is taken. `registered`: the caller registered it already.
    */
-  openDocAs(id: string, path: WirePath, handed?: HandedDoc): boolean;
+  openDocAs(id: string, path: WirePath, handed?: HandedDoc, registered?: boolean): boolean;
   /** Whether the editor of document tab `id` holds text that differs from the file's last saved text. */
   setDirty(id: string, dirty: boolean): void;
   /** Document tab `id` now shows the file at `path` (after Save As); the title follows. */
@@ -252,13 +254,20 @@ export const useTabs = create<TabsState>()((set, get) => ({
       return { tabs: [...s.tabs, tab], activeId: tab.id };
     });
   },
-  openDocAs(id, path, handed) {
+  openDocAs(id, path, handed, registered) {
     const s = get();
     const key = pathKey(path);
     if (s.tabs.some((t) => t.id === id || (t.kind === "doc" && pathKey(t.path) === key))) {
       return false;
     }
-    const tab: DocTab = { id, kind: "doc", path, dirty: false, ...(handed ? { handed } : {}) };
+    const tab: DocTab = {
+      id,
+      kind: "doc",
+      path,
+      dirty: false,
+      ...(handed ? { handed } : {}),
+      ...(registered ? { registered } : {}),
+    };
     set({ tabs: [...s.tabs, tab], activeId: id });
     return true;
   },

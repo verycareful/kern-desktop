@@ -36,6 +36,7 @@ const fakeDoc = (over: Partial<DocController>): DocController => ({
   saveForClose: () => Promise.resolve(true),
   snapshot: () => null,
   setMoving: vi.fn(),
+  busy: () => false,
   ...over,
 });
 

@@ -22,6 +22,8 @@ export interface DocController {
   snapshot(): HandedDoc | null;
   /** While true the document cannot be edited or saved: it is being handed to another window. */
   setMoving(moving: boolean): void;
+  /** A save or a move is under way: the document is not to be moved now. */
+  busy(): boolean;
 }
 
 const controllers = new Map<string, DocController>();

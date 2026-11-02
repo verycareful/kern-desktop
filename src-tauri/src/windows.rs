@@ -97,7 +97,9 @@ struct Inner {
     next_doc: u64,
     ready: HashSet<String>,
     pending: HashMap<String, Vec<Queued>>,
-    adopting: HashMap<String, Sender<()>>,
+    /// Moves waiting for main's answer: `Ok` it took the document, `Err`
+    /// it refused, with its reason.
+    adopting: HashMap<String, Sender<Result<(), String>>>,
     /// Labels reserved whose window is still being built, with the latest
     /// activation token of a launch that landed on them.
     creating: HashMap<String, String>,
@@ -880,14 +882,18 @@ pub async fn move_doc_to_main<R: Runtime>(
         eprintln!("kern: could not raise the main window: {e:?}");
     }
     let timeout = st.adopt_timeout;
-    let acked = match blocking(move || Ok(rx.recv_timeout(timeout).is_ok())).await {
+    let answer = match blocking(move || Ok(rx.recv_timeout(timeout).ok())).await {
         Ok(a) => a,
         Err(e) => {
             cancel_adoption(&app, &st, &label, &path);
             return Err(e);
         }
     };
-    if !acked {
+    if let Some(Err(reason)) = answer {
+        cancel_adoption(&app, &st, &label, &path);
+        return Err(wire_error("AdoptRefused", reason, Some(&path)));
+    }
+    if answer.is_none() {
         cancel_adoption(&app, &st, &label, &path);
         return Err(wire_error(
             "AdoptTimeout",
@@ -935,12 +941,39 @@ pub fn adopted<R: Runtime>(
     let tx = state(&app)?.lock().adopting.remove(&label);
     match tx {
         Some(tx) => {
-            let _ = tx.send(());
+            let _ = tx.send(Ok(()));
             Ok(())
         }
         None => Err(wire_error(
             "NoAdoption",
             format!("no move from window {label} is waiting; drop the tab"),
+            None,
+        )),
+    }
+}
+
+/// `main` will not take the document of window `label` (see
+/// `move_doc_to_main`): the move ends at once with `reason`, and the window
+/// keeps the document.
+#[tauri::command]
+pub fn refuse_adoption<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+    label: String,
+    reason: String,
+) -> Result<(), WireError> {
+    if window.label() != MAIN {
+        return Err(wire_error("Denied", "only the main window adopts", None));
+    }
+    let tx = state(&app)?.lock().adopting.remove(&label);
+    match tx {
+        Some(tx) => {
+            let _ = tx.send(Err(reason));
+            Ok(())
+        }
+        None => Err(wire_error(
+            "NoAdoption",
+            format!("no move from window {label} is waiting"),
             None,
         )),
     }
