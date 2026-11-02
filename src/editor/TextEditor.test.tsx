@@ -434,6 +434,33 @@ test("save_as_onto_an_existing_file_says_what_is_lost_and_waits_for_replace", as
   expect(ipc.textSave.mock.calls[0]![4]).toBeNull();
 });
 
+test("replace_asks_again_with_the_new_facts_when_the_target_changed_since", async () => {
+  const { content } = await mount();
+  const shown = {
+    path: p("/home/a/other.txt"),
+    name: "other.txt",
+    kind: "file",
+    len: 2048,
+    modified_ms: 1000,
+  };
+  ipc.entryOf.mockResolvedValue(shown);
+  key(content, "s", { ctrlKey: true, shiftKey: true });
+  const dialog = await screen.findByTestId("save-as-dialog");
+  fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "/home/a/other.txt" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await screen.findByTestId("replace-prompt");
+  // Another program rewrote it while the question was open.
+  ipc.entryOf.mockResolvedValue({ ...shown, len: 4096, modified_ms: 2000 });
+  fireEvent.click(screen.getByRole("button", { name: "Replace" }));
+  await waitFor(() =>
+    expect(screen.getByTestId("replace-prompt")).toHaveTextContent(
+      "It changed since you were asked. This is what is there now."
+    )
+  );
+  expect(screen.getByTestId("replace-prompt")).toHaveTextContent("4 KB");
+  expect(ipc.textSave).not.toHaveBeenCalled();
+});
+
 test("save_as_cancelled_at_the_replace_question_writes_nothing", async () => {
   const { content } = await mount();
   ipc.entryOf.mockResolvedValue({

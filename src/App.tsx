@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useRef, useState } from "react";
-import { isMainWindow, toWireError, type WireError } from "./ipc";
+import { currentWindowLabel, isMainWindow, toWireError, type WireError } from "./ipc";
+import { DocumentWindow } from "./shell/DocumentWindow";
 import MainWindow from "./shell/MainWindow";
 import { useOpenDirectives } from "./shell/useOpenDirectives";
 import { useUserDirs } from "./shell/user-dirs-store";
@@ -12,9 +13,9 @@ export default function App() {
   const { error, problems } = useTheme();
   const [homeError, setHomeError] = useState<WireError | null>(null);
   const tabCount = useTabs((s) => s.tabs.length);
-  // Only the main window browses until document windows have their own shell;
-  // a document window can only be closed for now.
+  // The main window browses; a document window (design 4.4) shows one document.
   const [isMain] = useState(isMainWindow);
+  const [label] = useState(currentWindowLabel);
   const directives = useOpenDirectives(isMain ? "main" : "doc");
   const mounted = useRef(true);
 
@@ -88,10 +89,10 @@ export default function App() {
           ))}
         </ul>
       )}
-      {!isMain && (
-        <p role="status">
-          This window will show its document in a later version of Kern. It can be closed.
-        </p>
+      {!isMain && label && (
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <DocumentWindow label={label} starting={!directives.ready} />
+        </div>
       )}
       {isMain && (
         <div style={{ flex: 1, minHeight: 0 }}>

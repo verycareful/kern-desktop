@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { create } from "zustand";
 import { displayPath, parent, pathKey, type WirePath } from "../ipc";
+import type { HandedDoc } from "../editor/handed-doc";
 
 // Design 4.1 (tabs above the panels), 4.3 (a file opens as a document tab),
 // 4.5 (a file already open is focused, never opened twice).
@@ -13,7 +14,14 @@ export type FolderTab = {
   history: WirePath[];
   cursor: number;
 };
-export type DocTab = { id: string; kind: "doc"; path: WirePath; dirty: boolean };
+export type DocTab = {
+  id: string;
+  kind: "doc";
+  path: WirePath;
+  dirty: boolean;
+  /** The document as another window handed it over, which the editor starts from. */
+  handed?: HandedDoc;
+};
 /**
  * The Trash (design 5.2). A place of its own rather than a folder: it lists the
  * home trash and the trashes of the mounted volumes, so it has no path and no
@@ -72,6 +80,12 @@ export interface TabsState {
   openDocuments(): void;
   /** Open a document tab, or focus the one already open on this path. */
   openDoc(path: WirePath): void;
+  /**
+   * Opens document tab `id` on `path`, starting from `handed` when given (a document moved from
+   * another window), and shows it. False, and nothing opened, when a tab already shows `path`
+   * (4.5: never opened twice) or the id is taken.
+   */
+  openDocAs(id: string, path: WirePath, handed?: HandedDoc): boolean;
   /** Whether the editor of document tab `id` holds text that differs from the file's last saved text. */
   setDirty(id: string, dirty: boolean): void;
   /** Document tab `id` now shows the file at `path` (after Save As); the title follows. */
@@ -154,7 +168,7 @@ function cycle(set: SetTabs, delta: 1 | -1) {
   });
 }
 
-export const useTabs = create<TabsState>()((set) => ({
+export const useTabs = create<TabsState>()((set, get) => ({
   tabs: [],
   activeId: null,
   lastFolderId: null,
@@ -237,6 +251,16 @@ export const useTabs = create<TabsState>()((set) => ({
       const tab: DocTab = { id: crypto.randomUUID(), kind: "doc", path, dirty: false };
       return { tabs: [...s.tabs, tab], activeId: tab.id };
     });
+  },
+  openDocAs(id, path, handed) {
+    const s = get();
+    const key = pathKey(path);
+    if (s.tabs.some((t) => t.id === id || (t.kind === "doc" && pathKey(t.path) === key))) {
+      return false;
+    }
+    const tab: DocTab = { id, kind: "doc", path, dirty: false, ...(handed ? { handed } : {}) };
+    set({ tabs: [...s.tabs, tab], activeId: id });
+    return true;
   },
   setDirty(id, dirty) {
     set((s) => {

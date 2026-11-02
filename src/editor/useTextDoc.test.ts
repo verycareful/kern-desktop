@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { StrictMode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { Text } from "@codemirror/state";
 import { beforeEach, expect, test, vi } from "vitest";
@@ -589,4 +590,206 @@ test("a_release_never_lands_after_the_next_registration_of_the_same_document", a
     "open /home/a/copy.txt start",
     "open /home/a/copy.txt end",
   ]);
+});
+
+// ---- handed over between windows, and closing (Task 27) ----
+
+const HANDED = {
+  text: "mine\nhello",
+  saved: "hello",
+  stamp: S0,
+  ending: "crlf" as const,
+  bom: true,
+  read_only: null,
+};
+
+test("a_handed_document_starts_from_its_text_and_is_checked_not_read", async () => {
+  const hook = renderHook(() =>
+    useTextDoc("doc-1", FILE, { handed: HANDED, location: { kind: "window", label: "doc-1" } })
+  );
+  await waitFor(() => expect(hook.result.current.phase).toBe("ready"));
+  expect(hook.result.current.doc?.toString()).toBe("mine\nhello");
+  // Dirty against the text as last saved, not against what it was handed.
+  expect(hook.result.current.dirty).toBe(true);
+  expect(hook.result.current.ending).toBe("crlf");
+  expect(hook.result.current.bom).toBe(true);
+  expect(ipc.textOpen).not.toHaveBeenCalled();
+  // It was added to Recent when first opened.
+  expect(ipc.recentTouch).not.toHaveBeenCalled();
+  // The file may have changed while it moved.
+  await waitFor(() => expect(ipc.textCheck).toHaveBeenCalledWith(FILE, S0));
+  await waitFor(() =>
+    expect(ipc.docOpened).toHaveBeenCalledWith(FILE, { kind: "window", label: "doc-1" })
+  );
+  act(() => hook.result.current.edited(Text.of(["hello"])));
+  expect(hook.result.current.dirty).toBe(false);
+  hook.unmount();
+  await waitFor(() =>
+    expect(ipc.docClosed).toHaveBeenCalledWith(FILE, { kind: "window", label: "doc-1" })
+  );
+});
+
+test("a_handed_document_saves_with_its_handed_stamp_ending_and_bom", async () => {
+  const hook = renderHook(() => useTextDoc("t1", FILE, { handed: HANDED }));
+  await waitFor(() => expect(hook.result.current.phase).toBe("ready"));
+  await act(() => hook.result.current.save());
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine\nhello", "crlf", true, S0);
+});
+
+test("a_handed_document_is_not_replaced_by_the_file_when_strict_mode_runs_the_effect_again", async () => {
+  const hook = renderHook(() => useTextDoc("t1", FILE, { handed: HANDED }), {
+    wrapper: StrictMode,
+  });
+  await waitFor(() => expect(hook.result.current.phase).toBe("ready"));
+  await act(async () => {});
+  expect(hook.result.current.doc?.toString()).toBe("mine\nhello");
+  expect(ipc.textOpen).not.toHaveBeenCalled();
+});
+
+test("the_snapshot_is_what_is_shown_and_what_was_saved", async () => {
+  const hook = await mount();
+  type(hook, "hello world");
+  expect(docController("t1")?.snapshot()).toEqual({
+    text: "hello world",
+    saved: "hello",
+    stamp: S0,
+    ending: "lf",
+    bom: false,
+    read_only: null,
+  });
+});
+
+test("a_moving_document_cannot_be_saved", async () => {
+  const hook = await mount();
+  type(hook, "mine");
+  act(() => docController("t1")?.setMoving(true));
+  expect(hook.result.current.moving).toBe(true);
+  expect(docController("t1")?.canSave()).toBe(false);
+  expect(docController("t1")?.canSaveAs()).toBe(false);
+  await act(() => hook.result.current.save());
+  let r: { status: string } = { status: "" };
+  await act(async () => {
+    r = await hook.result.current.saveAs(p("/home/a/x.txt"), null);
+  });
+  expect(r.status).toBe("failed");
+  let ok = true;
+  await act(async () => {
+    ok = await docController("t1")!.saveForClose();
+  });
+  expect(ok).toBe(false);
+  expect(ipc.textSave).not.toHaveBeenCalled();
+  act(() => docController("t1")?.setMoving(false));
+  expect(docController("t1")?.canSave()).toBe(true);
+});
+
+test("close_risk_names_unsaved_changes_and_a_deleted_file", async () => {
+  const hook = await mount();
+  expect(docController("t1")?.closeRisk()).toBeNull();
+  type(hook, "mine");
+  expect(docController("t1")?.closeRisk()).toEqual({
+    dirty: true,
+    deleted: false,
+    readOnly: false,
+  });
+  type(hook, "hello");
+  ipc.textCheck.mockResolvedValue("deleted");
+  await emit("kernkraft://dir-changed", { key: "doc:t1" });
+  await waitFor(() =>
+    expect(docController("t1")?.closeRisk()).toEqual({
+      dirty: false,
+      deleted: true,
+      readOnly: false,
+    })
+  );
+});
+
+async function saveForClose(): Promise<boolean> {
+  let ok = false;
+  await act(async () => {
+    ok = await docController("t1")!.saveForClose();
+  });
+  return ok;
+}
+
+test("save_for_close_writes_with_the_stamp", async () => {
+  const hook = await mount();
+  type(hook, "mine");
+  expect(await saveForClose()).toBe(true);
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine", "lf", false, S0);
+  expect(hook.result.current.dirty).toBe(false);
+});
+
+test("save_for_close_of_a_file_changed_on_disk_asks_and_does_not_close", async () => {
+  const hook = await mount();
+  ipc.textSave.mockRejectedValueOnce(wireError("ExternalModification"));
+  ipc.textCheck.mockResolvedValue("changed");
+  type(hook, "mine");
+  expect(await saveForClose()).toBe(false);
+  expect(hook.result.current.prompt).toBe("external");
+});
+
+test("save_for_close_of_a_deleted_file_creates_it_only_while_it_is_still_gone", async () => {
+  const hook = await mount();
+  ipc.textCheck.mockResolvedValue("deleted");
+  await emit("kernkraft://dir-changed", { key: "doc:t1" });
+  await waitFor(() => expect(hook.result.current.deletedOnDisk).toBe(true));
+  expect(await saveForClose()).toBe(true);
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "hello", "lf", false, null);
+
+  // Something came back at the path meanwhile: not written, the question about it is asked.
+  ipc.textSave.mockClear();
+  ipc.textCheck.mockResolvedValue("deleted");
+  await emit("kernkraft://dir-changed", { key: "doc:t1" });
+  await waitFor(() => expect(hook.result.current.deletedOnDisk).toBe(true));
+  ipc.textCheck.mockResolvedValue("changed");
+  expect(await saveForClose()).toBe(false);
+  expect(ipc.textSave).not.toHaveBeenCalled();
+  expect(hook.result.current.prompt).toBe("external");
+});
+
+test("save_for_close_of_a_read_only_document_does_not_close", async () => {
+  ipc.textOpen.mockResolvedValue(
+    opened({ read_only: { kind: "MixedLineEndings", detail: "mixed" } })
+  );
+  const hook = await mount();
+  type(hook, "mine");
+  expect(await saveForClose()).toBe(false);
+  expect(ipc.textSave).not.toHaveBeenCalled();
+  expect(useOps.getState().notice?.text).toMatch(/notes\.txt is read-only/);
+});
+
+test("save_for_close_that_fails_does_not_close", async () => {
+  const hook = await mount();
+  ipc.textSave.mockRejectedValueOnce(wireError("Io", "disk full"));
+  type(hook, "mine");
+  expect(await saveForClose()).toBe(false);
+  expect(hook.result.current.problem).toMatch(/disk full/);
+});
+
+test("save_as_replace_of_a_target_gone_meanwhile_writes_the_new_file", async () => {
+  const hook = await mount();
+  const target = p("/home/a/other.txt");
+  const asked = { path: target, name: "other.txt", kind: "file", len: 42, modified_ms: 1 };
+  // Gone between the question and the write: nothing there is lost, so the file is written.
+  ipc.entryOf.mockRejectedValue(wireError("NotFound"));
+  ipc.textOpen.mockResolvedValue(opened({ path: target, stamp: S1 }));
+  type(hook, "mine");
+  let r: unknown;
+  await act(async () => {
+    r = await hook.result.current.saveAs(target, asked as WireEntry);
+  });
+  expect(r).toEqual({ status: "saved" });
+  expect(ipc.textSave).toHaveBeenCalledWith(target, "mine", "lf", false, null);
+});
+
+test("save_for_close_of_a_deleted_file_that_came_back_unchanged_saves_with_its_stamp", async () => {
+  const hook = await mount();
+  ipc.textCheck.mockResolvedValue("deleted");
+  await emit("kernkraft://dir-changed", { key: "doc:t1" });
+  await waitFor(() => expect(hook.result.current.deletedOnDisk).toBe(true));
+  // Restored from the Trash as it was opened: a normal save, checked against its stamp.
+  ipc.textCheck.mockResolvedValue("same");
+  type(hook, "mine");
+  expect(await saveForClose()).toBe(true);
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine", "lf", false, S0);
 });

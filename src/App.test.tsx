@@ -38,6 +38,7 @@ vi.mock("./ipc", async () => ({
   openPendingTake: () => Promise.resolve([]),
   confirmClose: () => Promise.resolve(),
   isMainWindow: () => true,
+  currentWindowLabel: () => "main",
   EVENT_OPEN: "kern://open",
   EVENT_SELECT: "kern://select",
   EVENT_OPEN_ERROR: "kern://open-error",

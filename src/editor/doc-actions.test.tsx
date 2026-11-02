@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { WirePath } from "../ipc";
 
@@ -20,10 +20,24 @@ import { useShortcuts } from "../keys/useShortcuts";
 import { useOps } from "../ops/useOps";
 import { usePinnedRecent } from "../shell/pinned-recent-store";
 import { useTabs } from "../store/tabs";
-import { docController, registerDoc } from "./doc-controller";
+import { useCloseGuard } from "../shell/useCloseGuard";
+import { docController, registerDoc, type DocController } from "./doc-controller";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 const DOC = p("/home/a/n.md");
+
+/** A document controller whose every command is a stub, with `over` for the ones a test uses. */
+const fakeDoc = (over: Partial<DocController>): DocController => ({
+  save: vi.fn(),
+  askSaveAs: vi.fn(),
+  canSave: () => false,
+  canSaveAs: () => false,
+  closeRisk: () => null,
+  saveForClose: () => Promise.resolve(true),
+  snapshot: () => null,
+  setMoving: vi.fn(),
+  ...over,
+});
 
 function Host() {
   useShortcuts();
@@ -33,6 +47,7 @@ function Host() {
 beforeEach(() => {
   vi.clearAllMocks();
   usePinnedRecent.getState().reset();
+  useCloseGuard.getState().reset();
   useOps.setState({ notice: null });
   useTabs.setState({
     tabs: [
@@ -113,7 +128,10 @@ test("the_folder_keys_do_not_fire_while_the_focus_is_in_the_editor", () => {
 test("ctrl_s_and_ctrl_shift_s_reach_the_editor_of_the_active_document_in_an_editable_field", () => {
   const save = vi.fn();
   const askSaveAs = vi.fn();
-  const off = registerDoc("d", { save, askSaveAs, canSave: () => true, canSaveAs: () => true });
+  const off = registerDoc(
+    "d",
+    fakeDoc({ save, askSaveAs, canSave: () => true, canSaveAs: () => true })
+  );
   const { getByTestId } = render(<Host />);
   const ce = getByTestId("ce");
   ce.focus();
@@ -127,7 +145,7 @@ test("ctrl_s_and_ctrl_shift_s_reach_the_editor_of_the_active_document_in_an_edit
 
 test("save_is_greyed_when_the_editor_says_there_is_nothing_to_save", () => {
   const save = vi.fn();
-  registerDoc("d", { save, askSaveAs: vi.fn(), canSave: () => false, canSaveAs: () => true });
+  registerDoc("d", fakeDoc({ save, canSave: () => false, canSaveAs: () => true }));
   expect(runAction(getAction("doc.save"), currentContext())).toBe(false);
   expect(save).not.toHaveBeenCalled();
   expect(runAction(getAction("doc.saveAs"), currentContext())).toBe(true);
@@ -178,17 +196,33 @@ test("a_failed_pin_or_unpin_is_said_in_the_status_bar", async () => {
   );
 });
 
-test("a_dirty_document_tab_is_not_closed_and_the_user_is_told", () => {
-  useTabs.getState().setDirty("d", true);
+test("a_document_that_would_lose_something_asks_before_it_closes", async () => {
+  registerDoc(
+    "d",
+    fakeDoc({ closeRisk: () => ({ dirty: true, deleted: false, readOnly: false }) })
+  );
   const close = getAction("tab.close");
   expect(runAction(close, currentContext("d"))).toBe(true);
   expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["f", "d"]);
-  expect(useOps.getState().notice?.text).toMatch(/n\.md has unsaved changes/);
+  expect(useCloseGuard.getState().question).toMatchObject({
+    what: "tab",
+    items: [{ id: "d", name: "n.md", dirty: true, deleted: false }],
+  });
+  // A second close while the question is open does nothing.
+  runAction(close, currentContext("d"));
+  act(() => useCloseGuard.getState().answer("discard"));
+  await vi.waitFor(() => expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["f"]));
+  expect(useCloseGuard.getState().question).toBeNull();
+});
 
-  // A clean one, and a folder, close as before.
-  useTabs.getState().setDirty("d", false);
+test("a_document_that_would_lose_nothing_and_a_folder_close_at_once", () => {
+  registerDoc("d", fakeDoc({}));
+  const close = getAction("tab.close");
   runAction(close, currentContext("d"));
   expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["f"]);
+  runAction(close, currentContext("f"));
+  expect(useTabs.getState().tabs).toEqual([]);
+  expect(useCloseGuard.getState().question).toBeNull();
 });
 
 test("the_tab_store_keeps_dirty_and_follows_a_save_as", () => {

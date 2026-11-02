@@ -39,7 +39,8 @@ function openMenu() {
 
 test("arrow_keys_move_between_enabled_items", () => {
   openMenu();
-  const items = screen.getAllByRole("menuitem");
+  // Focus moves over the enabled items only.
+  const items = screen.getAllByRole("menuitem").filter((i) => !i.hasAttribute("disabled"));
   expect(items[0]).toHaveFocus();
   fireEvent.keyDown(items[0]!, { key: "ArrowDown" });
   expect(items[1]).toHaveFocus();

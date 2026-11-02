@@ -73,9 +73,13 @@ pub enum Directive {
     DocTab {
         path: WirePath,
     },
-    /// For a `doc-<n>` window: load this document.
+    /// For a `doc-<n>` window: load this document. `text_state` is the
+    /// editor state of the tab it left (unsaved text included), passed
+    /// through untouched; without it the window reads the file.
     LoadDoc {
         path: WirePath,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        text_state: Option<Value>,
     },
     HomeTab,
     FocusTab {
@@ -527,6 +531,7 @@ fn place<R: Runtime>(
                 &label,
                 &Directive::LoadDoc {
                     path: WirePath::from(&p),
+                    text_state: None,
                 },
             )?;
             focus(app, &label, &token)?;
@@ -767,11 +772,14 @@ pub fn open_pending_take<R: Runtime>(
 }
 
 /// Detaches a document tab of `main` into its own window (D4.5).
+/// `text_state` is the tab's editor state, handed to the window untouched,
+/// so unsaved text moves with the document.
 #[tauri::command]
 pub async fn detach_doc<R: Runtime>(
     app: AppHandle<R>,
     tab_id: String,
     path: WirePath,
+    text_state: Option<Value>,
 ) -> Result<String, WireError> {
     let p = path.to_path_buf()?;
     let st = state(&app)?;
@@ -821,7 +829,7 @@ pub async fn detach_doc<R: Runtime>(
         }
         return Err(e);
     }
-    send_directive(&app, &label, &Directive::LoadDoc { path })?;
+    send_directive(&app, &label, &Directive::LoadDoc { path, text_state })?;
     focus(&app, &label, &token)?;
     Ok(label)
 }

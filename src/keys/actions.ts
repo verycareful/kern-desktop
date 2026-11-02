@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { parent, pathKey, pinsGet, toWireError, type WirePath } from "../ipc";
+import { isMainWindow, parent, pathKey, pinsGet, toWireError, type WirePath } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
-import { activeTab, tabTitle, useTabs, type Tab, type TabsState } from "../store/tabs";
+import { activeTab, useTabs, type Tab, type TabsState } from "../store/tabs";
 import { usePanelsStore } from "../store/panels";
 import { folderController, type MoveTo } from "../files/folder-controller";
 import { useFolderUi } from "../files/folder-ui";
@@ -23,6 +23,8 @@ import { useProperties } from "../files/properties-store";
 import { documentsController } from "../files/documents-controller";
 import { useOps } from "../ops/useOps";
 import { docController } from "../editor/doc-controller";
+import { moveTabToWindow } from "../shell/move-doc";
+import { closeTab } from "../shell/useCloseGuard";
 
 // The single table of user-visible actions. Shortcuts (useShortcuts), the
 // main menu and the tab context menu (ActionMenu) all read it, so keyboard and
@@ -103,8 +105,8 @@ export const actions: Action[] = [
   // Ctrl+W and Ctrl+Tab: design 4.5. Both also work inside an editor, where
   // focus sits in an editable field. Shift+Tab reversal is the usual partner of Ctrl+Tab.
   // Every way to close a tab (shortcut, x button, middle click, menus) runs this one action.
-  // A document with unsaved changes is not closed: its edits would go with it. Until the
-  // save / discard / cancel question exists the user is told to save first.
+  // A document that would lose something (unsaved changes, a file deleted on disk) asks first
+  // (shell/useCloseGuard.ts).
   {
     id: "tab.close",
     label: "Close tab",
@@ -114,17 +116,7 @@ export const actions: Action[] = [
     inEditable: true,
     enabled: (c) => c.target !== null,
     run: (c) => {
-      const t = c.target;
-      if (!t) return;
-      if (t.kind === "doc" && t.dirty) {
-        useOps
-          .getState()
-          .notify(
-            `${tabTitle(t)} has unsaved changes, so Kern did not close it. Save it (Ctrl+S), or Save As, first.`
-          );
-        return;
-      }
-      c.tabs.close(t.id);
+      if (c.target) closeTab(c.target.id);
     },
   },
   {
@@ -146,6 +138,18 @@ export const actions: Action[] = [
     inEditable: true,
     enabled: (c) => c.tabs.tabs.length > 1,
     run: (c) => c.tabs.prev(),
+  },
+  // Design 4.5: a document tab can have a window of its own; its unsaved text goes with it.
+  {
+    id: "tab.detach",
+    label: "Move to new window",
+    area: "Tabs",
+    keys: [],
+    when: "any",
+    enabled: (c) => c.target?.kind === "doc" && isMainWindow(),
+    run: (c) => {
+      if (c.target?.kind === "doc") void moveTabToWindow(c.target.id);
+    },
   },
   // Alt+Left, Alt+Right, Alt+Up are the back, forward and up keys of the
   // desktop file managers (Dolphin, Nautilus). Design 4.5 does not list them.

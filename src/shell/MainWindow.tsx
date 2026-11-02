@@ -7,6 +7,7 @@ import { OpsHost } from "../ops/OpsHost";
 import { usePanels } from "../store/panels";
 import { TextEditor } from "../editor/TextEditor";
 import { activeTab, isPlaceTab, useTabs, type DocTab } from "../store/tabs";
+import { ClosePrompt } from "./ClosePrompt";
 import { PanelStub } from "./PanelStub";
 import { PlacesPanel } from "./PlacesPanel";
 import { PinnedRecentPanel } from "./PinnedRecentPanel";
@@ -77,7 +78,13 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
       {layout === "doc" && <PanelStub side="left" expanded={leftOpen} />}
       <main className="kern-doc-area" data-testid="doc-area">
         {docs.map((d) => (
-          <TextEditor key={d.id} tabId={d.id} path={d.path} active={d.id === tab?.id} />
+          <TextEditor
+            key={d.id}
+            tabId={d.id}
+            path={d.path}
+            active={d.id === tab?.id}
+            handed={d.handed}
+          />
         ))}
       </main>
       {layout === "doc" && <PanelStub side="right" expanded={rightOpen} />}
@@ -96,6 +103,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
       <OpsHost />
       <PropertiesHost />
       <StatusBar />
+      <ClosePrompt />
     </div>
   );
 }

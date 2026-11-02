@@ -100,7 +100,7 @@ export interface OpenOutcome {
 export type Directive =
   | { kind: "folder_tab"; path: WirePath }
   | { kind: "doc_tab"; path: WirePath }
-  | { kind: "load_doc"; path: WirePath }
+  | { kind: "load_doc"; path: WirePath; text_state?: unknown }
   | { kind: "home_tab" }
   | { kind: "focus_tab"; tab_id: string };
 
@@ -123,8 +123,8 @@ export const docClosed = (path: WirePath, location: Location) =>
 export const openPendingTake = () => invoke<Queued[]>("open_pending_take");
 
 /** Detaches a document tab into its own window; resolves to the window label. */
-export const detachDoc = (tabId: string, path: WirePath) =>
-  invoke<string>("detach_doc", { tabId, path });
+export const detachDoc = (tabId: string, path: WirePath, textState?: unknown) =>
+  invoke<string>("detach_doc", { tabId, path, textState: textState ?? null });
 
 export const moveDocToMain = (label: string, textState?: unknown) =>
   invoke<void>("move_doc_to_main", { label, textState: textState ?? null });

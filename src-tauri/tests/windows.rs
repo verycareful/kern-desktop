@@ -304,6 +304,29 @@ fn old_tab_closing_after_detach_keeps_the_window() {
 }
 
 #[test]
+fn detach_hands_the_tab_state_to_the_window_untouched() {
+    let e = env(Duration::from_secs(5));
+    let f = e.text("a.txt");
+    let tab = json!({"kind": "tab", "tab_id": "t1"});
+    e.call("doc_opened", json!({"path": wp(&f), "location": tab}))
+        .unwrap();
+    let state = json!({"text": "unsaved", "saved": "as opened", "stamp": "s"});
+    let label = e
+        .call(
+            "detach_doc",
+            json!({"tabId": "t1", "path": wp(&f), "textState": state}),
+        )
+        .unwrap();
+    let label = label.as_str().unwrap();
+    let queued = e.call_from(label, "open_pending_take", json!({})).unwrap();
+    assert_eq!(
+        queued,
+        json!([{"event": "kern://open", "payload":
+            {"kind": "load_doc", "path": wp(&f), "text_state": state}}])
+    );
+}
+
+#[test]
 fn adopt_timeout_gives_the_document_back_to_its_window() {
     let e = env(Duration::from_millis(600));
     let f = e.text("a.txt");

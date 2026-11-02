@@ -5,13 +5,14 @@ import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, lineNumbers, type ViewUpdate } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { search, searchKeymap } from "@codemirror/search";
-import { openDefault, settingsGet, toWireError, type WirePath } from "../ipc";
+import { openDefault, settingsGet, toWireError, type Location, type WirePath } from "../ipc";
 import { useViewSettings } from "../files/view-settings";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { ChangedOnDiskBanner } from "./ChangedOnDiskBanner";
 import { ExternalModificationPrompt, RecreatePrompt, SaveAsDialog } from "./DocPrompts";
 import { columnOf, useDocStatus } from "./doc-status";
+import type { HandedDoc } from "./handed-doc";
 import { ReadOnlyBanner } from "./ReadOnlyBanner";
 import { useTextDoc } from "./useTextDoc";
 import "./editor.css";
@@ -38,9 +39,17 @@ const zoomTheme = (zoom: number): Extension =>
 /** A zoom the settings did not give as a finite number is the unzoomed size. */
 const safeZoom = (z: unknown): number => (typeof z === "number" && Number.isFinite(z) ? z : 1);
 
-export function TextEditor(props: { tabId: string; path: WirePath; active: boolean }) {
+export function TextEditor(props: {
+  tabId: string;
+  path: WirePath;
+  active: boolean;
+  /** Where the document is open; a tab of `tabId` when not given. */
+  location?: Location;
+  /** The document as another window handed it over. */
+  handed?: HandedDoc;
+}) {
   const { tabId, path, active } = props;
-  const doc = useTextDoc(tabId, path);
+  const doc = useTextDoc(tabId, path, { location: props.location, handed: props.handed });
   const wordWrap = useViewSettings((s) => s.wordWrap);
   const zoom = safeZoom(useViewSettings((s) => s.editorZoom));
   const host = useRef<HTMLDivElement>(null);
@@ -54,9 +63,11 @@ export function TextEditor(props: { tabId: string; path: WirePath; active: boole
   });
 
   // What the editor's callbacks read, so they need not be rebuilt with each render.
-  const latest = useRef({ edited: doc.edited, readOnly: doc.readOnly !== null, wordWrap, zoom });
+  // A document moving to another window takes no edits: one made after its state was taken would be lost.
+  const isReadOnly = doc.readOnly !== null || doc.moving;
+  const latest = useRef({ edited: doc.edited, readOnly: isReadOnly, wordWrap, zoom });
   useEffect(() => {
-    latest.current = { edited: doc.edited, readOnly: doc.readOnly !== null, wordWrap, zoom };
+    latest.current = { edited: doc.edited, readOnly: isReadOnly, wordWrap, zoom };
   });
 
   const ready = doc.phase === "ready";
@@ -101,7 +112,6 @@ export function TextEditor(props: { tabId: string; path: WirePath; active: boole
   }, [ready, initial, tabId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- settings and read-only state, applied to the view that is there ----
-  const isReadOnly = doc.readOnly !== null;
   useEffect(() => {
     view.current?.dispatch({
       effects: parts.current.readOnly.reconfigure(EditorState.readOnly.of(isReadOnly)),
@@ -200,6 +210,11 @@ export function TextEditor(props: { tabId: string; path: WirePath; active: boole
             Kern cannot watch the folder of this file, so it will not notice if the file changes or
             is deleted ({errorText(doc.watchError)}).
           </p>
+        </div>
+      )}
+      {ready && doc.moving && (
+        <div className="kern-doc-banner" role="status" data-testid="doc-moving">
+          <p>Moving {name} to another window…</p>
         </div>
       )}
       {doc.problem && (

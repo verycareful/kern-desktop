@@ -514,3 +514,28 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Design 4.4: a document window, Home at the top left, the document below, the status bar last. */
+.kern-doc-window > .kern-doc-area {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.kern-doc-window-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--shell-stub-pad);
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-doc-window-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kern-doc-window-wait {
+  padding: 16px;
+}

@@ -432,3 +432,44 @@ test("a_failed_read_of_the_pins_for_the_window_is_kept_for_the_strip", async () 
   expect(usePinnedRecent.getState().pins).toBeNull();
   expect(usePinnedRecent.getState().loadError).toEqual(err);
 });
+
+test("a_follower_arriving_while_the_first_subscribes_shares_it", async () => {
+  let resolveOn!: () => void;
+  const gate = new Promise<void>((r) => (resolveOn = r));
+  ipc.on.mockImplementation(async (name: string, h: (payload: unknown) => void) => {
+    handlers[name] = h;
+    await gate;
+    return () => undefined;
+  });
+  ipc.pinsGet.mockResolvedValue({ entries: [] });
+  const store = usePinnedRecent.getState();
+  const first = store.follow({ prune: false });
+  const second = store.follow({ prune: false });
+  resolveOn();
+  await Promise.all([first, second]);
+  // pins and recents, then the store-error reports: one set, not two.
+  expect(ipc.on).toHaveBeenCalledTimes(3);
+});
+
+test("a_reset_while_subscribing_leaves_nothing_subscribed", async () => {
+  let resolveOn!: () => void;
+  const gate = new Promise<void>((r) => (resolveOn = r));
+  const off = vi.fn();
+  ipc.on.mockImplementation(async (name: string, h: (payload: unknown) => void) => {
+    handlers[name] = h;
+    await gate;
+    return off;
+  });
+  ipc.pinsGet.mockResolvedValue({ entries: [p("/home/t/Work")] });
+  const pending = usePinnedRecent.getState().follow({ prune: false });
+  usePinnedRecent.getState().reset();
+  resolveOn();
+  const stop = await pending;
+  // What the stale subscription placed is taken down, and it wrote nothing into the fresh state.
+  expect(off).toHaveBeenCalled();
+  expect(usePinnedRecent.getState().pins).toBeNull();
+  stop();
+  // The next follower subscribes afresh.
+  await usePinnedRecent.getState().follow({ prune: false });
+  expect(usePinnedRecent.getState().pins).toEqual([p("/home/t/Work")]);
+});

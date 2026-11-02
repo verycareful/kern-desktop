@@ -29,6 +29,7 @@ vi.mock("../ipc", async (orig) => ({
       stamp: "s1:5:0:1:1:0",
     }),
   textCheck: () => Promise.resolve("same"),
+  textSave: () => Promise.resolve("s1:6:0:1:1:1"),
   recentTouch: () => Promise.resolve({ entries: [] }),
   docOpened: () => Promise.resolve(),
   docClosed: () => Promise.resolve(),
@@ -40,12 +41,16 @@ import MainWindow from "./MainWindow";
 import { VOLUME_MENU } from "./volume-menu";
 import { ENTRY_MENU } from "./entry-menu";
 import { usePinnedRecent } from "./pinned-recent-store";
+import { useCloseGuard } from "./useCloseGuard";
+import { useOps } from "../ops/useOps";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 
 beforeEach(() => {
   useUserDirs.getState().reset();
   usePinnedRecent.getState().reset();
+  useCloseGuard.getState().reset();
+  useOps.setState({ notice: null });
   useTabs.setState({ tabs: [], activeId: null });
   usePanelsStore.setState({ leftSlid: false, rightSlid: false });
 });
@@ -145,15 +150,45 @@ test("each_document_tab_keeps_its_editor_and_unsaved_text_while_another_tab_is_s
   expect(view.state.doc.toString()).toBe("kept hello");
 });
 
-test("a_dirty_document_tab_survives_every_close_button_and_says_why", async () => {
+test("close_dirty_tab_prompts", async () => {
+  useTabs.getState().openFolder(p("/home/a"), false);
+  useTabs.getState().openDoc(p("/home/a/n.md"));
+  render(<MainWindow />);
+  const host = await screen.findByTestId("editor-host");
+  await waitFor(() => expect(host.querySelector(".cm-content")).not.toBeNull());
+  act(() => EditorView.findFromDOM(host)!.dispatch({ changes: { from: 0, insert: "x" } }));
+
+  // The close button asks; Cancel keeps the tab and its text.
+  fireEvent.click(screen.getByRole("button", { name: "Close n.md" }));
+  const prompt = await screen.findByTestId("close-prompt");
+  expect(prompt).toHaveTextContent("Save the changes to n.md before closing?");
+  fireEvent.click(within(prompt).getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByTestId("close-prompt")).toBeNull();
+  expect(useTabs.getState().tabs).toHaveLength(2);
+
+  // Close without saving drops it.
+  fireEvent.click(screen.getByRole("button", { name: "Close n.md" }));
+  fireEvent.click(
+    within(await screen.findByTestId("close-prompt")).getByRole("button", {
+      name: "Close without saving",
+    })
+  );
+  await waitFor(() => expect(useTabs.getState().tabs.map((t) => t.kind)).toEqual(["folder"]));
+});
+
+test("save_in_the_close_question_writes_then_closes", async () => {
+  useTabs.getState().openFolder(p("/home/a"), false);
   useTabs.getState().openDoc(p("/home/a/n.md"));
   render(<MainWindow />);
   const host = await screen.findByTestId("editor-host");
   await waitFor(() => expect(host.querySelector(".cm-content")).not.toBeNull());
   act(() => EditorView.findFromDOM(host)!.dispatch({ changes: { from: 0, insert: "x" } }));
   fireEvent.click(screen.getByRole("button", { name: "Close n.md" }));
-  expect(useTabs.getState().tabs).toHaveLength(1);
-  expect(screen.getByTestId("status-notice")).toHaveTextContent(/n\.md has unsaved changes/);
+  fireEvent.click(
+    within(await screen.findByTestId("close-prompt")).getByRole("button", { name: "Save" })
+  );
+  await waitFor(() => expect(useTabs.getState().tabs.map((t) => t.kind)).toEqual(["folder"]));
+  expect(screen.getByTestId("status-notice")).toHaveTextContent("Saved n.md");
 });
 
 test("tab_bar_buttons_and_menu_follow_the_action_table", () => {
