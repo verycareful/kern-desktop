@@ -142,8 +142,8 @@ test("ctrl_d_pins_the_document_and_unpins_it_when_pinned", async () => {
   // A document tab folds Pinned and Recent away: the outcome is in the status bar.
   await vi.waitFor(() => expect(useOps.getState().notice?.text).toBe("Pinned n.md"));
 
-  // The store follows the backend's event (the window follows it while open).
-  usePinnedRecent.setState({ pins: [DOC] });
+  // The store takes the backend's answer, so the label is right without its event.
+  expect(usePinnedRecent.getState().pins).toEqual([DOC]);
   expect(getAction("doc.pin").menuLabel?.()).toBe("Unpin");
   runAction(getAction("doc.pin"), currentContext());
   await vi.waitFor(() => expect(ipc.unpin).toHaveBeenCalledWith(DOC));

@@ -502,12 +502,18 @@ export function useTextDoc(tabId: string, path: WirePath): TextDoc {
           try {
             verdict = await textCheck(f.path, f.stamp);
           } catch (e) {
+            // The question closes, so the reason is not hidden behind it; the edit stays dirty.
+            if (st.current.prompt === "recreate") patch({ prompt: null });
             patch({
               problem: `${baseName(f.path)} was not saved: Kern could not check whether it is still gone: ${errorText(toWireError(e))}`,
             });
             return;
           }
+          // Cancelled while the check ran: the user no longer wants the file created.
+          if (st.current.prompt !== "recreate") return;
           if (verdict !== "deleted") {
+            // Something is at the path again: its folder is there to be watched again.
+            ensureWatch.current();
             patch({
               prompt: verdict === "changed" ? "external" : null,
               deletedOnDisk: false,

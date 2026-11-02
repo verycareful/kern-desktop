@@ -233,7 +233,7 @@ test("ctrl_d_pins_the_selection_and_nothing_else", () => {
   expect(getAction("folder.pin").keys).toContain("Ctrl+D");
   useTabs.getState().openFolder(p("/a"), false);
   const tab = useTabs.getState().tabs[0]!;
-  const pinPaths = vi.fn(() => Promise.resolve());
+  const pinPaths = vi.fn(() => Promise.resolve(true));
   const original = usePinnedRecent.getState().pinPaths;
   usePinnedRecent.setState({ pinPaths });
   let selection: WirePath[] = [];

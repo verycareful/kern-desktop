@@ -79,8 +79,13 @@ interface PinnedRecentState {
    * after the call.
    */
   prune(fresh?: boolean): Promise<void>;
-  pinPaths(paths: readonly WirePath[]): Promise<void>;
-  unpin(path: WirePath): Promise<void>;
+  /**
+   * Pins each path; true when all were pinned. A failure is said through `say`, a panel notice
+   * when none is given (a document tab, with the panel folded away, gives the status bar).
+   */
+  pinPaths(paths: readonly WirePath[], say?: (text: string) => void): Promise<boolean>;
+  /** As pinPaths, for one unpin. */
+  unpin(path: WirePath, say?: (text: string) => void): Promise<boolean>;
   /** Puts the pins in this order. */
   reorder(paths: readonly WirePath[]): Promise<void>;
   /** Moves a pin one place up (-1) or down (1). */
@@ -277,22 +282,27 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
       })();
       return pruning;
     },
-    async pinPaths(paths) {
+    async pinPaths(paths, say = get().notify) {
+      let all = true;
       for (const p of paths) {
         const seen = events.pins;
         try {
           answerPins(await pin(p), seen);
         } catch (e) {
-          fail(`${baseName(p)} could not be pinned`, e);
+          all = false;
+          say(`${baseName(p)} could not be pinned: ${errorText(toWireError(e))}`);
         }
       }
+      return all;
     },
-    async unpin(path) {
+    async unpin(path, say = get().notify) {
       const seen = events.pins;
       try {
         answerPins(await unpin(path), seen);
+        return true;
       } catch (e) {
-        fail(`${baseName(path)} could not be unpinned`, e);
+        say(`${baseName(path)} could not be unpinned: ${errorText(toWireError(e))}`);
+        return false;
       }
     },
     async reorder(paths) {

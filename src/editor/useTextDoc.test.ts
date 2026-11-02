@@ -276,6 +276,43 @@ test("recreate_writes_nothing_when_it_cannot_check_the_file_is_still_gone", asyn
   expect(ipc.textSave).not.toHaveBeenCalled();
   expect(hook.result.current.problem).toMatch(/notes\.txt was not saved.*still gone.*denied/);
   expect(hook.result.current.dirty).toBe(true);
+  // The question closes, so the reason is not behind it.
+  expect(hook.result.current.prompt).toBeNull();
+});
+
+test("recreate_cancelled_while_the_check_runs_writes_nothing", async () => {
+  const hook = await askedToRecreate();
+  let answer!: (v: string) => void;
+  ipc.textCheck.mockReturnValue(new Promise((r) => (answer = r)));
+  let done!: Promise<void>;
+  ipc.textCheck.mockClear();
+  act(() => {
+    done = hook.result.current.overwrite();
+  });
+  // The check is under way when the user cancels.
+  await waitFor(() => expect(ipc.textCheck).toHaveBeenCalled());
+  act(() => hook.result.current.cancelPrompt());
+  await act(async () => {
+    answer("deleted");
+    await done;
+  });
+  expect(ipc.textSave).not.toHaveBeenCalled();
+  expect(hook.result.current.dirty).toBe(true);
+});
+
+test("recreate_finding_the_file_back_watches_its_folder_again", async () => {
+  const hook = await mount();
+  ipc.textCheck.mockResolvedValue("deleted");
+  await emit("kernkraft://dir-gone", { key: "doc:t1" });
+  await waitFor(() => expect(hook.result.current.deletedOnDisk).toBe(true));
+  type(hook, "mine");
+  await act(() => hook.result.current.save());
+  expect(hook.result.current.prompt).toBe("recreate");
+  ipc.watchDir.mockClear();
+  ipc.textCheck.mockResolvedValue("changed");
+  await act(() => hook.result.current.overwrite());
+  await waitFor(() => expect(ipc.watchDir).toHaveBeenCalledWith("doc:t1", p("/home/a")));
+  expect(ipc.textSave).not.toHaveBeenCalled();
 });
 
 test("the_folder_vanishing_means_the_file_is_deleted", async () => {

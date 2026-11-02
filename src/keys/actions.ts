@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { parent, pathKey, pin, pinsGet, toWireError, unpin, type WirePath } from "../ipc";
+import { parent, pathKey, pinsGet, toWireError, type WirePath } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { activeTab, tabTitle, useTabs, type Tab, type TabsState } from "../store/tabs";
@@ -805,7 +805,8 @@ function docPinned(c: ActionContext): boolean {
 /**
  * Pins the document, or unpins it when it is pinned. The pins are read first when the store
  * has none yet, never guessed. A document tab folds Pinned and Recent away, so the outcome is
- * said in the status bar; the store follows the change through the backend's event.
+ * said in the status bar. The store takes the backend's answer, so the label is right even
+ * when its events cannot be followed.
  */
 async function toggleDocPin(path: WirePath): Promise<void> {
   const say = (text: string) => useOps.getState().notify(text);
@@ -822,21 +823,10 @@ async function toggleDocPin(path: WirePath): Promise<void> {
     }
   }
   const key = pathKey(path);
+  const store = usePinnedRecent.getState();
   if (pins.some((p) => pathKey(p) === key)) {
-    try {
-      await unpin(path);
-      say(`Unpinned ${name}`);
-    } catch (e) {
-      say(`${name} could not be unpinned: ${errorText(toWireError(e))}`);
-    }
-  } else {
-    try {
-      await pin(path);
-      say(`Pinned ${name}`);
-    } catch (e) {
-      say(`${name} could not be pinned: ${errorText(toWireError(e))}`);
-    }
-  }
+    if (await store.unpin(path, say)) say(`Unpinned ${name}`);
+  } else if (await store.pinPaths([path], say)) say(`Pinned ${name}`);
 }
 
 // Ctrl+S and Ctrl+Shift+S also fire while the focus is in the editor, which is an editable
