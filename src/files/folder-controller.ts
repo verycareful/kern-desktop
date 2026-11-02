@@ -40,6 +40,16 @@ export interface FolderController {
   trash(): void;
   /** Asks to delete the selection for good; the delete runs on the answer. */
   askDelete(): void;
+  // The tools (files/use-folder-tools.ts).
+  /** Copies the selection's paths as text, or the folder's with nothing selected. */
+  copyPath(): void;
+  /** True when the folder is listed, so a terminal can open there. */
+  canOpenTerminal(): boolean;
+  /** Opens a terminal in the one selected folder, or else in the folder on show. */
+  openTerminalHere(): void;
+  /** True when exactly one file (not a folder) is selected. */
+  canOpenWith(): boolean;
+  openWith(): void;
 }
 
 const controllers = new Map<string, FolderController>();

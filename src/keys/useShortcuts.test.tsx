@@ -200,13 +200,16 @@ test("the_keys_of_the_file_operations_are_scoped_to_the_view_and_undo_is_not", (
   expect(scoped.sort()).toEqual(
     [
       "folder.copy",
+      "folder.copyPath",
       "folder.cut",
       "folder.delete",
       "folder.new.file",
       "folder.new.folder",
+      "folder.openWith",
       "folder.paste",
       "folder.pin",
       "folder.rename",
+      "folder.terminal",
       "folder.trash",
     ].sort()
   );

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FolderOpen, LayoutGrid, List, X } from "lucide-react";
+import { FolderOpen, LayoutGrid, List, SquareTerminal, X } from "lucide-react";
 import {
   EVENT_DROP,
   displayPath,
@@ -27,6 +27,8 @@ import {
 } from "../ops/dnd";
 import { useTabs, type FolderTab, type FolderViewState } from "../store/tabs";
 import { Breadcrumb } from "./Breadcrumb";
+import { OpenWithDialog } from "./OpenWithDialog";
+import { useFolderTools } from "./use-folder-tools";
 import { ConfirmBanner } from "./ConfirmBanner";
 import { FileGrid } from "./FileGrid";
 import { FileOpsUi } from "./FileOpsUi";
@@ -285,6 +287,12 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       )?.focus(),
   });
 
+  const tools = useFolderTools({
+    folder: tab.path,
+    listed: () => latest.current.phase === "ready",
+    selected,
+  });
+
   // Something dropped on a folder (a pointer drag inside Kern, or a drop from another
   // application): the modifier keys and what the other application offers decide when they
   // can, and otherwise the filesystems do, item by item (use-file-ops.ts).
@@ -371,8 +379,13 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       refresh,
       editLocation: () => setEditing(true),
       ...fileOps.controller,
+      copyPath: tools.copyPath,
+      canOpenTerminal: tools.canOpenTerminal,
+      openTerminalHere: tools.openTerminalHere,
+      canOpenWith: tools.canOpenWith,
+      openWith: tools.openWith,
     });
-  }, [tab.id, dispatch, openOrAsk, refresh, selected, toOpen, fileOps.controller]);
+  }, [tab.id, dispatch, openOrAsk, refresh, selected, toOpen, fileOps.controller, tools]);
 
   // The status bar's counts (design 4.1).
   useEffect(() => {
@@ -572,6 +585,16 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         ) : (
           <Breadcrumb path={tab.path} onNavigate={navigate} onEdit={() => setEditing(true)} />
         )}
+        <button
+          type="button"
+          className="kern-icon-button"
+          aria-label="Open terminal here"
+          title="Open terminal here (F4)"
+          disabled={folder.phase !== "ready"}
+          onClick={() => runAction(getAction("folder.terminal"), currentContext(tab.id))}
+        >
+          <SquareTerminal size={20} strokeWidth={2} aria-hidden />
+        </button>
         <div className="kern-view-toggle" role="group" aria-label="View">
           {viewButton("folder.view.list", List, viewMode === "list")}
           {viewButton("folder.view.grid", LayoutGrid, viewMode === "grid")}
@@ -653,6 +676,24 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
           onCancel={cancelAsking}
         />
       )}
+      {tools.notes.length > 0 && (
+        <div role="alert" className="kern-banner">
+          <ul>
+            {tools.notes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            className="kern-icon-button"
+            aria-label="Dismiss"
+            onClick={tools.dismissNotes}
+          >
+            <X size={16} strokeWidth={2} aria-hidden />
+          </button>
+        </div>
+      )}
+      {tools.choosing && <OpenWithDialog entry={tools.choosing} onClose={tools.closeOpenWith} />}
       <FileOpsUi ops={fileOps} scope={files} active={isActive} />
       {folder.phase === "ready" && folder.sorting && (
         <p role="status" className="kern-note-body">

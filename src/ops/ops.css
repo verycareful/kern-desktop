@@ -69,6 +69,17 @@
   font-size: 13px;
 }
 
+.kern-open-with-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 40vh;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  border: 0;
+}
+
 .kern-modal-actions {
   display: flex;
   flex-wrap: wrap;

@@ -210,12 +210,23 @@ test("the_file_actions_are_greyed_in_the_menu_when_only_an_item_is_outlined", as
   act(() => screen.getByTestId("folder-list").focus());
   fireEvent.contextMenu(screen.getByTestId("folder-scroll"));
   const menu = await screen.findByTestId("action-menu");
-  for (const name of [/^Cut/, /^Copy/, /^Rename/, /^Move to Trash/, /^Delete permanently/]) {
+  for (const name of [
+    /^Cut/,
+    /^Copy\s*Ctrl\+C$/,
+    /^Rename/,
+    /^Move to Trash/,
+    /^Delete permanently/,
+    /^Pin/,
+    /^Open with/,
+  ]) {
     expect(within(menu).getByRole("menuitem", { name })).toBeDisabled();
   }
   // Creating and pasting need no selection.
   expect(within(menu).getByRole("menuitem", { name: /^New folder/ })).toBeEnabled();
   expect(within(menu).getByRole("menuitem", { name: /^Paste/ })).toBeEnabled();
+  // With nothing selected, Copy path copies the folder's path and the terminal opens in it.
+  expect(within(menu).getByRole("menuitem", { name: /^Copy path/ })).toBeEnabled();
+  expect(within(menu).getByRole("menuitem", { name: /^Open terminal here/ })).toBeEnabled();
 });
 
 test("delete_moves_the_selected_items_to_the_trash_without_asking", async () => {
