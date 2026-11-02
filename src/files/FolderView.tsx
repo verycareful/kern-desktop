@@ -134,7 +134,14 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   const [editing, setEditing] = useState(false);
   // The name search shows in place of the items; another folder ends it.
   const [searching, setSearching] = useState(false);
-  useEffect(() => setSearching(false), [key]);
+  // A selection asked for in one folder is not for the next one the tab shows.
+  const shownKey = useRef(key);
+  useEffect(() => {
+    setSearching(false);
+    if (shownKey.current === key) return;
+    shownKey.current = key;
+    useTabs.getState().clearSelectRequest(tab.id);
+  }, [key, tab.id]);
   const [openErrors, setOpenErrors] = useState<WireError[]>([]);
   const [revealTick, setRevealTick] = useState(0);
   // What could not be selected, apart from the open errors, which are replaced by each open.
@@ -297,6 +304,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       )?.focus(),
   });
 
+  const { cancelAsk: cancelOpsQuestion, closeNaming } = fileOps;
   const tools = useFolderTools({
     folder: tab.path,
     listed: () => latest.current.phase === "ready",
@@ -399,8 +407,12 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
           files.current?.querySelector<HTMLInputElement>('input[type="search"]')?.select();
           return;
         }
-        // The selection is not on show during a search, so nothing may act on it.
+        // The selection is not on show during a search, so nothing may act on it, and no
+        // question about it (Delete permanently, open many) or new name stays open.
         dispatch((s) => selectNone(s));
+        cancelOpsQuestion();
+        closeNaming();
+        cancelAsking();
         setSearching(true);
       },
       ...fileOps.controller,
@@ -410,7 +422,19 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       canOpenWith: tools.canOpenWith,
       openWith: tools.openWith,
     });
-  }, [tab.id, dispatch, openOrAsk, refresh, selected, toOpen, fileOps.controller, tools]);
+  }, [
+    tab.id,
+    dispatch,
+    openOrAsk,
+    refresh,
+    selected,
+    toOpen,
+    fileOps.controller,
+    cancelOpsQuestion,
+    closeNaming,
+    cancelAsking,
+    tools,
+  ]);
 
   // The status bar's counts (design 4.1).
   useEffect(() => {
@@ -420,7 +444,9 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     }
     let bytes = 0;
     let folders = 0;
-    for (const i of sel.selected) {
+    // During a search the selection is not on show and is not counted.
+    const counted = searching ? new Set<number>() : sel.selected;
+    for (const i of counted) {
       const e = entries[i];
       if (!e) continue;
       if (isFolder(e)) folders++;
@@ -428,11 +454,11 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     }
     useFolderStatus.getState().set(tab.id, {
       items: entries.length,
-      selected: sel.selected.size,
+      selected: counted.size,
       selectedBytes: bytes,
       selectedFolders: folders,
     });
-  }, [tab.id, folder.phase, entries, sel]);
+  }, [tab.id, folder.phase, entries, sel, searching]);
   useEffect(() => () => useFolderStatus.getState().clear(tab.id), [tab.id]);
 
   const onItemClick = useCallback(

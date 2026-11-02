@@ -1486,3 +1486,24 @@ test("during_a_search_no_selection_can_be_rebuilt_and_acted_on", async () => {
   fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" });
   await waitFor(() => expect(folderController(tab.id)!.selectedPaths()).toEqual([p("/d/b")]));
 });
+
+test("a_search_closes_a_question_about_the_selection_and_rename_stays_off", async () => {
+  const tab = await mount([entry("only")]);
+  select("only");
+  key("Delete", { shiftKey: true });
+  expect(await screen.findByRole("alertdialog")).toBeTruthy();
+  // The main menu still reaches Search while the question holds the keyboard.
+  act(() => {
+    runAction(getAction("folder.search"), currentContext(tab.id));
+  });
+  await screen.findByRole("searchbox");
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  // One item: Ctrl+A would make it renamable, were the selection on show.
+  act(() => (document.activeElement as HTMLElement).blur());
+  key("a", { ctrlKey: true });
+  expect(isEnabled(getAction("folder.rename"), currentContext(tab.id))).toBe(false);
+  key("F2");
+  expect(screen.queryByRole("textbox", { name: /rename/i })).toBeNull();
+  expect(ipc.startOp).not.toHaveBeenCalled();
+  expect(useFolderStatus.getState().byTab[tab.id]?.selected).toBe(0);
+});

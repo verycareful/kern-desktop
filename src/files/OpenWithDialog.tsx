@@ -115,7 +115,7 @@ export function OpenWithDialog(props: { entry: WireEntry; onClose(): void }) {
       } catch (e) {
         const changed = setDefault ? ` ${picked.name} is now the default for ${entry.mime}.` : "";
         throw new Error(
-          `${picked.name} could not open ${entry.name}: ${errorText(toWireError(e))}.${changed}`
+          `${picked.name} could not open ${entry.name}: ${errorText(toWireError(e)).replace(/\.$/, "")}.${changed}`
         );
       }
       useOps.getState().notify(`Opened ${entry.name} with ${picked.name}`);
