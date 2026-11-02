@@ -152,6 +152,7 @@ test("every_action_is_in_a_menu", () => {
   useTabs.getState().openFolder(p("/a"), false);
   useTabs.getState().openDoc(p("/a/n.md"));
   useTabs.getState().openTrash();
+  useTabs.getState().openDocuments();
   const tabs = useTabs.getState().tabs;
   const tabOf = (kind: string) => tabs.find((t) => t.kind === kind) ?? null;
   const missing: string[] = [];

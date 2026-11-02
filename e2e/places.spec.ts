@@ -83,7 +83,7 @@ test("the_strip_lists_places_volumes_and_trash_and_the_trash_opens_in_a_tab", as
   await expect(strip.getByRole("button", { name: "STICK" })).toBeVisible();
   await expect(strip.getByRole("button", { name: "Mount BACKUP" })).toBeVisible();
 
-  await strip.getByRole("button", { name: "Documents" }).click();
+  await strip.getByRole("button", { name: "Documents", exact: true }).click();
   await expect(page.getByTestId("status-bar")).toContainText("/home/tester/Documents");
   await expect(page.getByRole("tab")).toHaveCount(1);
 

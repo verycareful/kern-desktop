@@ -179,8 +179,9 @@ test("every_action_appears_in_a_menu", () => {
   useTabs.getState().openFolder(p("/home/a"), false);
   useTabs.getState().openDoc(p("/home/a/n.md"));
   useTabs.getState().openTrash();
+  useTabs.getState().openDocuments();
   render(<MainWindow />);
-  for (const tabName of ["a", "n.md", "Trash"]) {
+  for (const tabName of ["a", "n.md", "Trash", "All documents"]) {
     fireEvent.click(screen.getByRole("tab", { name: tabName }));
     fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
     const menu = screen.getByTestId("action-menu");

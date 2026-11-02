@@ -13,12 +13,14 @@ import {
   type SettingsPatch,
   type ViewMode,
   type WireError,
+  type WirePath,
 } from "../ipc";
 import { DEFAULT_INTERFACE_SIZE, stepInterfaceSize } from "../theme/interface-size";
 
 // The settings the folder view follows (design 7.2): whether hidden files show,
-// list or grid, the density that sets the row height, and the interface size
-// (the zoom itself is applied by the backend; the actions step it). The stored settings
+// list or grid, the density that sets the row height, the interface size
+// (the zoom itself is applied by the backend; the actions step it), and the
+// folders All documents walks. The stored settings
 // are the source; this holds their last known value for the view and for the
 // actions (Ctrl+H, the view buttons), which write through settings_set.
 interface ViewSettingsState {
@@ -28,6 +30,10 @@ interface ViewSettingsState {
   density: Density;
   /** The interface size in percent. */
   interfaceSize: number;
+  /** What All documents walks: the Documents and Downloads folders when on, and these. */
+  scanDocuments: boolean;
+  scanDownloads: boolean;
+  scanRoots: WirePath[];
   /** The last read or write that failed, until the next one succeeds. */
   error: WireError | null;
 }
@@ -38,6 +44,9 @@ export const useViewSettings = create<ViewSettingsState>()(() => ({
   viewMode: "list",
   density: "cozy",
   interfaceSize: DEFAULT_INTERFACE_SIZE,
+  scanDocuments: true,
+  scanDownloads: true,
+  scanRoots: [],
   error: null,
 }));
 
@@ -48,6 +57,9 @@ function apply(s: Settings): void {
     viewMode: s.view_mode,
     density: s.density,
     interfaceSize: s.interface_size,
+    scanDocuments: s.scan_documents,
+    scanDownloads: s.scan_downloads,
+    scanRoots: s.scan_roots,
     error: null,
   });
 }
@@ -72,6 +84,8 @@ async function write(patch: SettingsPatch): Promise<void> {
 export const toggleHidden = () => write({ show_hidden: !useViewSettings.getState().showHidden });
 export const setViewMode = (view_mode: ViewMode) => write({ view_mode });
 export const setInterfaceSize = (interface_size: number) => write({ interface_size });
+export const setScanFolder = (folder: "documents" | "downloads", on: boolean) =>
+  write(folder === "documents" ? { scan_documents: on } : { scan_downloads: on });
 export const stepSize = (direction: 1 | -1) =>
   setInterfaceSize(stepInterfaceSize(useViewSettings.getState().interfaceSize, direction));
 

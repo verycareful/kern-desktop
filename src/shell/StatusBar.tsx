@@ -4,7 +4,7 @@ import { displayPath } from "../ipc";
 import { useFolderStatus } from "../files/folder-status";
 import { formatSize } from "../files/format";
 import { useOps } from "../ops/useOps";
-import { activeTab, useTabs } from "../store/tabs";
+import { activeTab, useTabs, isPlaceTab, tabTitle } from "../store/tabs";
 
 const plural = (n: number, one: string, many: string) =>
   `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
@@ -20,7 +20,7 @@ export function StatusBar() {
     tab?.kind === "folder" || tab?.kind === "trash" ? s.byTab[tab.id] : undefined
   );
   const notice = useOps((s) => s.notice);
-  const place = !tab ? "" : tab.kind === "trash" ? "Trash" : displayPath(tab.path);
+  const place = !tab ? "" : isPlaceTab(tab) ? tabTitle(tab) : displayPath(tab.path);
   return (
     <footer className="kern-status" data-testid="status-bar">
       <span className="kern-status-path" title={place || undefined}>

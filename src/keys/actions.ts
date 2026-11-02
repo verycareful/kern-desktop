@@ -18,6 +18,7 @@ import { trashController, type TrashMove } from "../files/trash-controller";
 import { useVolumes } from "../shell/volumes-store";
 import { usePinnedRecent } from "../shell/pinned-recent-store";
 import { useProperties } from "../files/properties-store";
+import { documentsController } from "../files/documents-controller";
 import { useOps } from "../ops/useOps";
 
 // The single table of user-visible actions. Shortcuts (useShortcuts), the
@@ -38,7 +39,7 @@ import { useOps } from "../ops/useOps";
 
 // "volume" actions are aimed at a volume of the places strip, and "entry" actions at an entry of
 // Pinned or Recent, not at a tab: they run from that item's own menu and are not part of the main menu.
-export type ActionContextKind = "folder" | "doc" | "trash" | "volume" | "entry";
+export type ActionContextKind = "folder" | "doc" | "trash" | "documents" | "volume" | "entry";
 
 export type ActionContext = {
   tabs: TabsState;
@@ -613,6 +614,24 @@ const placeActions: Action[] = [
     keys: [],
     when: "any",
     run: (c) => c.tabs.openTrash(),
+  },
+  {
+    id: "place.documents",
+    label: "Open All documents",
+    area: "Navigation",
+    keys: [],
+    when: "any",
+    run: (c) => c.tabs.openDocuments(),
+  },
+  // F5 refreshes a folder and the Trash; here it walks the folders again.
+  {
+    id: "documents.refresh",
+    label: "Look again",
+    area: "View",
+    keys: ["F5"],
+    when: "documents",
+    enabled: () => documentsController() !== null,
+    run: () => documentsController()?.refresh(),
   },
   {
     id: "volume.mount",

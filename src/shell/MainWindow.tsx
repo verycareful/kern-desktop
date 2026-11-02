@@ -4,7 +4,7 @@ import { useViewSettingsSync } from "../files/view-settings";
 import { useShortcuts } from "../keys/useShortcuts";
 import { OpsHost } from "../ops/OpsHost";
 import { usePanels } from "../store/panels";
-import { activeTab, useTabs } from "../store/tabs";
+import { activeTab, isPlaceTab, useTabs } from "../store/tabs";
 import { PanelStub } from "./PanelStub";
 import { PlacesPanel } from "./PlacesPanel";
 import { PinnedRecentPanel } from "./PinnedRecentPanel";
@@ -35,8 +35,8 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
         {!props.starting && props.openingHome && <p>Opening the Home folder…</p>}
       </main>
     );
-  } else if (tab.kind === "folder" || tab.kind === "trash") {
-    // The Trash takes the folder area; the strip and Pinned and Recent are as for a folder.
+  } else if (tab.kind === "folder" || isPlaceTab(tab)) {
+    // The Trash and All documents take the folder area; the strip and Pinned and Recent are as for a folder.
     layout = "folder";
     body = (
       <>

@@ -602,3 +602,8 @@
   font-size: 12px;
   color: var(--kern-text-dim);
 }
+
+.kern-documents-bar {
+  flex-wrap: wrap;
+  padding-top: var(--kern-density-gap);
+}

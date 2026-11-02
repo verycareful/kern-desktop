@@ -3,22 +3,30 @@
 // Design 4.1: the file manager. Docked, its two parts are cells of the
 // main grid: the places strip from the window top to the status bar, and the
 // folder area beside it under the tab row. Slid in over a document (4.3) they
-// are one panel. The strip holds Places, Volumes and Trash; its top slot,
+// are one panel. The strip holds Places, All documents, Volumes and Trash; its top slot,
 // level with the tab row, is free and left empty.
-import { Trash2 } from "lucide-react";
+import { FileSearch, Trash2, type LucideIcon } from "lucide-react";
 import { FolderView } from "../files/FolderView";
+import { DocumentsView } from "../files/DocumentsView";
 import { TrashView } from "../files/TrashView";
 import { currentContext, getAction, runAction } from "../keys/actions";
-import { activeTab, recentFolderTab, useTabs } from "../store/tabs";
+import { activeTab, recentFolderTab, useTabs, type TabsState } from "../store/tabs";
 import { PlacesList } from "./PlacesList";
-import { trashShown } from "./place-nav";
+import { documentsShown, trashShown } from "./place-nav";
 import { VolumesList } from "./VolumesList";
 
-function TrashPlace() {
-  const current = useTabs((s) => trashShown(s));
-  const action = getAction("place.trash");
+/** A place of Kern's own in the strip (the Trash, All documents): one entry that opens its tab. */
+function OwnPlace(props: {
+  label: string;
+  action: string;
+  Icon: LucideIcon;
+  shown(s: TabsState): boolean;
+}) {
+  const current = useTabs(props.shown);
+  const action = getAction(props.action);
+  const { Icon } = props;
   return (
-    <section className="kern-places-group" aria-label="Trash">
+    <section className="kern-places-group" aria-label={props.label}>
       <ul className="kern-places-list">
         <li>
           <button
@@ -27,8 +35,8 @@ function TrashPlace() {
             aria-current={current ? "page" : undefined}
             onClick={() => runAction(action, currentContext())}
           >
-            <Trash2 size={16} strokeWidth={2} aria-hidden />
-            <span className="kern-place-label">Trash</span>
+            <Icon size={16} strokeWidth={2} aria-hidden />
+            <span className="kern-place-label">{props.label}</span>
           </button>
         </li>
       </ul>
@@ -41,8 +49,14 @@ function PlacesStrip() {
     <nav className="kern-places" aria-label="Places and volumes" data-testid="places-strip">
       <div className="kern-places-slot" />
       <PlacesList />
+      <OwnPlace
+        label="All documents"
+        action="place.documents"
+        Icon={FileSearch}
+        shown={documentsShown}
+      />
       <VolumesList />
-      <TrashPlace />
+      <OwnPlace label="Trash" action="place.trash" Icon={Trash2} shown={trashShown} />
     </nav>
   );
 }
@@ -57,6 +71,8 @@ function FolderArea(props: { docked?: boolean }) {
     <div className="kern-folder-area" data-testid="folder-area" {...region}>
       {active?.kind === "trash" ? (
         <TrashView key={active.id} tab={active} />
+      ) : active?.kind === "documents" ? (
+        <DocumentsView key={active.id} />
       ) : (
         tab && <FolderView key={tab.id} tab={tab} />
       )}
