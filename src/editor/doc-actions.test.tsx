@@ -136,26 +136,46 @@ test("save_is_greyed_when_the_editor_says_there_is_nothing_to_save", () => {
 test("ctrl_d_pins_the_document_and_unpins_it_when_pinned", async () => {
   expect(getAction("doc.pin").menuLabel?.()).toBe("Pin");
   expect(runAction(getAction("doc.pin"), currentContext())).toBe(true);
-  // The panel has not loaded the pins (a document tab folds it away): they are read first.
+  // No pins read yet: they are read first, never guessed.
   await vi.waitFor(() => expect(ipc.pin).toHaveBeenCalledWith(DOC));
   expect(ipc.pinsGet).toHaveBeenCalledTimes(1);
+  // A document tab folds Pinned and Recent away: the outcome is in the status bar.
+  await vi.waitFor(() => expect(useOps.getState().notice?.text).toBe("Pinned n.md"));
 
-  await vi.waitFor(() => expect(usePinnedRecent.getState().pins).toEqual([DOC]));
+  // The store follows the backend's event (the window follows it while open).
+  usePinnedRecent.setState({ pins: [DOC] });
   expect(getAction("doc.pin").menuLabel?.()).toBe("Unpin");
   runAction(getAction("doc.pin"), currentContext());
   await vi.waitFor(() => expect(ipc.unpin).toHaveBeenCalledWith(DOC));
+  await vi.waitFor(() => expect(useOps.getState().notice?.text).toBe("Unpinned n.md"));
   expect(ipc.pin).toHaveBeenCalledTimes(1);
+  expect(ipc.pinsGet).toHaveBeenCalledTimes(1);
 });
 
-test("a_failed_pin_lookup_is_said_and_pins_nothing", async () => {
+test("a_failed_pin_lookup_is_said_in_the_status_bar_and_pins_nothing", async () => {
   ipc.pinsGet.mockRejectedValue({ kind: "Io", message: "unreadable", path: null, details: null });
   runAction(getAction("doc.pin"), currentContext());
   await vi.waitFor(() =>
-    expect(usePinnedRecent.getState().notices.map((n) => n.text)).toEqual([
-      expect.stringContaining("n.md could not be pinned"),
-    ])
+    expect(useOps.getState().notice?.text).toMatch(
+      /^Kern could not read the pins, so n\.md was left as it was: .*unreadable/
+    )
   );
   expect(ipc.pin).not.toHaveBeenCalled();
+  expect(ipc.unpin).not.toHaveBeenCalled();
+});
+
+test("a_failed_pin_or_unpin_is_said_in_the_status_bar", async () => {
+  ipc.pin.mockRejectedValue({ kind: "Io", message: "disk full", path: null, details: null });
+  runAction(getAction("doc.pin"), currentContext());
+  await vi.waitFor(() =>
+    expect(useOps.getState().notice?.text).toMatch(/^n\.md could not be pinned: .*disk full/)
+  );
+  usePinnedRecent.setState({ pins: [DOC] });
+  ipc.unpin.mockRejectedValue({ kind: "Io", message: "read-only", path: null, details: null });
+  runAction(getAction("doc.pin"), currentContext());
+  await vi.waitFor(() =>
+    expect(useOps.getState().notice?.text).toMatch(/^n\.md could not be unpinned: .*read-only/)
+  );
 });
 
 test("a_dirty_document_tab_is_not_closed_and_the_user_is_told", () => {

@@ -20,6 +20,7 @@ export const EMPTY_PINNED_RECENT: MockResponses = {
     pins: { entries: [] },
     recents: { entries: [] },
   },
+  pins_get: { entries: [] },
   store_errors_take: [],
 };
 

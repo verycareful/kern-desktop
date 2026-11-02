@@ -30,6 +30,7 @@ const ipc = vi.hoisted(() => ({
   themeGet: vi.fn(),
   undoState: vi.fn(),
   prune: vi.fn(),
+  pinsGet: vi.fn(),
   storeErrorsTake: vi.fn(),
   // A document tab's editor opens its file and registers it.
   textOpen: vi.fn(),
@@ -68,6 +69,7 @@ beforeEach(() => {
   });
   ipc.openPaths.mockResolvedValue([]);
   ipc.prune.mockResolvedValue(EMPTY_PRUNE);
+  ipc.pinsGet.mockResolvedValue({ entries: [] });
   ipc.storeErrorsTake.mockResolvedValue([]);
   ipc.textOpen.mockResolvedValue({
     path: p("/d/n.md"),

@@ -108,7 +108,7 @@ export function SaveAsDialog(props: {
   path: WirePath;
   /** Set when the text shown is a lossy copy of the file, which Save As would keep as it is shown. */
   lossyNote: string | null;
-  save(target: WirePath, replace: boolean): Promise<SaveAsResult>;
+  save(target: WirePath, replace: WireEntry | null): Promise<SaveAsResult>;
   onCancel(): void;
 }) {
   const [text, setText] = useState(displayPath(props.path));
@@ -128,14 +128,17 @@ export function SaveAsDialog(props: {
     };
   }, []);
 
-  const attempt = async (target: WirePath, replace: boolean) => {
+  const attempt = async (target: WirePath, replace: WireEntry | null) => {
     setBusy(true);
     setError(null);
     try {
       const r = await props.save(target, replace);
       if (!alive.current) return;
-      if (r.status === "exists") setExisting({ target, entry: r.entry });
-      else if (r.status === "failed") {
+      if (r.status === "exists") {
+        setExisting({ target, entry: r.entry });
+        // What the question described is not what is there now: it is asked again.
+        if (replace) setError("It changed since you were asked. This is what is there now.");
+      } else if (r.status === "failed") {
         setExisting(null);
         setError(r.message);
       }
@@ -159,7 +162,7 @@ export function SaveAsDialog(props: {
       return;
     }
     if (!alive.current) return;
-    await attempt(parsed.path, false);
+    await attempt(parsed.path, null);
   };
 
   if (existing) {
@@ -190,7 +193,7 @@ export function SaveAsDialog(props: {
             type="button"
             className="kern-button"
             disabled={busy}
-            onClick={() => void attempt(target, true)}
+            onClick={() => void attempt(target, entry)}
           >
             Replace
           </button>

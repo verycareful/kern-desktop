@@ -63,6 +63,7 @@ vi.mock("./ipc", async () => ({
   EVENT_RECENTS_CHANGED: "kern://recents-changed",
   EVENT_STORE_ERROR: "kern://store-error",
   prune: async () => (await import("./shell/test-pinned-recent")).EMPTY_PRUNE,
+  pinsGet: async () => ({ entries: [] }),
   storeErrorsTake: () => Promise.resolve([]),
   toWireError: (e: unknown) => e,
 }));

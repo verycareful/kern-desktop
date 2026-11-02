@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { parent, pathKey, pinsGet, toWireError, type WirePath } from "../ipc";
+import { parent, pathKey, pin, pinsGet, toWireError, unpin, type WirePath } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { activeTab, tabTitle, useTabs, type Tab, type TabsState } from "../store/tabs";
@@ -803,23 +803,40 @@ function docPinned(c: ActionContext): boolean {
 }
 
 /**
- * Pins the document, or unpins it when it is pinned. A document tab folds Pinned and Recent
- * away, so the pins may not have been read yet: they are read first, never guessed.
+ * Pins the document, or unpins it when it is pinned. The pins are read first when the store
+ * has none yet, never guessed. A document tab folds Pinned and Recent away, so the outcome is
+ * said in the status bar; the store follows the change through the backend's event.
  */
 async function toggleDocPin(path: WirePath): Promise<void> {
-  const store = usePinnedRecent.getState();
-  let pins = store.pins;
+  const say = (text: string) => useOps.getState().notify(text);
+  const name = baseName(path);
+  let pins = usePinnedRecent.getState().pins;
   if (pins === null) {
     try {
       pins = (await pinsGet()).entries;
     } catch (e) {
-      store.notify(`${baseName(path)} could not be pinned: ${errorText(toWireError(e))}`);
+      say(
+        `Kern could not read the pins, so ${name} was left as it was: ${errorText(toWireError(e))}`
+      );
       return;
     }
   }
   const key = pathKey(path);
-  if (pins.some((p) => pathKey(p) === key)) await store.unpin(path);
-  else await store.pinPaths([path]);
+  if (pins.some((p) => pathKey(p) === key)) {
+    try {
+      await unpin(path);
+      say(`Unpinned ${name}`);
+    } catch (e) {
+      say(`${name} could not be unpinned: ${errorText(toWireError(e))}`);
+    }
+  } else {
+    try {
+      await pin(path);
+      say(`Pinned ${name}`);
+    } catch (e) {
+      say(`${name} could not be pinned: ${errorText(toWireError(e))}`);
+    }
+  }
 }
 
 // Ctrl+S and Ctrl+Shift+S also fire while the focus is in the editor, which is an editable

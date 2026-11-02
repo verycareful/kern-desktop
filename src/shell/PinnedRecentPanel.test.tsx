@@ -12,6 +12,7 @@ const ipc = vi.hoisted(() => ({
   mimeOf: vi.fn(),
   openPaths: vi.fn(),
   pin: vi.fn(),
+  pinsGet: vi.fn(),
   unpin: vi.fn(),
   pinsReorder: vi.fn(),
   userDirs: vi.fn(),
@@ -385,4 +386,49 @@ test("the_same_notice_is_shown_once", async () => {
   }
   await waitFor(() => expect(ipc.prune).toHaveBeenCalledTimes(3));
   expect(screen.getAllByText("Pinned and Recent could not be checked: Io: denied")).toHaveLength(1);
+});
+
+test("every_follower_shares_one_subscription_which_ends_with_the_last", async () => {
+  const off = vi.fn();
+  ipc.on.mockImplementation((name: string, h: (payload: unknown) => void) => {
+    handlers[name] = h;
+    return Promise.resolve(off);
+  });
+  ipc.prune.mockResolvedValue(report(["/home/t/Work"]));
+  ipc.pinsGet.mockResolvedValue({ entries: [p("/home/t/Work")] });
+  const store = usePinnedRecent.getState();
+  const window = await store.follow({ prune: false });
+  const panel = await store.follow();
+  // One listener per event (pins, recents, the store-error reports), not one set per follower.
+  expect(ipc.on).toHaveBeenCalledTimes(3);
+  window();
+  window();
+  expect(off).not.toHaveBeenCalled();
+  act(() => handlers["kern://pins-changed"]!({ entries: [p("/home/t/Invoices")] }));
+  expect(usePinnedRecent.getState().pins).toEqual([p("/home/t/Invoices")]);
+  panel();
+  expect(off).toHaveBeenCalledTimes(3);
+  // A follower after the last left subscribes again.
+  await store.follow({ prune: false });
+  expect(ipc.on).toHaveBeenCalledTimes(6);
+});
+
+test("the_window_follow_reads_the_pins_and_does_not_prune", async () => {
+  ipc.pinsGet.mockResolvedValue({ entries: [p("/home/t/Work")] });
+  await usePinnedRecent.getState().follow({ prune: false });
+  expect(ipc.prune).not.toHaveBeenCalled();
+  expect(usePinnedRecent.getState().pins).toEqual([p("/home/t/Work")]);
+
+  // The panel shown later prunes, as design 4.2 says.
+  ipc.prune.mockResolvedValue(report(["/home/t/Work"]));
+  await usePinnedRecent.getState().follow();
+  expect(ipc.prune).toHaveBeenCalledTimes(1);
+});
+
+test("a_failed_read_of_the_pins_for_the_window_is_kept_for_the_strip", async () => {
+  const err = { kind: "Io", message: "unreadable", path: null, details: null };
+  ipc.pinsGet.mockRejectedValue(err);
+  await usePinnedRecent.getState().follow({ prune: false });
+  expect(usePinnedRecent.getState().pins).toBeNull();
+  expect(usePinnedRecent.getState().loadError).toEqual(err);
 });

@@ -16,6 +16,7 @@ vi.mock("../ipc", async (orig) => ({
   undoState: () => Promise.resolve({ undo: null, redo: null }),
   // Pinned and Recent read the pins and recents.
   prune: async () => (await import("./test-pinned-recent")).EMPTY_PRUNE,
+  pinsGet: async () => ({ entries: [] }),
   storeErrorsTake: () => Promise.resolve([]),
   // A document tab's editor opens its file and registers it.
   textOpen: (path: WirePath) =>
@@ -102,6 +103,15 @@ test("doc_tab_shows_two_stubs", () => {
   fireEvent.click(screen.getAllByRole("tab")[0]!);
   expect(screen.queryByTestId("stub-left")).toBeNull();
   expect(screen.getByTestId("side-panel")).toBeInTheDocument();
+});
+
+test("a_window_showing_only_a_document_follows_pinned_and_recent", async () => {
+  // The panel is folded away, yet Ctrl+D there needs to know whether the document is pinned.
+  useTabs.getState().openDoc(p("/home/a/n.md"));
+  const { unmount } = render(<MainWindow />);
+  expect(screen.queryByTestId("pinned")).toBeNull();
+  await waitFor(() => expect(usePinnedRecent.getState().pins).toEqual([]));
+  unmount();
 });
 
 test("doc_tab_status_makes_no_saved_claim", () => {

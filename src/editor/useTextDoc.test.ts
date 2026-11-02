@@ -3,7 +3,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { Text } from "@codemirror/state";
 import { beforeEach, expect, test, vi } from "vitest";
-import type { WireError, WirePath, WireText } from "../ipc";
+import type { WireEntry, WireError, WirePath, WireText } from "../ipc";
 
 const ipc = vi.hoisted(() => ({
   textOpen: vi.fn(),
@@ -236,6 +236,48 @@ test("deleted_file_save_warns", async () => {
   expect(hook.result.current.dirty).toBe(false);
 });
 
+/** A document whose file was deleted, with an edit, and the recreate question open. */
+async function askedToRecreate() {
+  const hook = await mount();
+  ipc.textCheck.mockResolvedValue("deleted");
+  await emit("kernkraft://dir-changed", { key: "doc:t1" });
+  await waitFor(() => expect(hook.result.current.deletedOnDisk).toBe(true));
+  type(hook, "mine");
+  await act(() => hook.result.current.save());
+  expect(hook.result.current.prompt).toBe("recreate");
+  return hook;
+}
+
+test("recreate_after_another_file_appeared_there_asks_again_and_writes_nothing", async () => {
+  const hook = await askedToRecreate();
+  // Restored from the Trash, or written by another program, while the question was open.
+  ipc.textCheck.mockResolvedValue("changed");
+  await act(() => hook.result.current.overwrite());
+  expect(ipc.textSave).not.toHaveBeenCalled();
+  expect(hook.result.current.prompt).toBe("external");
+  expect(hook.result.current.changedOnDisk).toBe(true);
+  expect(hook.result.current.deletedOnDisk).toBe(false);
+  expect(hook.result.current.dirty).toBe(true);
+});
+
+test("recreate_after_the_same_file_came_back_saves_with_its_stamp", async () => {
+  const hook = await askedToRecreate();
+  ipc.textCheck.mockResolvedValue("same");
+  await act(() => hook.result.current.overwrite());
+  expect(ipc.textSave).toHaveBeenCalledTimes(1);
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine", "lf", false, S0);
+  expect(hook.result.current.dirty).toBe(false);
+});
+
+test("recreate_writes_nothing_when_it_cannot_check_the_file_is_still_gone", async () => {
+  const hook = await askedToRecreate();
+  ipc.textCheck.mockRejectedValue(wireError("Io", "denied"));
+  await act(() => hook.result.current.overwrite());
+  expect(ipc.textSave).not.toHaveBeenCalled();
+  expect(hook.result.current.problem).toMatch(/notes\.txt was not saved.*still gone.*denied/);
+  expect(hook.result.current.dirty).toBe(true);
+});
+
 test("the_folder_vanishing_means_the_file_is_deleted", async () => {
   const hook = await mount();
   ipc.textCheck.mockResolvedValue("deleted");
@@ -355,7 +397,7 @@ test("save_as_to_a_new_path_writes_without_a_stamp_and_the_tab_follows", async (
   type(hook, "mine");
   let result: unknown;
   await act(async () => {
-    result = await hook.result.current.saveAs(target, false);
+    result = await hook.result.current.saveAs(target, null);
   });
   expect(result).toEqual({ status: "saved" });
   expect(ipc.textSave).toHaveBeenCalledWith(target, "mine", "lf", false, null);
@@ -375,12 +417,12 @@ test("save_as_to_a_new_path_writes_without_a_stamp_and_the_tab_follows", async (
 test("save_as_over_an_existing_file_asks_first_and_writes_nothing", async () => {
   const hook = await mount();
   const target = p("/home/a/other.txt");
-  const entry = { path: target, name: "other.txt", kind: "file", len: 42 };
+  const entry = { path: target, name: "other.txt", kind: "file", len: 42 } as WireEntry;
   ipc.entryOf.mockResolvedValue(entry);
   type(hook, "mine");
   let result: unknown;
   await act(async () => {
-    result = await hook.result.current.saveAs(target, false);
+    result = await hook.result.current.saveAs(target, null);
   });
   expect(result).toEqual({ status: "exists", entry });
   expect(ipc.textSave).not.toHaveBeenCalled();
@@ -389,10 +431,44 @@ test("save_as_over_an_existing_file_asks_first_and_writes_nothing", async () => 
   // Only the agreed Replace writes.
   ipc.textOpen.mockResolvedValue(opened({ path: target, stamp: S1 }));
   await act(async () => {
-    result = await hook.result.current.saveAs(target, true);
+    result = await hook.result.current.saveAs(target, entry);
   });
   expect(result).toEqual({ status: "saved" });
   expect(ipc.textSave).toHaveBeenCalledWith(target, "mine", "lf", false, null);
+});
+
+test("save_as_asks_again_when_the_target_changed_since_the_question", async () => {
+  const hook = await mount();
+  const target = p("/home/a/other.txt");
+  const asked = { path: target, name: "other.txt", kind: "file", len: 42, modified_ms: 1000 };
+  const now = { ...asked, len: 99, modified_ms: 2000 };
+  ipc.entryOf.mockResolvedValue(now);
+  type(hook, "mine");
+  let result: unknown;
+  await act(async () => {
+    result = await hook.result.current.saveAs(target, asked as WireEntry);
+  });
+  // What the user agreed to lose is not what is there: nothing is written, the new facts go back.
+  expect(result).toEqual({ status: "exists", entry: now });
+  expect(ipc.textSave).not.toHaveBeenCalled();
+  expect(useTabs.getState().tabs[0]).toMatchObject({ path: FILE });
+});
+
+test("save_as_keeps_the_stamp_of_its_write_and_flags_a_read_back_that_differs", async () => {
+  const hook = await mount();
+  const target = p("/home/a/copy.txt");
+  // Another program wrote between the save and the read-back.
+  ipc.textOpen.mockResolvedValue(opened({ path: target, stamp: "s1:7:0:1:1:2" }));
+  type(hook, "mine");
+  await act(async () => {
+    await hook.result.current.saveAs(target, null);
+  });
+  expect(hook.result.current.stamp).toBe(S1);
+  expect(hook.result.current.changedOnDisk).toBe(true);
+  // So the next save is checked against what was written, and refused.
+  type(hook, "mine 2");
+  await act(() => hook.result.current.save());
+  expect(ipc.textSave).toHaveBeenLastCalledWith(target, "mine 2", "lf", false, S1);
 });
 
 test("save_as_refuses_a_folder_this_file_and_an_open_tab_and_writes_nothing", async () => {
@@ -400,13 +476,13 @@ test("save_as_refuses_a_folder_this_file_and_an_open_tab_and_writes_nothing", as
   ipc.entryOf.mockResolvedValue({ path: p("/home/a/d"), name: "d", kind: "dir", len: 0 });
   let r: { status: string; message?: string } = { status: "" };
   await act(async () => {
-    r = await hook.result.current.saveAs(p("/home/a/d"), false);
+    r = await hook.result.current.saveAs(p("/home/a/d"), null);
   });
   expect(r).toMatchObject({ status: "failed" });
   expect(r.message).toMatch(/folder/);
 
   await act(async () => {
-    r = await hook.result.current.saveAs(FILE, false);
+    r = await hook.result.current.saveAs(FILE, null);
   });
   expect(r).toMatchObject({ status: "failed" });
 
@@ -414,7 +490,7 @@ test("save_as_refuses_a_folder_this_file_and_an_open_tab_and_writes_nothing", as
     tabs: [...s.tabs, { id: "t2", kind: "doc", path: p("/home/a/x.txt"), dirty: false }],
   }));
   await act(async () => {
-    r = await hook.result.current.saveAs(p("/home/a/x.txt"), false);
+    r = await hook.result.current.saveAs(p("/home/a/x.txt"), null);
   });
   expect(r.message).toMatch(/another tab/);
   expect(ipc.textSave).not.toHaveBeenCalled();
@@ -425,7 +501,7 @@ test("save_as_does_not_guess_when_it_cannot_tell_whether_something_is_there", as
   ipc.entryOf.mockRejectedValue(wireError("PermissionDenied", "cannot stat"));
   let r: { status: string; message?: string } = { status: "" };
   await act(async () => {
-    r = await hook.result.current.saveAs(p("/root/x.txt"), false);
+    r = await hook.result.current.saveAs(p("/root/x.txt"), null);
   });
   expect(r.status).toBe("failed");
   expect(r.message).toMatch(/cannot stat/);
@@ -438,7 +514,7 @@ test("a_failed_save_as_leaves_the_document_where_it_was", async () => {
   type(hook, "mine");
   let r: { status: string; message?: string } = { status: "" };
   await act(async () => {
-    r = await hook.result.current.saveAs(p("/home/a/new.txt"), false);
+    r = await hook.result.current.saveAs(p("/home/a/new.txt"), null);
   });
   expect(r.status).toBe("failed");
   expect(useTabs.getState().tabs[0]).toMatchObject({ path: FILE, dirty: true });
@@ -466,7 +542,7 @@ test("a_release_never_lands_after_the_next_registration_of_the_same_document", a
   });
   await waitFor(() => expect(hook.result.current.phase).toBe("ready"));
   await act(async () => {
-    await hook.result.current.saveAs(target, false);
+    await hook.result.current.saveAs(target, null);
   });
   await waitFor(() => expect(log).toContain("open /home/a/copy.txt end"));
   expect(log).toEqual([

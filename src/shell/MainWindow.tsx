@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { useEffect } from "react";
 import { useViewSettingsSync } from "../files/view-settings";
 import { useShortcuts } from "../keys/useShortcuts";
 import { OpsHost } from "../ops/OpsHost";
@@ -9,6 +10,7 @@ import { activeTab, isPlaceTab, useTabs, type DocTab } from "../store/tabs";
 import { PanelStub } from "./PanelStub";
 import { PlacesPanel } from "./PlacesPanel";
 import { PinnedRecentPanel } from "./PinnedRecentPanel";
+import { usePinnedRecent } from "./pinned-recent-store";
 import { PropertiesHost } from "../files/PropertiesHost";
 import { StatusBar } from "./StatusBar";
 import { TabBar } from "./TabBar";
@@ -23,6 +25,20 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
   useShortcuts();
   // The interface size actions step the stored size whatever tab is shown.
   useViewSettingsSync();
+  // Pinned and Recent is followed while the window is open, not only while its panel shows:
+  // a document tab folds the panel away, and Ctrl+D there reads whether the document is pinned.
+  useEffect(() => {
+    let live = true;
+    let stop: (() => void) | undefined;
+    void usePinnedRecent
+      .getState()
+      .follow({ prune: false })
+      .then((off) => (live ? (stop = off) : off()));
+    return () => {
+      live = false;
+      stop?.();
+    };
+  }, []);
   const tab = useTabs((s) => activeTab(s));
   const tabs = useTabs((s) => s.tabs);
   const { leftOpen, rightOpen } = usePanels();

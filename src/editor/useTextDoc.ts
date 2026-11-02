@@ -102,8 +102,11 @@ export interface TextDoc {
   overwrite(): Promise<void>;
   /** Opens the Save As question. */
   askSaveAs(): void;
-  /** Writes to `target` (Save As); `replace` says the user agreed to replace what is there. */
-  saveAs(target: WirePath, replace: boolean): Promise<SaveAsResult>;
+  /**
+   * Writes to `target` (Save As). `replace` is what the user agreed to replace there; what is
+   * there is looked at again just before the write, and anything else is asked about again.
+   */
+  saveAs(target: WirePath, replace: WireEntry | null): Promise<SaveAsResult>;
   /** Drops the unsaved text and reads the file again. */
   reload(): Promise<void>;
   /** Closes the question; nothing is written. */
@@ -157,6 +160,14 @@ interface FileFacts {
 
 /** Lines as CodeMirror splits them by default: \r\n, \r and \n each end one. */
 const toDoc = (text: string): Text => Text.of(text.split(/\r\n?|\n/));
+
+/**
+ * Whether what is at a path is still what the user was shown: the same kind, size and
+ * modification time. A file rewritten in the same millisecond to the same size is not told
+ * apart; the modification time is the finest the backend reports.
+ */
+const sameEntry = (a: WireEntry, b: WireEntry): boolean =>
+  a.kind === b.kind && a.len === b.len && a.modified_ms === b.modified_ms;
 
 const say = (text: string) => useOps.getState().notify(text);
 
@@ -481,8 +492,32 @@ export function useTextDoc(tabId: string, path: WirePath): TextDoc {
     () =>
       run(async () => {
         const s = st.current;
-        if (s.phase !== "ready" || s.saving || s.readOnly) return;
+        const f = file.current;
+        if (!f || s.phase !== "ready" || s.saving || s.readOnly) return;
         if (s.prompt !== "external" && s.prompt !== "recreate") return;
+        if (s.prompt === "recreate") {
+          // The user agreed to create a file that is gone. If something is at the path again
+          // (restored, or written by another program) that is not what they agreed to.
+          let verdict;
+          try {
+            verdict = await textCheck(f.path, f.stamp);
+          } catch (e) {
+            patch({
+              problem: `${baseName(f.path)} was not saved: Kern could not check whether it is still gone: ${errorText(toWireError(e))}`,
+            });
+            return;
+          }
+          if (verdict !== "deleted") {
+            patch({
+              prompt: verdict === "changed" ? "external" : null,
+              deletedOnDisk: false,
+              changedOnDisk: verdict === "changed",
+            });
+            // "same": the file as opened is back, so a normal save is safe.
+            if (verdict === "same") await write(f.stamp);
+            return;
+          }
+        }
         patch({ prompt: null });
         await write(null);
       }),
@@ -494,7 +529,7 @@ export function useTextDoc(tabId: string, path: WirePath): TextDoc {
   }, [patch]);
 
   const saveAs = useCallback(
-    (target: WirePath, replace: boolean): Promise<SaveAsResult> =>
+    (target: WirePath, replace: WireEntry | null): Promise<SaveAsResult> =>
       run(async (): Promise<SaveAsResult> => {
         const f = file.current;
         const snap = current.current;
@@ -511,18 +546,16 @@ export function useTextDoc(tabId: string, path: WirePath): TextDoc {
         if (other) {
           return { status: "failed", message: "That file is open in another tab. Close it first." };
         }
-        if (!replace) {
-          try {
-            const entry = await entryOf(target);
-            if (entry.kind === "dir") {
-              return { status: "failed", message: "That is a folder. Enter a file name in it." };
-            }
-            return { status: "exists", entry };
-          } catch (e) {
-            const err = toWireError(e);
-            // Nothing there is the case that goes on; anything else is not guessed at.
-            if (err.kind !== "NotFound") return { status: "failed", message: errorText(err) };
+        try {
+          const entry = await entryOf(target);
+          if (entry.kind === "dir") {
+            return { status: "failed", message: "That is a folder. Enter a file name in it." };
           }
+          if (!replace || !sameEntry(entry, replace)) return { status: "exists", entry };
+        } catch (e) {
+          const err = toWireError(e);
+          // Nothing there is the case that goes on; anything else is not guessed at.
+          if (err.kind !== "NotFound") return { status: "failed", message: errorText(err) };
         }
         patch({ saving: true, problem: null });
         let next: WireStamp;
@@ -532,7 +565,10 @@ export function useTextDoc(tabId: string, path: WirePath): TextDoc {
           patch({ saving: false });
           return { status: "failed", message: errorText(toWireError(e)) };
         }
-        // The new file as it is on disk gives its stamp, ending and read-only state.
+        // The new file as read back gives its ending and read-only state. The baseline is the
+        // stamp of the write itself: a read-back that differs means another program wrote in
+        // between, and that is said, not taken as what was saved.
+        let changedSince = false;
         let facts: FileFacts = {
           path: target,
           stamp: next,
@@ -543,9 +579,10 @@ export function useTextDoc(tabId: string, path: WirePath): TextDoc {
         let readBack = true;
         try {
           const t = await textOpen(target);
+          changedSince = t.stamp !== next;
           facts = {
             path: t.path,
-            stamp: t.stamp,
+            stamp: next,
             ending: t.ending,
             bom: t.bom,
             readOnly: t.read_only,
@@ -567,7 +604,7 @@ export function useTextDoc(tabId: string, path: WirePath): TextDoc {
           bom: facts.bom,
           readOnly: facts.readOnly,
           dirty: now ? !now.eq(snap) : false,
-          changedOnDisk: false,
+          changedOnDisk: changedSince,
           deletedOnDisk: false,
           prompt: null,
           problem: null,

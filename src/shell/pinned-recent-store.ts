@@ -8,6 +8,7 @@ import {
   on,
   pathKey,
   pin,
+  pinsGet,
   pinsReorder,
   prune,
   toWireError,
@@ -66,8 +67,12 @@ interface PinnedRecentState {
   notices: Notice[];
   /** The entry a menu was opened on. */
   current: { list: EntryList; path: WirePath } | null;
-  /** Follows the backend's events and prunes; the returned function stops following. */
-  follow(): Promise<() => void>;
+  /**
+   * Follows the backend's events and prunes; the returned function stops following. Every
+   * follower shares one subscription, which ends with the last. With `prune: false` the lists
+   * are read, not pruned: the window follows as long as it is open, the panel prunes when shown.
+   */
+  follow(opts?: { prune?: boolean }): Promise<() => void>;
   /**
    * Drops entries whose target is gone. Calls made meanwhile share one prune; with `fresh`, a
    * call made while one runs waits for it and then prunes again, so the targets are checked
@@ -95,6 +100,8 @@ let pruning: Promise<void> | null = null;
 const events = { pins: 0, recents: 0 };
 /** The paths whose kind is being looked up. */
 const looking = new Set<string>();
+/** The one subscription every follower shares, and how many follow it. */
+let shared: { stop: Promise<() => void>; followers: number } | null = null;
 /** How many of the store-error reports have been turned into notices. */
 let reportsSeen = 0;
 /** The failed take last turned into a notice. */
@@ -167,45 +174,72 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
     }
   };
 
+  /** Subscribes to the events and the store-error reports; the returned function ends it. */
+  const subscribe = async (): Promise<() => void> => {
+    const mine = epoch;
+    const subscribed = await Promise.allSettled([
+      on(EVENT_PINS_CHANGED, (p) => {
+        events.pins++;
+        set({ pins: p.entries });
+        lookKinds();
+      }),
+      on(EVENT_RECENTS_CHANGED, (r) => {
+        events.recents++;
+        set({ recents: r.entries });
+        lookKinds();
+      }),
+    ]);
+    const offs = subscribed.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+    const refused = subscribed.find((r) => r.status === "rejected");
+    // The lists are still read, and the answers to Kern's own changes still show.
+    if (refused && mine === epoch) {
+      fail(
+        "Pinned and Recent will not follow changes made elsewhere",
+        (refused as PromiseRejectedResult).reason
+      );
+    }
+    const unwatchReports = useStoreErrors.subscribe(showReports);
+    const stopReports = await useStoreErrors.getState().follow();
+    const stop = () => {
+      offs.forEach((off) => off());
+      unwatchReports();
+      stopReports();
+    };
+    if (mine !== epoch) {
+      stop();
+      return () => undefined;
+    }
+    showReports(useStoreErrors.getState());
+    return stop;
+  };
+
   return {
     ...initial,
-    async follow() {
+    async follow(opts) {
       const mine = epoch;
-      const subscribed = await Promise.allSettled([
-        on(EVENT_PINS_CHANGED, (p) => {
-          events.pins++;
-          set({ pins: p.entries });
-          lookKinds();
-        }),
-        on(EVENT_RECENTS_CHANGED, (r) => {
-          events.recents++;
-          set({ recents: r.entries });
-          lookKinds();
-        }),
-      ]);
-      const offs = subscribed.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
-      const refused = subscribed.find((r) => r.status === "rejected");
-      // The lists are still read, and the answers to Kern's own changes still show.
-      if (refused && mine === epoch) {
-        fail(
-          "Pinned and Recent will not follow changes made elsewhere",
-          (refused as PromiseRejectedResult).reason
-        );
+      const s = (shared ??= { stop: subscribe(), followers: 0 });
+      s.followers++;
+      const stop = await s.stop;
+      if (mine === epoch) {
+        if (opts?.prune !== false) await get().prune();
+        else if (get().pins === null) {
+          const seen = events.pins;
+          try {
+            answerPins(await pinsGet(), seen);
+          } catch (e) {
+            if (mine === epoch && get().pins === null) set({ loadError: toWireError(e) });
+          }
+        }
       }
-      const unwatchReports = useStoreErrors.subscribe(showReports);
-      const stopReports = await useStoreErrors.getState().follow();
-      const stop = () => {
-        offs.forEach((off) => off());
-        unwatchReports();
-        stopReports();
-      };
-      if (mine !== epoch) {
+      let left = false;
+      return () => {
+        if (left) return;
+        left = true;
+        s.followers--;
+        if (s.followers > 0) return;
+        if (shared === s) shared = null;
         stop();
-        return () => undefined;
-      }
-      showReports(useStoreErrors.getState());
-      await get().prune();
-      return stop;
+      };
     },
     async prune(fresh = false) {
       if (fresh && pruning) await pruning;
@@ -313,6 +347,7 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
     reset() {
       epoch++;
       pruning = null;
+      shared = null;
       events.pins = 0;
       events.recents = 0;
       looking.clear();
