@@ -128,7 +128,12 @@ function Row(props: { label: string; children: React.ReactNode }) {
   );
 }
 
-function SizeRow(props: { m: Measure; folders: boolean }) {
+/**
+ * `contents`: for one folder, what it holds (the walk counts the folder itself, so it is taken
+ * off); for several items, everything counted, the items themselves included; for one file or
+ * link, nothing.
+ */
+function SizeRow(props: { m: Measure; contents: "folder" | "items" | null; note?: string }) {
   const { m } = props;
   if (m.error) {
     return (
@@ -150,11 +155,17 @@ function SizeRow(props: { m: Measure; folders: boolean }) {
     <>
       <Row label="Size">
         {atLeast}
-        {formatSize(r.bytes)} ({r.bytes.toLocaleString("en-US")} bytes)
+        {formatSize(r.bytes)} ({r.bytes.toLocaleString("en-US")} bytes){props.note}
       </Row>
-      {props.folders && (
+      {props.contents === "folder" && (
         <Row label="Contains">
-          {plural(r.files, "file", "files")}, {plural(r.dirs, "folder", "folders")}
+          {plural(r.files, "file", "files")}, {plural(Math.max(r.dirs - 1, 0), "folder", "folders")}
+        </Row>
+      )}
+      {props.contents === "items" && (
+        <Row label="In all">
+          {plural(r.files, "file", "files")}, {plural(r.dirs, "folder", "folders")}, counting the
+          selected items themselves
         </Row>
       )}
       {r.unreadable.length > 0 && (
@@ -226,12 +237,19 @@ function One(props: { path: WirePath }) {
         {kindText(e)} ({e.mime})
       </Row>
       {where && <Row label="Location">{displayPath(where)}</Row>}
-      <SizeRow m={m} folders={isFolder(e)} />
+      {/* The walk does not follow a link: its size is the link's own, and it holds nothing. */}
+      <SizeRow
+        m={m}
+        contents={e.kind === "dir" ? "folder" : null}
+        note={e.kind === "symlink" ? ", the link itself, not what it points to" : undefined}
+      />
       <Row label="Modified">
         {e.modified_ms === null ? "not known" : WHEN.format(new Date(e.modified_ms))}
       </Row>
       <Row label="Permissions">
-        {modeText(e.mode)} ({modeOctal(e.mode)})
+        {e.kind === "symlink"
+          ? "none of its own: a link is used with the permissions of what it points to"
+          : `${modeText(e.mode)} (${modeOctal(e.mode)})`}
       </Row>
       {isFile && <OpensWith load={app} />}
     </dl>
@@ -251,7 +269,7 @@ function Several(props: { paths: WirePath[] }) {
     <dl className="kern-properties">
       <Row label="Items">{props.paths.length.toLocaleString("en-US")}</Row>
       {where && <Row label="Location">{displayPath(where)}</Row>}
-      <SizeRow m={m} folders />
+      <SizeRow m={m} contents="items" />
     </dl>
   );
 }

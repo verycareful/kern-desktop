@@ -302,10 +302,10 @@ test("the_first_row_is_spaced_from_the_path_bar", async ({ page, mockTauri }) =>
   expect(await gap('[data-testid="file-card"]')).toBeGreaterThanOrEqual(12);
 });
 
-// A tree with a symlink back to itself (loop -> .): the walk enters each folder once by device
-// and inode, so it streams what it finds and then ends. The mock plays that run: three batches,
-// then op-done, then a stray batch that must not be shown.
-test("search_terminates_on_loop", async ({ page, mockTauri }) => {
+// What the window does with a walk that streams and then ends, as one over a symlink loop does
+// (the walk itself ending on a loop is kernkraft's, tested there): three batches, then op-done,
+// then a stray batch that must not be shown, and nothing left to cancel.
+test("search_shows_streamed_hits_and_ignores_a_late_batch", async ({ page, mockTauri }) => {
   await mockTauri({
     ...COMMON,
     "plugin:kernkraft-tauri|list_dir": [

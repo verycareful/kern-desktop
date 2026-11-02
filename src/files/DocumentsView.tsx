@@ -193,6 +193,8 @@ export function DocumentsView() {
         )}
         <div className="kern-search-results">
           <ScanResults
+            // A new run is a new list: the active row starts at the top again.
+            key={scan.run}
             hits={scan.hits}
             count={scan.count}
             home={home}

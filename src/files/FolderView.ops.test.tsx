@@ -12,6 +12,7 @@ import type {
   WireReport,
   WireSame,
 } from "../ipc";
+import { currentContext, getAction, isEnabled, runAction } from "../keys/actions";
 import { useShortcuts } from "../keys/useShortcuts";
 import { OpsHost } from "../ops/OpsHost";
 import { forgetSpentCuts } from "../ops/spent-cut";
@@ -1452,4 +1453,36 @@ test("ctrl_f_searches_and_no_file_key_acts_on_the_selection_it_hides", async () 
   fireEvent.keyDown(input, { key: "Escape" });
   await waitFor(() => expect(screen.queryByTestId("search-view")).toBeNull());
   expect(screen.getByTestId("folder-list")).toBeTruthy();
+});
+
+test("during_a_search_no_selection_can_be_rebuilt_and_acted_on", async () => {
+  const tab = await mount([entry("a"), entry("b")]);
+  key("f", { ctrlKey: true });
+  await screen.findByRole("searchbox");
+  act(() => (document.activeElement as HTMLElement).blur());
+  // Ctrl+A with the keyboard nowhere in particular, then Delete and Shift+Delete.
+  key("a", { ctrlKey: true });
+  key("Delete");
+  key("Delete", { shiftKey: true });
+  key("x", { ctrlKey: true });
+  expect(folderController(tab.id)!.hasSelection()).toBe(false);
+  // The main menu: Select all, then Move to Trash and Delete permanently stay greyed.
+  runAction(getAction("folder.select.all"), currentContext(tab.id));
+  for (const id of [
+    "folder.trash",
+    "folder.delete",
+    "folder.cut",
+    "folder.copy",
+    "folder.rename",
+    "folder.paste",
+  ]) {
+    expect(isEnabled(getAction(id), currentContext(tab.id)), id).toBe(false);
+  }
+  // Another program asks for an item to be selected: it waits for the search to end.
+  act(() => useTabs.getState().requestSelect(tab.id, [p("/d/b")]));
+  expect(folderController(tab.id)!.hasSelection()).toBe(false);
+  expect(ipc.startOp).not.toHaveBeenCalled();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" });
+  await waitFor(() => expect(folderController(tab.id)!.selectedPaths()).toEqual([p("/d/b")]));
 });

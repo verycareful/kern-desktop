@@ -24,6 +24,12 @@ import { useOps } from "../ops/useOps";
 // read are listed, never left out quietly. A failure keeps the dialog open
 // with the reason, for another try.
 
+/**
+ * Types that say only that a file's type is not known (Shared MIME-info Database 0.21, the
+ * fallback for data). A default for one would open every such file with that application.
+ */
+const UNTYPED = ["application/octet-stream"];
+
 type Listing =
   | { state: "loading" }
   | { state: "ready"; list: WireAppList }
@@ -74,20 +80,18 @@ export function OpenWithDialog(props: { entry: WireEntry; onClose(): void }) {
         )
       : [];
 
+  // Only an application on show can be the one that opens the file: one chosen and then
+  // filtered away, or left behind in the other list, is not.
+  const picked = chosen && shown.some((a) => a.id === chosen.id) ? chosen : null;
+  const settable = !UNTYPED.includes(entry.mime);
+
   const open = async () => {
-    if (!chosen || busy) return;
+    if (!picked || busy) return;
     setBusy(true);
     setError(null);
     try {
-      if (always) {
-        try {
-          await setDefaultApp(chosen.id, entry.mime);
-        } catch (e) {
-          throw new Error(
-            `${chosen.name} could not be made the default for ${entry.mime}, so the file was not opened: ${errorText(toWireError(e))}`
-          );
-        }
-      }
+      // Everything that can fail before the open is done before the default is changed, so a
+      // failure leaves the default as it was.
       let terminal: string | null;
       try {
         terminal = (await settingsGet()).terminal;
@@ -96,14 +100,25 @@ export function OpenWithDialog(props: { entry: WireEntry; onClose(): void }) {
           `The terminal setting could not be read, so the file was not opened: ${errorText(toWireError(e))}`
         );
       }
+      const setDefault = always && settable;
+      if (setDefault) {
+        try {
+          await setDefaultApp(picked.id, entry.mime);
+        } catch (e) {
+          throw new Error(
+            `${picked.name} could not be made the default for ${entry.mime}, so the file was not opened: ${errorText(toWireError(e))}`
+          );
+        }
+      }
       try {
-        await launchApp(chosen.id, [entry.path], terminal ?? undefined);
+        await launchApp(picked.id, [entry.path], terminal ?? undefined);
       } catch (e) {
+        const changed = setDefault ? ` ${picked.name} is now the default for ${entry.mime}.` : "";
         throw new Error(
-          `${chosen.name} could not open ${entry.name}: ${errorText(toWireError(e))}`
+          `${picked.name} could not open ${entry.name}: ${errorText(toWireError(e))}.${changed}`
         );
       }
-      useOps.getState().notify(`Opened ${entry.name} with ${chosen.name}`);
+      useOps.getState().notify(`Opened ${entry.name} with ${picked.name}`);
       onClose();
     } catch (e) {
       if (alive.current) setError(e instanceof Error ? e.message : String(e));
@@ -159,7 +174,7 @@ export function OpenWithDialog(props: { entry: WireEntry; onClose(): void }) {
               <input
                 type="radio"
                 name={`${id}-app`}
-                checked={chosen?.id === a.id}
+                checked={picked?.id === a.id}
                 onChange={() => setChosen(a)}
               />
               {a.name}
@@ -186,10 +201,16 @@ export function OpenWithDialog(props: { entry: WireEntry; onClose(): void }) {
           Other application…
         </button>
       )}
-      <label className="kern-modal-check">
-        <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
-        Always use it for {entry.mime}
-      </label>
+      {settable ? (
+        <label className="kern-modal-check">
+          <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
+          Always use it for {entry.mime}
+        </label>
+      ) : (
+        <p className="kern-modal-text">
+          The type of {entry.name} is not known, so no default can be set for it.
+        </p>
+      )}
       {error && (
         <p role="alert" className="kern-modal-error">
           {error}
@@ -199,7 +220,7 @@ export function OpenWithDialog(props: { entry: WireEntry; onClose(): void }) {
         <button
           type="button"
           className="kern-button"
-          disabled={!chosen || busy}
+          disabled={!picked || busy}
           onClick={() => void open()}
         >
           Open

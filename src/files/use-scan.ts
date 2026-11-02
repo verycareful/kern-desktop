@@ -27,6 +27,8 @@ export interface Scan {
   /** The hits so far, in the order found. Read it with `count`, which changes as it grows. */
   hits: readonly WireEntry[];
   count: number;
+  /** Counts the runs started; a new number is a new list. */
+  run: number;
   /** How the walk ended, once it has. */
   done: WireScanDone | null;
   error: WireError | null;
@@ -42,6 +44,7 @@ export function useScan(): Scan {
   const [phase, setPhase] = useState<ScanPhase>("idle");
   const [done, setDone] = useState<WireScanDone | null>(null);
   const [error, setError] = useState<WireError | null>(null);
+  const [run, setRun] = useState(0);
   /** The run on show; anything from another is ignored. */
   const current = useRef<{ key: string; op: RunningOp | null; ended: boolean } | null>(null);
 
@@ -68,6 +71,7 @@ export function useScan(): Scan {
       const key = crypto.randomUUID();
       const run = { key, op: null as RunningOp | null, ended: false };
       current.current = run;
+      setRun((n) => n + 1);
       setPhase("running");
       const mine = () => current.current === run;
       void (async () => {
@@ -108,5 +112,5 @@ export function useScan(): Scan {
 
   useEffect(() => cancel, [cancel]);
 
-  return { phase, hits: hits.current, count, done, error, start, stop };
+  return { phase, hits: hits.current, count, run, done, error, start, stop };
 }

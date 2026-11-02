@@ -142,7 +142,8 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   // Items another program asked to have selected here (kern://select), once listed.
   const selectRequest = useTabs((s) => s.selectRequests[tab.id]);
   useEffect(() => {
-    if (!selectRequest || folder.phase !== "ready") return;
+    // A request made during a search waits until the items are on show again.
+    if (!selectRequest || folder.phase !== "ready" || searching) return;
     useTabs.getState().clearSelectRequest(tab.id);
     const listed = new Set(entries.map((e) => pathKey(e.path)));
     const wanted = selectRequest.filter((p) => listed.has(pathKey(p)));
@@ -165,7 +166,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         },
       ]);
     }
-  }, [selectRequest, folder.phase, entries, selectKeys, tab.id, showHidden]);
+  }, [selectRequest, folder.phase, entries, selectKeys, tab.id, showHidden, searching]);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [columns, setColumns] = useState(1);
   const root = useRef<HTMLDivElement>(null);
@@ -201,22 +202,26 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   );
 
   // The controller reads the latest view state without being re-registered.
-  const latest = useRef({ entries, sel, viewMode, columns, phase: folder.phase });
+  const latest = useRef({ entries, sel, viewMode, columns, phase: folder.phase, searching });
   useEffect(() => {
-    latest.current = { entries, sel, viewMode, columns, phase: folder.phase };
+    latest.current = { entries, sel, viewMode, columns, phase: folder.phase, searching };
   });
   // What the file operations act on: the selection, in list order, and nothing else. An item
   // that is only outlined (the cursor) is not selected and is never copied, cut, trashed,
   // deleted, renamed or dragged.
+  // While the search is on show the items are not, so there is no selection to act on, whatever
+  // has been selected meanwhile (Ctrl+A, the result of an operation): every action below reads
+  // the selection through this.
   const selected = useCallback(() => {
-    const { entries: es, sel: s } = latest.current;
+    const { entries: es, sel: s, searching: hidden } = latest.current;
+    if (hidden) return [];
     return [...s.selected].sort((a, b) => a - b).flatMap((i) => (es[i] ? [es[i]] : []));
   }, []);
   // What Enter opens: the selection, or else the outlined item.
   const toOpen = useCallback(() => {
     const picked = selected();
-    const { entries: es, sel: s } = latest.current;
-    const outlined = s.cursor === null ? undefined : es[s.cursor];
+    const { entries: es, sel: s, searching: hidden } = latest.current;
+    const outlined = s.cursor === null || hidden ? undefined : es[s.cursor];
     return picked.length === 0 && outlined ? [outlined] : picked;
   }, [selected]);
 
@@ -280,7 +285,8 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   const fileOps = useFileOps({
     folder: tab.path,
     selected,
-    ready: () => latest.current.phase === "ready",
+    // Nothing is created or pasted into a folder whose items are not on show.
+    ready: () => latest.current.phase === "ready" && !latest.current.searching,
     relist,
     selectKeys,
     reveal: () => setRevealTick((t) => t + 1),
@@ -367,15 +373,19 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       return { up: -row, down: row, left: -1, right: 1, first: -Infinity, last: Infinity }[to];
     };
     return registerFolder(tab.id, {
-      selectAll: () => dispatch((s, n) => selectAll(s, n)),
+      selectAll: () => {
+        if (!latest.current.searching) dispatch((s, n) => selectAll(s, n));
+      },
       selectNone: () => dispatch((s) => selectNone(s)),
-      hasSelection: () => latest.current.sel.selected.size > 0,
+      hasSelection: () => selected().length > 0,
       selectedPaths: () => selected().map((e) => e.path),
       canOpen: () => toOpen().length > 0,
       canMove: (to) =>
+        !latest.current.searching &&
         latest.current.entries.length > 0 &&
         (latest.current.viewMode === "grid" || (to !== "left" && to !== "right")),
       move: (to, extend) => {
+        if (latest.current.searching) return;
         dispatch((s, n) => move(s, step(to), extend, n));
         setRevealTick((t) => t + 1);
       },
@@ -384,6 +394,11 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       editLocation: () => setEditing(true),
       canSearch: () => latest.current.phase === "ready",
       search: () => {
+        if (latest.current.searching) {
+          // Ctrl+F from the results: back to the query.
+          files.current?.querySelector<HTMLInputElement>('input[type="search"]')?.select();
+          return;
+        }
         // The selection is not on show during a search, so nothing may act on it.
         dispatch((s) => selectNone(s));
         setSearching(true);

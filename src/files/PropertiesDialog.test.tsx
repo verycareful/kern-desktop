@@ -95,7 +95,8 @@ test("a_folder_counts_what_it_holds_and_says_what_it_could_not_read", async () =
     )
   );
   await waitFor(() => expect(rowOf("Size")).toHaveTextContent("at least"));
-  expect(rowOf("Contains")).toHaveTextContent("12 files, 3 folders");
+  // The walk counts the folder itself among the three.
+  expect(rowOf("Contains")).toHaveTextContent("12 files, 2 folders");
   expect(rowOf("Not read")).toHaveTextContent("/d/Work/locked");
   expect(rowOf("Permissions")).toHaveTextContent("rwxr-xr-x (0755)");
   // A folder has no application of its own.
@@ -124,6 +125,9 @@ test("several_items_are_counted_together", async () => {
   act(() => handlers["kernkraft://op-done"]!(done({ files: 2, bytes: 10 })));
   expect(rowOf("Location")).toHaveTextContent("/d");
   await waitFor(() => expect(rowOf("Size")).toHaveTextContent("10 bytes"));
+  expect(rowOf("In all")).toHaveTextContent(
+    "2 files, 0 folders, counting the selected items themselves"
+  );
   expect(ipc.entryOf).not.toHaveBeenCalled();
 });
 
@@ -140,4 +144,20 @@ test("an_item_that_cannot_be_read_says_so", async () => {
   expect(
     within(screen.getByTestId("properties-dialog")).getByRole("button", { name: "Close" })
   ).toBeTruthy();
+});
+
+test("a_link_has_no_permissions_of_its_own_and_holds_nothing", async () => {
+  ipc.entryOf.mockResolvedValue(
+    entry("to-work", { kind: "symlink", target_is_dir: true, mode: 0o777, mime: "inode/directory" })
+  );
+  render(<PropertiesDialog paths={[p("/d/to-work")]} onClose={onClose} />);
+  await screen.findByText("to-work", { selector: "dd" });
+  await waitFor(() => expect(handlers["kernkraft://op-done"]).toBeDefined());
+  await waitFor(() => expect(ipc.properties).toHaveBeenCalled());
+  act(() => handlers["kernkraft://op-done"]!(done({ files: 1, bytes: 7 })));
+  expect(rowOf("Type")).toHaveTextContent("Link to a folder");
+  expect(rowOf("Permissions")).toHaveTextContent("none of its own");
+  expect(rowOf("Permissions")).not.toHaveTextContent("0777");
+  await waitFor(() => expect(rowOf("Size")).toHaveTextContent("the link itself"));
+  expect(screen.queryByText("Contains")).toBeNull();
 });

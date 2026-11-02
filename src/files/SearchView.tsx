@@ -46,10 +46,9 @@ export function SearchView(props: {
 
   useEffect(() => {
     const q = query.trim();
-    if (q === "") {
-      stop();
-      return;
-    }
+    // The hits of the text before are not shown, and cannot be opened, while the new one waits.
+    stop();
+    if (q === "") return;
     const t = window.setTimeout(
       () => start((key) => search(key, [root], q, hidden)),
       SEARCH_DELAY_MS
@@ -105,7 +104,11 @@ export function SearchView(props: {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Escape") {
+            if (e.key === "f" && (e.ctrlKey || e.metaKey)) {
+              // Ctrl+F again: the query is selected, to be typed over.
+              e.preventDefault();
+              e.currentTarget.select();
+            } else if (e.key === "Escape") {
               e.preventDefault();
               e.stopPropagation();
               props.onClose();
@@ -144,6 +147,8 @@ export function SearchView(props: {
         }}
       >
         <ScanResults
+          // A new run is a new list: the active row starts at the top again.
+          key={scan.run}
           hits={scan.hits}
           count={scan.count}
           home={home}

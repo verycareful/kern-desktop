@@ -6,8 +6,10 @@ import {
   ArrowRight,
   ArrowUp,
   EllipsisVertical,
+  FileSearch,
   FileText,
   Folder,
+  Trash2,
   X,
 } from "lucide-react";
 import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
@@ -83,7 +85,9 @@ export function TabBar() {
       >
         {tabs.map((t) => {
           const isActive = t.id === activeId;
-          const Icon = t.kind === "folder" ? Folder : FileText;
+          const Icon = { folder: Folder, doc: FileText, trash: Trash2, documents: FileSearch }[
+            t.kind
+          ];
           return (
             <div
               key={t.id}

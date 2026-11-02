@@ -125,3 +125,14 @@ test("a_search_that_cannot_start_says_why", async () => {
     "The search could not run: NotFound: no such folder"
   );
 });
+
+test("the_hits_of_the_text_before_go_as_soon_as_it_changes", async () => {
+  render(<SearchView root={p("/d")} onClose={onClose} onOpen={onOpen} />);
+  const key = await typed("a");
+  emit("kernkraft://search-hit", { key, op: 1, entries: [entry("a1")] });
+  await screen.findAllByTestId("scan-hit");
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "ab" } });
+  // Before the pause is over and the new walk starts.
+  expect(screen.queryAllByTestId("scan-hit")).toHaveLength(0);
+  expect(ipc.search).toHaveBeenCalledTimes(1);
+});

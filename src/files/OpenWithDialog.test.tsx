@@ -107,3 +107,52 @@ test("entries_that_could_not_be_read_are_listed", async () => {
   expect(screen.getByText("Parse: bad.desktop: no Exec")).toBeTruthy();
   expect(screen.getByText(/No application says it opens text\/markdown/)).toBeTruthy();
 });
+
+test("an_application_filtered_away_is_not_the_one_that_opens", async () => {
+  render(<OpenWithDialog entry={file} onClose={onClose} />);
+  fireEvent.click(await screen.findByLabelText("Text Editor"));
+  fireEvent.click(screen.getByRole("button", { name: "Other application…" }));
+  await screen.findByLabelText("Kate");
+  fireEvent.change(screen.getByLabelText("Filter applications"), { target: { value: "ka" } });
+  expect(screen.getByRole("button", { name: "Open" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Open" }));
+  expect(ipc.launchApp).not.toHaveBeenCalled();
+});
+
+test("no_default_is_offered_for_an_unknown_type", async () => {
+  render(<OpenWithDialog entry={entry("blob")} onClose={onClose} />);
+  expect(
+    await screen.findByText("The type of blob is not known, so no default can be set for it.")
+  ).toBeTruthy();
+  expect(screen.queryByLabelText(/Always use it/)).toBeNull();
+});
+
+test("a_failed_open_after_the_default_changed_says_so", async () => {
+  ipc.launchApp.mockRejectedValue({
+    kind: "Launch",
+    message: "exec failed",
+    path: null,
+    details: null,
+  });
+  render(<OpenWithDialog entry={file} onClose={onClose} />);
+  fireEvent.click(await screen.findByLabelText("Text Editor"));
+  fireEvent.click(screen.getByLabelText("Always use it for text/markdown"));
+  fireEvent.click(screen.getByRole("button", { name: "Open" }));
+  expect(
+    await screen.findByText(
+      "Text Editor could not open notes.md: Launch: exec failed. Text Editor is now the default for text/markdown."
+    )
+  ).toBeTruthy();
+});
+
+test("an_unreadable_terminal_setting_leaves_the_default_alone", async () => {
+  ipc.settingsGet.mockRejectedValue({ kind: "Io", message: "denied", path: null, details: null });
+  render(<OpenWithDialog entry={file} onClose={onClose} />);
+  fireEvent.click(await screen.findByLabelText("Text Editor"));
+  fireEvent.click(screen.getByLabelText("Always use it for text/markdown"));
+  fireEvent.click(screen.getByRole("button", { name: "Open" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "The terminal setting could not be read"
+  );
+  expect(ipc.setDefaultApp).not.toHaveBeenCalled();
+});
