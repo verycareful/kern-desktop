@@ -185,3 +185,33 @@ test("a_close_asked_for_while_a_question_is_open_says_so", async () => {
   );
   expect(useTabs.getState().tabs).toHaveLength(3);
 });
+
+test("a_document_that_arrives_while_the_others_are_saved_is_asked_about_before_the_close", async () => {
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  registerDoc(
+    "a",
+    doc({
+      closeRisk: () => dirty,
+      saveForClose: async () => {
+        await held;
+        return true;
+      },
+    })
+  );
+  // Once saved, a is no longer at risk.
+  const closing = closeWindow();
+  answer("save");
+  await act(async () => {});
+  // b arrives (Home in a document window) while a is being written.
+  registerDoc("b", doc({ closeRisk: () => dirty }));
+  offs.push(register("a", doc({ closeRisk: () => null })));
+  await act(async () => release());
+  await vi.waitFor(() =>
+    expect(useCloseGuard.getState().question?.items.map((i) => i.id)).toEqual(["b"])
+  );
+  expect(ipc.confirmClose).not.toHaveBeenCalled();
+  answer("cancel");
+  await closing;
+  expect(ipc.confirmClose).not.toHaveBeenCalled();
+});

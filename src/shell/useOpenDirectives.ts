@@ -26,8 +26,9 @@ import {
   type WirePath,
 } from "../ipc";
 import { parseHanded } from "../editor/handed-doc";
+import { errorText } from "../ops/error-text";
 import { useTabs } from "../store/tabs";
-import { closeWindow } from "./useCloseGuard";
+import { closeWindow, isClosing } from "./useCloseGuard";
 import { useProperties } from "../files/properties-store";
 
 // Design 4.4 and 4.5: what the backend tells the main window to do. The
@@ -149,6 +150,11 @@ export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
     /** The main window: take the document a document window sends with Home. */
     const adopt = async (payload: { path: WirePath; text_state: unknown; from: string }) => {
       const { path, text_state, from } = payload;
+      // Taken now, the document would close with this window unasked.
+      if (isClosing()) {
+        await refuse(from, "the main window is closing, so the document stays here");
+        return;
+      }
       let handed = undefined;
       if (text_state !== undefined && text_state !== null) {
         const parsed = parseHanded(text_state);
@@ -169,6 +175,15 @@ export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
       }
       try {
         await docOpened(path, { kind: "tab", tab_id: id });
+      } catch (e) {
+        // Nothing was acknowledged: the window keeps the document and is told at once.
+        tabs().close(id);
+        const err = toWireError(e);
+        addError(err);
+        await refuse(from, `the main window could not register the document: ${errorText(err)}`);
+        return;
+      }
+      try {
         await adopted(from);
         adoptions.set(from, id);
       } catch (e) {

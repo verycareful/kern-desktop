@@ -43,6 +43,11 @@ interface CloseGuardState {
 }
 
 let pending: ((choice: CloseChoice) => void) | null = null;
+/** The window asked the backend to close it; a document arriving now would go with it. */
+let closing = false;
+
+/** True once this window has asked to be closed and until that fails. */
+export const isClosing = (): boolean => closing;
 
 export const useCloseGuard = create<CloseGuardState>()((set) => ({
   question: null,
@@ -55,6 +60,7 @@ export const useCloseGuard = create<CloseGuardState>()((set) => ({
   },
   reset() {
     pending = null;
+    closing = false;
     set({ question: null });
   },
 }));
@@ -149,9 +155,11 @@ export async function closeWindow(): Promise<void> {
     if (outcome === "stop") return;
     if (outcome === "discard") items.forEach((i) => givenUp.add(i.id));
   }
+  closing = true;
   try {
     await confirmClose();
   } catch (e) {
+    closing = false;
     say(`The window could not be closed: ${errorText(toWireError(e))}`);
   }
 }

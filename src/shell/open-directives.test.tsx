@@ -429,6 +429,57 @@ test("a_document_that_arrives_while_the_close_question_is_open_is_asked_about_to
   expect(ipc.confirmClose).not.toHaveBeenCalled();
 });
 
+test("an_arrival_during_the_question_given_up_too_lets_the_window_close", async () => {
+  render(<App />);
+  await screen.findByRole("tab", { name: "t" });
+  act(() => useTabs.getState().openDoc(p("/d/n.md")));
+  await editEveryDocument("x", 1);
+  await emit("kern://close-requested", null);
+  await screen.findByTestId("close-prompt");
+  const handed = {
+    text: "theirs",
+    saved: "hello",
+    stamp: "s1:5:0:1:1:0",
+    ending: "lf",
+    bom: false,
+    read_only: null,
+  };
+  await emit("kern://adopt-doc", { path: p("/d/m.md"), text_state: handed, from: "doc-1" });
+  await waitFor(() => expect(ipc.adopted).toHaveBeenCalledWith("doc-1"));
+  fireEvent.click(screen.getByRole("button", { name: "Close without saving" }));
+  // Asked about m.md alone: n.md, given up, is not asked about twice.
+  const again = await screen.findByTestId("close-prompt");
+  await waitFor(() => expect(again).toHaveTextContent("Save the changes to m.md before closing?"));
+  expect(again).not.toHaveTextContent("n.md");
+  fireEvent.click(within(again).getByRole("button", { name: "Close without saving" }));
+  await waitFor(() => expect(ipc.confirmClose).toHaveBeenCalledTimes(1));
+});
+
+test("a_document_sent_while_the_window_is_closing_is_refused", async () => {
+  ipc.confirmClose.mockImplementation(() => new Promise(() => undefined));
+  render(<App />);
+  await screen.findByRole("tab", { name: "t" });
+  await emit("kern://close-requested", null);
+  await waitFor(() => expect(ipc.confirmClose).toHaveBeenCalled());
+  await emit("kern://adopt-doc", { path: p("/d/n.md"), text_state: null, from: "doc-1" });
+  expect(ipc.refuseAdoption).toHaveBeenCalledWith("doc-1", expect.stringMatching(/closing/));
+  expect(ipc.adopted).not.toHaveBeenCalled();
+  expect(screen.queryByRole("tab", { name: /n\.md/ })).toBeNull();
+});
+
+test("a_document_main_cannot_register_is_refused_at_once", async () => {
+  render(<App />);
+  await screen.findByRole("tab", { name: "t" });
+  ipc.docOpened.mockRejectedValueOnce({ kind: "Io", message: "registry gone", path: null });
+  await emit("kern://adopt-doc", { path: p("/d/n.md"), text_state: null, from: "doc-1" });
+  expect(ipc.adopted).not.toHaveBeenCalled();
+  expect(ipc.refuseAdoption).toHaveBeenCalledWith(
+    "doc-1",
+    expect.stringMatching(/could not register the document: .*registry gone/)
+  );
+  expect(screen.queryByRole("tab", { name: /n\.md/ })).toBeNull();
+});
+
 test("cancel_keeps_window", async () => {
   render(<App />);
   await screen.findByRole("tab", { name: "t" });
