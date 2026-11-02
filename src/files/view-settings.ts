@@ -34,6 +34,9 @@ interface ViewSettingsState {
   scanDocuments: boolean;
   scanDownloads: boolean;
   scanRoots: WirePath[];
+  /** The editor: wrap long lines, and the text zoom factor (0.25 to 5.0). */
+  wordWrap: boolean;
+  editorZoom: number;
   /** The last read or write that failed, until the next one succeeds. */
   error: WireError | null;
 }
@@ -47,6 +50,8 @@ export const useViewSettings = create<ViewSettingsState>()(() => ({
   scanDocuments: true,
   scanDownloads: true,
   scanRoots: [],
+  wordWrap: false,
+  editorZoom: 1,
   error: null,
 }));
 
@@ -60,6 +65,8 @@ function apply(s: Settings): void {
     scanDocuments: s.scan_documents,
     scanDownloads: s.scan_downloads,
     scanRoots: s.scan_roots,
+    wordWrap: s.word_wrap,
+    editorZoom: s.editor_zoom,
     error: null,
   });
 }

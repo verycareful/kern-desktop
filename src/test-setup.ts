@@ -11,3 +11,18 @@ if (typeof window.PointerEvent === "undefined") {
     value: PointerEventPolyfill,
   });
 }
+
+// CodeMirror measures text with Range and Element geometry that jsdom does not implement. These
+// stand-ins give every box zero size, which is enough for the editor to build and take input.
+const emptyRects = (): DOMRectList => {
+  const list = [] as unknown as DOMRectList;
+  (list as unknown as { item: (i: number) => DOMRect | null }).item = () => null;
+  return list;
+};
+if (typeof Range !== "undefined") {
+  Range.prototype.getClientRects ??= emptyRects;
+  Range.prototype.getBoundingClientRect ??= () => new DOMRect(0, 0, 0, 0);
+}
+if (typeof document.elementFromPoint !== "function") {
+  document.elementFromPoint = () => null;
+}

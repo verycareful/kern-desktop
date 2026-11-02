@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { parent, pathKey } from "../ipc";
-import { activeTab, useTabs, type Tab, type TabsState } from "../store/tabs";
+import { parent, pathKey, pinsGet, toWireError, type WirePath } from "../ipc";
+import { errorText } from "../ops/error-text";
+import { baseName } from "../ops/labels";
+import { activeTab, tabTitle, useTabs, type Tab, type TabsState } from "../store/tabs";
 import { usePanelsStore } from "../store/panels";
 import { folderController, type MoveTo } from "../files/folder-controller";
 import { useFolderUi } from "../files/folder-ui";
@@ -20,6 +22,7 @@ import { usePinnedRecent } from "../shell/pinned-recent-store";
 import { useProperties } from "../files/properties-store";
 import { documentsController } from "../files/documents-controller";
 import { useOps } from "../ops/useOps";
+import { docController } from "../editor/doc-controller";
 
 // The single table of user-visible actions. Shortcuts (useShortcuts), the
 // main menu and the tab context menu (ActionMenu) all read it, so keyboard and
@@ -60,6 +63,7 @@ export type Action = {
   /** The menu group heading. */
   area:
     | "Tabs"
+    | "File"
     | "Navigation"
     | "Panels"
     | "Open"
@@ -99,6 +103,8 @@ export const actions: Action[] = [
   // Ctrl+W and Ctrl+Tab: design 4.5. Both also work inside an editor, where
   // focus sits in an editable field. Shift+Tab reversal is the usual partner of Ctrl+Tab.
   // Every way to close a tab (shortcut, x button, middle click, menus) runs this one action.
+  // A document with unsaved changes is not closed: its edits would go with it. Until the
+  // save / discard / cancel question exists the user is told to save first.
   {
     id: "tab.close",
     label: "Close tab",
@@ -107,7 +113,19 @@ export const actions: Action[] = [
     when: "any",
     inEditable: true,
     enabled: (c) => c.target !== null,
-    run: (c) => c.target && c.tabs.close(c.target.id),
+    run: (c) => {
+      const t = c.target;
+      if (!t) return;
+      if (t.kind === "doc" && t.dirty) {
+        useOps
+          .getState()
+          .notify(
+            `${tabTitle(t)} has unsaved changes, so Kern did not close it. Save it (Ctrl+S), or Save As, first.`
+          );
+        return;
+      }
+      c.tabs.close(t.id);
+    },
   },
   {
     id: "tab.next",
@@ -771,7 +789,85 @@ const pinnedActions: Action[] = [
   },
 ];
 
-actions.push(...trashActions, ...placeActions, ...pinnedActions);
+// ---- the document (design 4.3, 4.5) ----
+
+function docOf(c: ActionContext) {
+  return c.target?.kind === "doc" ? docController(c.target.id) : undefined;
+}
+
+/** True when the document of the target tab is among the pins. */
+function docPinned(c: ActionContext): boolean {
+  if (c.target?.kind !== "doc") return false;
+  const key = pathKey(c.target.path);
+  return (usePinnedRecent.getState().pins ?? []).some((p) => pathKey(p) === key);
+}
+
+/**
+ * Pins the document, or unpins it when it is pinned. A document tab folds Pinned and Recent
+ * away, so the pins may not have been read yet: they are read first, never guessed.
+ */
+async function toggleDocPin(path: WirePath): Promise<void> {
+  const store = usePinnedRecent.getState();
+  let pins = store.pins;
+  if (pins === null) {
+    try {
+      pins = (await pinsGet()).entries;
+    } catch (e) {
+      store.notify(`${baseName(path)} could not be pinned: ${errorText(toWireError(e))}`);
+      return;
+    }
+  }
+  const key = pathKey(path);
+  if (pins.some((p) => pathKey(p) === key)) await store.unpin(path);
+  else await store.pinPaths([path]);
+}
+
+// Ctrl+S and Ctrl+Shift+S also fire while the focus is in the editor, which is an editable
+// field. Ctrl+Z, Y, A, F, C, V, X and Delete are the folder actions' and apply to a folder tab
+// only, so in a document they are CodeMirror's own.
+const docActions: Action[] = [
+  {
+    id: "doc.save",
+    label: "Save",
+    area: "File",
+    keys: ["Ctrl+S"],
+    when: "doc",
+    inEditable: true,
+    enabled: (c) => docOf(c)?.canSave() ?? false,
+    run: (c) => docOf(c)?.save(),
+  },
+  {
+    id: "doc.saveAs",
+    label: "Save As…",
+    area: "File",
+    keys: ["Ctrl+Shift+S"],
+    when: "doc",
+    inEditable: true,
+    enabled: (c) => docOf(c)?.canSaveAs() ?? false,
+    run: (c) => docOf(c)?.askSaveAs(),
+  },
+  // Ctrl+D pins the document (design 4.5) and, on a pinned one, unpins it. CodeMirror's own
+  // Ctrl+D (select the next occurrence) is not installed, so the key has one meaning.
+  {
+    id: "doc.pin",
+    label: "Pin",
+    menuLabel: () => {
+      const c = currentContext();
+      return docPinned(c) ? "Unpin" : "Pin";
+    },
+    area: "Pinned",
+    keys: ["Ctrl+D"],
+    when: "doc",
+    inEditable: true,
+    enabled: (c) => c.target?.kind === "doc",
+    run: (c) => {
+      if (c.target?.kind !== "doc") return;
+      void toggleDocPin(c.target.path);
+    },
+  },
+];
+
+actions.push(...docActions, ...trashActions, ...placeActions, ...pinnedActions);
 
 export function getAction(id: string): Action {
   const a = actions.find((x) => x.id === id);

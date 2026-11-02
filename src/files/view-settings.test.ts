@@ -94,3 +94,10 @@ test("the_interface_size_is_read_and_follows_changes", async () => {
   act(() => changed!({ ...S, interface_size: 80 }));
   expect(useViewSettings.getState().interfaceSize).toBe(80);
 });
+
+test("the_editor_settings_follow_the_stored_ones", async () => {
+  renderHook(() => useViewSettingsSync());
+  await waitFor(() => expect(useViewSettings.getState().loaded).toBe(true));
+  act(() => changed!({ ...S, word_wrap: true, editor_zoom: 1.5 }));
+  expect(useViewSettings.getState()).toMatchObject({ wordWrap: true, editorZoom: 1.5 });
+});

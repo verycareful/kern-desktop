@@ -4,7 +4,8 @@ import { useViewSettingsSync } from "../files/view-settings";
 import { useShortcuts } from "../keys/useShortcuts";
 import { OpsHost } from "../ops/OpsHost";
 import { usePanels } from "../store/panels";
-import { activeTab, isPlaceTab, useTabs } from "../store/tabs";
+import { TextEditor } from "../editor/TextEditor";
+import { activeTab, isPlaceTab, useTabs, type DocTab } from "../store/tabs";
 import { PanelStub } from "./PanelStub";
 import { PlacesPanel } from "./PlacesPanel";
 import { PinnedRecentPanel } from "./PinnedRecentPanel";
@@ -23,7 +24,9 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
   // The interface size actions step the stored size whatever tab is shown.
   useViewSettingsSync();
   const tab = useTabs((s) => activeTab(s));
+  const tabs = useTabs((s) => s.tabs);
   const { leftOpen, rightOpen } = usePanels();
+  const docs = tabs.filter((t): t is DocTab => t.kind === "doc");
 
   let layout: "folder" | "doc" | "none";
   let body;
@@ -46,22 +49,33 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
     );
   } else {
     layout = "doc";
-    body = (
-      <div className="kern-body-doc" data-testid="doc-body">
-        <PanelStub side="left" expanded={leftOpen} />
-        <main className="kern-doc-area" data-testid="doc-area" />
-        <PanelStub side="right" expanded={rightOpen} />
-        {leftOpen && <PlacesPanel overlay />}
-        {rightOpen && <PinnedRecentPanel overlay />}
-      </div>
-    );
+    body = null;
   }
+
+  // Every document tab keeps its editor mounted, the ones not shown hidden: the
+  // unsaved text, the undo history and the watch on the file belong to the tab,
+  // not to which tab is on show. The panels folded to stubs (4.3) belong to the
+  // document layout only.
+  const docBody = docs.length > 0 && (
+    <div className="kern-body-doc" hidden={layout !== "doc"} data-testid="doc-body">
+      {layout === "doc" && <PanelStub side="left" expanded={leftOpen} />}
+      <main className="kern-doc-area" data-testid="doc-area">
+        {docs.map((d) => (
+          <TextEditor key={d.id} tabId={d.id} path={d.path} active={d.id === tab?.id} />
+        ))}
+      </main>
+      {layout === "doc" && <PanelStub side="right" expanded={rightOpen} />}
+      {layout === "doc" && leftOpen && <PlacesPanel overlay />}
+      {layout === "doc" && rightOpen && <PinnedRecentPanel overlay />}
+    </div>
+  );
 
   return (
     <div className="kern-window" data-testid="main-window">
       <div className="kern-main" data-layout={layout} data-testid="main-grid">
         <TabBar />
         {body}
+        {docBody}
       </div>
       <OpsHost />
       <PropertiesHost />

@@ -1,0 +1,112 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (c) 2026 Sricharan Suresh (github.com/verycareful) */
+
+/* The text editor of a document tab (src/editor). */
+.kern-doc-editor {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+}
+
+.kern-doc-editor[hidden] {
+  display: none;
+}
+
+.kern-doc-host {
+  min-height: 0;
+  flex: 1;
+}
+
+.kern-doc-host .cm-editor {
+  height: 100%;
+  color: var(--kern-text);
+  background: var(--kern-bg);
+}
+
+.kern-doc-host .cm-editor.cm-focused {
+  outline: 2px solid var(--kern-accent);
+  outline-offset: -2px;
+}
+
+.kern-doc-host .cm-scroller {
+  font-family: var(--kern-font-mono);
+  overflow: auto;
+}
+
+.kern-doc-host .cm-gutters {
+  color: var(--kern-text-dim);
+  background: var(--kern-sunken);
+  border-right: 1px solid var(--kern-border);
+}
+
+.kern-doc-host .cm-cursor {
+  border-left-color: var(--kern-text);
+}
+
+.kern-doc-host .cm-selectionBackground,
+.kern-doc-host .cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
+  background: var(--kern-accent-soft);
+}
+
+.kern-doc-host .cm-panels {
+  color: var(--kern-text);
+  background: var(--kern-surface);
+  border-color: var(--kern-border);
+}
+
+.kern-doc-host .cm-searchMatch {
+  background: var(--kern-accent-soft);
+  outline: 1px solid var(--kern-accent);
+}
+
+.kern-doc-host .cm-panel.cm-search input,
+.kern-doc-host .cm-panel.cm-search button {
+  font: inherit;
+  color: var(--kern-text);
+  background: var(--kern-bg);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-doc-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--kern-density-gap);
+  padding: 8px var(--kern-density-gap);
+  font-size: 13px;
+  background: var(--kern-accent-soft);
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-doc-banner p {
+  margin: 0;
+}
+
+.kern-doc-banner-detail {
+  color: var(--kern-text-dim);
+}
+
+.kern-doc-banner-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.kern-doc-note {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--kern-density-gap);
+  padding: calc(var(--kern-density-gap) * 2);
+  text-align: center;
+}
+
+.kern-doc-note p {
+  max-width: 60ch;
+  margin: 0;
+}

@@ -208,6 +208,10 @@
   grid-template-columns: auto 1fr auto;
 }
 
+.kern-body-doc[hidden] {
+  display: none;
+}
+
 .kern-panel {
   display: flex;
   min-width: 0;
@@ -433,7 +437,8 @@
 
 .kern-doc-area {
   min-width: 0;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* A panel slid over the document, beside the stub that opened it. */
@@ -497,6 +502,11 @@
   color: var(--kern-text-dim);
   background: var(--kern-sunken);
   border-top: 1px solid var(--kern-border);
+}
+
+.kern-status-doc {
+  display: flex;
+  gap: calc(var(--kern-density-gap) * 1.5);
 }
 
 .kern-status-path {

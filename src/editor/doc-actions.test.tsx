@@ -1,0 +1,185 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { fireEvent, render } from "@testing-library/react";
+import { beforeEach, expect, test, vi } from "vitest";
+import type { WirePath } from "../ipc";
+
+const ipc = vi.hoisted(() => ({ pin: vi.fn(), unpin: vi.fn(), pinsGet: vi.fn() }));
+vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
+
+import {
+  actions,
+  appliesTo,
+  currentContext,
+  findDuplicateBindings,
+  getAction,
+  menuSections,
+  runAction,
+} from "../keys/actions";
+import { useShortcuts } from "../keys/useShortcuts";
+import { useOps } from "../ops/useOps";
+import { usePinnedRecent } from "../shell/pinned-recent-store";
+import { useTabs } from "../store/tabs";
+import { docController, registerDoc } from "./doc-controller";
+
+const p = (v: string): WirePath => ({ k: "Utf8", v });
+const DOC = p("/home/a/n.md");
+
+function Host() {
+  useShortcuts();
+  return <div data-testid="ce" contentEditable suppressContentEditableWarning />;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  usePinnedRecent.getState().reset();
+  useOps.setState({ notice: null });
+  useTabs.setState({
+    tabs: [
+      { id: "f", kind: "folder", path: p("/home/a"), history: [p("/home/a")], cursor: 0 },
+      { id: "d", kind: "doc", path: DOC, dirty: false },
+    ],
+    activeId: "d",
+  });
+  ipc.pinsGet.mockResolvedValue({ entries: [] });
+  ipc.pin.mockResolvedValue({ entries: [DOC] });
+  ipc.unpin.mockResolvedValue({ entries: [] });
+});
+
+test("the_document_actions_are_in_the_table_the_menu_and_bind_each_key_once", () => {
+  for (const [id, key, label] of [
+    ["doc.save", "Ctrl+S", "Save"],
+    ["doc.saveAs", "Ctrl+Shift+S", "Save As…"],
+    ["doc.pin", "Ctrl+D", "Pin"],
+  ] as const) {
+    const a = getAction(id);
+    expect(a.keys).toEqual([key]);
+    expect(a.label).toBe(label);
+    expect(a.when).toBe("doc");
+    // The focus is in CodeMirror's contenteditable when these are used.
+    expect(a.inEditable).toBe(true);
+    const doc = useTabs.getState().tabs[1]!;
+    expect(menuSections(doc).flatMap((s) => s.actions.map((x) => x.id))).toContain(id);
+    expect(menuSections(useTabs.getState().tabs[0]!).flatMap((s) => s.actions)).not.toContain(a);
+  }
+  expect(findDuplicateBindings()).toEqual([]);
+});
+
+test("the_folder_keys_do_not_fire_while_the_focus_is_in_the_editor", () => {
+  const doc = useTabs.getState().tabs[1]!;
+  // Nothing that applies to a document tab and fires in an editable field takes these keys.
+  for (const key of [
+    "Ctrl+Z",
+    "Ctrl+Y",
+    "Ctrl+Shift+Z",
+    "Ctrl+A",
+    "Ctrl+F",
+    "Ctrl+C",
+    "Ctrl+V",
+    "Ctrl+X",
+    "Delete",
+    "Shift+Delete",
+    "F2",
+  ]) {
+    const hits = actions.filter(
+      (a) => a.keys.includes(key) && appliesTo(a, doc) && a.inEditable === true
+    );
+    expect(
+      hits.map((a) => a.id),
+      key
+    ).toEqual([]);
+  }
+  // And at the window: the keys reach CodeMirror's own handlers untouched.
+  const runUndo = vi.spyOn(useOps.getState(), "runUndo");
+  const { getByTestId } = render(<Host />);
+  const ce = getByTestId("ce");
+  ce.focus();
+  for (const [key, mods] of [
+    ["z", { ctrlKey: true }],
+    ["y", { ctrlKey: true }],
+    ["a", { ctrlKey: true }],
+    ["f", { ctrlKey: true }],
+    ["c", { ctrlKey: true }],
+    ["v", { ctrlKey: true }],
+    ["x", { ctrlKey: true }],
+    ["Delete", {}],
+  ] as const) {
+    const notClaimed = fireEvent.keyDown(ce, { key, ...mods });
+    expect(notClaimed, key).toBe(true);
+  }
+  expect(runUndo).not.toHaveBeenCalled();
+});
+
+test("ctrl_s_and_ctrl_shift_s_reach_the_editor_of_the_active_document_in_an_editable_field", () => {
+  const save = vi.fn();
+  const askSaveAs = vi.fn();
+  const off = registerDoc("d", { save, askSaveAs, canSave: () => true, canSaveAs: () => true });
+  const { getByTestId } = render(<Host />);
+  const ce = getByTestId("ce");
+  ce.focus();
+  expect(fireEvent.keyDown(ce, { key: "s", ctrlKey: true })).toBe(false);
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(fireEvent.keyDown(ce, { key: "s", ctrlKey: true, shiftKey: true })).toBe(false);
+  expect(askSaveAs).toHaveBeenCalledTimes(1);
+  off();
+  expect(docController("d")).toBeUndefined();
+});
+
+test("save_is_greyed_when_the_editor_says_there_is_nothing_to_save", () => {
+  const save = vi.fn();
+  registerDoc("d", { save, askSaveAs: vi.fn(), canSave: () => false, canSaveAs: () => true });
+  expect(runAction(getAction("doc.save"), currentContext())).toBe(false);
+  expect(save).not.toHaveBeenCalled();
+  expect(runAction(getAction("doc.saveAs"), currentContext())).toBe(true);
+});
+
+test("ctrl_d_pins_the_document_and_unpins_it_when_pinned", async () => {
+  expect(getAction("doc.pin").menuLabel?.()).toBe("Pin");
+  expect(runAction(getAction("doc.pin"), currentContext())).toBe(true);
+  // The panel has not loaded the pins (a document tab folds it away): they are read first.
+  await vi.waitFor(() => expect(ipc.pin).toHaveBeenCalledWith(DOC));
+  expect(ipc.pinsGet).toHaveBeenCalledTimes(1);
+
+  await vi.waitFor(() => expect(usePinnedRecent.getState().pins).toEqual([DOC]));
+  expect(getAction("doc.pin").menuLabel?.()).toBe("Unpin");
+  runAction(getAction("doc.pin"), currentContext());
+  await vi.waitFor(() => expect(ipc.unpin).toHaveBeenCalledWith(DOC));
+  expect(ipc.pin).toHaveBeenCalledTimes(1);
+});
+
+test("a_failed_pin_lookup_is_said_and_pins_nothing", async () => {
+  ipc.pinsGet.mockRejectedValue({ kind: "Io", message: "unreadable", path: null, details: null });
+  runAction(getAction("doc.pin"), currentContext());
+  await vi.waitFor(() =>
+    expect(usePinnedRecent.getState().notices.map((n) => n.text)).toEqual([
+      expect.stringContaining("n.md could not be pinned"),
+    ])
+  );
+  expect(ipc.pin).not.toHaveBeenCalled();
+});
+
+test("a_dirty_document_tab_is_not_closed_and_the_user_is_told", () => {
+  useTabs.getState().setDirty("d", true);
+  const close = getAction("tab.close");
+  expect(runAction(close, currentContext("d"))).toBe(true);
+  expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["f", "d"]);
+  expect(useOps.getState().notice?.text).toMatch(/n\.md has unsaved changes/);
+
+  // A clean one, and a folder, close as before.
+  useTabs.getState().setDirty("d", false);
+  runAction(close, currentContext("d"));
+  expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["f"]);
+});
+
+test("the_tab_store_keeps_dirty_and_follows_a_save_as", () => {
+  useTabs.getState().setDirty("d", true);
+  expect(useTabs.getState().tabs[1]).toMatchObject({ dirty: true });
+  useTabs.getState().setDirty("d", true);
+  useTabs.getState().setDirty("nope", true);
+  useTabs.getState().setDirty("f", true);
+  expect(useTabs.getState().tabs[0]).not.toHaveProperty("dirty");
+  useTabs.getState().retargetDoc("d", p("/home/a/other.md"));
+  expect(useTabs.getState().tabs[1]).toMatchObject({ path: p("/home/a/other.md"), dirty: true });
+  useTabs.getState().retargetDoc("f", p("/x"));
+  expect(useTabs.getState().tabs[0]).toMatchObject({ path: p("/home/a") });
+});

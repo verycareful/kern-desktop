@@ -72,6 +72,10 @@ export interface TabsState {
   openDocuments(): void;
   /** Open a document tab, or focus the one already open on this path. */
   openDoc(path: WirePath): void;
+  /** Whether the editor of document tab `id` holds text that differs from the file's last saved text. */
+  setDirty(id: string, dirty: boolean): void;
+  /** Document tab `id` now shows the file at `path` (after Save As); the title follows. */
+  retargetDoc(id: string, path: WirePath): void;
   /** Close a tab; the active tab becomes its right neighbour, else its left. */
   close(id: string): void;
   activate(id: string): void;
@@ -232,6 +236,20 @@ export const useTabs = create<TabsState>()((set) => ({
       if (open) return { activeId: open.id };
       const tab: DocTab = { id: crypto.randomUUID(), kind: "doc", path, dirty: false };
       return { tabs: [...s.tabs, tab], activeId: tab.id };
+    });
+  },
+  setDirty(id, dirty) {
+    set((s) => {
+      const t = s.tabs.find((x) => x.id === id);
+      if (!t || t.kind !== "doc" || t.dirty === dirty) return {};
+      return { tabs: s.tabs.map((x) => (x.id === id ? { ...t, dirty } : x)) };
+    });
+  },
+  retargetDoc(id, path) {
+    set((s) => {
+      const t = s.tabs.find((x) => x.id === id);
+      if (!t || t.kind !== "doc") return {};
+      return { tabs: s.tabs.map((x) => (x.id === id ? { ...t, path } : x)) };
     });
   },
   close(id) {

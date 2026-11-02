@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useUserDirs } from "./user-dirs-store";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { EditorView } from "@codemirror/view";
 import type { WirePath } from "../ipc";
 
 // The places strip looks the user's folders and the volumes up.
@@ -16,6 +17,20 @@ vi.mock("../ipc", async (orig) => ({
   // Pinned and Recent read the pins and recents.
   prune: async () => (await import("./test-pinned-recent")).EMPTY_PRUNE,
   storeErrorsTake: () => Promise.resolve([]),
+  // A document tab's editor opens its file and registers it.
+  textOpen: (path: WirePath) =>
+    Promise.resolve({
+      path,
+      text: "hello",
+      ending: "lf",
+      bom: false,
+      read_only: null,
+      stamp: "s1:5:0:1:1:0",
+    }),
+  textCheck: () => Promise.resolve("same"),
+  recentTouch: () => Promise.resolve({ entries: [] }),
+  docOpened: () => Promise.resolve(),
+  docClosed: () => Promise.resolve(),
 }));
 import { actions, appliesTo } from "../keys/actions";
 import { usePanelsStore } from "../store/panels";
@@ -95,6 +110,40 @@ test("doc_tab_status_makes_no_saved_claim", () => {
   expect(screen.getByTestId("status-bar")).toHaveTextContent("/home/a/n.md");
   expect(screen.queryByTestId("status-dirty")).toBeNull();
   expect(screen.getByTestId("status-bar")).not.toHaveTextContent("Saved");
+});
+
+test("each_document_tab_keeps_its_editor_and_unsaved_text_while_another_tab_is_shown", async () => {
+  useTabs.getState().openFolder(p("/home/a"), false);
+  useTabs.getState().openDoc(p("/home/a/n.md"));
+  render(<MainWindow />);
+  const host = await screen.findByTestId("editor-host");
+  await waitFor(() => expect(host.querySelector(".cm-content")).not.toBeNull());
+  const view = EditorView.findFromDOM(host)!;
+  act(() => view.dispatch({ changes: { from: 0, insert: "kept " } }));
+  expect(screen.getByTestId("status-dirty")).toBeInTheDocument();
+
+  // The folder tab is shown: the document is hidden, not torn down.
+  fireEvent.click(screen.getAllByRole("tab")[0]!);
+  expect(screen.getByTestId("main-grid")).toHaveAttribute("data-layout", "folder");
+  expect(screen.getByTestId("text-editor")).not.toBeVisible();
+  expect(screen.queryByTestId("stub-left")).toBeNull();
+  expect(useTabs.getState().tabs[1]).toMatchObject({ dirty: true });
+
+  fireEvent.click(screen.getAllByRole("tab")[1]!);
+  expect(screen.getByTestId("text-editor")).toBeVisible();
+  expect(EditorView.findFromDOM(screen.getByTestId("editor-host"))).toBe(view);
+  expect(view.state.doc.toString()).toBe("kept hello");
+});
+
+test("a_dirty_document_tab_survives_every_close_button_and_says_why", async () => {
+  useTabs.getState().openDoc(p("/home/a/n.md"));
+  render(<MainWindow />);
+  const host = await screen.findByTestId("editor-host");
+  await waitFor(() => expect(host.querySelector(".cm-content")).not.toBeNull());
+  act(() => EditorView.findFromDOM(host)!.dispatch({ changes: { from: 0, insert: "x" } }));
+  fireEvent.click(screen.getByRole("button", { name: "Close n.md" }));
+  expect(useTabs.getState().tabs).toHaveLength(1);
+  expect(screen.getByTestId("status-notice")).toHaveTextContent(/n\.md has unsaved changes/);
 });
 
 test("tab_bar_buttons_and_menu_follow_the_action_table", () => {

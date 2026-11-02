@@ -31,6 +31,12 @@ const ipc = vi.hoisted(() => ({
   undoState: vi.fn(),
   prune: vi.fn(),
   storeErrorsTake: vi.fn(),
+  // A document tab's editor opens its file and registers it.
+  textOpen: vi.fn(),
+  textCheck: vi.fn(),
+  recentTouch: vi.fn(),
+  docOpened: vi.fn(),
+  docClosed: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
@@ -63,6 +69,18 @@ beforeEach(() => {
   ipc.openPaths.mockResolvedValue([]);
   ipc.prune.mockResolvedValue(EMPTY_PRUNE);
   ipc.storeErrorsTake.mockResolvedValue([]);
+  ipc.textOpen.mockResolvedValue({
+    path: p("/d/n.md"),
+    text: "hello",
+    ending: "lf",
+    bom: false,
+    read_only: null,
+    stamp: "s1:5:0:1:1:0",
+  });
+  ipc.textCheck.mockResolvedValue("same");
+  ipc.recentTouch.mockResolvedValue({ entries: [] });
+  ipc.docOpened.mockResolvedValue(undefined);
+  ipc.docClosed.mockResolvedValue(undefined);
   usePinnedRecent.getState().reset();
   useProperties.getState().close();
   ipc.confirmClose.mockResolvedValue(undefined);

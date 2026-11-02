@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { displayPath } from "../ipc";
+import { encodingText, endingText, useDocStatus } from "../editor/doc-status";
 import { useFolderStatus } from "../files/folder-status";
 import { formatSize } from "../files/format";
 import { useOps } from "../ops/useOps";
@@ -11,14 +12,15 @@ const plural = (n: number, one: string, many: string) =>
 
 // Design 4.1: along the bottom, the whole window wide. Item count and
 // selection size come from the folder view of the tab (folder-status.ts);
-// a document's saved state is shown once the editor has loaded content, so
-// only a dirty document is flagged here. The last file operation that ended
+// a document shows its cursor position, encoding and line ending (editor/
+// doc-status.ts) and a dot while it has unsaved changes. The last file operation that ended
 // with nothing to report leaves a short message here (ops/useOps.ts).
 export function StatusBar() {
   const tab = useTabs((s) => activeTab(s));
   const counts = useFolderStatus((s) =>
     tab?.kind === "folder" || tab?.kind === "trash" ? s.byTab[tab.id] : undefined
   );
+  const docStatus = useDocStatus((s) => (tab?.kind === "doc" ? s.byTab[tab.id] : undefined));
   const notice = useOps((s) => s.notice);
   const place = !tab ? "" : isPlaceTab(tab) ? tabTitle(tab) : displayPath(tab.path);
   return (
@@ -40,7 +42,22 @@ export function StatusBar() {
                 : "")}
         </span>
       )}
-      {tab?.kind === "doc" && tab.dirty && <span data-testid="status-dirty">Unsaved changes</span>}
+      {tab?.kind === "doc" && docStatus && (
+        <span className="kern-status-doc" data-testid="status-doc">
+          <span data-testid="status-position">{`Ln ${docStatus.line}, Col ${docStatus.col}`}</span>
+          <span data-testid="status-encoding">{encodingText(docStatus.bom)}</span>
+          <span data-testid="status-ending">{endingText(docStatus.ending)}</span>
+        </span>
+      )}
+      {tab?.kind === "doc" && tab.dirty && (
+        <span
+          className="kern-dirty"
+          role="img"
+          aria-label="Unsaved changes"
+          title="Unsaved changes"
+          data-testid="status-dirty"
+        />
+      )}
       {notice && (
         <span role="status" data-testid="status-notice">
           {notice.text}
