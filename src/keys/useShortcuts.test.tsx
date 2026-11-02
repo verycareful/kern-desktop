@@ -208,6 +208,7 @@ test("the_keys_of_the_file_operations_are_scoped_to_the_view_and_undo_is_not", (
       "folder.openWith",
       "folder.paste",
       "folder.pin",
+      "folder.properties",
       "folder.rename",
       "folder.terminal",
       "folder.trash",

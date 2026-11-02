@@ -13,6 +13,7 @@ export function entry(name: string, over: Partial<WireEntry> = {}, parent = "/d"
     modified_ms: null,
     hidden: name.startsWith("."),
     mime: "application/octet-stream",
+    mode: 0o644,
     ...over,
   };
 }

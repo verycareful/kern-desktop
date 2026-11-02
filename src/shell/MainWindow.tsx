@@ -8,6 +8,7 @@ import { activeTab, useTabs } from "../store/tabs";
 import { PanelStub } from "./PanelStub";
 import { PlacesPanel } from "./PlacesPanel";
 import { PinnedRecentPanel } from "./PinnedRecentPanel";
+import { PropertiesHost } from "../files/PropertiesHost";
 import { StatusBar } from "./StatusBar";
 import { TabBar } from "./TabBar";
 import "./shell.css";
@@ -63,6 +64,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
         {body}
       </div>
       <OpsHost />
+      <PropertiesHost />
       <StatusBar />
     </div>
   );

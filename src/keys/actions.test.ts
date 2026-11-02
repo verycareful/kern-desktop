@@ -8,6 +8,7 @@ import { useOps } from "../ops/useOps";
 import { VOLUME_MENU } from "../shell/volume-menu";
 import { ENTRY_MENU } from "../shell/entry-menu";
 import { usePinnedRecent } from "../shell/pinned-recent-store";
+import { useProperties } from "../files/properties-store";
 import { registerFolder, type FolderController } from "../files/folder-controller";
 import { known } from "../shell/test-volumes";
 import {
@@ -267,5 +268,25 @@ test("entry_actions_follow_the_entry_the_menu_was_opened_on", () => {
     expect(enabled()).toEqual(["entry.open", "entry.pin"]);
   } finally {
     usePinnedRecent.getState().reset();
+  }
+});
+
+test("properties_shows_the_selection_or_else_the_folder", () => {
+  expect(getAction("folder.properties").keys).toContain("Alt+Enter");
+  useTabs.getState().openFolder(p("/a"), false);
+  const tab = useTabs.getState().tabs[0]!;
+  let selection: WirePath[] = [];
+  const off = registerFolder(tab.id, {
+    selectedPaths: () => selection,
+  } as Partial<FolderController> as FolderController);
+  try {
+    runAction(getAction("folder.properties"), currentContext());
+    expect(useProperties.getState().paths).toEqual([p("/a")]);
+    selection = [p("/a/x"), p("/a/y")];
+    runAction(getAction("folder.properties"), currentContext());
+    expect(useProperties.getState().paths).toEqual([p("/a/x"), p("/a/y")]);
+  } finally {
+    off();
+    useProperties.getState().close();
   }
 });

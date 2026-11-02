@@ -36,6 +36,7 @@ vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()),
 
 import App from "../App";
 import { usePinnedRecent } from "./pinned-recent-store";
+import { useProperties } from "../files/properties-store";
 import { EMPTY_PRUNE } from "./test-pinned-recent";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
@@ -63,6 +64,7 @@ beforeEach(() => {
   ipc.prune.mockResolvedValue(EMPTY_PRUNE);
   ipc.storeErrorsTake.mockResolvedValue([]);
   usePinnedRecent.getState().reset();
+  useProperties.getState().close();
   ipc.confirmClose.mockResolvedValue(undefined);
   delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   ipc.watchDir.mockResolvedValue(undefined);
@@ -235,18 +237,20 @@ test("an_open_error_is_shown_as_an_alert", async () => {
   fireEvent.click(within(screen.getAllByRole("alert")[0]!).getAllByRole("button")[0]!);
 });
 
+test("properties_from_another_program_open_the_dialog", async () => {
+  queue({ event: "kern://properties", payload: { paths: [p("/d/a")] } });
+  render(<App />);
+  expect(await screen.findByRole("dialog", { name: "Properties of a" })).toBeInTheDocument();
+});
+
 test("an_event_this_window_cannot_handle_is_reported_never_dropped", async () => {
-  queue(
-    { event: "kern://properties", payload: { paths: [p("/d/a")] } },
-    open({ kind: "load_doc", path: p("/d/a") })
-  );
+  queue(open({ kind: "load_doc", path: p("/d/a") }));
   render(<App />);
   await waitFor(() => expect(screen.getAllByRole("alert").length).toBeGreaterThan(0));
   const text = screen
     .getAllByRole("alert")
     .map((a) => a.textContent)
     .join("\n");
-  expect(text).toContain("kern://properties");
   expect(text).toContain("load_doc");
   await emit("kern://adopt-doc", { path: p("/d/a"), text_state: null, from: "doc-1" });
   expect(

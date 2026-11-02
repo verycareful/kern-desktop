@@ -17,6 +17,7 @@ import { DEFAULT_INTERFACE_SIZE, stepInterfaceSize } from "../theme/interface-si
 import { trashController, type TrashMove } from "../files/trash-controller";
 import { useVolumes } from "../shell/volumes-store";
 import { usePinnedRecent } from "../shell/pinned-recent-store";
+import { useProperties } from "../files/properties-store";
 import { useOps } from "../ops/useOps";
 
 // The single table of user-visible actions. Shortcuts (useShortcuts), the
@@ -237,6 +238,21 @@ const folderActions: Action[] = [
     when: "folder",
     enabled: (c) => controllerOf(c)?.canOpenWith() ?? false,
     run: (c) => controllerOf(c)?.openWith(),
+  },
+  // Alt+Enter: Properties in Dolphin and Nautilus. With nothing selected, the folder's own.
+  {
+    id: "folder.properties",
+    scope: "view",
+    label: "Properties",
+    area: "Open",
+    keys: ["Alt+Enter"],
+    when: "folder",
+    enabled: (c) => controllerOf(c) !== undefined,
+    run: (c) => {
+      const picked = controllerOf(c)?.selectedPaths() ?? [];
+      if (c.target?.kind !== "folder") return;
+      useProperties.getState().show(picked.length > 0 ? picked : [c.target.path]);
+    },
   },
   {
     id: "folder.copyPath",

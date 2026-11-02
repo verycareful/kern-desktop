@@ -26,6 +26,8 @@ export interface WireEntry {
   modified_ms: number | null;
   hidden: boolean;
   mime: string;
+  /** The permission bits of the entry itself (st_mode & 07777); a symlink's are its own, 0777. */
+  mode: number;
 }
 
 export interface WireUndoOutcome {
@@ -59,6 +61,8 @@ export interface WireUserDirs {
  */
 export type WireSame = { state: "checked"; same: boolean } | { state: "failed"; error: WireError };
 
+/** The entry for one path, as the listing of its folder gives it; a path that does not exist is NotFound. */
+export const entryOf = (path: WirePath) => invoke<WireEntry>(cmd("entry_of"), { path });
 export const listDir = (path: WirePath, hidden: boolean) =>
   invoke<WireEntry[]>(cmd("list_dir"), { path, hidden });
 

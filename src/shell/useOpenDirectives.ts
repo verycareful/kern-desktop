@@ -23,6 +23,7 @@ import {
   type WirePath,
 } from "../ipc";
 import { useTabs } from "../store/tabs";
+import { useProperties } from "../files/properties-store";
 
 // Design 4.4 and 4.5: what the backend tells the main window to do. The
 // backend queues events for a window until it has asked for them once with
@@ -32,7 +33,7 @@ import { useTabs } from "../store/tabs";
 //
 // A window asked to close with no dirty tab closes at once (design 4.5 with an
 // empty list of dirty tabs). Events of features this window does not have yet
-// (kern://properties, a document window's load_doc, adopt-doc, and a close
+// (a document window's load_doc, adopt-doc, and a close
 // with a dirty tab) are never dropped quietly: each is reported as a notice
 // that names it.
 
@@ -125,6 +126,9 @@ export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
         }
         case EVENT_OPEN_ERROR:
           addError(item.payload as WireError);
+          return;
+        case EVENT_PROPERTIES:
+          useProperties.getState().show((item.payload as { paths: WirePath[] }).paths);
           return;
         case EVENT_CLOSE_REQUESTED:
           if (tabs().tabs.some((t) => t.kind === "doc" && t.dirty)) {
