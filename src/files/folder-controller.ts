@@ -23,6 +23,10 @@ export interface FolderController {
   open(newWindow: boolean): void;
   refresh(): void;
   editLocation(): void;
+  /** True when the folder is listed, so there is a tree to search. */
+  canSearch(): boolean;
+  /** Shows the name search in place of the folder's items; the selection is cleared first. */
+  search(): void;
   // The file operations (design 5.1) act on the selection and on nothing else:
   // an item that is only outlined is never copied, cut, trashed, deleted,
   // renamed or dragged.

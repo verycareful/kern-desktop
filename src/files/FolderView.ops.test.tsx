@@ -53,6 +53,7 @@ const ipc = vi.hoisted(() => ({
   dragOut: vi.fn(),
   clipClearIf: vi.fn(),
   sameFilesystem: vi.fn(),
+  search: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({
   ...(await orig<typeof import("../ipc")>()),
@@ -1428,4 +1429,27 @@ test("the_disclosure_lists_the_frozen_items_not_the_current_selection", async ()
   expect([...details.querySelectorAll("li")].map((li) => li.textContent)).toEqual(
     names.slice(0, 5)
   );
+});
+
+test("ctrl_f_searches_and_no_file_key_acts_on_the_selection_it_hides", async () => {
+  const tab = await mount([entry("a"), entry("b")]);
+  select("a");
+  expect(folderController(tab.id)!.hasSelection()).toBe(true);
+  key("f", { ctrlKey: true });
+  const input = await screen.findByRole("searchbox");
+  expect(folderController(tab.id)!.hasSelection()).toBe(false);
+  expect(screen.queryByTestId("folder-list")).toBeNull();
+  // The keyboard in the search, in its results, or nowhere in particular: Delete trashes nothing.
+  fireEvent.keyDown(input, { key: "Delete" });
+  fireEvent.keyDown(screen.getByTestId("scan-results"), { key: "Delete" });
+  // And with the keyboard nowhere in particular.
+  act(() => (document.activeElement as HTMLElement).blur());
+  expect(document.activeElement).toBe(document.body);
+  key("Delete");
+  key("a", { ctrlKey: true });
+  fireEvent.keyDown(screen.getByTestId("scan-results"), { key: "Delete" });
+  expect(ipc.startOp).not.toHaveBeenCalled();
+  fireEvent.keyDown(input, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByTestId("search-view")).toBeNull());
+  expect(screen.getByTestId("folder-list")).toBeTruthy();
 });

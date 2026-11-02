@@ -413,6 +413,16 @@ const folderActions: Action[] = [
     enabled: (c) => controllerOf(c) !== undefined,
     run: (c) => controllerOf(c)?.editLocation(),
   },
+  // Ctrl+F: design 4.5.
+  {
+    id: "folder.search",
+    label: "Search",
+    area: "Navigation",
+    keys: ["Ctrl+F"],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.canSearch() ?? false,
+    run: (c) => controllerOf(c)?.search(),
+  },
   {
     id: "folder.refresh",
     label: "Refresh",

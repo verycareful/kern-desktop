@@ -28,6 +28,7 @@ import {
 import { useTabs, type FolderTab, type FolderViewState } from "../store/tabs";
 import { Breadcrumb } from "./Breadcrumb";
 import { OpenWithDialog } from "./OpenWithDialog";
+import { SearchView } from "./SearchView";
 import { useFolderTools } from "./use-folder-tools";
 import { ConfirmBanner } from "./ConfirmBanner";
 import { FileGrid } from "./FileGrid";
@@ -131,6 +132,9 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     if (kept && (folder.phase === "ready" || kept.pathKey !== key)) setKept(null);
   }, [kept, key, folder.phase]);
   const [editing, setEditing] = useState(false);
+  // The name search shows in place of the items; another folder ends it.
+  const [searching, setSearching] = useState(false);
+  useEffect(() => setSearching(false), [key]);
   const [openErrors, setOpenErrors] = useState<WireError[]>([]);
   const [revealTick, setRevealTick] = useState(0);
   // What could not be selected, apart from the open errors, which are replaced by each open.
@@ -378,6 +382,12 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       open: (newWindow) => openOrAsk(toOpen(), newWindow),
       refresh,
       editLocation: () => setEditing(true),
+      canSearch: () => latest.current.phase === "ready",
+      search: () => {
+        // The selection is not on show during a search, so nothing may act on it.
+        dispatch((s) => selectNone(s));
+        setSearching(true);
+      },
       ...fileOps.controller,
       copyPath: tools.copyPath,
       canOpenTerminal: tools.canOpenTerminal,
@@ -700,15 +710,30 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
           Sorting…
         </p>
       )}
-      <div
-        className="kern-files-body"
-        // Where a drop from another application on the list itself lands (ops/dnd.ts).
-        {...(folder.phase === "ready" ? { [DROP_AREA_ATTR]: dropTargetValue(tab.path) } : {})}
-        onScrollCapture={onScrollCapture}
-        onPointerDown={drag.onPointerDown}
-      >
-        {body}
-      </div>
+      {searching ? (
+        <SearchView
+          root={tab.path}
+          onClose={() => {
+            focusSoon.current = true;
+            setSearching(false);
+          }}
+          onOpen={(entry, newWindow) => {
+            // A folder opened from the results is shown here, which ends the search.
+            if (isFolder(entry) && !newWindow) navigate(entry.path);
+            else openOrAsk([entry], newWindow);
+          }}
+        />
+      ) : (
+        <div
+          className="kern-files-body"
+          // Where a drop from another application on the list itself lands (ops/dnd.ts).
+          {...(folder.phase === "ready" ? { [DROP_AREA_ATTR]: dropTargetValue(tab.path) } : {})}
+          onScrollCapture={onScrollCapture}
+          onPointerDown={drag.onPointerDown}
+        >
+          {body}
+        </div>
+      )}
       <div ref={drag.ghost} className="kern-drag-ghost" aria-hidden hidden />
       {menu && (
         <ActionMenu

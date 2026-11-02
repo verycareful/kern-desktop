@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import type { Page } from "@playwright/test";
-import { test, expect, EMPTY_PINNED_RECENT } from "./support/mockInvoke";
+import {
+  test,
+  expect,
+  EMPTY_PINNED_RECENT,
+  emitTauriEvent,
+  getInvokeCalls,
+} from "./support/mockInvoke";
 
 // The mocks are serialised into the page, so each is self-contained.
 const SETTINGS = {
@@ -294,4 +300,77 @@ test("the_first_row_is_spaced_from_the_path_bar", async ({ page, mockTauri }) =>
   await page.getByRole("button", { name: /grid view/i }).click();
   await expect(page.getByTestId("file-card")).toHaveCount(1);
   expect(await gap('[data-testid="file-card"]')).toBeGreaterThanOrEqual(12);
+});
+
+// A tree with a symlink back to itself (loop -> .): the walk enters each folder once by device
+// and inode, so it streams what it finds and then ends. The mock plays that run: three batches,
+// then op-done, then a stray batch that must not be shown.
+test("search_terminates_on_loop", async ({ page, mockTauri }) => {
+  await mockTauri({
+    ...COMMON,
+    "plugin:kernkraft-tauri|list_dir": [
+      {
+        path: { k: "Utf8", v: "/home/tester/docs/loop" },
+        name: "loop",
+        kind: "symlink",
+        target_is_dir: true,
+        len: 0,
+        modified_ms: null,
+        hidden: false,
+        mime: "inode/directory",
+        mode: 0o777,
+      },
+    ],
+    "plugin:kernkraft-tauri|search": 41,
+    "plugin:kernkraft-tauri|cancel_op": null,
+  });
+  await page.goto("/");
+  await expect(rows(page)).toHaveCount(1);
+  await rows(page).first().click();
+  await page.keyboard.press("Control+f");
+  await page.getByRole("searchbox").fill("loop");
+  await expect
+    .poll(async () => (await getInvokeCalls(page)).some((c) => c.cmd.endsWith("|search")))
+    .toBe(true);
+  const call = (await getInvokeCalls(page)).find((c) => c.cmd.endsWith("|search"))!;
+  const key = call.args.key as string;
+  expect(call.args.query).toBe("loop");
+  const hit = (v: string) => ({
+    path: { k: "Utf8", v },
+    name: "loop",
+    kind: "symlink",
+    target_is_dir: true,
+    len: 0,
+    modified_ms: null,
+    hidden: false,
+    mime: "inode/directory",
+    mode: 0o777,
+  });
+  for (const v of [
+    "/home/tester/docs/loop",
+    "/home/tester/docs/loop/loop",
+    "/home/tester/docs/loop/loop/loop",
+  ]) {
+    await emitTauriEvent(page, "kernkraft://search-hit", { key, op: 41, entries: [hit(v)] });
+  }
+  await expect(page.getByTestId("scan-hit")).toHaveCount(3);
+  await emitTauriEvent(page, "kernkraft://op-done", {
+    op: 41,
+    report: null,
+    properties: null,
+    error: null,
+    scan: { found: 3, unreadable: [], cancelled: false },
+  });
+  await expect(page.getByRole("status").filter({ hasText: "3 items found" })).toBeVisible();
+  await expect(page.getByText(/Searching/)).toHaveCount(0);
+  await emitTauriEvent(page, "kernkraft://search-hit", {
+    key,
+    op: 41,
+    entries: [hit("/home/tester/docs/stray")],
+  });
+  await expect(page.getByTestId("scan-hit")).toHaveCount(3);
+  // Escape ends the search and gives the folder back; nothing was left to cancel.
+  await page.getByRole("searchbox").press("Escape");
+  await expect(rows(page)).toHaveCount(1);
+  expect((await getInvokeCalls(page)).some((c) => c.cmd.endsWith("|cancel_op"))).toBe(false);
 });

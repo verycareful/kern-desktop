@@ -72,6 +72,7 @@ test("the_folder_shortcuts_of_design_4_5_are_bound", () => {
   expect(keyOf("folder.select.all")).toContain("Ctrl+A");
   expect(keyOf("folder.terminal")).toContain("F4");
   expect(keyOf("folder.copyPath")).toContain("Ctrl+Shift+C");
+  expect(keyOf("folder.search")).toContain("Ctrl+F");
 });
 
 test("folder_actions_without_a_mounted_folder_view_are_disabled", () => {
