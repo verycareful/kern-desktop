@@ -6,11 +6,16 @@
 
 mod common;
 
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use common::{env, env_with, invoke, tab, wait_for, wp, Answer, QUIET};
+use kern_lib::open::{FileId, Location, Stat};
 use kern_lib::windows::{
-    EVENT_ADOPT_CANCELLED, EVENT_ADOPT_DOC, EVENT_CLOSE_REQUESTED, EVENT_OPEN,
+    WindowState, EVENT_ADOPT_CANCELLED, EVENT_ADOPT_DOC, EVENT_CLOSE_REQUESTED, EVENT_OPEN,
 };
 use serde_json::{json, Value};
 use tauri::test::MockRuntime;
@@ -1389,4 +1394,330 @@ fn a_move_from_an_editor_window_that_is_refused_or_unanswered_keeps_the_tab() {
             assert_eq!(inside(&e, "main", path)["location"], tab(&label, tab_id));
         }
     });
+}
+
+// ---- registered paths that do not answer: no lock is held while a stat waits ----
+
+/// What a test does before each look at a path.
+type Hook = Arc<dyn Fn(&Path) + Send + Sync>;
+
+/// A stat for the registry: the disk's answer, except that paths in `hung` block until `release`,
+/// and `on_call` (when set) runs before each look at a path.
+struct Stuck {
+    hung: Mutex<HashSet<PathBuf>>,
+    open: (Mutex<bool>, Condvar),
+    calls: Mutex<HashMap<PathBuf, usize>>,
+    /// How many looks are blocked now.
+    waiting: AtomicUsize,
+    on_call: Mutex<Option<Hook>>,
+}
+
+impl Stuck {
+    fn new(hung: &[&Path]) -> Arc<Stuck> {
+        Arc::new(Stuck {
+            hung: Mutex::new(hung.iter().map(|p| p.to_path_buf()).collect()),
+            open: (Mutex::new(false), Condvar::new()),
+            calls: Mutex::default(),
+            waiting: AtomicUsize::new(0),
+            on_call: Mutex::default(),
+        })
+    }
+
+    /// The look the registry makes, through this.
+    fn stat(self: &Arc<Self>) -> Stat {
+        let me = Arc::clone(self);
+        Arc::new(move |p: &Path| {
+            *me.calls.lock().unwrap().entry(p.to_path_buf()).or_default() += 1;
+            let hook = me.on_call.lock().unwrap().clone();
+            if let Some(h) = hook {
+                h(p);
+            }
+            if me.hung.lock().unwrap().contains(p) {
+                let (m, cv) = &me.open;
+                let mut released = m.lock().unwrap();
+                me.waiting.fetch_add(1, Ordering::SeqCst);
+                while !*released {
+                    released = cv.wait(released).unwrap();
+                }
+                me.waiting.fetch_sub(1, Ordering::SeqCst);
+            }
+            FileId::of(p)
+        })
+    }
+
+    fn calls(&self, p: &Path) -> usize {
+        self.calls.lock().unwrap().get(p).copied().unwrap_or(0)
+    }
+
+    /// Lets every blocked look finish.
+    fn release(&self) {
+        *self.open.0.lock().unwrap() = true;
+        self.open.1.notify_all();
+    }
+}
+
+fn main_tab(id: &str) -> Location {
+    Location::Tab {
+        window: "main".to_owned(),
+        tab_id: id.to_owned(),
+    }
+}
+
+fn env_looking(stuck: &Arc<Stuck>, bound: Duration) -> common::Env {
+    common::env_state(
+        WindowState::new(Duration::from_secs(5)).with_stat(stuck.stat(), bound),
+        None,
+    )
+}
+
+/// Registers `path` as open in tab `id` of `window`.
+fn register(e: &common::Ctx, window: &str, id: &str, path: &Path) {
+    e.call_from(
+        window,
+        "doc_opened",
+        json!({"path": wp(path), "location": tab(window, id)}),
+    )
+    .unwrap();
+}
+
+fn save_as_to(
+    e: &common::Ctx,
+    from: &str,
+    target: &Path,
+    own: &Value,
+    reserve: bool,
+) -> Result<Value, Value> {
+    e.call_from(
+        from,
+        "doc_open_elsewhere",
+        json!({"path": wp(target), "own": own, "reserve": reserve}),
+    )
+}
+
+#[test]
+fn no_lock_is_held_while_a_stat_waits_on_a_registered_path() {
+    let t = tempfile::tempdir().unwrap();
+    let hung = t.path().join("never-mind");
+    let stuck = Stuck::new(&[&hung]);
+    let e = env_looking(&stuck, Duration::from_secs(60));
+    let (a, b, target) = (e.text("a.txt"), e.text("b.txt"), e.files.join("new.txt"));
+    e.with_main();
+    editor(&e);
+    // Both are registered; the look at a.txt blocks.
+    register(&e, "main", "t1", &a);
+    register(&e, "main", "t2", &b);
+    stuck.hung.lock().unwrap().insert(a.clone());
+    std::thread::scope(|s| {
+        let handle = e.handle.clone();
+        let t = target.clone();
+        let asker = s.spawn(move || {
+            common::invoke(
+                &handle,
+                "editor-1",
+                "doc_open_elsewhere",
+                json!({"path": wp(&t), "own": tab("editor-1", "t9"), "reserve": true}),
+            )
+        });
+        wait_for("the look at a.txt to block", || {
+            stuck.waiting.load(Ordering::SeqCst) >= 1
+        });
+        // The Save As is waiting on the stat. Everything that needs the registry or the gate and no
+        // look goes on: an open of a registered file, a release.
+        let again = inside(&e, "main", &b);
+        assert_eq!(again["action"], json!("focus"));
+        e.call_from(
+            "main",
+            "doc_closed",
+            json!({"path": wp(&b), "location": tab("main", "t2")}),
+        )
+        .unwrap();
+        if asker.is_finished() {
+            stuck.release();
+            panic!("the Save As did not wait: {:?}", asker.join().unwrap());
+        }
+        stuck.release();
+        // Answered now: nothing else has the new file, so it is held for the asker.
+        assert_eq!(asker.join().unwrap().unwrap(), json!({"state": "free"}));
+    });
+}
+
+#[test]
+fn a_path_that_did_not_answer_refuses_save_as_by_name_and_is_said_by_an_open_that_goes_on() {
+    let t = tempfile::tempdir().unwrap();
+    let hung = t.path().join("never-mind");
+    let stuck = Stuck::new(&[&hung]);
+    let e = env_looking(&stuck, Duration::from_millis(300));
+    let (a, c, target) = (e.text("a.txt"), e.text("c.txt"), e.files.join("new.txt"));
+    e.with_main();
+    editor(&e);
+    register(&e, "main", "t1", &a);
+    stuck.hung.lock().unwrap().insert(a.clone());
+    let own = tab("editor-1", "t9");
+    // Save As is refused, naming what did not answer and what was asked, and nothing is held.
+    let err = save_as_to(&e, "editor-1", &target, &own, true).unwrap_err();
+    assert_eq!(err["kind"], json!("OpenCheck"));
+    let words = err["message"].as_str().unwrap();
+    assert!(
+        words.contains("could not check whether")
+            && words.contains(target.to_str().unwrap())
+            && words.contains("is open elsewhere")
+            && words.contains(a.to_str().unwrap())
+            && words.contains("did not answer"),
+        "{words}"
+    );
+    // The same refusal while the stat is still stuck: the look is not started again.
+    let before = stuck.calls(&a);
+    assert!(save_as_to(&e, "editor-1", &target, &own, true).is_err());
+    assert_eq!(stuck.calls(&a), before);
+    // An open goes on by the path's text and says what it could not check.
+    let out = inside(&e, "main", &c);
+    assert_eq!(out["action"], json!("doc_tab"));
+    assert_eq!(out["error"]["kind"], json!("OpenCheck"));
+    assert!(
+        out["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains(a.to_str().unwrap()),
+        "{out}"
+    );
+    // A link to the file that did not answer resolves to its path, which is registered by that
+    // text: focused. A hard link cannot be told without the look: it goes on, and says so.
+    let (soft, hard) = (e.files.join("soft.txt"), e.files.join("hard.txt"));
+    std::os::unix::fs::symlink(&a, &soft).unwrap();
+    std::fs::hard_link(&a, &hard).unwrap();
+    let by_link = inside(&e, "main", &soft);
+    assert_eq!(by_link["action"], json!("focus"));
+    assert_eq!(by_link["location"], tab("main", "t1"));
+    let by_hard = inside(&e, "main", &hard);
+    assert_eq!(by_hard["action"], json!("doc_tab"));
+    assert_eq!(by_hard["error"]["kind"], json!("OpenCheck"));
+    // Nothing was held for the refused Save As: once the mount answers the target is free.
+    stuck.release();
+    wait_for("the stuck look to finish", || {
+        save_as_to(&e, "editor-1", &target, &own, false).is_ok()
+    });
+    assert_eq!(
+        save_as_to(&e, "editor-1", &target, &own, false).unwrap(),
+        json!({"state": "free"})
+    );
+    std::fs::write(&target, "x").unwrap();
+    assert_eq!(inside(&e, "main", &target)["action"], json!("doc_tab"));
+}
+
+#[test]
+fn a_look_made_stale_by_a_change_is_made_again_not_used() {
+    let stuck = Stuck::new(&[]);
+    let e = env_looking(&stuck, Duration::from_secs(5));
+    let a = e.text("a.txt");
+    let hard = e.files.join("hard.txt");
+    std::fs::hard_link(&a, &hard).unwrap();
+    e.with_main();
+    register(&e, "main", "t1", &a);
+    // While the first look at a.txt is made, its tab closes: the look says the file is open, and
+    // the registry no longer does.
+    let handle = e.handle.clone();
+    let path = a.clone();
+    let once = std::sync::atomic::AtomicBool::new(false);
+    *stuck.on_call.lock().unwrap() = Some(Arc::new(move |p: &Path| {
+        if p == path && !once.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            handle
+                .state::<WindowState>()
+                .open
+                .remove_if(&path, &main_tab("t1"));
+        }
+    }));
+    let out = inside(&e, "main", &hard);
+    // Not a focus on a tab that is gone: the look was taken again, on a registry that holds the
+    // path for the open that is making a tab now.
+    assert_eq!(out["action"], json!("doc_tab"), "{out}");
+    assert_eq!(stuck.calls(&a), 1, "the second look had nothing to look at");
+}
+
+#[test]
+fn a_registry_that_keeps_changing_is_given_up_and_answered_as_for_a_timeout() {
+    let stuck = Stuck::new(&[]);
+    let e = env_looking(&stuck, Duration::from_secs(5));
+    let (a, c, target) = (e.text("a.txt"), e.text("c.txt"), e.files.join("new.txt"));
+    e.with_main();
+    editor(&e);
+    register(&e, "main", "t1", &a);
+    // Every look at a.txt is overtaken by a registration, so no look is ever current.
+    let handle = e.handle.clone();
+    let n = std::sync::atomic::AtomicUsize::new(0);
+    let path = a.clone();
+    *stuck.on_call.lock().unwrap() = Some(Arc::new(move |p: &Path| {
+        if p == path {
+            let k = n.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            handle.state::<WindowState>().open.insert(
+                Path::new(&format!("/churn-{k}")),
+                main_tab(&format!("churn-{k}")),
+            );
+        }
+    }));
+    // Save As is refused, as when a stat does not answer.
+    let err = save_as_to(&e, "editor-1", &target, &tab("editor-1", "t9"), true).unwrap_err();
+    assert_eq!(err["kind"], json!("OpenCheck"), "{err}");
+    // An open goes on by the path's text.
+    let out = inside(&e, "main", &c);
+    assert_eq!(out["action"], json!("doc_tab"), "{out}");
+    assert_eq!(out["error"]["kind"], json!("OpenCheck"), "{out}");
+}
+
+// ---- a tab that closes holds nothing ----
+
+#[test]
+fn a_closed_tab_holds_neither_its_file_nor_a_save_as_target_nor_the_path_it_was_routed_with() {
+    let e = env(Duration::from_secs(5));
+    let (a, target, routed) = (e.text("a.txt"), e.files.join("new.txt"), e.text("r.txt"));
+    e.with_main();
+    editor(&e);
+    let own = tab("main", "t1");
+    register(&e, "main", "t1", &a);
+    // A Save As of the tab has reserved a target and not written yet; another path was routed to
+    // the window and its tab has not registered.
+    assert_eq!(
+        save_as_to(&e, "main", &target, &own, true).unwrap(),
+        json!({"state": "free"})
+    );
+    assert_eq!(inside(&e, "main", &routed)["action"], json!("doc_tab"));
+    // Releasing one path, as a Save As does for the path it left, keeps what else the tab holds.
+    e.call_from(
+        "main",
+        "doc_closed",
+        json!({"path": wp(&a), "location": own}),
+    )
+    .unwrap();
+    std::fs::write(&target, "x").unwrap();
+    assert_eq!(inside(&e, "editor-1", &target)["action"], json!("focus"));
+    // The tab itself closes: everything held at it goes, the routed path (by name) too.
+    e.call_from(
+        "main",
+        "doc_closed",
+        json!({"path": wp(&routed), "location": own, "tabClosed": true}),
+    )
+    .unwrap();
+    assert_eq!(inside(&e, "editor-1", &target)["action"], json!("doc_tab"));
+    assert_eq!(inside(&e, "editor-1", &routed)["action"], json!("doc_tab"));
+    assert_eq!(inside(&e, "editor-1", &a)["action"], json!("doc_tab"));
+}
+
+#[test]
+fn a_closing_tab_leaves_the_places_of_other_tabs_and_windows_alone() {
+    let e = env(Duration::from_secs(5));
+    let (a, b, c) = (e.text("a.txt"), e.text("b.txt"), e.text("c.txt"));
+    e.with_main();
+    editor(&e);
+    register(&e, "main", "t1", &a);
+    register(&e, "main", "t2", &b);
+    register(&e, "editor-1", "t1", &c);
+    e.call_from(
+        "main",
+        "doc_closed",
+        json!({"path": wp(&a), "location": tab("main", "t1"), "tabClosed": true}),
+    )
+    .unwrap();
+    assert_eq!(inside(&e, "main", &a)["action"], json!("doc_tab"));
+    // Another tab of the window, and the editor window's tab with the same id.
+    assert_eq!(inside(&e, "main", &b)["action"], json!("focus"));
+    assert_eq!(inside(&e, "main", &c)["action"], json!("focus"));
 }

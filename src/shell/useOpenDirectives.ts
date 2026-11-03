@@ -15,6 +15,7 @@ import {
   refuseDetach,
   tabWindow,
   displayPath,
+  docClosed,
   docOpened,
   on,
   openPendingTake,
@@ -219,6 +220,19 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
       }
     };
 
+    /**
+     * A document tab for `path`, or the tab this window already has for it. The backend held the
+     * path for this window when it routed it here, for a tab to register; when the window shows
+     * it already (a tab that has not registered it: refused, or its file did not open) no tab
+     * will, so that hold is let go.
+     */
+    const openDocTab = (path: WirePath) => {
+      if (tabs().openDoc(path)) return;
+      docClosed(path, { kind: "opening", window: tabWindow() }).catch((e: unknown) =>
+        notice(`${displayPath(path)} could not be let go: ${errorText(toWireError(e))}`)
+      );
+    };
+
     const apply = async (item: Queued): Promise<void> => {
       switch (item.event) {
         case EVENT_OPEN: {
@@ -234,7 +248,7 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
                 useLayout.getState().setTreeRoot(d.path);
                 return;
               case "doc_tab":
-                tabs().openDoc(d.path);
+                openDocTab(d.path);
                 return;
               case "focus_tab":
                 if (tabs().tabs.some((t) => t.id === d.tab_id)) tabs().activate(d.tab_id);
@@ -250,7 +264,7 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
               tabs().focusOrOpenFolder(d.path);
               return;
             case "doc_tab":
-              tabs().openDoc(d.path);
+              openDocTab(d.path);
               return;
             case "home_tab":
               tabs().focusOrOpenFolder((await userDirs()).home);

@@ -370,7 +370,11 @@ test("the_document_is_registered_recent_and_watched_and_released_with_the_tab", 
   expect(ipc.watchDir).toHaveBeenCalledWith("doc:t1", p("/home/a"));
   hook.unmount();
   await waitFor(() =>
-    expect(ipc.docClosed).toHaveBeenCalledWith(FILE, { kind: "tab", window: "main", tab_id: "t1" })
+    expect(ipc.docClosed).toHaveBeenCalledWith(
+      FILE,
+      { kind: "tab", window: "main", tab_id: "t1" },
+      true
+    )
   );
   expect(ipc.unwatchDir).toHaveBeenCalledWith("doc:t1");
   expect(useDocStatus.getState().byTab.t1).toBeUndefined();
@@ -392,7 +396,9 @@ test("a_failed_registration_is_said_and_only_the_tabs_own_place_is_let_go", asyn
   hook.unmount();
   await Promise.resolve();
   // What may have been held for this tab goes; nothing of another place's is touched.
-  expect(ipc.docClosed.mock.calls).toEqual([[FILE, { kind: "tab", window: "main", tab_id: "t1" }]]);
+  expect(ipc.docClosed.mock.calls).toEqual([
+    [FILE, { kind: "tab", window: "main", tab_id: "t1" }, true],
+  ]);
 });
 
 test("a_file_another_place_has_open_is_refused_to_the_tab_which_shows_it_read_only", async () => {
@@ -666,7 +672,7 @@ test("a_handed_document_starts_from_its_text_and_is_checked_not_read", async () 
   expect(hook.result.current.dirty).toBe(false);
   hook.unmount();
   await waitFor(() =>
-    expect(ipc.docClosed).toHaveBeenCalledWith(FILE, { kind: "window", label: "doc-1" })
+    expect(ipc.docClosed).toHaveBeenCalledWith(FILE, { kind: "window", label: "doc-1" }, true)
   );
 });
 
@@ -991,11 +997,11 @@ test("a_tab_whose_file_never_opened_lets_go_of_the_path_held_for_it_when_it_clos
   await waitFor(() => expect(hook.result.current.phase).toBe("failed"));
   expect(ipc.docClosed).not.toHaveBeenCalled();
   hook.unmount();
-  expect(ipc.docClosed).toHaveBeenCalledExactlyOnceWith(FILE, {
-    kind: "tab",
-    window: "main",
-    tab_id: "t1",
-  });
+  expect(ipc.docClosed).toHaveBeenCalledExactlyOnceWith(
+    FILE,
+    { kind: "tab", window: "main", tab_id: "t1" },
+    true
+  );
 });
 
 test("an_adopted_tab_never_releases_what_it_did_not_register", async () => {
@@ -1035,4 +1041,98 @@ test("a_tab_of_an_editor_window_registers_under_that_window", async () => {
   } finally {
     delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   }
+});
+
+// ---- a Save As hold and the tab that made it ----
+
+const HERE = { kind: "tab", window: "main", tab_id: "t1" };
+
+/** A promise settled from outside, for a call the test holds in flight. */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+test("a_tab_that_closes_between_the_reserve_and_the_write_lets_go_and_writes_nothing", async () => {
+  const target = p("/home/a/new.txt");
+  const hook = await mount();
+  type(hook, "hello world");
+  const reserve = deferred<{ state: "free" }>();
+  ipc.docOpenElsewhere.mockReturnValue(reserve.promise);
+  const saved = hook.result.current.saveAs(target, null);
+  await waitFor(() => expect(ipc.docOpenElsewhere).toHaveBeenCalled());
+  // The tab closes while the reservation is in flight; the backend then makes it.
+  hook.unmount();
+  await act(async () => reserve.resolve({ state: "free" }));
+  const result = await saved;
+  expect(result.status).toBe("failed");
+  expect(ipc.textSave).not.toHaveBeenCalled();
+  // The hold made after the tab's close is let go by name.
+  expect(ipc.docClosed).toHaveBeenCalledWith(target, HERE);
+});
+
+test("a_tab_that_closes_between_the_write_and_the_new_registration_lets_go_of_the_new_path", async () => {
+  const target = p("/home/a/new.txt");
+  const hook = await mount();
+  type(hook, "hello world");
+  const write = deferred<string>();
+  ipc.textSave.mockReturnValue(write.promise);
+  ipc.textOpen.mockResolvedValue(opened({ path: target, stamp: S1 }));
+  const saved = hook.result.current.saveAs(target, null);
+  await waitFor(() => expect(ipc.textSave).toHaveBeenCalled());
+  hook.unmount();
+  await act(async () => write.resolve(S1));
+  await saved;
+  // Nothing registers the new path for a tab that is gone, so the hold is let go.
+  expect(ipc.docClosed).toHaveBeenCalledWith(target, HERE);
+  expect(ipc.docOpened).not.toHaveBeenCalledWith(target, expect.anything());
+});
+
+test("a_reserve_whose_reply_is_lost_is_treated_as_held_and_let_go", async () => {
+  const target = p("/home/a/new.txt");
+  ipc.docOpenElsewhere.mockRejectedValue(wireError("Ipc", "reply lost"));
+  const { result, hook } = await saveAsTo(target);
+  expect(result.status).toBe("failed");
+  expect(ipc.textSave).not.toHaveBeenCalled();
+  expect(ipc.docClosed).toHaveBeenCalledWith(target, HERE);
+  hook.unmount();
+});
+
+test("a_tab_that_closes_says_its_tab_is_gone_whether_or_not_its_registration_was_taken", async () => {
+  // Taken.
+  const hook = await mount();
+  await waitFor(() => expect(ipc.docOpened).toHaveBeenCalled());
+  hook.unmount();
+  await waitFor(() => expect(ipc.docClosed).toHaveBeenCalledWith(FILE, HERE, true));
+  // Refused: another place has the file; a Save As hold of the tab may still be there.
+  vi.clearAllMocks();
+  ipc.textOpen.mockResolvedValue(opened());
+  ipc.docOpened.mockRejectedValue(wireError("AlreadyOpen", "open in a window"));
+  ipc.docClosed.mockResolvedValue(undefined);
+  ipc.watchDir.mockResolvedValue(undefined);
+  ipc.on.mockResolvedValue(() => undefined);
+  const refused = renderHook(() => useTextDoc("t1", FILE));
+  await waitFor(() => expect(refused.result.current.phase).toBe("ready"));
+  await waitFor(() => expect(ipc.docOpened).toHaveBeenCalled());
+  refused.unmount();
+  await waitFor(() => expect(ipc.docClosed).toHaveBeenCalledWith(FILE, HERE, true));
+});
+
+test("a_save_as_that_moves_the_document_releases_the_old_path_and_not_the_tab", async () => {
+  const target = p("/home/a/new.txt");
+  const hook = await mount();
+  type(hook, "hello world");
+  ipc.textOpen.mockResolvedValue(opened({ path: target, stamp: S1 }));
+  await act(async () => {
+    await hook.result.current.saveAs(target, null);
+  });
+  await waitFor(() => expect(ipc.docClosed).toHaveBeenCalledWith(FILE, HERE));
+  // The tab lives on at the new path: what is held at it must not go with the old one.
+  for (const call of ipc.docClosed.mock.calls) expect(call[2]).toBeUndefined();
+  hook.unmount();
 });

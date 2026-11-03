@@ -167,8 +167,12 @@ export const openPaths = (paths: WirePath[], origin: Origin, gesture: Gesture = 
 export const docOpened = (path: WirePath, location: Location, adoptingFrom?: string) =>
   invoke<void>("doc_opened", { path, location, adoptingFrom: adoptingFrom ?? null });
 
-export const docClosed = (path: WirePath, location: Location) =>
-  invoke<void>("doc_closed", { path, location });
+/**
+ * Releases `path` at `location`. With `tabClosed` the tab itself is gone, and everything the
+ * backend holds at it goes too, whatever its path (a Save As target whose save was still on its way).
+ */
+export const docClosed = (path: WirePath, location: Location, tabClosed?: boolean) =>
+  invoke<void>("doc_closed", { path, location, tabClosed: tabClosed ?? null });
 
 /**
  * Whether `path`, by any name, is open in a place other than `own`; Save As asks before it writes.

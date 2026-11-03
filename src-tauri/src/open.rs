@@ -2,15 +2,18 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
 //! Where an opened path goes: the rules of design D4.3 to D4.5 and 6.1
-//! (kern-desktop 0.1.0.0 design), as a pure function. The caller does the
-//! file-system work (what the path is, which file it resolves to, via
-//! [`FileId::of`]) and passes the answers in; the registry and the rules
-//! never touch the disk.
+//! (kern-desktop 0.1.0.0 design). [`route`] is a pure function of what it is
+//! told. The registry holds places and takes no file-system step while its
+//! lock is held: which file each registered path leads to is looked up by a
+//! [`Survey`], on threads of its own, with a bound on the wait, and the
+//! caller that decides on it checks the registry's generation to know that
+//! nothing changed since the look.
 
 use std::collections::HashMap;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -166,12 +169,40 @@ pub enum Kind {
 
 struct Entry {
     location: Location,
+    /// Held for a Save As that has not written yet: not the path of the
+    /// window's document, whatever the place says.
+    reserved: bool,
 }
+
+#[derive(Default)]
+struct Book {
+    map: HashMap<PathBuf, Entry>,
+    /// Counts every change to `map`; a decision made on a look at the
+    /// registry holds only while this is the number the look saw.
+    generation: u64,
+}
+
+/// What looks up a path's [`FileId`]. Production passes [`FileId::of`]; a
+/// test passes one that can block.
+pub type Stat = Arc<dyn Fn(&Path) -> FileId + Send + Sync>;
+
+/// The look at one path: the answer, once it is in.
+struct Look {
+    started: Instant,
+    answer: Mutex<Option<FileId>>,
+    done: Condvar,
+}
+
+/// The looks in progress, by path. A path whose stat does not return keeps
+/// its one look (and its one thread) until it does, however many surveys
+/// ask, so a hung mount costs one thread, not one per open.
+type Looking = Arc<Mutex<HashMap<PathBuf, Arc<Look>>>>;
 
 /// The documents open in Kern: path to place.
 #[derive(Default)]
 pub struct OpenRegistry {
-    map: Mutex<HashMap<PathBuf, Entry>>,
+    book: Mutex<Book>,
+    looking: Looking,
 }
 
 impl OpenRegistry {
@@ -179,89 +210,327 @@ impl OpenRegistry {
         OpenRegistry::default()
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<PathBuf, Entry>> {
-        self.map.lock().unwrap_or_else(PoisonError::into_inner)
+    fn lock(&self) -> std::sync::MutexGuard<'_, Book> {
+        self.book.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Records `path` as open at `location`, replacing an earlier place.
     pub fn insert(&self, path: &Path, location: Location) {
-        self.lock().insert(path.to_path_buf(), Entry { location });
+        self.put(path, location, false);
+    }
+
+    /// Holds `path` at `location` for a Save As that has not written yet.
+    /// The place's own registration of the path replaces the hold.
+    pub fn reserve(&self, path: &Path, location: Location) {
+        self.put(path, location, true);
+    }
+
+    fn put(&self, path: &Path, location: Location, reserved: bool) {
+        let mut book = self.lock();
+        book.generation += 1;
+        book.map
+            .insert(path.to_path_buf(), Entry { location, reserved });
     }
 
     /// Forgets `path`, whatever place it has.
     pub fn remove(&self, path: &Path) {
-        self.lock().remove(path);
+        let mut book = self.lock();
+        if book.map.remove(path).is_some() {
+            book.generation += 1;
+        }
     }
 
     /// Forgets `path` only if it is registered at `location`: a tab closing
     /// after its document moved to a window must not erase the window.
     pub fn remove_if(&self, path: &Path, location: &Location) {
-        let mut map = self.lock();
-        if map.get(path).is_some_and(|e| &e.location == location) {
-            map.remove(path);
+        let mut book = self.lock();
+        if book.map.get(path).is_some_and(|e| &e.location == location) {
+            book.map.remove(path);
+            book.generation += 1;
         }
     }
 
-    /// Where `path` is open: under the same name, or under another name of
-    /// the same file (`id` is the caller's look at `path`: a symlink shares
-    /// the resolved path, a hard link the device and inode), which stops two
-    /// dirty copies of one file. Every registered path is looked at again
-    /// now, outside the lock, and compared with `id` by identity and by
-    /// resolved path; nothing remembered from registration is used.
-    pub fn get(&self, path: &Path, id: &FileId) -> Option<Location> {
-        let all: Vec<(PathBuf, Location)> = {
-            let map = self.lock();
-            if let Some(e) = map.get(path) {
-                return Some(e.location.clone());
-            }
-            map.iter()
-                .map(|(p, e)| (p.clone(), e.location.clone()))
-                .collect()
-        };
-        all.into_iter()
-            .find(|(p, _)| FileId::of(p).names_same_file_as(id))
-            .map(|(_, l)| l)
-    }
-
-    /// How `path` stands for the place `own` that holds a document: the
-    /// file is its own (the path leads to the file it has open), free, or
-    /// open somewhere else.
-    pub fn held_by(&self, path: &Path, id: &FileId, own: &Location) -> Held {
-        match self.get(path, id) {
-            None => Held::Free,
-            Some(loc) if &loc == own => Held::Own,
-            Some(location) => Held::Elsewhere { location },
+    /// Forgets every path held at the tab `tab_id` of `window`: its
+    /// document and any Save As target held for it.
+    pub fn remove_tab(&self, window: &str, tab_id: &str) {
+        let mut book = self.lock();
+        let before = book.map.len();
+        book.map.retain(|_, e| {
+            !matches!(&e.location, Location::Tab { window: w, tab_id: t } if w == window && t == tab_id)
+        });
+        if book.map.len() != before {
+            book.generation += 1;
         }
     }
 
-    /// The path open in window `label`.
+    /// The path open in window `label`, not counting a Save As target held
+    /// for it.
     pub fn path_of_window(&self, label: &str) -> Option<PathBuf> {
         self.lock()
+            .map
             .iter()
-            .find(|(_, e)| matches!(&e.location, Location::Window { label: l } if l == label))
+            .find(|(_, e)| {
+                !e.reserved && matches!(&e.location, Location::Window { label: l } if l == label)
+            })
             .map(|(p, _)| p.clone())
     }
 
     /// Forgets what window `label` held: the document it shows as a
     /// standalone window and every tab it has. Other windows' tabs stay.
     pub fn remove_window(&self, label: &str) {
-        self.lock().retain(|_, e| e.location.window() != label);
+        let mut book = self.lock();
+        let before = book.map.len();
+        book.map.retain(|_, e| e.location.window() != label);
+        if book.map.len() != before {
+            book.generation += 1;
+        }
+    }
+
+    /// The number the registry's generation is now; see [`Survey::generation`].
+    pub fn generation(&self) -> u64 {
+        self.lock().generation
+    }
+
+    /// A copy of what is registered, to look at without the lock.
+    pub fn snapshot(&self) -> Snapshot {
+        let book = self.lock();
+        Snapshot {
+            generation: book.generation,
+            entries: book
+                .map
+                .iter()
+                .map(|(p, e)| (p.clone(), e.location.clone()))
+                .collect(),
+            looking: Arc::clone(&self.looking),
+        }
+    }
+
+    /// [`Snapshot::survey`] of the registry as it is now. Blocks for up to
+    /// `bound`; never call it with a lock held.
+    pub fn survey(&self, path: &Path, stat: &Stat, bound: Duration) -> Survey {
+        self.snapshot().survey(path, stat, bound)
     }
 }
 
-/// The rules, with no file access. `id` is the caller's look at `path` (see
-/// [`FileId`]) and `kind` what it is, resolved through links:
-/// a link to a folder is a folder (Review Focus 4). The target keeps `path`
-/// as given.
+/// What the registry held at one moment, owned, so it can be looked at on
+/// another thread.
+pub struct Snapshot {
+    generation: u64,
+    entries: Vec<(PathBuf, Location)>,
+    looking: Looking,
+}
+
+impl Snapshot {
+    /// Looks up the file behind every registered path (`stat`, one thread
+    /// per path, none of it under a lock) and waits at most `bound` in all
+    /// for the answers. A path whose look did not finish stays unanswered.
+    /// Nothing is looked up when `path` itself is registered: it is found
+    /// by its text.
+    pub fn survey(self, path: &Path, stat: &Stat, bound: Duration) -> Survey {
+        let exact = self
+            .entries
+            .iter()
+            .find(|(p, _)| p == path)
+            .map(|(_, l)| l.clone());
+        let deadline = Instant::now() + bound;
+        let looks: Vec<Option<Arc<Look>>> = if exact.is_some() {
+            Vec::new()
+        } else {
+            self.entries
+                .iter()
+                .map(|(p, _)| start_look(&self.looking, p, stat))
+                .collect()
+        };
+        let mut entries = Vec::with_capacity(self.entries.len());
+        for (i, (p, location)) in self.entries.into_iter().enumerate() {
+            let id = looks
+                .get(i)
+                .and_then(|l| l.as_ref())
+                .and_then(|l| wait_for(l, deadline, bound));
+            entries.push(Surveyed {
+                path: p,
+                location,
+                id,
+            });
+        }
+        Survey {
+            generation: self.generation,
+            exact,
+            entries,
+        }
+    }
+}
+
+impl Snapshot {
+    /// A survey in which no registered path was looked at, so each is
+    /// compared by its text only. Takes no step on the file system.
+    pub fn unlooked(self, path: &Path) -> Survey {
+        Survey {
+            generation: self.generation,
+            exact: self
+                .entries
+                .iter()
+                .find(|(p, _)| p == path)
+                .map(|(_, l)| l.clone()),
+            entries: self
+                .entries
+                .into_iter()
+                .map(|(path, location)| Surveyed {
+                    path,
+                    location,
+                    id: None,
+                })
+                .collect(),
+        }
+    }
+}
+
+/// The look at `path`: the one in progress, or a new one on a thread of its
+/// own. `None` when no thread could be made.
+fn start_look(looking: &Looking, path: &Path, stat: &Stat) -> Option<Arc<Look>> {
+    let mut map = looking.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(l) = map.get(path) {
+        return Some(Arc::clone(l));
+    }
+    let look = Arc::new(Look {
+        started: Instant::now(),
+        answer: Mutex::new(None),
+        done: Condvar::new(),
+    });
+    let (l, p, stat, looking) = (
+        Arc::clone(&look),
+        path.to_path_buf(),
+        Arc::clone(stat),
+        Arc::clone(looking),
+    );
+    std::thread::Builder::new()
+        .name("kern-open-stat".to_owned())
+        .spawn(move || {
+            let id = stat(&p);
+            looking
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(&p);
+            *l.answer.lock().unwrap_or_else(PoisonError::into_inner) = Some(id);
+            l.done.notify_all();
+        })
+        .ok()?;
+    map.insert(path.to_path_buf(), Arc::clone(&look));
+    Some(look)
+}
+
+/// The answer of `look`, waiting no later than `deadline`. A look that has
+/// run for `bound` already and has not answered is not waited for again.
+fn wait_for(look: &Look, deadline: Instant, bound: Duration) -> Option<FileId> {
+    let mut answer = look.answer.lock().unwrap_or_else(PoisonError::into_inner);
+    loop {
+        if let Some(id) = answer.as_ref() {
+            return Some(id.clone());
+        }
+        let now = Instant::now();
+        if now >= deadline || look.started.elapsed() >= bound {
+            return None;
+        }
+        answer = look
+            .done
+            .wait_timeout(answer, deadline - now)
+            .unwrap_or_else(PoisonError::into_inner)
+            .0;
+    }
+}
+
+struct Surveyed {
+    path: PathBuf,
+    location: Location,
+    /// `None` when the path's look did not answer in time.
+    id: Option<FileId>,
+}
+
+/// The registry looked at once, for one asked path.
+pub struct Survey {
+    /// The registry's generation when the snapshot was taken. A decision
+    /// made on this survey is sound only if the registry's generation is
+    /// still this number when it is carried out.
+    pub generation: u64,
+    exact: Option<Location>,
+    entries: Vec<Surveyed>,
+}
+
+/// What a survey found for a path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Lookup {
+    /// Where the file is open, if it was found.
+    pub location: Option<Location>,
+    /// The registered paths whose look did not answer in time, when the
+    /// file was not found: it may be one of them.
+    pub unanswered: Vec<PathBuf>,
+}
+
+impl Survey {
+    /// Where the asked path is open: under the same name, or under another
+    /// name of the same file (`id` is the caller's look at the path: a
+    /// symlink shares the resolved path, a hard link the device and inode),
+    /// which stops two dirty copies of one file. A registered path that did
+    /// not answer is compared by its text only: with the asked path and with
+    /// the asked path's own resolution.
+    pub fn lookup(&self, id: &FileId) -> Lookup {
+        if let Some(location) = &self.exact {
+            return Lookup {
+                location: Some(location.clone()),
+                unanswered: Vec::new(),
+            };
+        }
+        let mut unanswered = Vec::new();
+        for e in &self.entries {
+            match &e.id {
+                Some(seen) if seen.names_same_file_as(id) => {
+                    return Lookup {
+                        location: Some(e.location.clone()),
+                        unanswered: Vec::new(),
+                    };
+                }
+                Some(_) => {}
+                None if id.canonical.as_deref() == Some(e.path.as_path()) => {
+                    return Lookup {
+                        location: Some(e.location.clone()),
+                        unanswered: Vec::new(),
+                    };
+                }
+                None => unanswered.push(e.path.clone()),
+            }
+        }
+        Lookup {
+            location: None,
+            unanswered,
+        }
+    }
+
+    /// How the asked path stands for the place `own` that holds a document:
+    /// the file is its own, free, or open somewhere else. `Err` names the
+    /// registered paths that did not answer when the answer depends on them.
+    pub fn held_by(&self, id: &FileId, own: &Location) -> Result<Held, Vec<PathBuf>> {
+        let found = self.lookup(id);
+        match found.location {
+            Some(loc) if &loc == own => Ok(Held::Own),
+            Some(location) => Ok(Held::Elsewhere { location }),
+            None if found.unanswered.is_empty() => Ok(Held::Free),
+            None => Err(found.unanswered),
+        }
+    }
+}
+
+/// The rules, with no file access. `found` is where the survey found the
+/// path open ([`Survey::lookup`]) and `kind` what it is, resolved through
+/// links: a link to a folder is a folder (Review Focus 4). The target keeps
+/// `path` as given.
 pub fn route(
     path: &Path,
-    id: &FileId,
+    found: Option<Location>,
     origin: Origin,
     gesture: Gesture,
     kind: Kind,
-    open: &OpenRegistry,
 ) -> Target {
-    if let Some(loc) = open.get(path, id) {
+    if let Some(loc) = found {
         return Target::Focus(loc);
     }
     let p = path.to_path_buf();

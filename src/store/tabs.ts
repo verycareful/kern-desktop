@@ -89,8 +89,8 @@ export interface TabsState {
   openDocuments(): void;
   /** Focus the Settings tab, or open it. */
   openSettings(): void;
-  /** Open a document tab, or focus the one already open on this path. */
-  openDoc(path: WirePath): void;
+  /** Open a document tab, or focus the one already open on this path. False when one was. */
+  openDoc(path: WirePath): boolean;
   /**
    * Opens document tab `id` on `path`, starting from `handed` when given (a document moved from
    * another window), and shows it. False, and nothing opened, when a tab already shows `path`
@@ -271,13 +271,15 @@ export const useTabs = create<TabsState>()((set, get) => ({
     });
   },
   openDoc(path) {
-    set((s) => {
-      const key = pathKey(path);
-      const open = s.tabs.find((t) => t.kind === "doc" && pathKey(t.path) === key);
-      if (open) return { activeId: open.id };
-      const tab: DocTab = { id: crypto.randomUUID(), kind: "doc", path, dirty: false };
-      return { tabs: [...s.tabs, tab], activeId: tab.id };
-    });
+    const key = pathKey(path);
+    const open = get().tabs.find((t) => t.kind === "doc" && pathKey(t.path) === key);
+    if (open) {
+      set({ activeId: open.id });
+      return false;
+    }
+    const tab: DocTab = { id: crypto.randomUUID(), kind: "doc", path, dirty: false };
+    set((s) => ({ tabs: [...s.tabs, tab], activeId: tab.id }));
+    return true;
   },
   openDocAs(id, path, handed, registered, awaitingAck) {
     const s = get();

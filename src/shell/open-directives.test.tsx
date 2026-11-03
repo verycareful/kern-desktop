@@ -991,3 +991,25 @@ test("the_default_layout_setting_decides_a_window_with_no_stored_layout", async 
   expect(await screen.findByTestId("welcome-pane")).toBeInTheDocument();
   expect(useTabs.getState().tabs).toHaveLength(0);
 });
+
+// ---- a second open of a file a tab of this window already shows without having registered it ----
+
+test("a_second_open_of_a_path_an_unregistered_tab_shows_focuses_that_tab_and_holds_nothing", async () => {
+  // The tab's file did not open, so the tab never registered it.
+  ipc.textOpen.mockRejectedValue({ kind: "NotFound", message: "gone", path: null });
+  queue(
+    open({ kind: "doc_tab", path: p("/d/a.md") }),
+    open({ kind: "doc_tab", path: p("/d/b.md") })
+  );
+  render(<App />);
+  await waitFor(() => expect(useTabs.getState().tabs).toHaveLength(2));
+  const [first] = useTabs.getState().tabs;
+  await emit("kern://open", { kind: "doc_tab", path: p("/d/a.md") });
+  // The first tab is shown again; no tab was made, and the backend's hold for this second open,
+  // which would outlive nothing, is let go by name.
+  expect(useTabs.getState().tabs).toHaveLength(2);
+  expect(useTabs.getState().activeId).toBe(first!.id);
+  expect(ipc.docClosed).toHaveBeenCalledWith(p("/d/a.md"), { kind: "opening", window: "main" });
+  // A path that made a tab holds what the backend routed it with until that tab registers.
+  expect(ipc.docClosed).not.toHaveBeenCalledWith(p("/d/b.md"), { kind: "opening", window: "main" });
+});

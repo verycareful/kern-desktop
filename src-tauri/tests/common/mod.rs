@@ -160,6 +160,15 @@ pub fn env_with(
     adopt_timeout: Duration,
     extra: Option<tauri::plugin::TauriPlugin<MockRuntime>>,
 ) -> Env {
+    env_state(WindowState::new(adopt_timeout), extra)
+}
+
+/// [`env_with`] over a window state of the test's own, e.g. one whose registry looks files up with a
+/// stat of the test's choosing.
+pub fn env_state(
+    state: WindowState,
+    extra: Option<tauri::plugin::TauriPlugin<MockRuntime>>,
+) -> Env {
     let tmp = tempfile::tempdir().unwrap();
     let files = tmp.path().canonicalize().unwrap().join("files");
     fs::create_dir(&files).unwrap();
@@ -179,7 +188,7 @@ pub fn env_with(
     }
     let app = builder
         .plugin(kernkraft_tauri::init())
-        .manage(WindowState::new(adopt_timeout))
+        .manage(state)
         .manage(Launches::default())
         .on_window_event(kern_lib::windows::on_window_event)
         .invoke_handler(tauri::generate_handler![

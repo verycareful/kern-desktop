@@ -208,18 +208,32 @@ fn a_window_the_capability_does_not_name_may_not_say_where_a_drag_is() {
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
 }
 
-/// What an editor window's page calls of Kern's own commands: it opens documents into tabs of its
-/// own, asks where a file is open, moves a tab to a window of its own, takes its queue and closes
-/// itself after the close question.
-const EDITOR_COMMANDS: [&str; 7] = [
-    "open_pending_take",
-    "doc_opened",
-    "doc_closed",
-    "doc_open_elsewhere",
-    "detach_doc",
-    "open_editor",
-    "settings_get",
-];
+/// What `capabilities/editor.json` grants to editor windows, read from the file the application is
+/// built from: the commands of kernkraft's plugin and Kern's own, by name. (That the page asks for
+/// nothing else is checked where the page is run, `src/shell/editor-grants.test.tsx`, against this
+/// same file; here every grant is checked against Tauri's access control as the application loads it.)
+fn granted_to_editors() -> (Vec<String>, Vec<String>) {
+    let file = concat!(env!("CARGO_MANIFEST_DIR"), "/capabilities/editor.json");
+    let json: Value = serde_json::from_str(&fs::read_to_string(file).unwrap()).unwrap();
+    assert_eq!(json["windows"], json!(["editor-*"]));
+    let (mut kernkraft_cmds, mut kern_cmds) = (Vec::new(), Vec::new());
+    for permission in json["permissions"].as_array().unwrap() {
+        let permission = permission.as_str().unwrap();
+        if permission.starts_with("core:") {
+            continue;
+        }
+        let prefix = format!("{}:allow-", kernkraft_tauri::PLUGIN_NAME);
+        if let Some(name) = permission.strip_prefix(&prefix) {
+            kernkraft_cmds.push(name.replace('-', "_"));
+        } else {
+            let name = permission
+                .strip_prefix("allow-")
+                .unwrap_or_else(|| panic!("{permission}: not a grant of one command"));
+            kern_cmds.push(name.replace('-', "_"));
+        }
+    }
+    (kernkraft_cmds, kern_cmds)
+}
 
 /// Every command of Kern's own that only the main window (or a document window) needs, each
 /// refused to an editor window by its capability: moving a document Home, answering for a
@@ -240,24 +254,6 @@ const NOT_FOR_EDITORS: [&str; 15] = [
     "default_fm_status",
     "make_default_fm",
     "layout_set",
-];
-
-/// What an editor window's page calls of kernkraft's: the listing and watching of the tree, the
-/// text of a document, the theme and the volumes it only looks at, and the default application of a
-/// file too large for the editor. Each is granted by its own permission.
-const EDITOR_KERNKRAFT: [&str; 12] = [
-    "list_dir",
-    "entry_of",
-    "watch_dir",
-    "unwatch_dir",
-    "user_dirs",
-    "text_open",
-    "text_save",
-    "text_check",
-    "theme_get",
-    "volumes_list",
-    "volumes_problems_take",
-    "open_default",
 ];
 
 /// The kernkraft commands that change files, the Trash, volumes and applications: the editor window
@@ -288,9 +284,17 @@ const KERNKRAFT_NOT_FOR_EDITORS: [&str; 22] = [
 ];
 
 #[test]
-fn an_editor_window_is_granted_what_its_page_calls() {
+fn an_editor_window_is_granted_every_command_its_capability_names() {
     let e = env("editor-1");
-    for cmd in EDITOR_COMMANDS {
+    let (kernkraft_cmds, kern_cmds) = granted_to_editors();
+    // The page needs at least the commands of its tabs, its tree and its text.
+    for needed in ["list_dir", "text_open", "text_save", "mime_of", "watch_dir"] {
+        assert!(kernkraft_cmds.iter().any(|c| c == needed), "{needed}");
+    }
+    for needed in ["doc_opened", "doc_closed", "detach_doc", "confirm_close"] {
+        assert!(kern_cmds.iter().any(|c| c == needed), "{needed}");
+    }
+    for cmd in &kern_cmds {
         // Reached or refused by the command itself, never by the access control.
         if let Err(err) = invoke(&e, cmd, json!({"path": {"k": "Utf8", "v": "/a"}})) {
             assert!(
@@ -299,8 +303,7 @@ fn an_editor_window_is_granted_what_its_page_calls() {
             );
         }
     }
-    // Of kernkraft's: each of the page's own is reached, never refused by the access control.
-    for cmd in EDITOR_KERNKRAFT {
+    for cmd in &kernkraft_cmds {
         if let Err(err) = invoke(&e, &kernkraft(cmd), json!({})) {
             assert!(
                 !err.as_str().is_some_and(|s| s.contains("not allowed")),
@@ -308,6 +311,7 @@ fn an_editor_window_is_granted_what_its_page_calls() {
             );
         }
     }
+    // What the grants are for is reachable: the listing of a folder answers.
     invoke(&e, &kernkraft("user_dirs"), json!({})).unwrap();
     invoke(
         &e,
@@ -315,6 +319,13 @@ fn an_editor_window_is_granted_what_its_page_calls() {
         json!({"path": {"k": "Utf8", "v": "/"}, "hidden": false}),
     )
     .unwrap();
+    // And what is refused is not among them.
+    for cmd in KERNKRAFT_NOT_FOR_EDITORS {
+        assert!(!kernkraft_cmds.iter().any(|c| c == cmd), "{cmd}");
+    }
+    for cmd in NOT_FOR_EDITORS {
+        assert!(!kern_cmds.iter().any(|c| c == cmd), "{cmd}");
+    }
 }
 
 #[test]

@@ -384,6 +384,19 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
     checkRef.current = check;
   });
 
+  // True once the tab's component has unmounted: the tab is gone, as against an effect that runs
+  // again for a new path (Save As) or place. Declared before the effects whose cleanups read it,
+  // so on an unmount it is set first.
+  const unmounted = useRef(false);
+  // Set when the registration effect first runs: from then on it releases the document.
+  const registrationRan = useRef(false);
+  useEffect(() => {
+    unmounted.current = false;
+    return () => {
+      unmounted.current = true;
+    };
+  }, []);
+
   // ---- registration with the backend, and the watch on the file's folder ----
   const ready = state.phase === "ready";
   useEffect(() => {
@@ -401,6 +414,7 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
     // document back to another window, and take the path from it.
     const skip = preRegistered.current === key;
     preRegistered.current = null;
+    registrationRan.current = true;
     const registered = registration.current
       .then(() => (skip ? undefined : docOpened(target, where)))
       .then(
@@ -419,7 +433,6 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
       );
     registration.current = registered;
     void registered.then((ok) => {
-      if (ok) everRegistered.current = true;
       latestOpts.current.onRegistered?.(ok);
     });
 
@@ -494,28 +507,33 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
       unlisten.forEach((u) => u());
       stopWatch();
       ensureWatch.current = () => undefined;
+      // A tab that closes tells the backend its tab is gone, so whatever is held at it goes,
+      // a Save As target included, whether or not this path's registration was taken. A path
+      // released because the document moved to another file releases only that path.
+      const gone = unmounted.current;
       registration.current = registered.then((ok) => {
-        if (!ok) return;
-        return docClosed(target, where).catch((e: unknown) =>
-          say(`${baseName(target)} could not be released: ${errorText(toWireError(e))}`)
+        if (!ok && !gone) return;
+        return (gone ? docClosed(target, where, true) : docClosed(target, where)).catch(
+          (e: unknown) =>
+            say(`${baseName(target)} could not be released: ${errorText(toWireError(e))}`)
         );
       });
     };
   }, [ready, tabId, key, locationKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A tab that closes without ever registering (its file did not open) lets go of the path the
-  // backend held for it when the file was routed here.
-  const everRegistered = useRef(false);
+  // A tab that closes without its registration effect ever running (its file did not open) lets
+  // go of the path the backend held for it when the file was routed here.
   const latestPlace = useRef({ path, here });
   useEffect(() => {
     latestPlace.current = { path, here };
   });
   useEffect(
     () => () => {
-      // An adopted document was registered by the caller.
-      if (everRegistered.current || latestOpts.current.registered) return;
+      // An adopted document was registered by the caller; a document that got as far as
+      // registering is released by that effect.
+      if (registrationRan.current || latestOpts.current.registered) return;
       const { path: p, here: h } = latestPlace.current;
-      docClosed(p, h).catch(() => undefined);
+      docClosed(p, h, true).catch(() => undefined);
     },
     []
   );
@@ -700,14 +718,27 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
         // when the save lands. The document's own registration must have landed first, or the
         // registry could not tell the file is its own.
         await registration.current;
+        const letGo = () =>
+          docClosed(target, here).catch((e: unknown) =>
+            say(`${baseName(target)} could not be let go: ${errorText(toWireError(e))}`)
+          );
         let held: Awaited<ReturnType<typeof docOpenElsewhere>>;
         try {
           held = await docOpenElsewhere(target, here, true);
         } catch (e) {
+          // The reply may have been lost after the backend made the hold: it is treated as held
+          // and let go (letting go of a path that is not held does nothing).
+          await letGo();
           return {
             status: "failed",
             message: `Kern could not tell whether that file is open elsewhere, so nothing was saved: ${errorText(toWireError(e))}`,
           };
+        }
+        // The tab closed while the question was in flight: the backend made the hold after the
+        // tab's own release, so nothing else would let go of it.
+        if (unmounted.current) {
+          if (held.state === "free") await letGo();
+          return { status: "failed", message: "The tab was closed, so nothing was saved." };
         }
         if (held.state === "own") {
           return {
@@ -717,10 +748,6 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
         }
         if (held.state === "elsewhere")
           return { status: "open-elsewhere", location: held.location };
-        const letGo = () =>
-          docClosed(target, here).catch((e: unknown) =>
-            say(`${baseName(target)} could not be let go: ${errorText(toWireError(e))}`)
-          );
         let outcome: SaveAsResult;
         try {
           outcome = await writeTo(f, snap);
@@ -728,7 +755,9 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
           await letGo();
           throw e;
         }
-        if (outcome.status !== "saved") await letGo();
+        // Saved, but the tab closed meanwhile: it will not register the new path, so the hold is
+        // let go.
+        if (outcome.status !== "saved" || unmounted.current) await letGo();
         return outcome;
 
         async function writeTo(f: FileFacts, snap: Text): Promise<SaveAsResult> {
@@ -747,6 +776,10 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
             const err = toWireError(e);
             // Nothing there is the case that goes on; anything else is not guessed at.
             if (err.kind !== "NotFound") return { status: "failed", message: errorText(err) };
+          }
+          // The tab closed while the target was looked at: nothing is written for it.
+          if (unmounted.current) {
+            return { status: "failed", message: "The tab was closed, so nothing was saved." };
           }
           patch({ saving: true, problem: null });
           let next: WireStamp;

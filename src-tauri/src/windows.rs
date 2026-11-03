@@ -21,7 +21,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use kernkraft_tauri::{KernkraftExt, WireError, WirePath};
@@ -35,7 +35,9 @@ use tauri::{
 
 use crate::cli::{self, ArgError, Plan};
 use crate::instance::{exit_when_drained, Launches};
-use crate::open::{route, FileId, Gesture, Held, Kind, Location, OpenRegistry, Origin, Target};
+use crate::open::{
+    route, FileId, Gesture, Held, Kind, Location, OpenRegistry, Origin, Stat, Survey, Target,
+};
 use crate::store_cmds::StoreState;
 
 pub const EVENT_OPEN: &str = "kern://open";
@@ -85,6 +87,21 @@ fn is_number(s: &str) -> bool {
 /// first; 15 s is far beyond a healthy start and short enough that a stuck
 /// window is reported while the user still remembers the click.
 pub const ADOPT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// The longest a look at the registered documents waits in all (see
+/// [`under_gate`]). A stat on a local disk or a working network mount
+/// returns in milliseconds and on a slow remote one within a second or so;
+/// a stat that has not returned after two seconds is a mount that has
+/// stopped answering (NFS, sshfs, a stale FUSE mount), and an open or a
+/// Save As must not wait on it for ever.
+pub const SWEEP_BOUND: Duration = Duration::from_secs(2);
+
+/// How many times a look at the registry is taken again because the
+/// registry changed while the look was made, before the answer is given
+/// without a look (see [`under_gate`]). Each change is another window's open
+/// or close landing in the milliseconds a look takes, so a few tries are
+/// enough in practice and the bound only stops a storm of them.
+const MAX_SWEEPS: usize = 5;
 
 /// Size of a standalone document window (my call, D4.4 gives none).
 const DOC_SIZE: (f64, f64) = (900.0, 700.0);
@@ -157,14 +174,20 @@ pub struct WindowState {
     /// Held while a path is checked against the registry and reserved, so
     /// two launches of one file cannot both make a window (D4.5).
     ///
-    /// Rule: nothing under the gate creates a window or waits for the main
-    /// thread. Window creation blocks its caller until the main thread has
-    /// built the window, and a command running on the main thread may be
-    /// waiting for this gate. The gate covers the registry check and the
-    /// reservation (label, registry entry) only; the window is built after
-    /// it is released, and the reservation is confirmed or rolled back.
+    /// Rule: nothing under the gate creates a window, waits for the main
+    /// thread or touches the file system. Window creation blocks its caller
+    /// until the main thread has built the window, and a command running on
+    /// the main thread may be waiting for this gate; a stat on a mount that
+    /// has stopped answering never returns. The gate covers the registry
+    /// check and the reservation (label, registry entry) only, on a look at
+    /// the registry taken before it ([`under_gate`]); the window is built
+    /// after it is released, and the reservation is confirmed or rolled back.
     gate: Mutex<()>,
     adopt_timeout: Duration,
+    /// How the file behind a registered path is looked up, and how long a
+    /// look waits. [`FileId::of`] and [`SWEEP_BOUND`] in the application.
+    stat: Stat,
+    sweep_bound: Duration,
     /// Whether focusing goes through GTK (startup id, present). Off only in
     /// tests, whose mock runtime has no GTK window.
     toolkit_focus: bool,
@@ -193,7 +216,17 @@ impl WindowState {
                 creating: HashMap::new(),
             }),
             adopt_timeout,
+            stat: Arc::new(FileId::of),
+            sweep_bound: SWEEP_BOUND,
         }
+    }
+
+    /// State whose registry looks files up with `stat`, waiting at most
+    /// `bound` in all for a look at the registered documents.
+    pub fn with_stat(mut self, stat: Stat, bound: Duration) -> WindowState {
+        self.stat = stat;
+        self.sweep_bound = bound;
+        self
     }
 
     /// Focus through GTK, so an activation token is honoured.
@@ -209,6 +242,47 @@ impl WindowState {
     fn lock(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
     }
+}
+
+/// Runs `act` under the gate on a look at the registry that was taken
+/// without it. The look (`stat` of every registered path, on threads of their
+/// own, bounded by the state's `sweep_bound`) is taken first; the gate is
+/// then taken and the registry's generation compared with the look's: if
+/// anything was registered or released in between, the look is stale and is
+/// taken again, up to [`MAX_SWEEPS`] times. After that `act` runs once more
+/// on a look in which no path answered, so it decides as for a timeout (by
+/// path text and the asked path's own resolution). `act` returns `None` to ask
+/// for a new look (it has changed the registry, or found a window gone);
+/// it must not change the registry and then return `None` for any other
+/// reason. `None` comes back only when even the last pass asked again.
+async fn under_gate<T>(
+    st: &WindowState,
+    path: &Path,
+    mut act: impl FnMut(&Survey) -> Option<T>,
+) -> Result<Option<T>, WireError> {
+    for _ in 0..MAX_SWEEPS {
+        let snapshot = st.open.snapshot();
+        let (stat, bound, p) = (Arc::clone(&st.stat), st.sweep_bound, path.to_path_buf());
+        let survey = blocking(move || Ok(snapshot.survey(&p, &stat, bound))).await?;
+        let gate = st.lock_gate();
+        if st.open.generation() == survey.generation {
+            if let Some(t) = act(&survey) {
+                return Ok(Some(t));
+            }
+        }
+        drop(gate);
+    }
+    let _gate = st.lock_gate();
+    Ok(act(&st.open.snapshot().unlooked(path)))
+}
+
+/// What is said when the registered documents could not all be looked at.
+fn unanswered_words(paths: &[PathBuf]) -> String {
+    paths
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The next `<prefix><n>` label. The counter only grows, so a label is never
@@ -567,11 +641,11 @@ async fn try_open<R: Runtime>(
     // and the reservation are one step under the gate; the window is built
     // after it (see the gate's rule).
     let resolved = resolve(app, path).await;
-    place(app, home, path, &resolved, origin, gesture, token)
+    place(app, home, path, &resolved, origin, gesture, token).await
 }
 
 /// Decides under the gate, then carries the decision out without it.
-fn place<R: Runtime>(
+async fn place<R: Runtime>(
     app: &AppHandle<R>,
     home: &str,
     path: &Path,
@@ -581,14 +655,51 @@ fn place<R: Runtime>(
     token: &str,
 ) -> Result<Step, WireError> {
     let st = state(app)?;
-    let plan = decide(app, &st, home, path, resolved, (origin, gesture), token)?;
+    let decided = under_gate(&st, path, |survey| {
+        decide(
+            app,
+            &st,
+            home,
+            path,
+            resolved,
+            (origin, gesture),
+            token,
+            survey,
+        )
+        .transpose()
+    })
+    .await?;
+    let Decision { plan, unanswered } = decided.ok_or_else(|| {
+        wire_error(
+            "Internal",
+            "the open registry kept naming a window that does not exist",
+            Some(path),
+        )
+    })??;
     let wp = WirePath::from(path);
+    // Registered documents that did not answer were compared by their path text only, so the
+    // file may be open under another name of one of them: said with the result.
+    let unchecked = (!unanswered.is_empty()).then(|| {
+        wire_error(
+            "OpenCheck",
+            format!(
+                "could not check whether {} is already open under another name: {} did not answer; it was opened by its path",
+                path.display(),
+                unanswered_words(&unanswered)
+            ),
+            Some(path),
+        )
+    });
     let done = |action, location| {
         Step::Done(OpenOutcome {
             path: wp.clone(),
             action,
             location,
-            error: None,
+            error: if matches!(action, "doc_tab" | "doc_window") {
+                unchecked.clone()
+            } else {
+                None
+            },
         })
     };
     match plan {
@@ -698,8 +809,18 @@ fn place<R: Runtime>(
     }
 }
 
-/// The registry check and the reservation, under the gate. Takes no step
-/// that waits for the main thread.
+/// What [`decide`] settled on, and the registered paths that did not answer
+/// the look it used.
+struct Decision {
+    plan: Placement,
+    unanswered: Vec<PathBuf>,
+}
+
+/// The registry check and the reservation, on the look `survey`, under the
+/// gate. Takes no step that waits for the main thread or the file system.
+/// `Ok(None)` asks for a new look: a registry entry whose window is gone was
+/// dropped, and the path is to be routed afresh.
+#[allow(clippy::too_many_arguments)]
 fn decide<R: Runtime>(
     app: &AppHandle<R>,
     st: &WindowState,
@@ -708,72 +829,64 @@ fn decide<R: Runtime>(
     resolved: &Resolved,
     (origin, gesture): (Origin, Gesture),
     token: &str,
-) -> Result<Placement, WireError> {
-    let _gate = st.lock_gate();
-    let id = &resolved.id;
-    // Twice at most: a registry entry whose window is gone is dropped and
-    // the path routed afresh.
-    for _ in 0..2 {
-        let known = st.open.get(path, id).is_some();
-        let kind = match (&resolved.kind, known) {
-            (Ok(k), _) => *k,
-            // A document already open stays focusable after its file is gone.
-            (Err(_), true) => Kind::Other,
-            (Err(e), false) => return Err(e.clone()),
-        };
-        match route(path, id, origin, gesture, kind, &st.open) {
-            Target::FolderTab(p) => return Ok(Placement::FolderTab(p)),
-            Target::DocTab(p) => {
-                // The window that asked, when it holds tabs; otherwise main. Held for it from
-                // here until its tab registers, so a second open of the file is focused, not
-                // opened: both would load the text and one would unseat the other.
-                let window = if window_kind(home) == Some(WindowKind::Editor) {
-                    home.to_owned()
-                } else {
-                    MAIN.to_owned()
-                };
-                st.open.insert(
-                    &p,
-                    Location::Opening {
-                        window: window.clone(),
-                    },
-                );
-                return Ok(Placement::DocTab { path: p, window });
-            }
-            Target::DefaultApp(p) => return Ok(Placement::DefaultApp(p)),
-            Target::DocWindow(p) => {
-                let label = reserve_doc_label(app, st, token);
-                st.open.insert(
-                    &p,
-                    Location::Window {
-                        label: label.clone(),
-                    },
-                );
-                return Ok(Placement::NewDoc { path: p, label });
-            }
-            Target::Focus(loc) => {
-                let gone = match &loc {
-                    Location::Tab { window, .. } | Location::Opening { window } => {
-                        app.get_webview_window(window).is_none()
-                    }
-                    Location::Window { label } => {
-                        app.get_webview_window(label).is_none()
-                            && !st.lock().creating.contains_key(label)
-                    }
-                };
-                if gone {
-                    st.open.remove_window(loc.window());
-                    continue;
-                }
-                return Ok(Placement::Focus(loc));
-            }
+    survey: &Survey,
+) -> Result<Option<Decision>, WireError> {
+    let found = survey.lookup(&resolved.id);
+    let kind = match (&resolved.kind, found.location.is_some()) {
+        (Ok(k), _) => *k,
+        // A document already open stays focusable after its file is gone.
+        (Err(_), true) => Kind::Other,
+        (Err(e), false) => return Err(e.clone()),
+    };
+    let unanswered = found.unanswered;
+    let plan = match route(path, found.location, origin, gesture, kind) {
+        Target::FolderTab(p) => Placement::FolderTab(p),
+        Target::DocTab(p) => {
+            // The window that asked, when it holds tabs; otherwise main. Held for it from
+            // here until its tab registers, so a second open of the file is focused, not
+            // opened: both would load the text and one would unseat the other.
+            let window = if window_kind(home) == Some(WindowKind::Editor) {
+                home.to_owned()
+            } else {
+                MAIN.to_owned()
+            };
+            st.open.insert(
+                &p,
+                Location::Opening {
+                    window: window.clone(),
+                },
+            );
+            Placement::DocTab { path: p, window }
         }
-    }
-    Err(wire_error(
-        "Internal",
-        "the open registry kept naming a window that does not exist",
-        Some(path),
-    ))
+        Target::DefaultApp(p) => Placement::DefaultApp(p),
+        Target::DocWindow(p) => {
+            let label = reserve_doc_label(app, st, token);
+            st.open.insert(
+                &p,
+                Location::Window {
+                    label: label.clone(),
+                },
+            );
+            Placement::NewDoc { path: p, label }
+        }
+        Target::Focus(loc) => {
+            let gone = match &loc {
+                Location::Tab { window, .. } | Location::Opening { window } => {
+                    app.get_webview_window(window).is_none()
+                }
+                Location::Window { label } => {
+                    app.get_webview_window(label).is_none()
+                        && !st.lock().creating.contains_key(label)
+                }
+            };
+            if gone {
+                st.open.remove_window(loc.window());
+                return Ok(None);
+            }
+            Placement::Focus(loc)
+        }
+    };
+    Ok(Some(Decision { plan, unanswered }))
 }
 
 /// `main` with a Home folder tab, or just raised when it exists.
@@ -926,18 +1039,22 @@ pub async fn doc_opened<R: Runtime>(
     let st = state(&app)?;
     match adopting_from {
         None => {
-            // Looked at and registered in one step, with the opens that reserve a path.
-            let _gate = st.lock_gate();
-            match st.open.get(&p, &id) {
-                Some(held) if !may_take_over(&held, &location) => {
-                    return Err(wire_error(
-                        "AlreadyOpen",
-                        format!("this file is already open in {}", describe_place(&held)),
-                        Some(&p),
-                    ));
+            // Looked at and registered in one step, with the opens that reserve a path. A
+            // registered document that did not answer the look is compared by its text; the
+            // open that routed the file here said so.
+            let done = under_gate(&st, &p, |survey| match survey.lookup(&id).location {
+                Some(held) if !may_take_over(&held, &location) => Some(Err(wire_error(
+                    "AlreadyOpen",
+                    format!("this file is already open in {}", describe_place(&held)),
+                    Some(&p),
+                ))),
+                _ => {
+                    st.open.insert(&p, location.clone());
+                    Some(Ok(()))
                 }
-                _ => st.open.insert(&p, location),
-            }
+            })
+            .await?;
+            done.ok_or_else(registry_busy)??;
         }
         Some(from) => {
             if window.label() != MAIN {
@@ -966,28 +1083,40 @@ pub async fn doc_opened<R: Runtime>(
 
 /// The frontend closed `path` at `location`, a place of the calling window.
 /// Only that registration goes: a tab closing after its document moved to a
-/// window leaves the window's.
+/// window leaves the window's. With `tab_closed` the tab itself is gone (not
+/// only this path released, as when a Save As moves the document to another
+/// file), and everything held at that tab goes with it, whatever its path.
 #[tauri::command]
 pub fn doc_closed<R: Runtime>(
     app: AppHandle<R>,
     window: WebviewWindow<R>,
     path: WirePath,
     location: Location,
+    tab_closed: Option<bool>,
 ) -> Result<(), WireError> {
     own_place(window.label(), &location)?;
     let p = path.to_path_buf()?;
     let st = state(&app)?;
     st.open.remove_if(&p, &location);
-    // A tab that never registered (its file did not open) lets go of the path held for it.
-    if let Location::Tab { window, .. } = &location {
+    if let Location::Tab { window, tab_id } = &location {
+        // A tab that never registered (its file did not open) lets go of the path held for it.
         st.open.remove_if(
             &p,
             &Location::Opening {
                 window: window.clone(),
             },
         );
+        // A tab that is gone holds nothing: not a Save As target whose save was still on its
+        // way, nor anything else registered at it.
+        if tab_closed == Some(true) {
+            st.open.remove_tab(window, tab_id);
+        }
     }
     Ok(())
+}
+
+fn registry_busy() -> WireError {
+    wire_error("Internal", "the open registry could not be read", None)
 }
 
 /// Whether `path`, by any name, is open in a place other than `own`, a place
@@ -998,7 +1127,10 @@ pub fn doc_closed<R: Runtime>(
 /// held for `own` in the same step, so nothing can open it between the check
 /// and the write; the holder lets go with `doc_closed` when the save does not
 /// happen, and the document's own registration of the new path replaces it
-/// when it does.
+/// when it does. When a registered document's file does not answer a look in
+/// time the question cannot be answered, and the call fails (`OpenCheck`)
+/// naming the path that did not answer: nothing is held and nothing is
+/// written over a file that may be open elsewhere.
 #[tauri::command]
 pub async fn doc_open_elsewhere<R: Runtime>(
     app: AppHandle<R>,
@@ -1012,12 +1144,26 @@ pub async fn doc_open_elsewhere<R: Runtime>(
     let q = p.clone();
     let id = blocking(move || Ok(FileId::of(&q))).await?;
     let st = state(&app)?;
-    let _gate = st.lock_gate();
-    let held = st.open.held_by(&p, &id, &own);
-    if reserve == Some(true) && held == Held::Free {
-        st.open.insert(&p, own);
-    }
-    Ok(held)
+    let answer = under_gate(&st, &p, |survey| {
+        let held = survey.held_by(&id, &own);
+        if reserve == Some(true) && held == Ok(Held::Free) {
+            st.open.reserve(&p, own.clone());
+        }
+        Some(held)
+    })
+    .await?
+    .ok_or_else(registry_busy)?;
+    answer.map_err(|silent| {
+        wire_error(
+            "OpenCheck",
+            format!(
+                "could not check whether {} is open elsewhere: {} did not answer",
+                p.display(),
+                unanswered_words(&silent)
+            ),
+            Some(&p),
+        )
+    })
 }
 
 /// Hands over, once, what was queued for the calling window, and from then
@@ -1056,35 +1202,34 @@ pub async fn detach_doc<R: Runtime>(
     let q = p.clone();
     let id = blocking(move || Ok(FileId::of(&q))).await?;
     // Check and reserve under the gate; build the window after it.
-    let (label, prior, rx) = {
-        let _gate = st.lock_gate();
-        let prior = st.open.get(&p, &id);
+    let reserved = under_gate(&st, &p, |survey| {
+        let prior = survey.lookup(&id).location;
         match &prior {
             Some(Location::Window { label }) => {
-                return Err(wire_error(
+                return Some(Err(wire_error(
                     "AlreadyOpen",
                     format!("the document is already open in window {label}"),
                     Some(&p),
-                ));
+                )));
             }
             Some(Location::Tab {
                 window: w,
                 tab_id: registered,
             }) if w != window.label() || registered != &tab_id => {
-                return Err(wire_error(
+                return Some(Err(wire_error(
                     "TabMismatch",
                     format!("the document is open in tab {registered} of window {w}, not tab {tab_id} of window {}", window.label()),
                     Some(&p),
-                ));
+                )));
             }
             // Only a tab that has registered its document is moved: the registry is how the
             // window holding the tab is known to be the one asking.
             None | Some(Location::Opening { .. }) => {
-                return Err(wire_error(
+                return Some(Err(wire_error(
                     "NotRegistered",
                     "the document has not finished opening in this tab, so it cannot be moved yet",
                     Some(&p),
-                ));
+                )));
             }
             _ => {}
         }
@@ -1098,8 +1243,10 @@ pub async fn detach_doc<R: Runtime>(
                 label: label.clone(),
             },
         );
-        (label, prior, rx)
-    };
+        Some(Ok((label, prior, rx)))
+    })
+    .await?;
+    let (label, prior, rx) = reserved.ok_or_else(registry_busy)??;
     let result = build_doc_window(&app, &label);
     let token = built(&st, &label);
     if let Err(e) = result {
