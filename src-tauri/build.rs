@@ -7,6 +7,8 @@
 const COMMANDS: &[&str] = &[
     "settings_get",
     "settings_set",
+    "layout_get",
+    "layout_set",
     "pins_get",
     "pin",
     "unpin",

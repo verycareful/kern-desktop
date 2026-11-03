@@ -95,6 +95,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             store_cmds::settings_get,
             store_cmds::settings_set,
+            store_cmds::layout_get,
+            store_cmds::layout_set,
             store_cmds::pins_get,
             store_cmds::pin,
             store_cmds::unpin,

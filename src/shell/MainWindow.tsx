@@ -3,6 +3,9 @@
 import { useEffect } from "react";
 import { useViewSettingsSync } from "../files/view-settings";
 import { useShortcuts } from "../keys/useShortcuts";
+import { useLayout } from "../store/layout";
+import { EditorCentre, EditorLayout } from "./EditorLayout";
+import { useLayoutSync } from "./use-layout-sync";
 import { useSettingsReportNotice } from "../settings/settings-reports";
 import { OpsHost } from "../ops/OpsHost";
 import { usePanels } from "../store/panels";
@@ -28,6 +31,9 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
   // The interface size actions step the stored size whatever tab is shown.
   useViewSettingsSync();
   useSettingsReportNotice();
+  // How the window is laid out is remembered across restarts (layout.json).
+  useLayoutSync(true);
+  const editorLayout = useLayout((s) => s.layout === "editor");
   // Pinned and Recent is followed while the window is open, not only while its panel shows:
   // a document tab folds the panel away, and Ctrl+D there reads whether the document is pinned.
   useEffect(() => {
@@ -98,11 +104,17 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
 
   return (
     <div className="kern-window" data-testid="main-window">
-      <div className="kern-main" data-layout={layout} data-testid="main-grid">
-        <TabBar />
-        {body}
-        {docBody}
-      </div>
+      {editorLayout ? (
+        <EditorLayout>
+          <EditorCentre tab={tab} docs={docs} starting={props.starting} />
+        </EditorLayout>
+      ) : (
+        <div className="kern-main" data-layout={layout} data-testid="main-grid">
+          <TabBar />
+          {body}
+          {docBody}
+        </div>
+      )}
       <OpsHost />
       <PropertiesHost />
       <StatusBar />

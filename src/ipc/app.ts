@@ -13,6 +13,9 @@ import type { Density, Follow, KernAccent, ThemeMode } from "./kernkraft";
 
 export type ViewMode = "list" | "grid";
 
+/** The two layouts of a window (store.rs LayoutKind). */
+export type LayoutKind = "file_manager" | "editor";
+
 export interface Settings {
   theme_mode: ThemeMode;
   accent: KernAccent;
@@ -30,6 +33,8 @@ export interface Settings {
   show_hidden: boolean;
   /** Interface size in percent: 80, 90, 100, 110 or 125 (store.rs INTERFACE_SIZES). */
   interface_size: number;
+  /** The layout of a window that has none remembered yet. */
+  default_layout: LayoutKind;
 }
 
 /** The keys settings_set takes. A `follow` patch may be partial. */
@@ -70,6 +75,24 @@ export interface PruneReport {
 
 export const settingsGet = () => invoke<Settings>("settings_get");
 export const settingsSet = (patch: SettingsPatch) => invoke<Settings>("settings_set", { patch });
+/** How the main window is laid out, as stored (store.rs WindowLayout, layout.json). */
+export interface WindowLayout {
+  /** The layout the user chose; null until they do, when `default_layout` decides. */
+  layout: LayoutKind | null;
+  /** Width of the editor layout's left column in pixels, 180 to 640 (store.rs LEFT_WIDTH_MIN, LEFT_WIDTH_MAX). */
+  left_width: number;
+  left_open: boolean;
+  /** The folder the tree is rooted at; null until it is set. */
+  tree_root: WirePath | null;
+}
+
+/** The keys layout_set takes. */
+export type WindowLayoutPatch = Partial<WindowLayout>;
+
+export const layoutGet = () => invoke<WindowLayout>("layout_get");
+/** Stores a change to the main window's layout; only the main window may. */
+export const layoutSet = (patch: WindowLayoutPatch) =>
+  invoke<WindowLayout>("layout_set", { patch });
 export const pinsGet = () => invoke<Pins>("pins_get");
 export const pin = (path: WirePath) => invoke<Pins>("pin", { path });
 export const unpin = (path: WirePath) => invoke<Pins>("unpin", { path });

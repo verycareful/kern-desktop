@@ -6,6 +6,7 @@
 // are one panel. The strip holds Places, All documents, Volumes and Trash; its top slot,
 // level with the tab row, is free and left empty.
 import { FileSearch, Trash2, type LucideIcon } from "lucide-react";
+import { isMainWindow } from "../ipc";
 import { FolderView } from "../files/FolderView";
 import { DocumentsView } from "../files/DocumentsView";
 import { SettingsView } from "../settings/SettingsView";
@@ -45,24 +46,36 @@ function OwnPlace(props: {
   );
 }
 
-function PlacesStrip() {
+/**
+ * The strip. `column` is the strip as the top of the editor layout's left column, which has its
+ * width from the column rather than its own. The Trash and All documents are tabs of the main
+ * window, so an editor window's strip has neither.
+ */
+export function PlacesStrip(props: { column?: boolean }) {
+  const main = isMainWindow();
   return (
-    <nav className="kern-places" aria-label="Places and volumes" data-testid="places-strip">
+    <nav
+      className={props.column ? "kern-places kern-places-column" : "kern-places"}
+      aria-label="Places and volumes"
+      data-testid="places-strip"
+    >
       <div className="kern-places-slot" />
       <PlacesList />
-      <OwnPlace
-        label="All documents"
-        action="place.documents"
-        Icon={FileSearch}
-        shown={documentsShown}
-      />
+      {main && (
+        <OwnPlace
+          label="All documents"
+          action="place.documents"
+          Icon={FileSearch}
+          shown={documentsShown}
+        />
+      )}
       <VolumesList />
-      <OwnPlace label="Trash" action="place.trash" Icon={Trash2} shown={trashShown} />
+      {main && <OwnPlace label="Trash" action="place.trash" Icon={Trash2} shown={trashShown} />}
     </nav>
   );
 }
 
-function FolderArea(props: { docked?: boolean }) {
+export function FolderArea(props: { docked?: boolean }) {
   const active = useTabs((s) => activeTab(s));
   // Slid in over a document, the panel shows the folder tab used last (design 4.3).
   const recent = useTabs((s) => recentFolderTab(s));

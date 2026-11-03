@@ -37,6 +37,8 @@ vi.mock("./ipc", async () => ({
   on: () => Promise.resolve(() => undefined),
   openPendingTake: () => Promise.resolve([]),
   confirmClose: () => Promise.resolve(),
+  layoutGet: () =>
+    Promise.resolve({ layout: null, left_width: 280, left_open: true, tree_root: null }),
   isMainWindow: () => true,
   isEditorWindow: () => false,
   isDocumentWindow: () => false,
@@ -57,6 +59,7 @@ vi.mock("./ipc", async () => ({
       density: "cozy",
       show_hidden: false,
       view_mode: "list",
+      default_layout: "file_manager",
     }),
   themeGet,
   userDirs,

@@ -12,6 +12,7 @@ const COMMON = {
     density: "cozy",
     show_hidden: false,
     view_mode: "list",
+    default_layout: "file_manager",
   },
   "plugin:kernkraft-tauri|theme_get": { css: ":root{}", tokens: {}, fallbacks: [], problems: [] },
   "plugin:kernkraft-tauri|watch_dir": null,

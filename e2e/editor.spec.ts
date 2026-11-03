@@ -23,6 +23,7 @@ const COMMON = {
     density: "cozy",
     show_hidden: false,
     view_mode: "list",
+    default_layout: "file_manager",
     word_wrap: false,
     editor_zoom: 1,
     interface_size: 90,

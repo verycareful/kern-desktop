@@ -22,9 +22,11 @@ use kernkraft_fs::base_dirs;
 use kernkraft_tauri::{KernkraftExt, WireError, WirePath};
 use kernkraft_theme::UserChoice;
 use serde_json::{Map, Value};
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindow};
 
-use crate::store::{CorruptReport, Loaded, Pins, PruneReport, Recents, Settings, Store};
+use crate::store::{
+    CorruptReport, Loaded, Pins, PruneReport, Recents, Settings, Store, WindowLayout,
+};
 
 pub const EVENT_SETTINGS_CHANGED: &str = "kern://settings-changed";
 pub const EVENT_PINS_CHANGED: &str = "kern://pins-changed";
@@ -183,6 +185,38 @@ pub async fn settings_set<R: Runtime>(
     let settings = finish(&app, loaded, EVENT_SETTINGS_CHANGED);
     crate::zoom::apply(&app, settings.interface_size);
     Ok(settings)
+}
+
+/// How the main window is laid out, as last stored. Any window may read it (an editor window
+/// starts with the column width the main window ended with).
+#[tauri::command]
+pub async fn layout_get<R: Runtime>(app: AppHandle<R>) -> Result<WindowLayout, WireError> {
+    let store = app.state::<StoreState>().store()?;
+    let loaded = blocking(move || store.layout_get()).await?;
+    announce_corrupt(&app, &loaded.corrupt);
+    Ok(loaded.value)
+}
+
+/// Stores a change to the main window's layout. Only the main window writes it: an editor window
+/// has the editor layout by kind and no layout of its own to remember.
+#[tauri::command]
+pub async fn layout_set<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+    patch: Map<String, Value>,
+) -> Result<WindowLayout, WireError> {
+    if window.label() != crate::windows::MAIN {
+        return Err(WireError {
+            kind: "Denied".to_owned(),
+            message: "only the main window stores its layout".to_owned(),
+            path: None,
+            details: None,
+        });
+    }
+    let store = app.state::<StoreState>().store()?;
+    let loaded = blocking(move || store.layout_set(patch)).await?;
+    announce_corrupt(&app, &loaded.corrupt);
+    Ok(loaded.value)
 }
 
 #[tauri::command]

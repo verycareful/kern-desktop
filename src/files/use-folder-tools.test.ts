@@ -6,6 +6,7 @@ import type { Settings, WireEntry, WirePath } from "../ipc";
 import { dir, entry } from "./test-entries";
 
 const ipc = vi.hoisted(() => ({
+  openEditor: vi.fn(),
   clipText: vi.fn(),
   openTerminal: vi.fn(),
   settingsGet: vi.fn(),
@@ -26,6 +27,7 @@ function tools() {
 
 beforeEach(() => {
   selection = [];
+  ipc.openEditor.mockResolvedValue("editor-1");
   ipc.clipText.mockResolvedValue(undefined);
   ipc.openTerminal.mockResolvedValue(undefined);
   ipc.settingsGet.mockResolvedValue({ terminal: "kitty" } as Settings);
@@ -95,4 +97,41 @@ test("open_with_needs_exactly_one_file", () => {
   expect(result.current.canOpenWith()).toBe(true);
   act(() => result.current.openWith());
   expect(result.current.choosing?.name).toBe("a.txt");
+});
+
+test("open_as_editor_opens_the_one_selected_folder_else_the_folder_on_show", async () => {
+  const { result } = tools();
+  expect(result.current.canOpenAsEditor()).toBe(true);
+  act(() => result.current.openAsEditor());
+  expect(ipc.openEditor).toHaveBeenLastCalledWith(p("/d"));
+  selection = [dir("sub")];
+  act(() => result.current.openAsEditor());
+  expect(ipc.openEditor).toHaveBeenLastCalledWith(p("/d/sub"));
+  // A file, or several items, are not a folder to open: the folder on show is.
+  selection = [entry("a.txt")];
+  act(() => result.current.openAsEditor());
+  expect(ipc.openEditor).toHaveBeenLastCalledWith(p("/d"));
+  selection = [dir("one"), dir("two")];
+  act(() => result.current.openAsEditor());
+  expect(ipc.openEditor).toHaveBeenLastCalledWith(p("/d"));
+  // A folder that is not listed offers nothing.
+  const closed = renderHook(() =>
+    useFolderTools({ folder: p("/d"), listed: () => false, selected: () => [] })
+  );
+  expect(closed.result.current.canOpenAsEditor()).toBe(false);
+});
+
+test("an_editor_window_that_cannot_be_opened_is_said_in_the_status_bar", async () => {
+  ipc.openEditor.mockRejectedValue({
+    kind: "NotAFolder",
+    message: "that is not a folder",
+    path: null,
+  });
+  const { result } = tools();
+  act(() => result.current.openAsEditor());
+  await waitFor(() =>
+    expect(useOps.getState().notice?.text).toMatch(
+      /d could not be opened as an editor: .*not a folder/
+    )
+  );
 });

@@ -24,6 +24,9 @@ export const EMPTY_PINNED_RECENT: MockResponses = {
   store_errors_take: [],
 };
 
+/** The window layout of a user who never chose one, as layout_get answers. */
+export const NO_LAYOUT = { layout: null, left_width: 280, left_open: true, tree_root: null };
+
 export type InvokeCall = { cmd: string; args: Record<string, unknown> };
 
 /**
@@ -32,7 +35,8 @@ export type InvokeCall = { cmd: string; args: Record<string, unknown> };
  * resolves to null and logs a warning.
  */
 export async function installTauriMocks(page: Page, handlers: MockResponses = {}): Promise<void> {
-  const literals: Record<string, unknown> = {};
+  // Every window reads its stored layout once; a test that cares overrides it.
+  const literals: Record<string, unknown> = { layout_get: NO_LAYOUT };
   const fns: Record<string, string> = {};
   for (const [name, value] of Object.entries(handlers)) {
     if (typeof value === "function") fns[name] = `(${value.toString()})`;

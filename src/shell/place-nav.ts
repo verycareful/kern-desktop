@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { displayPath, pathKey, type WirePath } from "../ipc";
+import { isEditorLayout, useLayout } from "../store/layout";
 import {
   activeTab,
   isPlaceTab,
@@ -15,7 +16,14 @@ import {
 // the document, that is the folder tab used last (4.3); from the Trash or All
 // documents that tab is brought forward, since they have no folder to navigate. With no
 // folder tab at all one is opened.
+//
+// In the editor layout the strip is the top of the left column and a place is where the tree is
+// rooted: it re-roots the tree and opens no folder tab.
 export function showFolder(path: WirePath): void {
+  if (isEditorLayout()) {
+    useLayout.getState().setTreeRoot(path);
+    return;
+  }
   const s = useTabs.getState();
   const active = activeTab(s);
   if (active?.kind === "folder") {

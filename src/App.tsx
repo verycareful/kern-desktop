@@ -13,6 +13,7 @@ import { EditorWindow } from "./shell/EditorWindow";
 import MainWindow from "./shell/MainWindow";
 import { useOpenDirectives } from "./shell/useOpenDirectives";
 import { useUserDirs } from "./shell/user-dirs-store";
+import { useLayout } from "./store/layout";
 import { useTabs } from "./store/tabs";
 import { useTheme } from "./theme/useTheme";
 
@@ -20,6 +21,10 @@ export default function App() {
   const { error, problems } = useTheme();
   const [homeError, setHomeError] = useState<WireError | null>(null);
   const tabCount = useTabs((s) => s.tabs.length);
+  // The main window opens Home when it has no tab, in the file manager layout: the editor layout's
+  // centre shows the welcome pane instead. Which layout it has is known once the stored one is read.
+  const layoutReady = useLayout((s) => s.loaded);
+  const wantsHome = useLayout((s) => s.layout === "file_manager");
   // The main window browses; a document window (design 4.4) shows one document.
   const [isMain] = useState(isMainWindow);
   // An editor window has tabs of its own and a folder tree; a document window shows one document.
@@ -43,7 +48,8 @@ export default function App() {
   // only opened once what was queued for the window has been applied and left
   // it without a tab.
   useEffect(() => {
-    if (!isMain || !directives.ready || tabCount !== 0 || homeError !== null) return;
+    if (!isMain || !directives.ready || !layoutReady || !wantsHome) return;
+    if (tabCount !== 0 || homeError !== null) return;
     useUserDirs
       .getState()
       .load()
@@ -55,7 +61,7 @@ export default function App() {
         },
         (e: unknown) => mounted.current && setHomeError(toWireError(e))
       );
-  }, [isMain, directives.ready, tabCount, homeError]);
+  }, [isMain, directives.ready, layoutReady, wantsHome, tabCount, homeError]);
 
   return (
     <div data-testid="shell" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -112,7 +118,9 @@ export default function App() {
         <div style={{ flex: 1, minHeight: 0 }}>
           <MainWindow
             starting={!directives.ready}
-            openingHome={directives.ready && tabCount === 0 && homeError === null}
+            openingHome={
+              directives.ready && layoutReady && wantsHome && tabCount === 0 && homeError === null
+            }
           />
         </div>
       )}

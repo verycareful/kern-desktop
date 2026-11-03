@@ -21,6 +21,7 @@ const ipc = vi.hoisted(() => ({
   unwatchDir: vi.fn(),
   on: vi.fn(),
   settingsGet: vi.fn(),
+  layoutGet: vi.fn(),
   userDirs: vi.fn(),
   volumesList: vi.fn(),
   volumesProblemsTake: vi.fn(),
@@ -118,7 +119,14 @@ beforeEach(() => {
     theme_mode: "system",
     accent: "slate",
     follow: { colours: true, accent: true, fonts: true, radius: true },
+    default_layout: "file_manager",
   } as Settings);
+  ipc.layoutGet.mockResolvedValue({
+    layout: null,
+    left_width: 280,
+    left_open: true,
+    tree_root: null,
+  });
   ipc.listDir.mockImplementation((path: { v: string }) =>
     Promise.resolve(["a", "b", "c"].map((n) => entry(n, {}, path.v)))
   );
@@ -869,9 +877,15 @@ test("an_editor_window_is_told_its_folder_and_opens_documents_in_tabs_of_its_own
     "on kern://open-error",
     "on kern://close-requested",
   ]);
-  // Neither the Home folder nor the places of the main window.
-  expect(ipc.userDirs).not.toHaveBeenCalled();
-  expect(screen.queryByTestId("places-strip")).toBeNull();
+  // The left column: the places over the tree of the folder it was told. The Trash and All
+  // documents are tabs of the main window, so its strip has neither.
+  const strip = await screen.findByTestId("places-strip");
+  expect(within(strip).queryByRole("button", { name: "Trash" })).toBeNull();
+  expect(within(strip).queryByRole("button", { name: "All documents" })).toBeNull();
+  expect(await screen.findByRole("tree", { name: "Folders of project" })).toBeInTheDocument();
+  expect(ipc.listDir).toHaveBeenCalledWith(p("/d/project"), false);
+  // No Home folder tab: it has documents only.
+  expect(useTabs.getState().tabs.every((t) => t.kind === "doc")).toBe(true);
 });
 
 test("an_editor_window_focuses_a_tab_it_is_asked_to", async () => {
@@ -933,4 +947,47 @@ test("closing_a_tab_of_an_editor_window_leaves_the_window_open", async () => {
   await waitFor(() => expect(useTabs.getState().tabs).toHaveLength(1));
   await act(async () => {});
   expect(ipc.confirmClose).not.toHaveBeenCalled();
+});
+
+test("the_main_window_in_the_editor_layout_opens_no_home_tab_and_shows_the_welcome_pane", async () => {
+  ipc.layoutGet.mockResolvedValue({
+    layout: "editor",
+    left_width: 280,
+    left_open: true,
+    tree_root: p("/home/t"),
+  });
+  render(<App />);
+  expect(await screen.findByTestId("welcome-pane")).toBeInTheDocument();
+  await act(async () => {});
+  expect(useTabs.getState().tabs).toHaveLength(0);
+  // A folder asked for from outside still opens as a tab, in the centre.
+  await emit("kern://open", { kind: "folder_tab", path: p("/d/more") });
+  expect(await screen.findByRole("tab", { name: "more" })).toBeInTheDocument();
+  expect(screen.queryByTestId("welcome-pane")).toBeNull();
+});
+
+test("a_stored_file_manager_layout_still_opens_home", async () => {
+  ipc.layoutGet.mockResolvedValue({
+    layout: "file_manager",
+    left_width: 280,
+    left_open: true,
+    tree_root: null,
+  });
+  render(<App />);
+  expect(await screen.findByRole("tab", { name: "t" })).toBeInTheDocument();
+});
+
+test("the_default_layout_setting_decides_a_window_with_no_stored_layout", async () => {
+  ipc.settingsGet.mockResolvedValue({
+    show_hidden: false,
+    view_mode: "list",
+    density: "cozy",
+    theme_mode: "system",
+    accent: "slate",
+    follow: { colours: true, accent: true, fonts: true, radius: true },
+    default_layout: "editor",
+  } as Settings);
+  render(<App />);
+  expect(await screen.findByTestId("welcome-pane")).toBeInTheDocument();
+  expect(useTabs.getState().tabs).toHaveLength(0);
 });

@@ -10,6 +10,7 @@ import {
   toWireError,
   type DefaultFm,
   type Fm1Status,
+  type LayoutKind,
   type Settings,
   type ViewMode,
   type WireError,
@@ -21,13 +22,18 @@ import { useSettings } from "./settings-store";
 
 // Files: the folders All documents walks (Documents and
 // Downloads, and folders of the user's own), whether hidden items show and
-// list or grid in a new folder view, the Terminal command, and whether Kern
+// list or grid in a new folder view, the layout of a window that has none yet, the Terminal command, and whether Kern
 // is the default file manager (default_fm.rs: the inode/directory default, and the
 // org.freedesktop.FileManager1 name other programs ask to show folders).
 
 const VIEWS: { value: ViewMode; label: string }[] = [
   { value: "list", label: "List" },
   { value: "grid", label: "Grid" },
+];
+
+const LAYOUTS: { value: LayoutKind; label: string }[] = [
+  { value: "file_manager", label: "File manager" },
+  { value: "editor", label: "Editor" },
 ];
 
 type Load<T> =
@@ -296,6 +302,26 @@ export function FilesSection(props: { settings: Settings }) {
             {v.label}
           </label>
         ))}
+      </fieldset>
+      <fieldset>
+        <legend>Default layout for new windows</legend>
+        {LAYOUTS.map((l) => (
+          <label key={l.value} className="kern-settings-choice">
+            <input
+              type="radio"
+              name={`${id}-layout`}
+              checked={settings.default_layout === l.value}
+              onChange={() => void change({ default_layout: l.value }, "The default layout")}
+            />
+            {l.label}
+          </label>
+        ))}
+        <p className="kern-settings-note">
+          The file manager has the places on the left and Pinned and Recent on the right. The editor
+          keeps a folder tree on the left whatever tab is shown. A window you have switched keeps
+          its own layout; this is for a window that has none yet. Open as editor always makes an
+          editor window.
+        </p>
       </fieldset>
       <Terminal settings={settings} />
       <DefaultFileManager />

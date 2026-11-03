@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, lineNumbers, type ViewUpdate } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { search, searchKeymap } from "@codemirror/search";
+import { history } from "@codemirror/commands";
+import { search } from "@codemirror/search";
 import { openDefault, settingsGet, toWireError, type Location, type WirePath } from "../ipc";
 import { useViewSettings } from "../files/view-settings";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
+import { KEYS } from "./editor-keys";
 import { ChangedOnDiskBanner } from "./ChangedOnDiskBanner";
 import { ExternalModificationPrompt, RecreatePrompt, SaveAsDialog } from "./DocPrompts";
 import { columnOf, useDocStatus } from "./doc-status";
@@ -26,9 +27,6 @@ import "./editor.css";
 //
 // The editor of a tab that is not shown stays mounted, hidden, so the edits,
 // the undo history and the watch on the file survive a switch of tab.
-
-/** Mod-d selects the next occurrence in CodeMirror's search keymap; Kern gives Ctrl+D to Pin. */
-const KEYS = [...defaultKeymap, ...historyKeymap, ...searchKeymap.filter((k) => k.key !== "Mod-d")];
 
 /** The font size of the editor at zoom 1, before the zoom setting (store.rs ZOOM_MIN 0.25, ZOOM_MAX 5.0). */
 const BASE_FONT_SIZE = "var(--kern-editor-font-size, 13px)";

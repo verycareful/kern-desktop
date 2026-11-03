@@ -3,8 +3,9 @@
 
 //! Persistent settings, pins and recents (parent spec section 6.3).
 //!
-//! Three JSON files: `settings.json` under `$XDG_CONFIG_HOME/kern/`, and
-//! `pins.json` and `recents.json` under `$XDG_STATE_HOME/kern/` (XDG Base
+//! Four JSON files: `settings.json` under `$XDG_CONFIG_HOME/kern/`, and
+//! `pins.json`, `recents.json` and `layout.json` (how the main window is laid
+//! out: its layout, left column width and tree root) under `$XDG_STATE_HOME/kern/` (XDG Base
 //! Directory Specification 0.8, `$XDG_CONFIG_HOME` and `$XDG_STATE_HOME`,
 //! resolved by `kernkraft_fs::base_dirs_from`). Every write goes through
 //! `kernkraft_fs::write_bytes_atomic`, so a crash leaves the old file or the
@@ -20,7 +21,7 @@
 //! `-2` on a collision, and never over an existing copy) and the caller gets
 //! a [`CorruptReport`] once; the next read finds no file and uses defaults.
 //!
-//! `settings.json` is read field by field. A field this version cannot
+//! `settings.json` and `layout.json` are read field by field. A field this version cannot
 //! parse (a value a newer Kern wrote, say) keeps its raw JSON, is written
 //! back unchanged, and is reported once per run; in memory it holds its
 //! default. Unknown keys, including unknown keys inside `follow`, survive a
@@ -70,6 +71,28 @@ const APP_DIR: &str = "kern";
 /// traditional manual mount points.
 pub const MOUNT_LAYOUTS: &[(&str, usize)] = &[("/run/media", 2), ("/media", 1), ("/mnt", 1)];
 
+/// Smallest and largest width of the editor layout's left column in pixels:
+/// the places strip is 180 px wide in the file manager layout (shell.css
+/// `--shell-places-width`), which is the least that shows "Documents" in
+/// full, and 640 px is a third of a 1920 px window, beyond which the
+/// document is the smaller part. The frontend's `LEFT_WIDTH_MIN` and
+/// `LEFT_WIDTH_MAX` are the same.
+pub const LEFT_WIDTH_MIN: u32 = 180;
+pub const LEFT_WIDTH_MAX: u32 = 640;
+/// The left column's width before the user drags it.
+pub const LEFT_WIDTH_DEFAULT: u32 = 280;
+
+/// The two layouts of a window (design D4.1 to D4.3 and the editor layout).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LayoutKind {
+    /// Places, volumes and Trash on the left, Pinned and Recent on the right.
+    #[default]
+    FileManager,
+    /// A folder tree docked on the left whatever tab is shown.
+    Editor,
+}
+
 /// The Files view mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -102,6 +125,8 @@ pub struct Settings {
     /// The interface size in percent, one of [`INTERFACE_SIZES`]; applied as
     /// the zoom of every window (`zoom.rs`).
     pub interface_size: u32,
+    /// The layout of a window that has none remembered yet.
+    pub default_layout: LayoutKind,
     /// Keys inside `follow` this version does not define.
     #[serde(skip)]
     pub follow_extra: Map<String, Value>,
@@ -128,7 +153,41 @@ impl Default for Settings {
             view_mode: ViewMode::default(),
             show_hidden: false,
             interface_size: DEFAULT_INTERFACE_SIZE,
+            default_layout: LayoutKind::default(),
             follow_extra: Map::new(),
+            extra: Map::new(),
+        }
+    }
+}
+
+/// `layout.json`: how the main window is laid out, kept across restarts.
+/// Read field by field like the settings: a field that does not parse keeps
+/// its raw JSON, holds its default in memory and is reported once.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct WindowLayout {
+    /// The layout the user chose; `None` until they do, when
+    /// [`Settings::default_layout`] decides.
+    pub layout: Option<LayoutKind>,
+    /// The width of the editor layout's left column in pixels,
+    /// [`LEFT_WIDTH_MIN`] to [`LEFT_WIDTH_MAX`].
+    pub left_width: u32,
+    /// Whether the editor layout's left column is shown.
+    pub left_open: bool,
+    /// The folder the tree is rooted at, absolute; `None` until it is set.
+    pub tree_root: Option<WirePath>,
+    /// Top-level keys this version does not define, and the raw value of any
+    /// defined field that did not parse.
+    #[serde(skip)]
+    pub extra: Map<String, Value>,
+}
+
+impl Default for WindowLayout {
+    fn default() -> WindowLayout {
+        WindowLayout {
+            layout: None,
+            left_width: LEFT_WIDTH_DEFAULT,
+            left_open: true,
+            tree_root: None,
             extra: Map::new(),
         }
     }
@@ -390,6 +449,22 @@ fn check_interface_size(size: &u32) -> Result<(), String> {
     }
 }
 
+fn check_left_width(w: &u32) -> Result<(), String> {
+    if (LEFT_WIDTH_MIN..=LEFT_WIDTH_MAX).contains(w) {
+        Ok(())
+    } else {
+        Err(format!(
+            "left column width {w} is outside {LEFT_WIDTH_MIN} to {LEFT_WIDTH_MAX}"
+        ))
+    }
+}
+
+fn check_tree_root(root: &Option<WirePath>) -> Result<(), String> {
+    root.as_ref().map_or(Ok(()), |r| {
+        r.to_path_buf().map(|_| ()).map_err(|e| e.to_string())
+    })
+}
+
 fn check_roots(roots: &[WirePath]) -> Result<(), String> {
     roots
         .iter()
@@ -500,6 +575,14 @@ impl Stored for Settings {
             &mut problems,
             check_interface_size,
         );
+        take(
+            &mut obj,
+            "default_layout",
+            &mut s.default_layout,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
         if let Some(raw) = obj.remove("follow") {
             match parse_follow(&raw) {
                 Ok((follow, extra)) => {
@@ -527,6 +610,60 @@ impl Stored for Settings {
         if let Some(Value::Object(follow)) = out.get_mut("follow") {
             follow.extend(self.follow_extra.clone());
         }
+        out.extend(self.extra.clone());
+        Ok(Value::Object(out))
+    }
+}
+
+impl Stored for WindowLayout {
+    fn parse(value: Value) -> Result<(WindowLayout, Vec<FieldProblem>), String> {
+        let Value::Object(mut obj) = value else {
+            return Err("not a JSON object".to_owned());
+        };
+        let mut l = WindowLayout::default();
+        let mut keep = Map::new();
+        let mut problems = Vec::new();
+        take(
+            &mut obj,
+            "layout",
+            &mut l.layout,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "left_width",
+            &mut l.left_width,
+            &mut keep,
+            &mut problems,
+            check_left_width,
+        );
+        take(
+            &mut obj,
+            "left_open",
+            &mut l.left_open,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "tree_root",
+            &mut l.tree_root,
+            &mut keep,
+            &mut problems,
+            check_tree_root,
+        );
+        l.extra = obj;
+        l.extra.extend(keep);
+        Ok((l, problems))
+    }
+
+    fn render(&self) -> Result<Value, String> {
+        let Value::Object(mut out) = serde_json::to_value(self).map_err(|e| e.to_string())? else {
+            return Err("layout is not an object".to_owned());
+        };
         out.extend(self.extra.clone());
         Ok(Value::Object(out))
     }
@@ -660,6 +797,7 @@ pub struct Store {
     settings: JsonFile<Settings>,
     pins: JsonFile<Pins>,
     recents: JsonFile<Recents>,
+    layout: JsonFile<WindowLayout>,
 }
 
 impl Store {
@@ -670,6 +808,7 @@ impl Store {
             settings: JsonFile::new(config_dir.join("settings.json")),
             pins: JsonFile::new(state_dir.join("pins.json")),
             recents: JsonFile::new(state_dir.join("recents.json")),
+            layout: JsonFile::new(state_dir.join("layout.json")),
         }
     }
 
@@ -719,6 +858,40 @@ impl Store {
                 Settings::parse(Value::Object(merged)).map_err(|e| invalid("setting", e))?;
             if let Some(p) = problems.iter().find(|p| patch.contains_key(&p.field)) {
                 return Err(invalid("setting", format!("{}: {}", p.field, p.reason)));
+            }
+            let changed = next != *current;
+            *current = next;
+            Ok(changed)
+        })
+    }
+
+    pub fn layout_get(&self) -> Result<Loaded<WindowLayout>, WireError> {
+        self.layout.get()
+    }
+
+    /// Merges `patch` (field name to new value) into the stored layout. A
+    /// field this version does not define, a value of the wrong type, a
+    /// `left_width` outside [`LEFT_WIDTH_MIN`] to [`LEFT_WIDTH_MAX`] or a
+    /// `tree_root` that is not an absolute path refuses the whole patch and
+    /// writes nothing. A `null` clears `layout` and `tree_root`.
+    pub fn layout_set(&self, patch: Map<String, Value>) -> Result<Loaded<WindowLayout>, WireError> {
+        let known: HashSet<String> = match serde_json::to_value(WindowLayout::default()) {
+            Ok(Value::Object(m)) => m.into_iter().map(|(k, _)| k).collect(),
+            _ => HashSet::new(),
+        };
+        if let Some(bad) = patch.keys().find(|k| !known.contains(k.as_str())) {
+            return Err(invalid("layout", format!("unknown field {bad:?}")));
+        }
+        self.layout.update(|current| {
+            let Value::Object(mut merged) = current.render().map_err(|e| invalid("layout", e))?
+            else {
+                return Err(werr("Internal", "layout is not an object".to_owned(), None));
+            };
+            merged.extend(patch.clone());
+            let (next, problems) =
+                WindowLayout::parse(Value::Object(merged)).map_err(|e| invalid("layout", e))?;
+            if let Some(p) = problems.iter().find(|p| patch.contains_key(&p.field)) {
+                return Err(invalid("layout", format!("{}: {}", p.field, p.reason)));
             }
             let changed = next != *current;
             *current = next;

@@ -13,6 +13,7 @@ test("boots_with_mocked_ipc", async ({ page, mockTauri }) => {
       density: "cozy",
       show_hidden: false,
       view_mode: "list",
+      default_layout: "file_manager",
     },
     "plugin:kernkraft-tauri|list_dir": [],
     "plugin:kernkraft-tauri|watch_dir": null,

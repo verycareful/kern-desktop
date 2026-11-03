@@ -54,6 +54,10 @@ export interface FolderController {
   /** True when exactly one file (not a folder) is selected. */
   canOpenWith(): boolean;
   openWith(): void;
+  /** True when the folder is listed, so there is a folder to open as an editor. */
+  canOpenAsEditor(): boolean;
+  /** Opens a new editor window rooted at the one selected folder, or else at the folder on show. */
+  openAsEditor(): void;
 }
 
 const controllers = new Map<string, FolderController>();

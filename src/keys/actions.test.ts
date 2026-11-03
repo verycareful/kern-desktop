@@ -2,11 +2,15 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import type { WirePath } from "../ipc";
 import { usePanelsStore } from "../store/panels";
+import { useLayout } from "../store/layout";
+import { useTreeMenu } from "../files/tree-menu-store";
+import { dir, entry } from "../files/test-entries";
 import { useTabs } from "../store/tabs";
 import { useVolumes } from "../shell/volumes-store";
 import { useOps } from "../ops/useOps";
 import { VOLUME_MENU } from "../shell/volume-menu";
 import { ENTRY_MENU } from "../shell/entry-menu";
+import { TREE_MENU } from "../files/tree-menu";
 import { usePinnedRecent } from "../shell/pinned-recent-store";
 import { useProperties } from "../files/properties-store";
 import { registerFolder, type FolderController } from "../files/folder-controller";
@@ -162,9 +166,11 @@ test("every_action_is_in_a_menu", () => {
         ? VOLUME_MENU.some((s) => s.actions.includes(a))
         : a.when === "entry"
           ? ENTRY_MENU.some((s) => s.actions.includes(a))
-          : menuSections(a.when === "any" ? null : tabOf(a.when)).some((s) =>
-              s.actions.includes(a)
-            );
+          : a.when === "tree"
+            ? TREE_MENU.some((s) => s.actions.includes(a))
+            : menuSections(a.when === "any" ? null : tabOf(a.when)).some((s) =>
+                s.actions.includes(a)
+              );
     if (!inMenu) missing.push(a.id);
   }
   expect(missing).toEqual([]);
@@ -291,4 +297,67 @@ test("properties_shows_the_selection_or_else_the_folder", () => {
     off();
     useProperties.getState().close();
   }
+});
+
+test("open_as_editor_is_a_folder_action_of_the_open_group_that_asks_the_folder_view", () => {
+  const a = getAction("folder.openAsEditor");
+  expect([a.label, a.area, a.when, a.keys]).toEqual(["Open as editor", "Open", "folder", []]);
+  useTabs.getState().openFolder(p("/a"), false);
+  const tab = useTabs.getState().tabs[0]!;
+  // No folder view mounted: greyed.
+  expect(isEnabled(a, currentContext())).toBe(false);
+  const openAsEditor = vi.fn();
+  let can = false;
+  const off = registerFolder(tab.id, {
+    canOpenAsEditor: () => can,
+    openAsEditor,
+  } as Partial<FolderController> as FolderController);
+  try {
+    expect(runAction(a, currentContext())).toBe(false);
+    can = true;
+    expect(runAction(a, currentContext())).toBe(true);
+    expect(openAsEditor).toHaveBeenCalledTimes(1);
+    // It is in the main menu of a folder tab, and so in the folder view's context menu (by area).
+    expect(menuSections(tab).some((s) => s.actions.includes(a))).toBe(true);
+  } finally {
+    off();
+  }
+});
+
+test("the_layout_actions_belong_to_the_main_window_and_the_column_toggle_to_the_editor_layout", () => {
+  useLayout.getState().reset();
+  const to = (id: string) => isEnabled(getAction(id), currentContext());
+  // Before the stored layout is read nothing can be chosen.
+  expect([to("layout.editor"), to("layout.fileManager"), to("layout.left.toggle")]).toEqual([
+    false,
+    false,
+    false,
+  ]);
+  useLayout
+    .getState()
+    .apply({ layout: null, left_width: 280, left_open: true, tree_root: p("/a") }, "file_manager");
+  expect([to("layout.editor"), to("layout.fileManager"), to("layout.left.toggle")]).toEqual([
+    true,
+    false,
+    false,
+  ]);
+  useLayout.getState().setLayout("editor");
+  expect([to("layout.editor"), to("layout.fileManager"), to("layout.left.toggle")]).toEqual([
+    false,
+    true,
+    true,
+  ]);
+  useLayout.getState().reset();
+});
+
+test("the_tree_action_is_aimed_at_the_entry_the_menu_was_opened_on", () => {
+  const a = getAction("tree.openAsEditor");
+  expect(isEnabled(a, currentContext())).toBe(false);
+  useTreeMenu.getState().setCurrent(dir("sub"));
+  expect(isEnabled(a, currentContext())).toBe(true);
+  useTreeMenu.getState().setCurrent(entry("a.txt"));
+  expect(isEnabled(a, currentContext())).toBe(false);
+  useTreeMenu.getState().setCurrent(null);
+  // It is not part of any tab's main menu.
+  expect(menuSections(null).some((s) => s.actions.includes(a))).toBe(false);
 });

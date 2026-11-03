@@ -36,3 +36,20 @@ test("toggle_resets_on_tab_change", () => {
   useTabs.getState().activate(doc);
   expect(vis()).toEqual({ leftOpen: false, rightOpen: false });
 });
+
+test("the_editor_layout_docks_the_left_column_for_every_tab_and_folds_pinned_and_recent", () => {
+  const editor = (leftDocked: boolean) =>
+    panelVisibility(activeTab(useTabs.getState()), usePanelsStore.getState(), { leftDocked });
+  useTabs.getState().openFolder(p("/a"), false);
+  // A folder tab would show both panels in the file manager layout; here Pinned and Recent are folded.
+  expect(editor(true)).toEqual({ leftOpen: true, rightOpen: false });
+  useTabs.getState().openDoc(p("/a/n.md"));
+  expect(editor(true)).toEqual({ leftOpen: true, rightOpen: false });
+  expect(editor(false)).toEqual({ leftOpen: false, rightOpen: false });
+  // The right stub slides Pinned and Recent in; the slid state is the same as for a document.
+  usePanelsStore.getState().toggleRight();
+  expect(editor(true)).toEqual({ leftOpen: true, rightOpen: true });
+  // A slid left panel is the file manager layout's and means nothing here.
+  usePanelsStore.getState().toggleLeft();
+  expect(editor(false)).toEqual({ leftOpen: false, rightOpen: true });
+});

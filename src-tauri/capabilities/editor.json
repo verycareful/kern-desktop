@@ -8,6 +8,7 @@
     "kernkraft-tauri:default",
     "allow-settings-get",
     "allow-settings-set",
+    "allow-layout-get",
     "allow-pins-get",
     "allow-pin",
     "allow-unpin",

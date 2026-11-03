@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import type { Settings } from "../ipc";
+import type { Settings, WindowLayout } from "../ipc";
+
+/** The stored layout of a user who never chose one, in the shape layout_get answers with. */
+export const NO_LAYOUT: WindowLayout = {
+  layout: null,
+  left_width: 280,
+  left_open: true,
+  tree_root: null,
+};
 
 /** Settings for tests, in the shape settings_get answers with. */
 export const SETTINGS: Settings = {
@@ -17,4 +25,5 @@ export const SETTINGS: Settings = {
   view_mode: "list",
   show_hidden: false,
   interface_size: 100,
+  default_layout: "file_manager",
 };

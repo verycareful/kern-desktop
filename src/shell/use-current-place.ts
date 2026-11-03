@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { useLayout } from "../store/layout";
 import { useTabs } from "../store/tabs";
 import { currentPlace, shownFolder, type PlaceCandidate } from "./place-nav";
 import { useUserDirs } from "./user-dirs-store";
@@ -8,9 +9,14 @@ import { mountedKeys, useVolumes } from "./volumes-store";
 /** Key of a user-folder place in the strip ("home", or the xdg name). */
 export const placeKey = (name: string) => `place:${name}`;
 
-/** The key of the one place or volume the strip marks as current (place-nav.ts currentPlace). */
+/**
+ * The key of the one place or volume the strip marks as current (place-nav.ts currentPlace): the
+ * folder the active folder tab shows, or in the editor layout the folder the tree is rooted at.
+ */
 export function useCurrentPlace(): string | null {
-  const shown = useTabs((s) => shownFolder(s));
+  const tabsShown = useTabs((s) => shownFolder(s));
+  const root = useLayout((s) => (s.layout === "editor" ? s.treeRoot : undefined));
+  const shown = root === undefined ? tabsShown : root;
   const dirs = useUserDirs((s) => s.dirs);
   const mounted = useVolumes((s) => s.mounted);
   const keys = mountedKeys(mounted);

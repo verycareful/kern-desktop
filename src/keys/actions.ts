@@ -25,6 +25,10 @@ import { useOps } from "../ops/useOps";
 import { docController } from "../editor/doc-controller";
 import { moveTabToWindow } from "../shell/move-doc";
 import { closeTab } from "../shell/useCloseGuard";
+import { openAsEditor, switchLayout } from "../shell/layout-switch";
+import { isEditorLayout, useLayout } from "../store/layout";
+import { useTreeMenu } from "../files/tree-menu-store";
+import { isFolder } from "../files/file-type";
 
 // The single table of user-visible actions. Shortcuts (useShortcuts), the
 // main menu and the tab context menu (ActionMenu) all read it, so keyboard and
@@ -42,9 +46,11 @@ import { closeTab } from "../shell/useCloseGuard";
 // for the physical key (KeyboardEvent.code KeyW / Digit1), so Ctrl+W still
 // works there.
 
-// "volume" actions are aimed at a volume of the places strip, and "entry" actions at an entry of
-// Pinned or Recent, not at a tab: they run from that item's own menu and are not part of the main menu.
-export type ActionContextKind = "folder" | "doc" | "trash" | "documents" | "volume" | "entry";
+// "volume" actions are aimed at a volume of the places strip, "entry" actions at an entry of
+// Pinned or Recent and "tree" actions at an entry of the folder tree, not at a tab: they run from
+// that item's own menu and are not part of the main menu.
+export type ActionContextKind =
+  "folder" | "doc" | "trash" | "documents" | "volume" | "entry" | "tree";
 
 export type ActionContext = {
   tabs: TabsState;
@@ -75,7 +81,8 @@ export type Action = {
     | "View"
     | "Trash"
     | "Volumes"
-    | "Pinned";
+    | "Pinned"
+    | "Layout";
   keys: string[];
   /** The tab kind the action applies to. */
   when: ActionContextKind | "any";
@@ -97,7 +104,13 @@ export function currentContext(targetId?: string, extend = false): ActionContext
     active,
     target: tabs.tabs.find((t) => t.id === targetId) ?? active,
     extend,
-    togglePanel: (side) => (side === "left" ? panels.toggleLeft() : panels.toggleRight()),
+    // In the editor layout the left button is the docked column's.
+    togglePanel: (side) =>
+      side === "left"
+        ? isEditorLayout()
+          ? useLayout.getState().toggleLeft()
+          : panels.toggleLeft()
+        : panels.toggleRight(),
   };
 }
 
@@ -191,12 +204,15 @@ export const actions: Action[] = [
     when: "doc",
     run: (c) => c.togglePanel("left"),
   },
+  // Pinned and Recent are folded to the right stub for a document tab, and in the editor layout
+  // for every tab.
   {
     id: "panel.right.toggle",
     label: "Show or hide Pinned and Recent",
     area: "Panels",
     keys: [],
-    when: "doc",
+    when: "any",
+    enabled: (c) => c.target?.kind === "doc" || isEditorLayout(),
     run: (c) => c.togglePanel("right"),
   },
 ];
@@ -287,6 +303,16 @@ const folderActions: Action[] = [
     when: "folder",
     enabled: (c) => controllerOf(c) !== undefined,
     run: (c) => controllerOf(c)?.copyPath(),
+  },
+  // A folder as the root of a new editor window (the editor layout's tree and tabs).
+  {
+    id: "folder.openAsEditor",
+    label: "Open as editor",
+    area: "Open",
+    keys: [],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.canOpenAsEditor() ?? false,
+    run: (c) => controllerOf(c)?.openAsEditor(),
   },
   {
     id: "folder.openNewWindow",
@@ -528,6 +554,59 @@ const sizeActions: Action[] = [
   },
 ];
 actions.push(...sizeActions);
+
+// ---- the layout of the window (Task 28a) ----
+// "Switch to ..." changes the current window, the main window only: an editor window is the
+// editor layout by kind. Ctrl+B is not bound by CodeMirror's keymaps on Linux (editor/TextEditor.tsx
+// KEYS; its test checks), so it works inside the editor too.
+
+const layoutActions: Action[] = [
+  {
+    id: "layout.editor",
+    label: "Switch to editor layout",
+    area: "Layout",
+    keys: [],
+    when: "any",
+    enabled: () => isMainWindow() && useLayout.getState().loaded && !isEditorLayout(),
+    run: () => void switchLayout("editor"),
+  },
+  {
+    id: "layout.fileManager",
+    label: "Switch to file manager layout",
+    area: "Layout",
+    keys: [],
+    when: "any",
+    enabled: () => isMainWindow() && useLayout.getState().loaded && isEditorLayout(),
+    run: () => void switchLayout("file_manager"),
+  },
+  {
+    id: "layout.left.toggle",
+    label: "Show or hide the folder column",
+    area: "Layout",
+    keys: ["Ctrl+B"],
+    when: "any",
+    inEditable: true,
+    enabled: () => isEditorLayout(),
+    run: () => useLayout.getState().toggleLeft(),
+  },
+  // The right-click menu of the folder tree.
+  {
+    id: "tree.openAsEditor",
+    label: "Open as editor",
+    area: "Open",
+    keys: [],
+    when: "tree",
+    enabled: () => {
+      const e = useTreeMenu.getState().current;
+      return e !== null && isFolder(e);
+    },
+    run: () => {
+      const e = useTreeMenu.getState().current;
+      if (e) void openAsEditor(e.path);
+    },
+  },
+];
+actions.push(...layoutActions);
 
 // ---- the Trash (design 5.2) ----
 
@@ -899,7 +978,13 @@ export function getAction(id: string): Action {
 }
 
 export function appliesTo(a: Action, tab: Tab | null): boolean {
-  return a.when === "any" || a.when === "volume" || a.when === "entry" || a.when === tab?.kind;
+  return (
+    a.when === "any" ||
+    a.when === "volume" ||
+    a.when === "entry" ||
+    a.when === "tree" ||
+    a.when === tab?.kind
+  );
 }
 
 export function isEnabled(a: Action, ctx: ActionContext): boolean {
@@ -917,7 +1002,7 @@ export function runAction(a: Action, ctx: ActionContext): boolean {
 export function menuSections(tab: Tab | null): { title: string; actions: Action[] }[] {
   const sections: { title: string; actions: Action[] }[] = [];
   for (const a of actions.filter(
-    (x) => x.when !== "volume" && x.when !== "entry" && appliesTo(x, tab)
+    (x) => x.when !== "volume" && x.when !== "entry" && x.when !== "tree" && appliesTo(x, tab)
   )) {
     const s = sections.find((x) => x.title === a.area);
     if (s) s.actions.push(a);

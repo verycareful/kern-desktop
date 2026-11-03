@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use kern_lib::store::{
-    move_aside, volume_online, Store, ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES,
-    RECENTS_CAP,
+    move_aside, volume_online, LayoutKind, Store, ViewMode, DEFAULT_INTERFACE_SIZE,
+    INTERFACE_SIZES, LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, RECENTS_CAP,
 };
 use kernkraft_tauri::WirePath;
 use serde_json::{json, Map, Value};
@@ -600,4 +600,194 @@ fn a_bad_stored_interface_size_is_reported_kept_and_replaced_by_the_next_choice(
     let got = store(&e).settings_get().unwrap();
     assert_eq!(got.value.interface_size, 90);
     assert_eq!(got.corrupt[0].field.as_deref(), Some("interface_size"));
+}
+
+// ---- the window layout and the default layout setting ----
+
+#[test]
+fn layout_remembered() {
+    let e = env();
+    let s = store(&e);
+    // Nothing chosen yet: no layout of its own, the default column, the tree not rooted.
+    let first = s.layout_get().unwrap().value;
+    assert_eq!(first.layout, None);
+    assert_eq!(
+        (first.left_width, first.left_open, first.tree_root.clone()),
+        (LEFT_WIDTH_DEFAULT, true, None)
+    );
+    assert!(!e.state.join("layout.json").exists());
+
+    let root = wp(&e.files);
+    let out = s
+        .layout_set(patch(json!({
+            "layout": "editor", "left_width": 333, "left_open": false, "tree_root": root,
+        })))
+        .unwrap();
+    assert!(out.changed);
+    assert_eq!(out.value.layout, Some(LayoutKind::Editor));
+    // A restart: a new store over the same directories reads what was written, in the state dir.
+    let again = store(&e).layout_get().unwrap().value;
+    assert_eq!(again.layout, Some(LayoutKind::Editor));
+    assert_eq!(again.left_width, 333);
+    assert!(!again.left_open);
+    assert_eq!(again.tree_root, Some(wp(&e.files)));
+    let on_disk = read_json(&e.state.join("layout.json"));
+    assert_eq!(on_disk["layout"], json!("editor"));
+    assert_eq!(on_disk["left_width"], json!(333));
+    // The same patch again changes nothing; a partial one leaves the other fields.
+    assert!(
+        !s.layout_set(patch(json!({"left_width": 333})))
+            .unwrap()
+            .changed
+    );
+    let part = s.layout_set(patch(json!({"layout": null}))).unwrap().value;
+    assert_eq!((part.layout, part.left_width), (None, 333));
+}
+
+#[test]
+fn a_non_utf8_tree_root_is_kept() {
+    let e = env();
+    let s = store(&e);
+    let name = OsString::from_vec(b"caf\xe9".to_vec());
+    let dir = e.files.join(name);
+    fs::create_dir(&dir).unwrap();
+    s.layout_set(patch(json!({"tree_root": wp(&dir)}))).unwrap();
+    assert_eq!(
+        store(&e).layout_get().unwrap().value.tree_root,
+        Some(wp(&dir))
+    );
+}
+
+#[test]
+fn a_layout_patch_that_is_wrong_writes_nothing() {
+    let e = env();
+    let s = store(&e);
+    for bad in [
+        json!({"nope": 1}),
+        json!({"layout": "sideways"}),
+        json!({"left_width": LEFT_WIDTH_MIN - 1}),
+        json!({"left_width": LEFT_WIDTH_MAX + 1}),
+        json!({"left_width": "wide"}),
+        json!({"left_open": 1}),
+        json!({"tree_root": {"k": "Utf8", "v": "relative/dir"}}),
+        // One bad field refuses the good one beside it.
+        json!({"left_width": 300, "layout": "sideways"}),
+    ] {
+        let err = s.layout_set(patch(bad.clone())).unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument", "{bad}");
+    }
+    assert!(!e.state.join("layout.json").exists());
+    for good in [LEFT_WIDTH_MIN, LEFT_WIDTH_MAX] {
+        assert_eq!(
+            s.layout_set(patch(json!({"left_width": good})))
+                .unwrap()
+                .value
+                .left_width,
+            good
+        );
+    }
+}
+
+#[test]
+fn a_bad_layout_field_is_reported_once_kept_and_never_a_crash() {
+    let e = env();
+    fs::create_dir_all(&e.state).unwrap();
+    fs::write(
+        e.state.join("layout.json"),
+        r#"{"layout": "sideways", "left_width": 9999, "left_open": false, "tree_root": "/x", "future": [1]}"#,
+    )
+    .unwrap();
+    let s = store(&e);
+    let got = s.layout_get().unwrap();
+    // The bad fields hold their defaults in memory; the good one is read.
+    assert_eq!(got.value.layout, None);
+    assert_eq!(got.value.left_width, LEFT_WIDTH_DEFAULT);
+    assert!(!got.value.left_open);
+    let mut fields: Vec<_> = got.corrupt.iter().filter_map(|r| r.field.clone()).collect();
+    fields.sort();
+    assert_eq!(fields, ["layout", "left_width", "tree_root"]);
+    assert!(got
+        .corrupt
+        .iter()
+        .all(|r| r.file == "layout.json" && r.moved_to.is_none()));
+    // Reported once per run.
+    assert!(s.layout_get().unwrap().corrupt.is_empty());
+    // A write of another field keeps the raw bad values and the unknown key.
+    s.layout_set(patch(json!({"left_open": true}))).unwrap();
+    let disk = read_json(&e.state.join("layout.json"));
+    assert_eq!(disk["layout"], json!("sideways"));
+    assert_eq!(disk["left_width"], json!(9999));
+    assert_eq!(disk["future"], json!([1]));
+    // Choosing the field again replaces the bad value.
+    s.layout_set(patch(json!({"left_width": 300}))).unwrap();
+    assert_eq!(
+        read_json(&e.state.join("layout.json"))["left_width"],
+        json!(300)
+    );
+}
+
+#[test]
+fn a_layout_file_that_is_not_an_object_is_moved_aside() {
+    let e = env();
+    fs::create_dir_all(&e.state).unwrap();
+    fs::write(e.state.join("layout.json"), "[1, 2").unwrap();
+    let got = store(&e).layout_get().unwrap();
+    assert_eq!(got.value.layout, None);
+    let moved = got.corrupt[0].moved_to.clone().expect("moved aside");
+    assert!(moved.to_path_buf().unwrap().exists());
+    assert!(!e.state.join("layout.json").exists());
+}
+
+#[test]
+fn default_layout_follows_the_rules_of_the_other_settings() {
+    let e = env();
+    let s = store(&e);
+    assert_eq!(
+        s.settings_get().unwrap().value.default_layout,
+        LayoutKind::FileManager
+    );
+    let out = s
+        .settings_set(patch(json!({"default_layout": "editor"})))
+        .unwrap();
+    assert_eq!(out.value.default_layout, LayoutKind::Editor);
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["default_layout"],
+        json!("editor")
+    );
+    assert_eq!(
+        store(&e).settings_get().unwrap().value.default_layout,
+        LayoutKind::Editor
+    );
+    // A value that is not a layout refuses the patch and changes nothing.
+    let err = s
+        .settings_set(patch(json!({"default_layout": "sideways"})))
+        .unwrap_err();
+    assert_eq!(err.kind, "InvalidArgument");
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["default_layout"],
+        json!("editor")
+    );
+}
+
+#[test]
+fn a_bad_stored_default_layout_is_reported_kept_and_replaced_by_the_next_choice() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    fs::write(e.config.join("settings.json"), r#"{"default_layout": 3}"#).unwrap();
+    let s = store(&e);
+    let got = s.settings_get().unwrap();
+    assert_eq!(got.value.default_layout, LayoutKind::FileManager);
+    assert_eq!(got.corrupt.len(), 1);
+    assert_eq!(got.corrupt[0].field.as_deref(), Some("default_layout"));
+    s.settings_set(patch(json!({"word_wrap": true}))).unwrap();
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["default_layout"],
+        json!(3)
+    );
+    s.settings_set(patch(json!({"default_layout": "editor"})))
+        .unwrap();
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["default_layout"],
+        json!("editor")
+    );
 }

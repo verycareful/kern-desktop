@@ -421,6 +421,8 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       openTerminalHere: tools.openTerminalHere,
       canOpenWith: tools.canOpenWith,
       openWith: tools.openWith,
+      canOpenAsEditor: tools.canOpenAsEditor,
+      openAsEditor: tools.openAsEditor,
     });
   }, [
     tab.id,

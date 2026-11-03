@@ -13,6 +13,7 @@ import {
 import { errorText } from "../ops/error-text";
 import { baseName, itemsText } from "../ops/labels";
 import { useOps } from "../ops/useOps";
+import { openAsEditor as openAsEditorWindow } from "../shell/layout-switch";
 import { isFolder } from "./file-type";
 
 // Copy path, Open terminal here and Open with for a folder view (design 4.5,
@@ -37,6 +38,8 @@ export interface FolderTools {
   /** True when exactly one file (not a folder) is selected. */
   canOpenWith(): boolean;
   openWith(): void;
+  canOpenAsEditor(): boolean;
+  openAsEditor(): void;
   /** The file the Open with dialog is open for. */
   choosing: WireEntry | null;
   closeOpenWith(): void;
@@ -119,6 +122,13 @@ export function useFolderTools(args: {
     if (picked.length === 1 && !isFolder(picked[0]!)) setChoosing(picked[0]!);
   }, []);
 
+  const openAsEditor = useCallback(() => {
+    const picked = latest.current.selected();
+    const only = picked.length === 1 ? picked[0] : undefined;
+    const dir = only && isFolder(only) ? only.path : latest.current.folder;
+    void openAsEditorWindow(dir);
+  }, []);
+
   return useMemo(
     () => ({
       copyPath,
@@ -126,11 +136,13 @@ export function useFolderTools(args: {
       openTerminalHere,
       canOpenWith,
       openWith,
+      canOpenAsEditor: () => latest.current.listed(),
+      openAsEditor,
       choosing,
       closeOpenWith: () => setChoosing(null),
       notes,
       dismissNotes: () => setNotes([]),
     }),
-    [copyPath, openTerminalHere, canOpenWith, openWith, choosing, notes]
+    [copyPath, openTerminalHere, canOpenWith, openWith, openAsEditor, choosing, notes]
   );
 }

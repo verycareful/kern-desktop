@@ -41,6 +41,8 @@ fn env(label: &str) -> Env {
         .invoke_handler(tauri::generate_handler![
             kern_lib::store_cmds::settings_get,
             kern_lib::store_cmds::settings_set,
+            kern_lib::store_cmds::layout_get,
+            kern_lib::store_cmds::layout_set,
             kern_lib::windows::open_pending_take,
             kern_lib::identity::file_identity,
             kern_lib::windows::doc_opened,
@@ -309,5 +311,27 @@ fn the_main_and_editor_windows_may_ask_for_a_files_identity_and_a_stranger_may_n
     }
     let e = env("stranger");
     let err = invoke(&e, "file_identity", json!({"paths": []})).unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+}
+
+#[test]
+fn only_the_main_window_stores_its_layout_and_every_window_that_has_one_may_read_it() {
+    let patch = json!({"patch": {"left_width": 300}});
+    let main = env("main");
+    let stored = invoke(&main, "layout_set", patch.clone()).unwrap();
+    assert_eq!(stored["left_width"], 300);
+    // An editor window may read it, for the width to start with, and not write it.
+    let editor = env("editor-1");
+    assert!(invoke(&editor, "layout_get", json!({})).is_ok());
+    let err = invoke(&editor, "layout_set", patch.clone()).unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+    // A document window shares the main window's capability, so the write is the command's to refuse.
+    let doc = env("doc-1");
+    assert_eq!(
+        invoke(&doc, "layout_set", patch).unwrap_err()["kind"],
+        "Denied"
+    );
+    let stranger = env("stranger");
+    let err = invoke(&stranger, "layout_get", json!({})).unwrap_err();
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
 }
