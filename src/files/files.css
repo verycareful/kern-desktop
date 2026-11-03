@@ -607,3 +607,109 @@
   flex-wrap: wrap;
   padding-top: var(--kern-density-gap);
 }
+
+/*
+ * The folder tree of the editor layout. Rows are a fixed height (ROW_HEIGHT in tree.ts) and sit
+ * absolutely in a body as tall as all the rows, so only the rows in view are in the page. No
+ * outline round the tree itself (R62): the current row shows the keyboard.
+ */
+.kern-tree-wrap {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.kern-tree-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px var(--kern-density-gap);
+  font-weight: 600;
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-tree-head-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kern-tree-notes {
+  margin: 0;
+  padding: 4px var(--kern-density-gap);
+  font-size: 12px;
+  list-style: none;
+  background: var(--kern-accent-soft);
+}
+
+.kern-tree-notes li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.kern-tree {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.kern-tree:focus-visible {
+  outline: none;
+}
+
+.kern-tree-body {
+  position: relative;
+  min-width: 100%;
+}
+
+.kern-tree-row {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: var(--kern-density-gap);
+  font-size: 13.5px;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+}
+
+.kern-tree-row:hover {
+  background: color-mix(in srgb, var(--kern-text) 4%, transparent);
+}
+
+.kern-tree-twist {
+  display: inline-flex;
+  width: 14px;
+  flex: none;
+}
+
+.kern-tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kern-tree-flag,
+.kern-tree-note {
+  font-size: 12px;
+  color: var(--kern-text-dim);
+}
+
+.kern-tree-note-error {
+  color: var(--kern-text);
+}
+
+.kern-tree-note span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

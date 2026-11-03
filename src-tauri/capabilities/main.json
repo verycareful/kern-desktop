@@ -16,6 +16,7 @@
     "allow-recent-touch",
     "allow-prune",
     "allow-store-errors-take",
+    "allow-file-identity",
     "allow-open-paths",
     "allow-doc-opened",
     "allow-doc-closed",

@@ -79,6 +79,19 @@ export const recentTouch = (path: WirePath) => invoke<Recents>("recent_touch", {
 export const prune = () => invoke<PruneReport>("prune");
 export const storeErrorsTake = () => invoke<CorruptReport[]>("store_errors_take");
 
+// ---- which file a path leads to (identity.rs) ----
+
+/**
+ * What a path leads to after links are followed: the device and inode as decimal strings (an inode
+ * can exceed what a JSON number holds exactly), or why it could not be looked at.
+ */
+export type FileIdentity =
+  { state: "known"; dev: string; ino: string } | { state: "failed"; error: WireError };
+
+/** The identity of each path, in order; two paths with the same identity are one file or folder. */
+export const fileIdentity = (paths: WirePath[]) =>
+  invoke<FileIdentity[]>("file_identity", { paths });
+
 // ---- windows and opening (windows.rs, open.rs) ----
 
 export type Origin = "inside" | "outside";

@@ -8,6 +8,7 @@ pub mod dnd;
 pub mod drop_rule;
 pub mod filemanager1;
 pub mod guard;
+pub mod identity;
 pub mod instance;
 pub mod open;
 pub mod prelaunch;
@@ -102,6 +103,7 @@ pub fn run() {
             store_cmds::recent_touch,
             store_cmds::prune,
             store_cmds::store_errors_take,
+            identity::file_identity,
             windows::open_paths,
             windows::doc_opened,
             windows::doc_closed,

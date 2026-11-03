@@ -15,6 +15,7 @@ const COMMANDS: &[&str] = &[
     "recent_touch",
     "prune",
     "store_errors_take",
+    "file_identity",
     "open_paths",
     "doc_opened",
     "doc_closed",

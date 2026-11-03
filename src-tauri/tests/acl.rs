@@ -42,6 +42,7 @@ fn env(label: &str) -> Env {
             kern_lib::store_cmds::settings_get,
             kern_lib::store_cmds::settings_set,
             kern_lib::windows::open_pending_take,
+            kern_lib::identity::file_identity,
             kern_lib::windows::doc_opened,
             kern_lib::windows::doc_closed,
             kern_lib::windows::doc_open_elsewhere,
@@ -292,4 +293,21 @@ fn an_editor_window_registers_its_own_tabs_and_not_another_windows() {
     )
     .unwrap_err();
     assert_eq!(err["kind"], "Denied", "{err}");
+}
+
+#[test]
+fn the_main_and_editor_windows_may_ask_for_a_files_identity_and_a_stranger_may_not() {
+    for label in ["main", "editor-1"] {
+        let e = env(label);
+        let out = invoke(
+            &e,
+            "file_identity",
+            json!({"paths": [{"k": "Utf8", "v": "/"}]}),
+        )
+        .unwrap();
+        assert_eq!(out[0]["state"], "known", "{label}");
+    }
+    let e = env("stranger");
+    let err = invoke(&e, "file_identity", json!({"paths": []})).unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
 }
