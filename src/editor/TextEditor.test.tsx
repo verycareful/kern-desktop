@@ -208,7 +208,10 @@ test("ctrl_s_saves_with_the_opened_stamp_and_the_dot_goes", async () => {
   act(() => view.dispatch({ changes: { from: 0, insert: "x" } }));
   key(content, "s", { ctrlKey: true });
   await waitFor(() => expect(ipc.textSave).toHaveBeenCalledTimes(1));
-  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "xhello\nworld", "lf", false, S0);
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "xhello\nworld", "lf", false, {
+    kind: "unchanged",
+    stamp: S0,
+  });
   await waitFor(() => expect(screen.queryByTestId("status-dirty")).toBeNull());
 });
 
@@ -318,7 +321,9 @@ test("an_outside_change_asks_reload_overwrite_save_as_or_cancel", async () => {
 
   fireEvent.click(within(prompt).getByRole("button", { name: "Overwrite" }));
   await waitFor(() => expect(ipc.textSave).toHaveBeenCalledTimes(2));
-  expect(ipc.textSave).toHaveBeenLastCalledWith(FILE, "mine hello\nworld", "lf", false, null);
+  expect(ipc.textSave).toHaveBeenLastCalledWith(FILE, "mine hello\nworld", "lf", false, {
+    kind: "anything",
+  });
   await waitFor(() => expect(screen.queryByTestId("external-prompt")).toBeNull());
 });
 
@@ -357,7 +362,9 @@ test("a_file_deleted_on_disk_shows_the_banner_and_save_asks_before_recreating", 
   expect(ipc.textSave).not.toHaveBeenCalled();
   fireEvent.click(within(prompt).getByRole("button", { name: "Create the file again" }));
   await waitFor(() => expect(ipc.textSave).toHaveBeenCalledTimes(1));
-  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine hello\nworld", "lf", false, null);
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine hello\nworld", "lf", false, {
+    kind: "nothing",
+  });
   await waitFor(() => expect(screen.queryByTestId("deleted-banner")).toBeNull());
 });
 
@@ -383,7 +390,7 @@ test("a_watch_that_cannot_be_set_is_said_in_the_editor", async () => {
   expect(banner).toHaveTextContent(/no inotify watches left/);
 });
 
-test("save_as_asks_for_a_path_and_writes_a_new_file_without_a_stamp", async () => {
+test("save_as_asks_for_a_path_and_creates_a_new_file_only_if_nothing_is_there", async () => {
   const { view, content } = await mount();
   act(() => view.dispatch({ changes: { from: 0, insert: "mine " } }));
   key(content, "s", { ctrlKey: true, shiftKey: true });
@@ -399,7 +406,7 @@ test("save_as_asks_for_a_path_and_writes_a_new_file_without_a_stamp", async () =
     "mine hello\nworld",
     "lf",
     false,
-    null
+    { kind: "nothing" }
   );
   await waitFor(() => expect(screen.queryByTestId("save-as-dialog")).toBeNull());
   // The tab follows the new file.
@@ -431,7 +438,7 @@ test("save_as_onto_an_existing_file_says_what_is_lost_and_waits_for_replace", as
   fireEvent.click(within(replace).getByRole("button", { name: "Replace" }));
   await waitFor(() => expect(ipc.textSave).toHaveBeenCalledTimes(1));
   expect(ipc.textSave.mock.calls[0]![0]).toEqual(p("/home/a/other.txt"));
-  expect(ipc.textSave.mock.calls[0]![4]).toBeNull();
+  expect(ipc.textSave.mock.calls[0]![4]).toEqual({ kind: "anything" });
 });
 
 test("replace_asks_again_with_the_new_facts_when_the_target_changed_since", async () => {

@@ -97,7 +97,10 @@ test("dirty_after_edit_clean_after_save", async () => {
 
   await act(() => hook.result.current.save());
   // The stamp of the text as opened goes with the save, never null.
-  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "hello world", "lf", false, S0);
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "hello world", "lf", false, {
+    kind: "unchanged",
+    stamp: S0,
+  });
   expect(hook.result.current.dirty).toBe(false);
   expect(hook.result.current.stamp).toBe(S1);
   expect(useTabs.getState().tabs[0]).toMatchObject({ dirty: false });
@@ -105,7 +108,10 @@ test("dirty_after_edit_clean_after_save", async () => {
   // The next save carries the stamp the last one returned.
   type(hook, "hello world!");
   await act(() => hook.result.current.save());
-  expect(ipc.textSave).toHaveBeenLastCalledWith(FILE, "hello world!", "lf", false, S1);
+  expect(ipc.textSave).toHaveBeenLastCalledWith(FILE, "hello world!", "lf", false, {
+    kind: "unchanged",
+    stamp: S1,
+  });
 });
 
 test("an_edit_undone_by_hand_is_clean_again", async () => {
@@ -143,7 +149,10 @@ test("crlf_kept_on_save", async () => {
   expect(useDocStatus.getState().byTab.t1).toMatchObject({ ending: "crlf", bom: true });
   type(hook, "a\nbc");
   await act(() => hook.result.current.save());
-  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "a\nbc", "crlf", true, S0);
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "a\nbc", "crlf", true, {
+    kind: "unchanged",
+    stamp: S0,
+  });
 });
 
 test("external_change_prompts", async () => {
@@ -156,7 +165,7 @@ test("external_change_prompts", async () => {
   expect(hook.result.current.changedOnDisk).toBe(true);
   // Nothing was written without the stamp.
   expect(ipc.textSave).toHaveBeenCalledTimes(1);
-  expect(ipc.textSave.mock.calls[0]![4]).toBe(S0);
+  expect(ipc.textSave.mock.calls[0]![4]).toEqual({ kind: "unchanged", stamp: S0 });
   // Cancel writes nothing and keeps the edit.
   act(() => hook.result.current.cancelPrompt());
   expect(hook.result.current.prompt).toBeNull();
@@ -164,7 +173,7 @@ test("external_change_prompts", async () => {
   expect(ipc.textSave).toHaveBeenCalledTimes(1);
 });
 
-test("overwrite_after_the_prompt_saves_without_a_stamp", async () => {
+test("overwrite_after_the_prompt_replaces_whatever_is_there", async () => {
   const hook = await mount();
   ipc.textSave.mockRejectedValueOnce(wireError("ExternalModification"));
   ipc.textCheck.mockResolvedValue("changed");
@@ -172,7 +181,7 @@ test("overwrite_after_the_prompt_saves_without_a_stamp", async () => {
   await act(() => hook.result.current.save());
   await act(() => hook.result.current.overwrite());
   expect(ipc.textSave).toHaveBeenCalledTimes(2);
-  expect(ipc.textSave).toHaveBeenLastCalledWith(FILE, "mine", "lf", false, null);
+  expect(ipc.textSave).toHaveBeenLastCalledWith(FILE, "mine", "lf", false, { kind: "anything" });
   expect(hook.result.current.dirty).toBe(false);
   expect(hook.result.current.changedOnDisk).toBe(false);
 });
@@ -228,11 +237,11 @@ test("deleted_file_save_warns", async () => {
   expect(ipc.textSave).not.toHaveBeenCalled();
   expect(hook.result.current.dirty).toBe(true);
 
-  // Only the confirmation writes, without a stamp (there is nothing to match).
+  // Only the confirmation writes, and only where nothing is (there is no file to match).
   await act(() => hook.result.current.save());
   await act(() => hook.result.current.overwrite());
   expect(ipc.textSave).toHaveBeenCalledTimes(1);
-  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine", "lf", false, null);
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine", "lf", false, { kind: "nothing" });
   expect(hook.result.current.deletedOnDisk).toBe(false);
   expect(hook.result.current.dirty).toBe(false);
 });
@@ -266,7 +275,10 @@ test("recreate_after_the_same_file_came_back_saves_with_its_stamp", async () => 
   ipc.textCheck.mockResolvedValue("same");
   await act(() => hook.result.current.overwrite());
   expect(ipc.textSave).toHaveBeenCalledTimes(1);
-  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine", "lf", false, S0);
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine", "lf", false, {
+    kind: "unchanged",
+    stamp: S0,
+  });
   expect(hook.result.current.dirty).toBe(false);
 });
 
@@ -427,7 +439,7 @@ test("a_clean_document_has_nothing_to_save", async () => {
 
 // ---- Save As ----
 
-test("save_as_to_a_new_path_writes_without_a_stamp_and_the_tab_follows", async () => {
+test("save_as_to_a_free_path_creates_it_only_if_nothing_is_there_and_the_tab_follows", async () => {
   const hook = await mount();
   const target = p("/home/a/copy.txt");
   ipc.textOpen.mockClear();
@@ -438,7 +450,7 @@ test("save_as_to_a_new_path_writes_without_a_stamp_and_the_tab_follows", async (
     result = await hook.result.current.saveAs(target, null);
   });
   expect(result).toEqual({ status: "saved" });
-  expect(ipc.textSave).toHaveBeenCalledWith(target, "mine", "lf", false, null);
+  expect(ipc.textSave).toHaveBeenCalledWith(target, "mine", "lf", false, { kind: "nothing" });
   expect(useTabs.getState().tabs[0]).toMatchObject({ path: target, dirty: false });
   // The new file is read back once; the move to its path does not open it again.
   await waitFor(() =>
@@ -472,7 +484,7 @@ test("save_as_over_an_existing_file_asks_first_and_writes_nothing", async () => 
     result = await hook.result.current.saveAs(target, entry);
   });
   expect(result).toEqual({ status: "saved" });
-  expect(ipc.textSave).toHaveBeenCalledWith(target, "mine", "lf", false, null);
+  expect(ipc.textSave).toHaveBeenCalledWith(target, "mine", "lf", false, { kind: "anything" });
 });
 
 test("save_as_asks_again_when_the_target_changed_since_the_question", async () => {
@@ -506,7 +518,10 @@ test("save_as_keeps_the_stamp_of_its_write_and_flags_a_read_back_that_differs", 
   // So the next save is checked against what was written, and refused.
   type(hook, "mine 2");
   await act(() => hook.result.current.save());
-  expect(ipc.textSave).toHaveBeenLastCalledWith(target, "mine 2", "lf", false, S1);
+  expect(ipc.textSave).toHaveBeenLastCalledWith(target, "mine 2", "lf", false, {
+    kind: "unchanged",
+    stamp: S1,
+  });
 });
 
 test("save_as_refuses_a_folder_this_file_and_an_open_tab_and_writes_nothing", async () => {
@@ -633,7 +648,10 @@ test("a_handed_document_saves_with_its_handed_stamp_ending_and_bom", async () =>
   const hook = renderHook(() => useTextDoc("t1", FILE, { handed: HANDED }));
   await waitFor(() => expect(hook.result.current.phase).toBe("ready"));
   await act(() => hook.result.current.save());
-  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine\nhello", "crlf", true, S0);
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine\nhello", "crlf", true, {
+    kind: "unchanged",
+    stamp: S0,
+  });
 });
 
 test("a_handed_document_is_not_replaced_by_the_file_when_strict_mode_runs_the_effect_again", async () => {
@@ -715,7 +733,10 @@ test("save_for_close_writes_with_the_stamp", async () => {
   const hook = await mount();
   type(hook, "mine");
   expect(await saveForClose()).toBe(true);
-  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine", "lf", false, S0);
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine", "lf", false, {
+    kind: "unchanged",
+    stamp: S0,
+  });
   expect(hook.result.current.dirty).toBe(false);
 });
 
@@ -734,7 +755,7 @@ test("save_for_close_of_a_deleted_file_creates_it_only_while_it_is_still_gone", 
   await emit("kernkraft://dir-changed", { key: "doc:t1" });
   await waitFor(() => expect(hook.result.current.deletedOnDisk).toBe(true));
   expect(await saveForClose()).toBe(true);
-  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "hello", "lf", false, null);
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "hello", "lf", false, { kind: "nothing" });
 
   // Something came back at the path meanwhile: not written, the question about it is asked.
   ipc.textSave.mockClear();
@@ -779,7 +800,7 @@ test("save_as_replace_of_a_target_gone_meanwhile_writes_the_new_file", async () 
     r = await hook.result.current.saveAs(target, asked as WireEntry);
   });
   expect(r).toEqual({ status: "saved" });
-  expect(ipc.textSave).toHaveBeenCalledWith(target, "mine", "lf", false, null);
+  expect(ipc.textSave).toHaveBeenCalledWith(target, "mine", "lf", false, { kind: "nothing" });
 });
 
 test("save_for_close_of_a_deleted_file_that_came_back_unchanged_saves_with_its_stamp", async () => {
@@ -791,5 +812,50 @@ test("save_for_close_of_a_deleted_file_that_came_back_unchanged_saves_with_its_s
   ipc.textCheck.mockResolvedValue("same");
   type(hook, "mine");
   expect(await saveForClose()).toBe(true);
-  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine", "lf", false, S0);
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine", "lf", false, {
+    kind: "unchanged",
+    stamp: S0,
+  });
+});
+
+// ---- what each save expects at the path ----
+
+test("a_recreate_that_finds_something_there_at_the_write_asks_about_it_and_writes_nothing", async () => {
+  const hook = await askedToRecreate();
+  // Still gone at the check, but something took the name before the write.
+  ipc.textSave.mockRejectedValueOnce(wireError("Exists"));
+  await act(() => hook.result.current.overwrite());
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "mine", "lf", false, { kind: "nothing" });
+  expect(hook.result.current.prompt).toBe("external");
+  expect(hook.result.current.changedOnDisk).toBe(true);
+  expect(hook.result.current.deletedOnDisk).toBe(false);
+  expect(hook.result.current.dirty).toBe(true);
+});
+
+test("save_as_to_a_path_taken_meanwhile_asks_to_replace_what_is_there_now", async () => {
+  const hook = await mount();
+  const target = p("/home/a/new.txt");
+  const now = { path: target, name: "new.txt", kind: "file", len: 7, modified_ms: 3 };
+  // Free when looked at, taken by the time of the write.
+  ipc.entryOf.mockRejectedValueOnce(wireError("NotFound")).mockResolvedValueOnce(now);
+  ipc.textSave.mockRejectedValueOnce(wireError("Exists"));
+  type(hook, "mine");
+  let r: unknown;
+  await act(async () => {
+    r = await hook.result.current.saveAs(target, null);
+  });
+  expect(r).toEqual({ status: "exists", entry: now });
+  expect(ipc.textSave).toHaveBeenCalledTimes(1);
+  expect(useTabs.getState().tabs[0]).toMatchObject({ path: FILE });
+  expect(hook.result.current.saving).toBe(false);
+});
+
+test("save_for_close_of_a_deleted_file_taken_meanwhile_does_not_close", async () => {
+  const hook = await mount();
+  ipc.textCheck.mockResolvedValue("deleted");
+  await emit("kernkraft://dir-changed", { key: "doc:t1" });
+  await waitFor(() => expect(hook.result.current.deletedOnDisk).toBe(true));
+  ipc.textSave.mockRejectedValueOnce(wireError("Exists"));
+  expect(await saveForClose()).toBe(false);
+  expect(hook.result.current.prompt).toBe("external");
 });

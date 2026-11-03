@@ -16,22 +16,21 @@ describe("textSave", () => {
     invoke.mockResolvedValue("s1:next");
   });
 
-  test("passes_the_stamp_to_invoke_as_given", async () => {
-    await textSave(PATH, "body", "lf", false, "s1:opened");
-    expect(invoke).toHaveBeenCalledWith("plugin:kernkraft-tauri|text_save", {
-      path: PATH,
-      text: "body",
-      ending: "lf",
-      bom: false,
-      stamp: "s1:opened",
-    });
-  });
-
-  test("passes_a_deliberate_null_stamp_as_null", async () => {
-    await textSave(PATH, "body", "crlf", true, null);
-    expect(invoke).toHaveBeenCalledWith(
-      "plugin:kernkraft-tauri|text_save",
-      expect.objectContaining({ stamp: null })
-    );
+  test("passes_what_the_save_expects_to_invoke_as_given", async () => {
+    for (const expect_ of [
+      { kind: "unchanged", stamp: "s1:opened" },
+      { kind: "nothing" },
+      { kind: "anything" },
+    ] as const) {
+      invoke.mockClear();
+      await textSave(PATH, "body", "lf", false, expect_);
+      expect(invoke).toHaveBeenCalledWith("plugin:kernkraft-tauri|text_save", {
+        path: PATH,
+        text: "body",
+        ending: "lf",
+        bom: false,
+        expect: expect_,
+      });
+    }
   });
 });

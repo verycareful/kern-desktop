@@ -73,8 +73,8 @@ test("open_edit_save_ctrl_s", async ({ page, mockTauri, invokeCalls }) => {
     text: "hello world\nline two and more",
     ending: "lf",
     bom: false,
-    // The stamp of the text as opened; a normal save never skips the check.
-    stamp: "s1:13:0:1:1:0",
+    // The file as opened; a normal save never skips the check.
+    expect: { kind: "unchanged", stamp: "s1:13:0:1:1:0" },
   });
   // The document was registered and put in Recent when it opened.
   const cmds = (await invokeCalls()).map((c) => c.cmd);

@@ -37,7 +37,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use kernkraft_fs::{write_bytes_atomic, BaseDirs};
+use kernkraft_fs::{write_bytes_atomic, BaseDirs, Expect};
 use kernkraft_tauri::{WireError, WireItemError, WirePath};
 use kernkraft_theme::{Density, Follow, KernAccent, Mode};
 use rustix::fs::{renameat_with, RenameFlags, CWD};
@@ -618,7 +618,8 @@ impl<T: Stored> JsonFile<T> {
             )
         })?;
         bytes.push(b'\n');
-        write_bytes_atomic(&self.path, None, &bytes)?;
+        // Only Kern writes its settings files, so what is at the name is the copy to replace.
+        write_bytes_atomic(&self.path, Expect::Anything, &bytes)?;
         lock(&self.reported).clear();
         Ok(())
     }

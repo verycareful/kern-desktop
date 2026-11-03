@@ -20,6 +20,7 @@ import {
   watchDir,
   type LineEnding,
   type Location,
+  type TextExpect,
   type UnlistenFn,
   type WireEntry,
   type WireError,
@@ -52,12 +53,14 @@ import type { HandedDoc } from "./handed-doc";
 // handed over from another window (handed-doc.ts) starts from the text it had
 // there, unsaved edits included, and is checked against the disk at once.
 //
-// A write over what is on disk without the stamp of the text as opened is made
-// only after the user said so: the confirmed Overwrite after
-// ExternalModification, Save As (which first asks to Replace when something is
-// there), and the creation again of a deleted file, confirmed in its own
-// question or with Save in the close question, and made only while a fresh
-// check finds the file still gone.
+// Every save says what it expects at the path (ipc TextExpect). An ordinary
+// save expects the file as opened or last saved. A file is created, never
+// replacing anything that appeared meanwhile, for Save As to a path found free
+// and for a deleted file written again (confirmed in its own question or with
+// Save in the close question, and only while a fresh check finds it still
+// gone). Whatever is there is replaced only after the user said so: the
+// confirmed Overwrite after ExternalModification, and Save As's Replace while
+// the target is still what they were shown.
 
 /** What a pending question to the user is about. */
 export type DocPrompt =
@@ -487,15 +490,15 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
   );
 
   // ---- saving ----
-  /** Writes the current text to the file at its path; `stamp` null replaces whatever is there. */
+  /** Writes the current text to the file at its path, as far as `expect` allows. */
   const write = useCallback(
-    async (stamp: WireStamp | null) => {
+    async (expect: TextExpect) => {
       const f = file.current;
       const snap = current.current;
       if (!f || !snap) return;
       patch({ saving: true, problem: null });
       try {
-        const next = await textSave(f.path, snap.toString(), f.ending, f.bom, stamp);
+        const next = await textSave(f.path, snap.toString(), f.ending, f.bom, expect);
         file.current = { ...f, stamp: next };
         saved.current = snap;
         const now = current.current;
@@ -512,7 +515,17 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
         ensureWatch.current();
       } catch (e) {
         const err = toWireError(e);
-        if (err.kind === "ExternalModification" && stamp !== null) {
+        if (err.kind === "Exists" && expect.kind === "nothing") {
+          // The file was to be created again, and something took its place meanwhile: nothing
+          // was written, and the user is asked about what is there now.
+          ensureWatch.current();
+          patch({
+            saving: false,
+            prompt: "external",
+            deletedOnDisk: false,
+            changedOnDisk: true,
+          });
+        } else if (err.kind === "ExternalModification" && expect.kind === "unchanged") {
           // A deleted file counts as changed to the backend; the user is told which it is.
           let deleted = false;
           try {
@@ -551,7 +564,7 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
           patch({ prompt: "recreate" });
           return;
         }
-        await write(f.stamp);
+        await write({ kind: "unchanged", stamp: f.stamp });
       }),
     [patch, run, write]
   );
@@ -588,12 +601,17 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
               changedOnDisk: verdict === "changed",
             });
             // "same": the file as opened is back, so a normal save is safe.
-            if (verdict === "same") await write(f.stamp);
+            if (verdict === "same") await write({ kind: "unchanged", stamp: f.stamp });
             return;
           }
+          // Still gone: created, and only if nothing has appeared there by the time it is written.
+          patch({ prompt: null });
+          await write({ kind: "nothing" });
+          return;
         }
+        // The user chose to replace the file that changed on disk.
         patch({ prompt: null });
-        await write(null);
+        await write({ kind: "anything" });
       }),
     [patch, run, write]
   );
@@ -623,12 +641,17 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
         if (other) {
           return { status: "failed", message: "That file is open in another tab. Close it first." };
         }
+        // What the last look found decides what the write may replace: what the user agreed to
+        // replace, still as they were shown it, is replaced; where nothing is, the file is
+        // created only if nothing appears meanwhile.
+        let expect: TextExpect = { kind: "nothing" };
         try {
           const entry = await entryOf(target);
           if (entry.kind === "dir") {
             return { status: "failed", message: "That is a folder. Enter a file name in it." };
           }
           if (!replace || !sameEntry(entry, replace)) return { status: "exists", entry };
+          expect = { kind: "anything" };
         } catch (e) {
           const err = toWireError(e);
           // Nothing there is the case that goes on; anything else is not guessed at.
@@ -637,10 +660,19 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
         patch({ saving: true, problem: null });
         let next: WireStamp;
         try {
-          next = await textSave(target, snap.toString(), f.ending, f.bom, null);
+          next = await textSave(target, snap.toString(), f.ending, f.bom, expect);
         } catch (e) {
           patch({ saving: false });
-          return { status: "failed", message: errorText(toWireError(e)) };
+          const err = toWireError(e);
+          if (err.kind === "Exists") {
+            // Something appeared at the path since it was found free: the user is asked about it.
+            try {
+              return { status: "exists", entry: await entryOf(target) };
+            } catch (again) {
+              return { status: "failed", message: errorText(toWireError(again)) };
+            }
+          }
+          return { status: "failed", message: errorText(err) };
         }
         // The new file as read back gives its ending and read-only state. The baseline is the
         // stamp of the write itself: a read-back that differs means another program wrote in
@@ -751,9 +783,11 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
             patch({ prompt: "external", changedOnDisk: true, deletedOnDisk: false });
             return false;
           }
-          await write(verdict === "deleted" ? null : f.stamp);
+          await write(
+            verdict === "deleted" ? { kind: "nothing" } : { kind: "unchanged", stamp: f.stamp }
+          );
         } else if (s.dirty) {
-          await write(f.stamp);
+          await write({ kind: "unchanged", stamp: f.stamp });
         }
         const after = st.current;
         return (

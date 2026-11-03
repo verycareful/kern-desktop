@@ -226,19 +226,26 @@ export interface WireText {
 export const textOpen = (path: WirePath) => invoke<WireText>(cmd("text_open"), { path });
 
 /**
- * Saves `text`. `stamp` is the stamp of the text as opened or last saved: the
- * save is refused with ExternalModification when the file on disk no longer
- * matches it. `null` skips that check and overwrites whatever is on disk, so
- * pass it only for a deliberate overwrite (Save As to a new file, or the
- * user's confirmed "overwrite"), never because no stamp is at hand.
+ * What a save expects at its path (kernkraft-tauri WireExpect):
+ * - `unchanged`: the file as opened or last saved; refused with ExternalModification when the
+ *   file on disk no longer matches `stamp`. An ordinary save.
+ * - `nothing`: no file at all; refused with Exists when anything is there, something that
+ *   appears while the text is written included. Save As to a path found free, or a deleted
+ *   file written again.
+ * - `anything`: whatever is there is replaced. Only an overwrite the user confirmed knowing what
+ *   is there.
  */
+export type TextExpect =
+  { kind: "unchanged"; stamp: WireStamp } | { kind: "nothing" } | { kind: "anything" };
+
+/** Saves `text`, as far as `expect` allows. */
 export const textSave = (
   path: WirePath,
   text: string,
   ending: LineEnding,
   bom: boolean,
-  stamp: WireStamp | null
-) => invoke<WireStamp>(cmd("text_save"), { path, text, ending, bom, stamp });
+  expect: TextExpect
+) => invoke<WireStamp>(cmd("text_save"), { path, text, ending, bom, expect });
 
 /** "deleted" when nothing is at `path` any more. */
 export type TextCheck = "same" | "changed" | "deleted";
