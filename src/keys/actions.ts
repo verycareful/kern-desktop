@@ -638,6 +638,17 @@ const placeActions: Action[] = [
     when: "any",
     run: (c) => c.tabs.openTrash(),
   },
+  // Ctrl+, opens the settings in most desktop editors (GNOME Text Editor, VS Code); design 4.5
+  // names no key for it.
+  {
+    id: "place.settings",
+    label: "Open Settings",
+    area: "Navigation",
+    keys: ["Ctrl+,"],
+    when: "any",
+    inEditable: true,
+    run: (c) => c.tabs.openSettings(),
+  },
   {
     id: "place.documents",
     label: "Open All documents",

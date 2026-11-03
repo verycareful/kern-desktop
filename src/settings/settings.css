@@ -1,0 +1,60 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (c) 2026 Sricharan Suresh (github.com/verycareful) */
+
+/* The Settings tab: one column of sections, scrolled as a whole. */
+.kern-settings {
+  overflow-y: auto;
+  height: 100%;
+  padding: 16px 24px;
+}
+
+.kern-settings-title {
+  margin: 0 0 12px;
+  font-size: 1.4em;
+}
+
+.kern-settings-section {
+  max-width: 44em;
+  margin-bottom: 24px;
+}
+
+.kern-settings-section fieldset {
+  margin: 8px 0;
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-settings-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 12px 2px 0;
+}
+
+.kern-settings-note {
+  color: var(--kern-text-dim);
+}
+
+.kern-settings-list {
+  padding: 0;
+  list-style: none;
+}
+
+.kern-settings-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.kern-settings-url {
+  color: var(--kern-text-dim);
+  font-family: var(--kern-font-mono);
+}
+
+.kern-settings-licence {
+  max-height: 24em;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--kern-font-mono);
+}

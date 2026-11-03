@@ -382,6 +382,13 @@ export const launchApp = (id: string, paths: WirePath[], terminal?: string) =>
 export const openDefault = (paths: WirePath[], terminal?: string) =>
   invoke<void>(cmd("open_default"), { paths, terminal: terminal ?? null });
 
+/**
+ * Opens an https URL with the default application for https links; anything else is refused
+ * (InvalidArgument) and nothing is started. Kern connects to nothing: the application does.
+ */
+export const openUrl = (url: string, terminal?: string) =>
+  invoke<void>(cmd("open_url"), { url, terminal: terminal ?? null });
+
 export const setDefaultApp = (id: string, mime: string) =>
   invoke<void>(cmd("set_default_app"), { id, mime });
 

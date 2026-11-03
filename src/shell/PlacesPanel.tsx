@@ -8,6 +8,7 @@
 import { FileSearch, Trash2, type LucideIcon } from "lucide-react";
 import { FolderView } from "../files/FolderView";
 import { DocumentsView } from "../files/DocumentsView";
+import { SettingsView } from "../settings/SettingsView";
 import { TrashView } from "../files/TrashView";
 import { currentContext, getAction, runAction } from "../keys/actions";
 import { activeTab, recentFolderTab, useTabs, type TabsState } from "../store/tabs";
@@ -73,6 +74,8 @@ function FolderArea(props: { docked?: boolean }) {
         <TrashView key={active.id} tab={active} />
       ) : active?.kind === "documents" ? (
         <DocumentsView key={active.id} />
+      ) : active?.kind === "settings" ? (
+        <SettingsView key={active.id} />
       ) : (
         tab && <FolderView key={tab.id} tab={tab} />
       )}

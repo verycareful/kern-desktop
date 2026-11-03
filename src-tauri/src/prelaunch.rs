@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 
 use kernkraft_fs::base_dirs;
-use kernkraft_xdg_apps::{launch_in_terminal, AppRegistry, DesktopEntry, MimeDb};
+use kernkraft_xdg_apps::{launch_in_terminal, AppRegistry, DesktopEntry, MimeDb, Targets};
 
 use crate::cli::{self, Plan};
 use crate::instance::Invocation;
@@ -132,7 +132,7 @@ fn launch_default(base: &kernkraft_fs::BaseDirs, db: &MimeDb, files: &[PathBuf])
     };
     let mut failures = Vec::new();
     for (app, group) in groups {
-        if let Err(e) = launch_in_terminal(app, &group, None, terminal.as_deref()) {
+        if let Err(e) = launch_in_terminal(app, Targets::Files(&group), None, terminal.as_deref()) {
             failures.push(format!("{}: {e}", app.id));
             break;
         }

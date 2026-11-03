@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { fireEvent, render } from "@testing-library/react";
+import { fireEvent, render, within } from "@testing-library/react";
 import type { WirePath } from "../ipc";
 import { activeTab, useTabs } from "../store/tabs";
 import { actions, candidateKeys, eventToKey, findDuplicateBindings } from "./actions";
@@ -67,6 +67,25 @@ test("keys_fall_back_to_the_physical_key_on_non_latin_layouts", () => {
   expect(candidateKeys({ ...base, key: "1", code: "Digit1" })).toEqual(["Ctrl+1"]);
   // A Latin layout that moved the letter (Dvorak) keeps the typed key only.
   expect(candidateKeys({ ...base, key: ",", code: "KeyW" })).toEqual(["Ctrl+,"]);
+});
+
+test("ctrl_comma_opens_settings_once_even_from_a_text_field", () => {
+  const { container } = render(
+    <>
+      <Host />
+      <input aria-label="settings test field" />
+    </>
+  );
+  useTabs.getState().openFolder(p("/a"), false);
+  fireEvent.keyDown(within(container).getByLabelText("settings test field"), {
+    key: ",",
+    code: "Comma",
+    ctrlKey: true,
+  });
+  fireEvent.keyDown(window, { key: ",", code: "Comma", ctrlKey: true });
+  const settings = useTabs.getState().tabs.filter((t) => t.kind === "settings");
+  expect(settings).toHaveLength(1);
+  expect(useTabs.getState().activeId).toBe(settings[0]!.id);
 });
 
 test("ctrl_w_works_on_a_cyrillic_layout", () => {

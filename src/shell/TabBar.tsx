@@ -9,6 +9,7 @@ import {
   FileSearch,
   FileText,
   Folder,
+  Settings,
   Trash2,
   X,
 } from "lucide-react";
@@ -85,9 +86,13 @@ export function TabBar() {
       >
         {tabs.map((t) => {
           const isActive = t.id === activeId;
-          const Icon = { folder: Folder, doc: FileText, trash: Trash2, documents: FileSearch }[
-            t.kind
-          ];
+          const Icon = {
+            folder: Folder,
+            doc: FileText,
+            trash: Trash2,
+            documents: FileSearch,
+            settings: Settings,
+          }[t.kind];
           return (
             <div
               key={t.id}

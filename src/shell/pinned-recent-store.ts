@@ -22,7 +22,7 @@ import {
 import { openFiles } from "../files/open-entries";
 import { errorText } from "../ops/error-text";
 import { baseName, namesText } from "../ops/labels";
-import { useStoreErrors } from "../store/store-errors";
+import { corruptText, useStoreErrors } from "../store/store-errors";
 import { showFolder } from "./place-nav";
 
 // Design 4.2: the pins and recents of the right-hand panel, kept by the
@@ -375,12 +375,4 @@ export function moveItem<T>(list: readonly T[], from: number, to: number): T[] {
   if (item === undefined) return out;
   out.splice(to, 0, item);
   return out;
-}
-
-function corruptText(r: CorruptReport): string {
-  const where = r.moved_to
-    ? `It was kept as ${baseName(r.moved_to)} and Kern started a fresh one`
-    : "Kern left it in place";
-  const field = r.field ? ` (the ${r.field} entry)` : "";
-  return `${r.file}${field} could not be read: ${r.reason}. ${where}.`;
 }

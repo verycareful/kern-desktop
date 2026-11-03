@@ -35,12 +35,14 @@ export type TrashTab = { id: string; kind: "trash" };
  * a walk. Like the Trash a place of its own, with no path, and at most one.
  */
 export type DocumentsTab = { id: string; kind: "documents" };
-export type Tab = FolderTab | DocTab | TrashTab | DocumentsTab;
-/** A tab that shows a place of Kern's own (the Trash, All documents), not a folder or a document. */
-export type PlaceTab = TrashTab | DocumentsTab;
+/** Kern's settings (plan Task 28): a place of its own, at most one. */
+export type SettingsTab = { id: string; kind: "settings" };
+export type Tab = FolderTab | DocTab | TrashTab | DocumentsTab | SettingsTab;
+/** A tab that shows a place of Kern's own (the Trash, All documents, Settings), not a folder or a document. */
+export type PlaceTab = TrashTab | DocumentsTab | SettingsTab;
 
 export function isPlaceTab(tab: Tab | null | undefined): tab is PlaceTab {
-  return tab?.kind === "trash" || tab?.kind === "documents";
+  return tab?.kind === "trash" || tab?.kind === "documents" || tab?.kind === "settings";
 }
 
 /**
@@ -80,6 +82,8 @@ export interface TabsState {
   openTrash(): void;
   /** Focus the All documents tab, or open it. */
   openDocuments(): void;
+  /** Focus the Settings tab, or open it. */
+  openSettings(): void;
   /** Open a document tab, or focus the one already open on this path. */
   openDoc(path: WirePath): void;
   /**
@@ -107,6 +111,7 @@ export interface TabsState {
 export function tabTitle(tab: Tab): string {
   if (tab.kind === "trash") return "Trash";
   if (tab.kind === "documents") return "All documents";
+  if (tab.kind === "settings") return "Settings";
   // A Bytes path shows with U+FFFD for the bytes that are not UTF-8.
   const trimmed = displayPath(tab.path).replace(/\/+$/, "");
   return trimmed.slice(trimmed.lastIndexOf("/") + 1) || "/";
@@ -234,6 +239,14 @@ export const useTabs = create<TabsState>()((set, get) => ({
       const open = s.tabs.find((t) => t.kind === "trash");
       if (open) return { activeId: open.id };
       const tab: TrashTab = { id: crypto.randomUUID(), kind: "trash" };
+      return { tabs: [...s.tabs, tab], activeId: tab.id };
+    });
+  },
+  openSettings() {
+    set((s) => {
+      const open = s.tabs.find((t) => t.kind === "settings");
+      if (open) return { activeId: open.id };
+      const tab: SettingsTab = { id: crypto.randomUUID(), kind: "settings" };
       return { tabs: [...s.tabs, tab], activeId: tab.id };
     });
   },

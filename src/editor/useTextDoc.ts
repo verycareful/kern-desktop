@@ -109,7 +109,10 @@ export interface TextDoc {
   edited(doc: Text): void;
   /** Saves with the stamp as opened. Asks first when the file was deleted. No-op while read-only. */
   save(): Promise<void>;
-  /** The user confirmed the question of `prompt` ("external" or "recreate"): writes without the stamp. */
+  /**
+   * The user confirmed the question of `prompt`: for "external" whatever is there now is replaced;
+   * for "recreate" the file is created, only while nothing is there.
+   */
   overwrite(): Promise<void>;
   /** Opens the Save As question. */
   askSaveAs(): void;

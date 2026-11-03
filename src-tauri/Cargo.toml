@@ -3,7 +3,7 @@
 
 [package]
 name = "kern"
-version = "0.1.0+0.58"
+version = "0.1.0+0.59"
 description = "Kern for Linux: a file manager and document viewer"
 license = "AGPL-3.0-or-later"
 publish = false
@@ -22,11 +22,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 rustix = { version = "1", features = ["fs"] }
-kernkraft-tauri = { git = "https://github.com/verycareful/kernkraft", rev = "4519c9f82493a053b98ca860756f41b99c8ed1dc" }
-kernkraft-fs = { git = "https://github.com/verycareful/kernkraft", rev = "4519c9f82493a053b98ca860756f41b99c8ed1dc" }
-kernkraft-theme = { git = "https://github.com/verycareful/kernkraft", rev = "4519c9f82493a053b98ca860756f41b99c8ed1dc" }
-kernkraft-bus = { git = "https://github.com/verycareful/kernkraft", rev = "4519c9f82493a053b98ca860756f41b99c8ed1dc" }
-kernkraft-xdg-apps = { git = "https://github.com/verycareful/kernkraft", rev = "4519c9f82493a053b98ca860756f41b99c8ed1dc" }
+kernkraft-tauri = { git = "https://github.com/verycareful/kernkraft", rev = "bbaa89443142ecba7aca91275825e53aa3422be6" }
+kernkraft-fs = { git = "https://github.com/verycareful/kernkraft", rev = "bbaa89443142ecba7aca91275825e53aa3422be6" }
+kernkraft-theme = { git = "https://github.com/verycareful/kernkraft", rev = "bbaa89443142ecba7aca91275825e53aa3422be6" }
+kernkraft-bus = { git = "https://github.com/verycareful/kernkraft", rev = "bbaa89443142ecba7aca91275825e53aa3422be6" }
+kernkraft-xdg-apps = { git = "https://github.com/verycareful/kernkraft", rev = "bbaa89443142ecba7aca91275825e53aa3422be6" }
 tauri-plugin-window-state = "2"
 # Only for the interface macro and message types; connections come from kernkraft-bus.
 zbus = "5"

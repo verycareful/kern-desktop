@@ -13,6 +13,7 @@ import {
   type WireError,
   type WireTheme,
 } from "../ipc";
+import { useThemeState } from "./theme-state";
 
 // Applies the system theme (parent spec 6.5, design 7.1): kernkraft-theme
 // resolves it, the backend sends it as CSS custom properties, and this hook
@@ -128,6 +129,9 @@ export function useTheme(prefs?: ThemePrefs): ThemeState {
       unlisten?.();
     };
   }, [key]);
+
+  // Settings shows what was applied; this window's theme is the one it shows.
+  useEffect(() => useThemeState.setState(state), [state]);
 
   return state;
 }

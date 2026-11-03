@@ -9,6 +9,7 @@ import {
   type CorruptReport,
   type WireError,
 } from "../ipc";
+import { baseName } from "../ops/labels";
 
 // The backend hands each report of an unreadable store file (settings.json,
 // pins.json, recents.json; store_cmds.rs) over once, through store_errors_take,
@@ -87,3 +88,12 @@ export const useStoreErrors = create<StoreErrorsState>()((set, get) => ({
     set({ reports: [], error: null });
   },
 }));
+
+/** A report in words: which file, why, and what Kern did with it. */
+export function corruptText(r: CorruptReport): string {
+  const where = r.moved_to
+    ? `It was kept as ${baseName(r.moved_to)} and Kern started a fresh one`
+    : "Kern left it in place";
+  const field = r.field ? ` (the ${r.field} entry)` : "";
+  return `${r.file}${field} could not be read: ${r.reason}. ${where}.`;
+}

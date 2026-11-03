@@ -116,7 +116,8 @@ export function SaveAsDialog(props: {
   const [busy, setBusy] = useState(false);
   const [existing, setExisting] = useState<{ target: WirePath; entry: WireEntry } | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const replaceButton = useRef<HTMLButtonElement>(null);
+  // The question opens on the choice that writes nothing, so a key held down replaces nothing.
+  const anotherName = useRef<HTMLButtonElement>(null);
   const alive = useRef(true);
   const id = useId();
 
@@ -172,7 +173,7 @@ export function SaveAsDialog(props: {
       <Modal
         role="alertdialog"
         label="Replace the existing file"
-        initialFocus={replaceButton}
+        initialFocus={anotherName}
         onEscape={props.onCancel}
         testId="replace-prompt"
       >
@@ -189,7 +190,6 @@ export function SaveAsDialog(props: {
         )}
         <div className="kern-modal-actions">
           <button
-            ref={replaceButton}
             type="button"
             className="kern-button"
             disabled={busy}
@@ -197,7 +197,12 @@ export function SaveAsDialog(props: {
           >
             Replace
           </button>
-          <button type="button" className="kern-button" onClick={() => setExisting(null)}>
+          <button
+            ref={anotherName}
+            type="button"
+            className="kern-button"
+            onClick={() => setExisting(null)}
+          >
             Choose another name
           </button>
           <button type="button" className="kern-button" onClick={props.onCancel}>

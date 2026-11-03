@@ -431,8 +431,9 @@ test("save_as_onto_an_existing_file_says_what_is_lost_and_waits_for_replace", as
   expect(replace).toHaveTextContent("/home/a/other.txt");
   expect(replace).toHaveTextContent("2 KB");
   expect(replace).toHaveTextContent(/what it holds now is lost/);
-  // Nothing was written, and Replace has the focus only as a choice, not as a default write.
+  // Nothing was written, and the question opens on the choice that writes nothing.
   expect(ipc.textSave).not.toHaveBeenCalled();
+  expect(within(replace).getByRole("button", { name: "Choose another name" })).toHaveFocus();
 
   ipc.textOpen.mockResolvedValue(opened({ path: p("/home/a/other.txt"), stamp: S1 }));
   fireEvent.click(within(replace).getByRole("button", { name: "Replace" }));

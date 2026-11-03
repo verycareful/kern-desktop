@@ -30,6 +30,10 @@ vi.mock("../ipc", async (orig) => ({
     }),
   textCheck: () => Promise.resolve("same"),
   textSave: () => Promise.resolve("s1:6:0:1:1:1"),
+  // The Settings tab reads the settings and the default file manager.
+  settingsGet: async () => (await import("../settings/test-settings")).SETTINGS,
+  defaultFmStatus: () => Promise.resolve({ is_default: true, current: null }),
+  fm1Status: () => Promise.resolve({ owned: true, owner: null, reason: null }),
   recentTouch: () => Promise.resolve({ entries: [] }),
   docOpened: () => Promise.resolve(),
   docClosed: () => Promise.resolve(),
@@ -274,8 +278,9 @@ test("every_action_appears_in_a_menu", () => {
   useTabs.getState().openDoc(p("/home/a/n.md"));
   useTabs.getState().openTrash();
   useTabs.getState().openDocuments();
+  useTabs.getState().openSettings();
   render(<MainWindow />);
-  for (const tabName of ["a", "n.md", "Trash", "All documents"]) {
+  for (const tabName of ["a", "n.md", "Trash", "All documents", "Settings"]) {
     fireEvent.click(screen.getByRole("tab", { name: tabName }));
     fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
     const menu = screen.getByTestId("action-menu");
