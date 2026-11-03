@@ -20,7 +20,7 @@ import { TabBar } from "./TabBar";
 import { WelcomePane } from "./WelcomePane";
 import { ensureTreeRoot } from "./layout-switch";
 
-// The editor layout (Task 28a, after design D4.1 to D4.3): a resizable left column, a places strip
+// The editor layout (after design D4.1 to D4.3): a resizable left column, a places strip
 // over a folder tree rooted at the window's folder, that stays docked whatever tab is shown; the tab
 // row and the tab take the centre; Pinned and Recent are folded to the right stub, as beside a
 // document in the file manager layout. Ctrl+B shows or hides the column. The main window shows it

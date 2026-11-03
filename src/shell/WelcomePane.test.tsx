@@ -118,7 +118,7 @@ test("welcome_facts_carry_no_version_and_do_not_speak_of_other_software", () => 
 });
 
 test("the_facts_name_files_that_are_tracked_by_the_repository", () => {
-  // A source is a file of this repository, never a local or ignored one (CLAUDE.md, local/, tools/).
+  // A source is a file of this repository, never a local or ignored one.
   for (const f of WELCOME_FACTS) {
     expect(f.source).toMatch(/^(src|src-tauri|scripts)\//);
     expect(f.source).not.toMatch(/^(local|tools)\//);

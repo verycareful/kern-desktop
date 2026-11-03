@@ -536,7 +536,11 @@ pub async fn open_paths_in<R: Runtime>(
 /// What a path is to be given, decided under the gate.
 enum Placement {
     FolderTab(PathBuf),
-    DocTab(PathBuf),
+    /// A text file for a tab of window `window`, held for it in the registry.
+    DocTab {
+        path: PathBuf,
+        window: String,
+    },
     /// A reserved label, already in the registry.
     NewDoc {
         path: PathBuf,
@@ -577,7 +581,7 @@ fn place<R: Runtime>(
     token: &str,
 ) -> Result<Step, WireError> {
     let st = state(app)?;
-    let plan = decide(app, &st, path, resolved, origin, gesture, token)?;
+    let plan = decide(app, &st, home, path, resolved, (origin, gesture), token)?;
     let wp = WirePath::from(path);
     let done = |action, location| {
         Step::Done(OpenOutcome {
@@ -600,22 +604,28 @@ fn place<R: Runtime>(
             focus(app, MAIN, token)?;
             Ok(done("folder_tab", None))
         }
-        Placement::DocTab(p) => {
-            // The window that asked, when it holds tabs; otherwise main.
-            let target = if window_kind(home) == Some(WindowKind::Editor) {
-                home
-            } else {
-                ensure_main(app)?;
-                MAIN
+        Placement::DocTab { path: p, window } => {
+            // The path is held for `window` already; if the tab cannot be asked for, it is let go.
+            let held = Location::Opening {
+                window: window.clone(),
             };
-            send_directive(
-                app,
-                target,
-                &Directive::DocTab {
-                    path: WirePath::from(&p),
-                },
-            )?;
-            focus(app, target, token)?;
+            let sent = (|| {
+                if window == MAIN {
+                    ensure_main(app)?;
+                }
+                send_directive(
+                    app,
+                    &window,
+                    &Directive::DocTab {
+                        path: WirePath::from(&p),
+                    },
+                )?;
+                focus(app, &window, token)
+            })();
+            if let Err(e) = sent {
+                st.open.remove_if(&p, &held);
+                return Err(e);
+            }
             Ok(done("doc_tab", None))
         }
         Placement::NewDoc { path: p, label } => {
@@ -645,6 +655,10 @@ fn place<R: Runtime>(
         }
         Placement::Focus(loc) => {
             match &loc {
+                // The tab is on its way: the window that is making it is brought forward.
+                Location::Opening { window } => {
+                    focus(app, window, token)?;
+                }
                 Location::Tab { window, tab_id } => {
                     send_directive(
                         app,
@@ -689,10 +703,10 @@ fn place<R: Runtime>(
 fn decide<R: Runtime>(
     app: &AppHandle<R>,
     st: &WindowState,
+    home: &str,
     path: &Path,
     resolved: &Resolved,
-    origin: Origin,
-    gesture: Gesture,
+    (origin, gesture): (Origin, Gesture),
     token: &str,
 ) -> Result<Placement, WireError> {
     let _gate = st.lock_gate();
@@ -709,13 +723,28 @@ fn decide<R: Runtime>(
         };
         match route(path, id, origin, gesture, kind, &st.open) {
             Target::FolderTab(p) => return Ok(Placement::FolderTab(p)),
-            Target::DocTab(p) => return Ok(Placement::DocTab(p)),
+            Target::DocTab(p) => {
+                // The window that asked, when it holds tabs; otherwise main. Held for it from
+                // here until its tab registers, so a second open of the file is focused, not
+                // opened: both would load the text and one would unseat the other.
+                let window = if window_kind(home) == Some(WindowKind::Editor) {
+                    home.to_owned()
+                } else {
+                    MAIN.to_owned()
+                };
+                st.open.insert(
+                    &p,
+                    Location::Opening {
+                        window: window.clone(),
+                    },
+                );
+                return Ok(Placement::DocTab { path: p, window });
+            }
             Target::DefaultApp(p) => return Ok(Placement::DefaultApp(p)),
             Target::DocWindow(p) => {
                 let label = reserve_doc_label(app, st, token);
                 st.open.insert(
                     &p,
-                    id.clone(),
                     Location::Window {
                         label: label.clone(),
                     },
@@ -724,14 +753,16 @@ fn decide<R: Runtime>(
             }
             Target::Focus(loc) => {
                 let gone = match &loc {
-                    Location::Tab { window, .. } => app.get_webview_window(window).is_none(),
+                    Location::Tab { window, .. } | Location::Opening { window } => {
+                        app.get_webview_window(window).is_none()
+                    }
                     Location::Window { label } => {
                         app.get_webview_window(label).is_none()
                             && !st.lock().creating.contains_key(label)
                     }
                 };
                 if gone {
-                    st.open.remove(path);
+                    st.open.remove_window(loc.window());
                     continue;
                 }
                 return Ok(Placement::Focus(loc));
@@ -855,8 +886,28 @@ fn own_place(window_label: &str, location: &Location) -> Result<(), WireError> {
     }
 }
 
+/// A place in words, for what is said when a file is already open there.
+pub fn describe_place(location: &Location) -> String {
+    match location {
+        Location::Window { .. } => "a window of its own".to_owned(),
+        Location::Tab { window, .. } | Location::Opening { window } if window == MAIN => {
+            "a tab of the main window".to_owned()
+        }
+        Location::Tab { .. } | Location::Opening { .. } => "a tab of an editor window".to_owned(),
+    }
+}
+
+/// Whether a registration at `want` may take over what the registry holds
+/// as `held`: the same place, or the tab a text file was routed to.
+fn may_take_over(held: &Location, want: &Location) -> bool {
+    held == want
+        || matches!((held, want), (Location::Opening { window: h }, Location::Tab { window: w, .. }) if h == w)
+}
+
 /// The frontend opened `path` at `location`, a place of the calling window.
-/// `adopting_from` is set by the main window when `location` is the tab it
+/// A path already open at another place is refused (`AlreadyOpen`, naming
+/// it): the registration would unseat that place's editor, and two editors
+/// on one file lose one user's text. `adopting_from` is set by the main window when `location` is the tab it
 /// made for the document of window `adopting_from` (a move Home): the
 /// registration is refused once the backend has taken that move back, so a
 /// late registration cannot take the path from the window that kept it.
@@ -874,8 +925,28 @@ pub async fn doc_opened<R: Runtime>(
     let id = blocking(move || Ok(FileId::of(&q))).await?;
     let st = state(&app)?;
     match adopting_from {
-        None => st.open.insert(&p, id, location),
+        None => {
+            // Looked at and registered in one step, with the opens that reserve a path.
+            let _gate = st.lock_gate();
+            match st.open.get(&p, &id) {
+                Some(held) if !may_take_over(&held, &location) => {
+                    return Err(wire_error(
+                        "AlreadyOpen",
+                        format!("this file is already open in {}", describe_place(&held)),
+                        Some(&p),
+                    ));
+                }
+                _ => st.open.insert(&p, location),
+            }
+        }
         Some(from) => {
+            if window.label() != MAIN {
+                return Err(wire_error(
+                    "Denied",
+                    "only the main window registers the tab of a move Home",
+                    None,
+                ));
+            }
             // Checked and registered under the lock `cancel_adoption` takes to
             // end the move, so the two cannot interleave.
             let inner = st.lock();
@@ -886,7 +957,7 @@ pub async fn doc_opened<R: Runtime>(
                     Some(&p),
                 ));
             }
-            st.open.insert(&p, id, location);
+            st.open.insert(&p, location);
             drop(inner);
         }
     }
@@ -905,7 +976,17 @@ pub fn doc_closed<R: Runtime>(
 ) -> Result<(), WireError> {
     own_place(window.label(), &location)?;
     let p = path.to_path_buf()?;
-    state(&app)?.open.remove_if(&p, &location);
+    let st = state(&app)?;
+    st.open.remove_if(&p, &location);
+    // A tab that never registered (its file did not open) lets go of the path held for it.
+    if let Location::Tab { window, .. } = &location {
+        st.open.remove_if(
+            &p,
+            &Location::Opening {
+                window: window.clone(),
+            },
+        );
+    }
     Ok(())
 }
 
@@ -913,19 +994,30 @@ pub fn doc_closed<R: Runtime>(
 /// of the calling window that holds a document. Save As asks this before it
 /// writes: a file open in another place is never written over (two editors
 /// on one file lose one user's text), and a path that leads to the document's
-/// own file is that file, not another.
+/// own file is that file, not another. With `reserve`, a path found free is
+/// held for `own` in the same step, so nothing can open it between the check
+/// and the write; the holder lets go with `doc_closed` when the save does not
+/// happen, and the document's own registration of the new path replaces it
+/// when it does.
 #[tauri::command]
 pub async fn doc_open_elsewhere<R: Runtime>(
     app: AppHandle<R>,
     window: WebviewWindow<R>,
     path: WirePath,
     own: Location,
+    reserve: Option<bool>,
 ) -> Result<Held, WireError> {
     own_place(window.label(), &own)?;
     let p = path.to_path_buf()?;
     let q = p.clone();
     let id = blocking(move || Ok(FileId::of(&q))).await?;
-    Ok(state(&app)?.open.held_by(&p, &id, &own))
+    let st = state(&app)?;
+    let _gate = st.lock_gate();
+    let held = st.open.held_by(&p, &id, &own);
+    if reserve == Some(true) && held == Held::Free {
+        st.open.insert(&p, own);
+    }
+    Ok(held)
 }
 
 /// Hands over, once, what was queued for the calling window, and from then
@@ -985,6 +1077,15 @@ pub async fn detach_doc<R: Runtime>(
                     Some(&p),
                 ));
             }
+            // Only a tab that has registered its document is moved: the registry is how the
+            // window holding the tab is known to be the one asking.
+            None | Some(Location::Opening { .. }) => {
+                return Err(wire_error(
+                    "NotRegistered",
+                    "the document has not finished opening in this tab, so it cannot be moved yet",
+                    Some(&p),
+                ));
+            }
             _ => {}
         }
         let label = reserve_doc_label(&app, &st, "");
@@ -993,7 +1094,6 @@ pub async fn detach_doc<R: Runtime>(
         // The window takes the registration over from the tab now.
         st.open.insert(
             &p,
-            id.clone(),
             Location::Window {
                 label: label.clone(),
             },
@@ -1003,7 +1103,7 @@ pub async fn detach_doc<R: Runtime>(
     let result = build_doc_window(&app, &label);
     let token = built(&st, &label);
     if let Err(e) = result {
-        undo_detach(&app, &st, &label, &p, id, prior);
+        undo_detach(&app, &st, &label, &p, prior);
         return Err(e);
     }
     let started = send_directive(
@@ -1017,14 +1117,14 @@ pub async fn detach_doc<R: Runtime>(
     )
     .and_then(|()| focus(&app, &label, &token));
     if let Err(e) = started {
-        undo_detach(&app, &st, &label, &p, id, prior);
+        undo_detach(&app, &st, &label, &p, prior);
         return Err(e);
     }
     let timeout = st.adopt_timeout;
     let answer = match blocking(move || Ok(rx.recv_timeout(timeout).ok())).await {
         Ok(a) => a,
         Err(e) => {
-            undo_detach(&app, &st, &label, &p, id, prior);
+            undo_detach(&app, &st, &label, &p, prior);
             return Err(e);
         }
     };
@@ -1034,11 +1134,11 @@ pub async fn detach_doc<R: Runtime>(
             Ok(label)
         }
         Some(Err(reason)) => {
-            undo_detach(&app, &st, &label, &p, id, prior);
+            undo_detach(&app, &st, &label, &p, prior);
             Err(wire_error("DetachRefused", reason, Some(&p)))
         }
         None => {
-            undo_detach(&app, &st, &label, &p, id, prior);
+            undo_detach(&app, &st, &label, &p, prior);
             Err(wire_error(
                 "DetachTimeout",
                 "the new window did not take the document; it stays in its tab",
@@ -1056,7 +1156,6 @@ fn undo_detach<R: Runtime>(
     st: &WindowState,
     label: &str,
     path: &Path,
-    id: FileId,
     prior: Option<Location>,
 ) {
     st.lock().detaching.remove(label);
@@ -1065,7 +1164,7 @@ fn undo_detach<R: Runtime>(
         label: label.to_owned(),
     };
     match prior {
-        Some(old) => st.open.insert(path, id, old),
+        Some(old) => st.open.insert(path, old),
         None => st.open.remove_if(path, &mine),
     }
     if let Some(w) = app.get_webview_window(label) {
@@ -1244,7 +1343,6 @@ fn cancel_adoption<R: Runtime>(app: &AppHandle<R>, st: &WindowState, label: &str
     st.lock().adopting.remove(label);
     st.open.insert(
         path,
-        FileId::of(path),
         Location::Window {
             label: label.to_owned(),
         },

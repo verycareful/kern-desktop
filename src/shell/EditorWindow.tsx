@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import { useViewSettingsSync } from "../files/view-settings";
 import { useShortcuts } from "../keys/useShortcuts";
 import type { Action } from "../keys/actions";
-import { OpsHost } from "../ops/OpsHost";
 import { activeTab, useTabs, type DocTab } from "../store/tabs";
 import { usePinnedRecent } from "./pinned-recent-store";
 import { ClosePrompt } from "./ClosePrompt";
@@ -56,7 +55,6 @@ export function EditorWindow(props: { starting: boolean }) {
       <EditorLayout allow={EDITOR_WINDOW_KEYS}>
         <EditorCentre tab={tab} docs={docs} starting={props.starting} />
       </EditorLayout>
-      <OpsHost />
       <StatusBar />
       <ClosePrompt />
     </div>

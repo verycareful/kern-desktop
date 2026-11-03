@@ -10,7 +10,7 @@ vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()),
 
 import { useOps } from "../ops/useOps";
 import { useLayout } from "../store/layout";
-import { WRITE_DELAY_MS, useLayoutSync } from "./use-layout-sync";
+import { WRITE_DELAY_MS, flushLayout, useLayoutSync } from "./use-layout-sync";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 const NONE: WindowLayout = { layout: null, left_width: 280, left_open: true, tree_root: null };
@@ -128,4 +128,45 @@ test("a_layout_that_cannot_be_saved_is_said_and_tried_again_with_the_next_change
   act(() => useLayout.getState().toggleLeft());
   await wait();
   expect(ipc.layoutSet).toHaveBeenLastCalledWith({ left_width: 350, left_open: false });
+});
+
+test("a_layout_that_could_not_be_read_is_still_written_when_it_changes", async () => {
+  ipc.layoutGet.mockRejectedValue(wireError("disk gone"));
+  renderHook(() => useLayoutSync(true));
+  await settle();
+  expect(useOps.getState().notice?.text).toMatch(/stored layout could not be read/);
+  act(() => useLayout.getState().setLeftWidth(410));
+  await wait();
+  expect(ipc.layoutSet).toHaveBeenCalledExactlyOnceWith({ left_width: 410 });
+});
+
+test("a_closing_window_waits_for_its_last_layout_change_to_be_written", async () => {
+  let finish!: () => void;
+  ipc.layoutSet.mockImplementation(
+    (patch: Partial<WindowLayout>) =>
+      new Promise((resolve) => {
+        finish = () => resolve({ ...disk, ...patch });
+      })
+  );
+  renderHook(() => useLayoutSync(true));
+  await settle();
+  act(() => useLayout.getState().setLeftWidth(450));
+  // Not written yet (the delay has not passed): the flush writes it now and waits for the answer.
+  let done = false;
+  const flushed = flushLayout().then(() => (done = true));
+  await settle();
+  expect(ipc.layoutSet).toHaveBeenCalledExactlyOnceWith({ left_width: 450 });
+  expect(done).toBe(false);
+  finish();
+  await act(async () => void (await flushed));
+  expect(done).toBe(true);
+});
+
+test("a_flush_that_fails_is_said_and_does_not_hold_the_window", async () => {
+  renderHook(() => useLayoutSync(true));
+  await settle();
+  ipc.layoutSet.mockRejectedValue(wireError("read-only disk"));
+  act(() => useLayout.getState().toggleLeft());
+  await act(async () => void (await flushLayout()));
+  expect(useOps.getState().notice?.text).toMatch(/could not be saved: .*read-only disk/);
 });

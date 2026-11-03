@@ -6,6 +6,7 @@ import { docController } from "../editor/doc-controller";
 import { errorText } from "../ops/error-text";
 import { useOps } from "../ops/useOps";
 import { tabTitle, useTabs } from "../store/tabs";
+import { flushLayout } from "./use-layout-sync";
 
 // Closing a document (design 4.5, parent spec 6.2): a document with unsaved
 // changes, or whose file was deleted on disk (its text is then the only copy),
@@ -157,6 +158,8 @@ export async function closeWindow(): Promise<void> {
     if (outcome === "discard") items.forEach((i) => givenUp.add(i.id));
   }
   closing = true;
+  // The layout of the window, changed last, is written before the window goes.
+  await flushLayout();
   try {
     await confirmClose();
   } catch (e) {

@@ -56,7 +56,13 @@ fn env(label: &str) -> Env {
             kern_lib::windows::adopted,
             kern_lib::windows::refuse_adoption,
             kern_lib::clipboard::clip_get,
+            kern_lib::clipboard::clip_set,
+            kern_lib::clipboard::clip_text,
             kern_lib::clipboard::clip_clear_if,
+            kern_lib::dnd::drag_out,
+            kern_lib::filemanager1::fm1_status,
+            kern_lib::default_fm::default_fm_status,
+            kern_lib::default_fm::make_default_fm,
             kern_lib::dnd::dnd_target,
         ])
         .build(tauri::generate_context!())
@@ -202,27 +208,83 @@ fn a_window_the_capability_does_not_name_may_not_say_where_a_drag_is() {
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
 }
 
-/// What an editor window's page calls: it opens documents into tabs of its own, asks where a
-/// file is open, takes its queue and closes itself after the close question.
-const EDITOR_COMMANDS: [&str; 6] = [
+/// What an editor window's page calls of Kern's own commands: it opens documents into tabs of its
+/// own, asks where a file is open, moves a tab to a window of its own, takes its queue and closes
+/// itself after the close question.
+const EDITOR_COMMANDS: [&str; 7] = [
     "open_pending_take",
     "doc_opened",
     "doc_closed",
     "doc_open_elsewhere",
+    "detach_doc",
     "open_editor",
     "settings_get",
 ];
 
-/// What only the main window (or a document window) needs: moving a tab or a document between
-/// windows, and the clipboard of the file manager. An editor window has none of these.
-const NOT_FOR_EDITORS: [&str; 7] = [
-    "detach_doc",
+/// Every command of Kern's own that only the main window (or a document window) needs, each
+/// refused to an editor window by its capability: moving a document Home, answering for a
+/// document window, the clipboard and drags of the file manager, the default file manager.
+const NOT_FOR_EDITORS: [&str; 15] = [
     "detached",
     "refuse_detach",
     "move_doc_to_main",
     "adopted",
     "refuse_adoption",
     "clip_get",
+    "clip_set",
+    "clip_text",
+    "clip_clear_if",
+    "drag_out",
+    "dnd_target",
+    "fm1_status",
+    "default_fm_status",
+    "make_default_fm",
+    "layout_set",
+];
+
+/// What an editor window's page calls of kernkraft's: the listing and watching of the tree, the
+/// text of a document, the theme and the volumes it only looks at, and the default application of a
+/// file too large for the editor. Each is granted by its own permission.
+const EDITOR_KERNKRAFT: [&str; 12] = [
+    "list_dir",
+    "entry_of",
+    "watch_dir",
+    "unwatch_dir",
+    "user_dirs",
+    "text_open",
+    "text_save",
+    "text_check",
+    "theme_get",
+    "volumes_list",
+    "volumes_problems_take",
+    "open_default",
+];
+
+/// The kernkraft commands that change files, the Trash, volumes and applications: the editor window
+/// has no file manager, and a page that held one of these could copy, delete or launch.
+const KERNKRAFT_NOT_FOR_EDITORS: [&str; 22] = [
+    "start_op",
+    "trash_purge",
+    "trash_restore",
+    "trash_list",
+    "rename",
+    "create_dir",
+    "create_file",
+    "undo",
+    "redo",
+    "undo_state",
+    "answer_conflict",
+    "cancel_op",
+    "volume_mount",
+    "volume_unmount",
+    "volume_eject",
+    "launch_app",
+    "set_default_app",
+    "open_terminal",
+    "theme_set_prefs",
+    "open_url",
+    "search",
+    "documents",
 ];
 
 #[test]
@@ -237,6 +299,15 @@ fn an_editor_window_is_granted_what_its_page_calls() {
             );
         }
     }
+    // Of kernkraft's: each of the page's own is reached, never refused by the access control.
+    for cmd in EDITOR_KERNKRAFT {
+        if let Err(err) = invoke(&e, &kernkraft(cmd), json!({})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "{cmd}: {err}"
+            );
+        }
+    }
     invoke(&e, &kernkraft("user_dirs"), json!({})).unwrap();
     invoke(
         &e,
@@ -244,6 +315,36 @@ fn an_editor_window_is_granted_what_its_page_calls() {
         json!({"path": {"k": "Utf8", "v": "/"}, "hidden": false}),
     )
     .unwrap();
+}
+
+#[test]
+fn an_editor_window_has_no_file_operation_of_kernkraft() {
+    let e = env("editor-1");
+    for cmd in KERNKRAFT_NOT_FOR_EDITORS {
+        let err = invoke(&e, &kernkraft(cmd), json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{cmd}: {err}"
+        );
+    }
+    // The main window has them: the same calls are not refused there.
+    let main = env("main");
+    for cmd in [
+        "start_op",
+        "trash_purge",
+        "rename",
+        "create_dir",
+        "volume_unmount",
+        "launch_app",
+        "set_default_app",
+    ] {
+        if let Err(err) = invoke(&main, &kernkraft(cmd), json!({})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "{cmd}: {err}"
+            );
+        }
+    }
 }
 
 #[test]

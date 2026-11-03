@@ -21,7 +21,7 @@ fn go(path: &Path, origin: Origin, gesture: Gesture, kind: Kind, reg: &OpenRegis
 
 /// Registers `path` the way the commands do.
 fn register(reg: &OpenRegistry, path: &Path, loc: Location) {
-    reg.insert(path, FileId::of(path), loc);
+    reg.insert(path, loc);
 }
 
 fn tab(window: &str, id: &str) -> Location {
@@ -540,4 +540,89 @@ fn windows_are_told_apart_by_label() {
     ] {
         assert_eq!(window_kind(other), None, "{other:?}");
     }
+}
+
+#[test]
+fn a_hard_link_made_after_the_file_was_replaced_by_rename_is_the_open_file() {
+    let t = tempfile::tempdir().unwrap();
+    let f = file(t.path(), "a.txt");
+    let reg = OpenRegistry::new();
+    let loc = tab("main", "t1");
+    register(&reg, &f, loc.clone());
+    // A name for the file as it was when it was registered.
+    let before = t.path().join("before.txt");
+    fs::hard_link(&f, &before).unwrap();
+    // A save: a temp file renamed over the path, as kernkraft-fs writes, so the path has a new inode.
+    let tmp = t.path().join(".a.txt.tmp");
+    fs::write(&tmp, "saved").unwrap();
+    fs::rename(&tmp, &f).unwrap();
+    let after = t.path().join("after.txt");
+    fs::hard_link(&f, &after).unwrap();
+    assert_ne!(FileId::of(&before).ident, FileId::of(&f).ident);
+    let held = |p: &Path| reg.held_by(p, &FileId::of(p), &tab("editor-1", "t2"));
+    // The link to the file as it is now is the open file; the link to the old inode is a different file.
+    assert_eq!(
+        held(&after),
+        Held::Elsewhere {
+            location: loc.clone()
+        }
+    );
+    assert_eq!(held(&before), Held::Free);
+    assert_eq!(
+        go(&after, Origin::Inside, Gesture::Default, Kind::Text, &reg),
+        Target::Focus(loc)
+    );
+}
+
+#[test]
+fn a_document_deleted_on_disk_is_found_through_a_link_that_dangles() {
+    let t = tempfile::tempdir().unwrap();
+    let f = file(t.path(), "a.txt");
+    let reg = OpenRegistry::new();
+    let loc = tab("main", "t1");
+    register(&reg, &f, loc.clone());
+    fs::remove_file(&f).unwrap();
+    let link = t.path().join("link.txt");
+    std::os::unix::fs::symlink(&f, &link).unwrap();
+    // Neither path exists: the link is resolved to where it points.
+    assert_eq!(FileId::of(&link).ident, None);
+    assert_eq!(reg.get(&link, &FileId::of(&link)), Some(loc));
+    // A link through a folder that is a link too, to a file that is gone, is another file.
+    let other = t.path().join("other.txt");
+    std::os::unix::fs::symlink(t.path().join("elsewhere.txt"), &other).unwrap();
+    assert_eq!(reg.get(&other, &FileId::of(&other)), None);
+}
+
+#[test]
+fn a_loop_of_links_is_given_up_not_followed_for_ever() {
+    let t = tempfile::tempdir().unwrap();
+    let (a, b) = (t.path().join("a"), t.path().join("b"));
+    std::os::unix::fs::symlink(&b, &a).unwrap();
+    std::os::unix::fs::symlink(&a, &b).unwrap();
+    assert_eq!(FileId::of(&a), FileId::default());
+}
+
+#[test]
+fn a_hold_for_a_window_is_a_place_found_by_identity_and_goes_with_the_window() {
+    let t = tempfile::tempdir().unwrap();
+    let f = file(t.path(), "a.txt");
+    let hard = t.path().join("hard.txt");
+    fs::hard_link(&f, &hard).unwrap();
+    let reg = OpenRegistry::new();
+    let hold = Location::Opening {
+        window: "editor-1".to_owned(),
+    };
+    register(&reg, &f, hold.clone());
+    assert_eq!(
+        go(&hard, Origin::Inside, Gesture::Default, Kind::Text, &reg),
+        Target::Focus(hold.clone())
+    );
+    assert_eq!(hold.window(), "editor-1");
+    let json = serde_json::to_value(&hold).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({"kind": "opening", "window": "editor-1"})
+    );
+    reg.remove_window("editor-1");
+    assert_eq!(reg.get(&f, &FileId::of(&f)), None);
 }

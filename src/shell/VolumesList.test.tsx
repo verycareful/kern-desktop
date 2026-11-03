@@ -327,3 +327,24 @@ test("a_replugged_disk_at_the_same_path_is_not_the_volume_that_was_busy", async 
   await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   await act(async () => finish());
 });
+
+test("an_editor_window_lists_mounted_volumes_as_places_and_offers_no_mount_or_menu", async () => {
+  (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {
+    metadata: { currentWindow: { label: "editor-1" } },
+  };
+  try {
+    ipc.volumesProblemsTake.mockResolvedValue([]);
+    ipc.volumesList.mockResolvedValue(
+      volumes({ mounted: [mount("STICK")], unmounted: [device("BACKUP")] })
+    );
+    render(<VolumesList />);
+    expect(await screen.findByRole("button", { name: "STICK" })).toBeInTheDocument();
+    // An unmounted device has no Mount button, and a right-click opens no menu.
+    expect(screen.queryByRole("button", { name: /Mount/ })).toBeNull();
+    expect(screen.queryByText("BACKUP")).toBeNull();
+    fireEvent.contextMenu(screen.getByRole("button", { name: "STICK" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+  } finally {
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  }
+});

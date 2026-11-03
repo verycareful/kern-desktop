@@ -5,6 +5,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { WirePath } from "../ipc";
 
 const ipc = vi.hoisted(() => ({ confirmClose: vi.fn(), isDocumentWindow: vi.fn() }));
+const layout = vi.hoisted(() => ({ flushLayout: vi.fn() }));
+vi.mock("./use-layout-sync", () => layout);
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
 import { registerDoc as register, type DocController } from "../editor/doc-controller";
@@ -38,6 +40,7 @@ const deleted = { dirty: false, deleted: true, readOnly: false };
 beforeEach(() => {
   vi.clearAllMocks();
   ipc.confirmClose.mockResolvedValue(undefined);
+  layout.flushLayout.mockResolvedValue(undefined);
   ipc.isDocumentWindow.mockReturnValue(false);
   useCloseGuard.getState().reset();
   useOps.setState({ notice: null });
@@ -214,4 +217,16 @@ test("a_document_that_arrives_while_the_others_are_saved_is_asked_about_before_t
   answer("cancel");
   await closing;
   expect(ipc.confirmClose).not.toHaveBeenCalled();
+});
+
+test("a_window_closes_only_after_its_layout_has_been_written", async () => {
+  let written!: () => void;
+  layout.flushLayout.mockImplementation(() => new Promise<void>((r) => (written = r)));
+  const closing = closeWindow();
+  await act(async () => {});
+  expect(layout.flushLayout).toHaveBeenCalledTimes(1);
+  expect(ipc.confirmClose).not.toHaveBeenCalled();
+  written();
+  await closing;
+  expect(ipc.confirmClose).toHaveBeenCalledTimes(1);
 });

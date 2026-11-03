@@ -6,7 +6,10 @@ import { EditorView, drawSelection, keymap, lineNumbers, type ViewUpdate } from 
 import { history } from "@codemirror/commands";
 import { search } from "@codemirror/search";
 import { openDefault, settingsGet, toWireError, type Location, type WirePath } from "../ipc";
+import { openFiles } from "../files/open-entries";
 import { useViewSettings } from "../files/view-settings";
+import { useOps } from "../ops/useOps";
+import { useTabs } from "../store/tabs";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { KEYS } from "./editor-keys";
@@ -104,6 +107,21 @@ export function TextEditor(props: {
   useEffect(() => {
     latest.current = { edited: doc.edited, readOnly: isReadOnly, wordWrap, zoom };
   });
+
+  // Another place has this file open (the registry refused this tab): with nothing typed here the
+  // tab goes and that place is brought forward; with edits it stays, read-only (the banner says
+  // why), so nothing typed is lost.
+  const heldElsewhere = doc.readOnly?.kind === "OpenElsewhere";
+  useEffect(() => {
+    if (!heldElsewhere || doc.dirty) return;
+    useTabs.getState().close(tabId);
+    const detail = doc.readOnly?.detail ?? "this file is already open in another place";
+    useOps.getState().notify(`${baseName(path)}: ${detail}, so it is shown there.`);
+    void openFiles([path], false).then((errors) =>
+      errors.forEach((e) => useOps.getState().notify(`${baseName(path)}: ${errorText(e)}`))
+    );
+    // Only the moment the refusal is known and the tab is clean decides.
+  }, [heldElsewhere, doc.dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ready = doc.phase === "ready";
   const initial = doc.doc;

@@ -385,13 +385,33 @@ test("a_failed_recent_entry_is_said_and_editing_goes_on", async () => {
   expect(hook.result.current.dirty).toBe(true);
 });
 
-test("a_failed_registration_is_said_and_not_released", async () => {
+test("a_failed_registration_is_said_and_only_the_tabs_own_place_is_let_go", async () => {
   ipc.docOpened.mockRejectedValue(wireError("Io", "no registry"));
   const hook = await mount();
   await waitFor(() => expect(useOps.getState().notice?.text).toMatch(/no registry/));
   hook.unmount();
   await Promise.resolve();
-  expect(ipc.docClosed).not.toHaveBeenCalled();
+  // What may have been held for this tab goes; nothing of another place's is touched.
+  expect(ipc.docClosed.mock.calls).toEqual([[FILE, { kind: "tab", window: "main", tab_id: "t1" }]]);
+});
+
+test("a_file_another_place_has_open_is_refused_to_the_tab_which_shows_it_read_only", async () => {
+  ipc.docOpened.mockRejectedValue(
+    wireError("AlreadyOpen", "this file is already open in a tab of the main window")
+  );
+  const hook = await mount();
+  await waitFor(() => expect(hook.result.current.readOnly?.kind).toBe("OpenElsewhere"));
+  expect(hook.result.current.readOnly?.detail).toBe(
+    "this file is already open in a tab of the main window"
+  );
+  // Not said as a failure of the registry, and saving writes nothing.
+  expect(useOps.getState().notice).toBeNull();
+  type(hook, "edited");
+  await act(() => hook.result.current.save());
+  expect(ipc.textSave).not.toHaveBeenCalled();
+  // A reload does not make it editable again while the other place has the file.
+  await act(() => hook.result.current.reload());
+  expect(hook.result.current.readOnly?.kind).toBe("OpenElsewhere");
 });
 
 test("a_watch_that_cannot_be_set_is_said", async () => {
@@ -886,12 +906,14 @@ test("save_as_into_a_file_open_elsewhere_is_refused_before_anything_is_written",
   const { result } = await saveAsTo(p("/home/a/other.txt"));
   expect(result).toEqual({ status: "open-elsewhere", location: ELSEWHERE.location });
   expect(ipc.textSave).not.toHaveBeenCalled();
-  // Asked about the target, from the place this document is registered at.
-  expect(ipc.docOpenElsewhere).toHaveBeenCalledWith(p("/home/a/other.txt"), {
-    kind: "tab",
-    window: "main",
-    tab_id: "t1",
-  });
+  // Asked about the target, from the place this document is registered at, holding it if free.
+  expect(ipc.docOpenElsewhere).toHaveBeenCalledWith(
+    p("/home/a/other.txt"),
+    { kind: "tab", window: "main", tab_id: "t1" },
+    true
+  );
+  // Nothing was held, so nothing is let go.
+  expect(ipc.docClosed).not.toHaveBeenCalled();
 });
 
 test("save_as_is_refused_even_when_the_user_agreed_to_replace_what_is_there", async () => {
@@ -913,12 +935,76 @@ test("save_as_to_the_same_file_under_another_name_is_this_file_not_another", asy
   expect(ipc.textSave).not.toHaveBeenCalled();
 });
 
-test("save_as_looks_again_right_before_the_write_and_a_window_that_opened_the_file_meanwhile_stops_it", async () => {
-  ipc.docOpenElsewhere.mockResolvedValueOnce({ state: "free" }).mockResolvedValue(ELSEWHERE);
-  const { result } = await saveAsTo(p("/home/a/new.txt"));
-  expect(result.status).toBe("open-elsewhere");
-  expect(ipc.docOpenElsewhere).toHaveBeenCalledTimes(2);
-  expect(ipc.textSave).not.toHaveBeenCalled();
+test("save_as_holds_its_target_through_the_write_and_the_new_registration_replaces_the_hold", async () => {
+  // The file as read back after the write is the new one.
+  const hook0 = await mount();
+  type(hook0, "hello world");
+  ipc.textOpen.mockResolvedValue(opened({ path: p("/home/a/new.txt"), stamp: S1 }));
+  let result!: Awaited<ReturnType<typeof hook0.result.current.saveAs>>;
+  await act(async () => {
+    result = await hook0.result.current.saveAs(p("/home/a/new.txt"), null);
+  });
+  const hook = hook0;
+  expect(result.status).toBe("saved");
+  // Held in the same step as the check, and not let go: the document registers the new path itself.
+  expect(ipc.docOpenElsewhere).toHaveBeenCalledExactlyOnceWith(
+    p("/home/a/new.txt"),
+    { kind: "tab", window: "main", tab_id: "t1" },
+    true
+  );
+  await waitFor(() =>
+    expect(ipc.docOpened).toHaveBeenCalledWith(p("/home/a/new.txt"), {
+      kind: "tab",
+      window: "main",
+      tab_id: "t1",
+    })
+  );
+  expect(ipc.docClosed).not.toHaveBeenCalledWith(p("/home/a/new.txt"), expect.anything());
+  hook.unmount();
+});
+
+test("save_as_lets_the_hold_go_when_nothing_is_written", async () => {
+  const place = { kind: "tab", window: "main", tab_id: "t1" };
+  // A failed write.
+  ipc.textSave.mockRejectedValueOnce(wireError("Io", "disk full"));
+  let r = await saveAsTo(p("/home/a/one.txt"));
+  expect(r.result.status).toBe("failed");
+  expect(ipc.docClosed).toHaveBeenLastCalledWith(p("/home/a/one.txt"), place);
+  r.hook.unmount();
+  // The file exists: the question is asked, and while it is open the path is not held.
+  ipc.entryOf.mockResolvedValueOnce({ kind: "file", len: 3, modified_ms: 1 } as WireEntry);
+  r = await saveAsTo(p("/home/a/two.txt"));
+  expect(r.result.status).toBe("exists");
+  expect(ipc.docClosed).toHaveBeenLastCalledWith(p("/home/a/two.txt"), place);
+  r.hook.unmount();
+  // A folder.
+  ipc.entryOf.mockResolvedValueOnce({ kind: "dir", len: 0, modified_ms: 1 } as WireEntry);
+  r = await saveAsTo(p("/home/a/three"));
+  expect(r.result.status).toBe("failed");
+  expect(ipc.docClosed).toHaveBeenLastCalledWith(p("/home/a/three"), place);
+  r.hook.unmount();
+});
+
+test("a_tab_whose_file_never_opened_lets_go_of_the_path_held_for_it_when_it_closes", async () => {
+  ipc.textOpen.mockRejectedValue(wireError("NotFound", "gone"));
+  const hook = renderHook(() => useTextDoc("t1", FILE));
+  await waitFor(() => expect(hook.result.current.phase).toBe("failed"));
+  expect(ipc.docClosed).not.toHaveBeenCalled();
+  hook.unmount();
+  expect(ipc.docClosed).toHaveBeenCalledExactlyOnceWith(FILE, {
+    kind: "tab",
+    window: "main",
+    tab_id: "t1",
+  });
+});
+
+test("an_adopted_tab_never_releases_what_it_did_not_register", async () => {
+  const hook = renderHook(() => useTextDoc("t1", FILE, { registered: true }));
+  await waitFor(() => expect(hook.result.current.phase).toBe("ready"));
+  hook.unmount();
+  // Released as any registered tab is, once; never as one that failed to register.
+  await Promise.resolve();
+  expect(ipc.docClosed).toHaveBeenCalledTimes(1);
 });
 
 test("save_as_writes_nothing_when_the_registry_cannot_be_asked", async () => {

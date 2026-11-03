@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { isMainWindow, parent, pathKey, pinsGet, toWireError, type WirePath } from "../ipc";
+import {
+  isEditorWindow,
+  isMainWindow,
+  parent,
+  pathKey,
+  pinsGet,
+  toWireError,
+  type WirePath,
+} from "../ipc";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { activeTab, useTabs, type Tab, type TabsState } from "../store/tabs";
@@ -160,7 +168,9 @@ export const actions: Action[] = [
     keys: [],
     when: "any",
     enabled: (c) =>
-      c.target?.kind === "doc" && isMainWindow() && !docController(c.target.id)?.busy(),
+      c.target?.kind === "doc" &&
+      (isMainWindow() || isEditorWindow()) &&
+      !docController(c.target.id)?.busy(),
     run: (c) => {
       if (c.target?.kind === "doc") void moveTabToWindow(c.target.id);
     },
@@ -555,9 +565,9 @@ const sizeActions: Action[] = [
 ];
 actions.push(...sizeActions);
 
-// ---- the layout of the window (Task 28a) ----
+// ---- the layout of the window ----
 // "Switch to ..." changes the current window, the main window only: an editor window is the
-// editor layout by kind. Ctrl+B is not bound by CodeMirror's keymaps on Linux (editor/TextEditor.tsx
+// editor layout by kind. Ctrl+B is not bound by CodeMirror's keymaps on Linux (editor/editor-keys.ts
 // KEYS; its test checks), so it works inside the editor too.
 
 const layoutActions: Action[] = [

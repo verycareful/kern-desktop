@@ -16,6 +16,8 @@ const SENTENCES: Record<string, string> = {
     "This file mixes Windows and Unix line endings. Kern opens it read-only so none of them change.",
   TooLarge:
     "This file is too large to edit safely. Kern shows it read-only so a save cannot run out of memory.",
+  OpenElsewhere:
+    "This file is already open in another place, so this copy is read-only: two editors on one file would lose one of them. Save As keeps your changes in another file.",
   NoWritePermission:
     "You do not have permission to write this file. Kern opens it read-only; Save As keeps a copy elsewhere.",
 };

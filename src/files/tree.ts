@@ -303,9 +303,10 @@ export function treeKey(
       if (!here || !here.folder || here.loop) return null;
       if (!here.expanded) return { expand: here.key };
       // An open folder: into its first entry (the next row, unless it is a note).
+      // With no entry to go into (a note, an empty folder) the key stays where it is.
       return rows[active + 1]?.kind === "entry" && (rows[active + 1] as EntryRow).depth > here.depth
         ? { move: active + 1 }
-        : null;
+        : { move: active };
     case "ArrowLeft": {
       if (!here) return null;
       if (here.folder && here.expanded) return { collapse: here.key };

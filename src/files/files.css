@@ -611,7 +611,7 @@
 /*
  * The folder tree of the editor layout. Rows are a fixed height (ROW_HEIGHT in tree.ts) and sit
  * absolutely in a body as tall as all the rows, so only the rows in view are in the page. No
- * outline round the tree itself (R62): the current row shows the keyboard.
+ * outline round the tree itself: the current row shows the keyboard.
  */
 .kern-tree-wrap {
   display: flex;

@@ -460,3 +460,61 @@ test("a_note_can_be_dismissed", async () => {
   fireEvent.click(within(notes).getByRole("button", { name: "Dismiss" }));
   expect(screen.queryByRole("status")).toBeNull();
 });
+
+test("two_trees_on_one_root_in_two_windows_keep_their_own_watches", async () => {
+  // No tree id given: the key is made from the window and a random id, so two trees never share one.
+  (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {
+    metadata: { currentWindow: { label: "editor-2" } },
+  };
+  try {
+    render(
+      <>
+        <div data-testid="a">
+          <FolderTree root={ROOT} hidden={false} />
+        </div>
+        <div data-testid="b">
+          <FolderTree root={ROOT} hidden={false} />
+        </div>
+      </>
+    );
+    const a = screen.getByTestId("a");
+    const b = screen.getByTestId("b");
+    await waitFor(() => expect(within(b).getAllByTestId("tree-row").length).toBeGreaterThan(0));
+    await waitFor(() => expect(within(a).getAllByTestId("tree-row").length).toBeGreaterThan(0));
+    fireEvent.click(within(a).getByRole("treeitem", { name: /^docs/ }));
+    fireEvent.click(within(b).getByRole("treeitem", { name: /^docs/ }));
+    await waitFor(() => expect(ipc.watchDir).toHaveBeenCalledTimes(4));
+    const keys = ipc.watchDir.mock.calls.map((c) => c[0] as string);
+    expect(new Set(keys).size).toBe(4);
+    for (const k of keys) expect(k).toMatch(/^tree:editor-2:[0-9a-f-]{36}:Utf8:\/r(\/docs)?$/);
+    // Closing the folder in one tree ends that tree's watch and not the other's.
+    const docsKeys = keys.filter((k) => k.endsWith("/r/docs"));
+    fireEvent.click(within(a).getByRole("treeitem", { name: /^docs/ }));
+    await waitFor(() => expect(ipc.unwatchDir).toHaveBeenCalledTimes(1));
+    expect(docsKeys).toContain(ipc.unwatchDir.mock.calls[0]![0]);
+    expect(ipc.unwatchDir.mock.calls.map((c) => c[0])).not.toContain(
+      docsKeys.find((k) => k !== ipc.unwatchDir.mock.calls[0]![0])
+    );
+    // A change reported for the other tree's key lists that tree's folder only.
+    const calls = ipc.listDir.mock.calls.length;
+    await emit("kernkraft://dir-changed", {
+      key: docsKeys.find((k) => k !== ipc.unwatchDir.mock.calls[0]![0])!,
+    });
+    await waitFor(() => expect(ipc.listDir.mock.calls.length).toBe(calls + 1));
+  } finally {
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  }
+});
+
+test("arrow_right_on_an_open_folder_with_nothing_in_it_stays_put", async () => {
+  disk["/r/src"] = [];
+  await mount();
+  fireEvent.click(row("src"));
+  await waitFor(() => expect(screen.getByText("Empty folder")).toBeInTheDocument());
+  const tree = screen.getByRole("tree");
+  const current = () =>
+    document.getElementById(tree.getAttribute("aria-activedescendant") ?? "")?.dataset.name;
+  expect(current()).toBe("src");
+  fireEvent.keyDown(tree, { key: "ArrowRight" });
+  expect(current()).toBe("src");
+});

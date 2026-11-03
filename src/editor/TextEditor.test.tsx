@@ -90,7 +90,9 @@ beforeEach(() => {
 /** The editor in a window that has the shortcuts and the status bar. */
 function Window(props: { onRender?: () => void }) {
   useShortcuts();
-  const path = useTabs((s) => (s.tabs.find((t) => t.id === "t1") as DocTab).path);
+  const path = useTabs(
+    (s) => (s.tabs.find((t) => t.id === "t1") as DocTab | undefined)?.path ?? FILE
+  );
   return (
     <>
       <Profiler id="editor" onRender={() => props.onRender?.()}>
@@ -536,4 +538,35 @@ test("save_as_into_a_file_open_in_another_window_says_where_and_offers_to_show_i
   await waitFor(() =>
     expect(ipc.openPaths).toHaveBeenCalledWith([p("/home/a/other.txt")], "inside")
   );
+});
+
+test("a_clean_tab_for_a_file_open_elsewhere_closes_and_brings_that_place_forward", async () => {
+  ipc.docOpened.mockRejectedValue(
+    wireError("AlreadyOpen", "this file is already open in a tab of the main window")
+  );
+  ipc.openPaths.mockResolvedValue([{ path: FILE, action: "focus", location: null, error: null }]);
+  render(<Window />);
+  await waitFor(() => expect(useTabs.getState().tabs).toHaveLength(0));
+  expect(ipc.openPaths).toHaveBeenCalledExactlyOnceWith([FILE], "inside", "default");
+  expect(useOps.getState().notice?.text).toMatch(
+    /notes\.txt: this file is already open in a tab of the main window, so it is shown there/
+  );
+});
+
+test("a_tab_with_edits_for_a_file_open_elsewhere_stays_read_only_and_says_why", async () => {
+  // The refusal comes back after the user has typed.
+  let refuse!: (e: unknown) => void;
+  ipc.docOpened.mockImplementation(() => new Promise((_, reject) => (refuse = reject)));
+  const { view } = await mount();
+  act(() => view.dispatch({ changes: { from: 0, insert: "mine " } }));
+  await act(async () =>
+    refuse(wireError("AlreadyOpen", "this file is already open in a window of its own"))
+  );
+  const banner = await screen.findByTestId("read-only-banner");
+  expect(banner).toHaveTextContent(/already open in another place, so this copy is read-only/);
+  expect(banner).toHaveTextContent("this file is already open in a window of its own");
+  // The tab stays with what was typed, and nothing was sent to the other place.
+  expect(useTabs.getState().tabs).toHaveLength(1);
+  expect(view.state.doc.toString()).toBe("mine hello\nworld");
+  expect(ipc.openPaths).not.toHaveBeenCalled();
 });

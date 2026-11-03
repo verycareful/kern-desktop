@@ -321,7 +321,7 @@ test("a_terminal_that_differs_only_by_spaces_is_not_a_change", async () => {
 
 test("the_default_layout_for_new_windows_is_chosen_and_stored", async () => {
   await shown();
-  const layouts = fieldset("Default layout for new windows");
+  const layouts = fieldset("Default layout of the main window");
   expect(within(layouts).getByRole("radio", { name: "File manager" })).toBeChecked();
   fireEvent.click(within(layouts).getByRole("radio", { name: "Editor" }));
   await waitFor(() => expect(ipc.settingsSet).toHaveBeenCalledWith({ default_layout: "editor" }));
@@ -347,7 +347,7 @@ test("a_default_layout_that_is_not_saved_is_said", async () => {
     details: null,
   });
   fireEvent.click(
-    within(fieldset("Default layout for new windows")).getByRole("radio", { name: "Editor" })
+    within(fieldset("Default layout of the main window")).getByRole("radio", { name: "Editor" })
   );
   expect(await screen.findByTestId("settings-problem")).toHaveTextContent(
     /The default layout was not saved: .*disk full/

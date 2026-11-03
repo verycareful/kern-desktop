@@ -39,8 +39,19 @@ pub enum Gesture {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Location {
-    Tab { window: String, tab_id: String },
-    Window { label: String },
+    Tab {
+        window: String,
+        tab_id: String,
+    },
+    Window {
+        label: String,
+    },
+    /// A text file routed to a tab of `window` whose tab has not registered
+    /// yet (the directive is on its way): the path is held for that window,
+    /// so a second open of it, by any name, is focused there and not opened.
+    Opening {
+        window: String,
+    },
 }
 
 impl Location {
@@ -49,6 +60,7 @@ impl Location {
         match self {
             Location::Tab { window, .. } => window,
             Location::Window { label } => label,
+            Location::Opening { window } => window,
         }
     }
 }
@@ -57,22 +69,56 @@ impl Location {
 /// resolved, and the file's identity on its device. A symlink shares the
 /// first with its target and a hard link shares the second with the other
 /// names of the file; the registry matches on either, so one file is never
-/// open twice under two names.
+/// open twice under two names. It is always looked up live: a save replaces
+/// the file by rename, which changes its inode, so nothing remembered from
+/// an earlier look is trusted.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FileId {
-    /// The path with links resolved, when it can be.
+    /// The path with links resolved. For a path that does not exist (a
+    /// document deleted on disk, a link whose target is gone) the nearest
+    /// existing folder's resolved path with the missing names after it.
     pub canonical: Option<PathBuf>,
     /// `(st_dev, st_ino)` of what the path leads to (stat(2), following
     /// links), when the file exists.
     pub ident: Option<(u64, u64)>,
 }
 
+/// Links followed before a path is given up as a loop: Linux's own limit
+/// (`MAXSYMLINKS` in the kernel's `namei.c`).
+const MAX_LINKS: usize = 40;
+
+/// `path` with links resolved, also when it or a target does not exist: a
+/// dangling link is followed to where it points, and a missing name is
+/// resolved through its nearest existing folder.
+fn canonical_lenient(path: &Path, links_left: usize) -> Option<PathBuf> {
+    if let Ok(c) = std::fs::canonicalize(path) {
+        return Some(c);
+    }
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_symlink() => {
+            let left = links_left.checked_sub(1)?;
+            let target = std::fs::read_link(path).ok()?;
+            let next = if target.is_absolute() {
+                target
+            } else {
+                path.parent()?.join(target)
+            };
+            canonical_lenient(&next, left)
+        }
+        // It exists but cannot be resolved (no permission): not guessed at.
+        Ok(_) => None,
+        Err(_) => {
+            let name = path.file_name()?;
+            canonical_lenient(path.parent()?, links_left).map(|p| p.join(name))
+        }
+    }
+}
+
 impl FileId {
-    /// Looks `path` up on the disk. A path that does not exist has neither
-    /// part and is known by its text alone.
+    /// Looks `path` up on the disk now.
     pub fn of(path: &Path) -> FileId {
         FileId {
-            canonical: std::fs::canonicalize(path).ok(),
+            canonical: canonical_lenient(path, MAX_LINKS),
             ident: std::fs::metadata(path).ok().map(|m| (m.dev(), m.ino())),
         }
     }
@@ -120,9 +166,6 @@ pub enum Kind {
 
 struct Entry {
     location: Location,
-    /// What the file was known by at registration, so a second route to it
-    /// (a symlink, a hard link) is found too.
-    id: FileId,
 }
 
 /// The documents open in Kern: path to place.
@@ -141,10 +184,8 @@ impl OpenRegistry {
     }
 
     /// Records `path` as open at `location`, replacing an earlier place.
-    /// `id` is what the file is known by (see [`FileId`]).
-    pub fn insert(&self, path: &Path, id: FileId, location: Location) {
-        self.lock()
-            .insert(path.to_path_buf(), Entry { location, id });
+    pub fn insert(&self, path: &Path, location: Location) {
+        self.lock().insert(path.to_path_buf(), Entry { location });
     }
 
     /// Forgets `path`, whatever place it has.
@@ -164,16 +205,22 @@ impl OpenRegistry {
     /// Where `path` is open: under the same name, or under another name of
     /// the same file (`id` is the caller's look at `path`: a symlink shares
     /// the resolved path, a hard link the device and inode), which stops two
-    /// dirty copies of one file. A file that was replaced since it was
-    /// registered keeps the identity it had then.
+    /// dirty copies of one file. Every registered path is looked at again
+    /// now, outside the lock, and compared with `id` by identity and by
+    /// resolved path; nothing remembered from registration is used.
     pub fn get(&self, path: &Path, id: &FileId) -> Option<Location> {
-        let map = self.lock();
-        if let Some(e) = map.get(path) {
-            return Some(e.location.clone());
-        }
-        map.values()
-            .find(|e| e.id.names_same_file_as(id))
-            .map(|e| e.location.clone())
+        let all: Vec<(PathBuf, Location)> = {
+            let map = self.lock();
+            if let Some(e) = map.get(path) {
+                return Some(e.location.clone());
+            }
+            map.iter()
+                .map(|(p, e)| (p.clone(), e.location.clone()))
+                .collect()
+        };
+        all.into_iter()
+            .find(|(p, _)| FileId::of(p).names_same_file_as(id))
+            .map(|(_, l)| l)
     }
 
     /// How `path` stands for the place `own` that holds a document: the

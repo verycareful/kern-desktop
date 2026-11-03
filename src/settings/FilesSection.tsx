@@ -304,7 +304,7 @@ export function FilesSection(props: { settings: Settings }) {
         ))}
       </fieldset>
       <fieldset>
-        <legend>Default layout for new windows</legend>
+        <legend>Default layout of the main window</legend>
         {LAYOUTS.map((l) => (
           <label key={l.value} className="kern-settings-choice">
             <input
@@ -318,9 +318,10 @@ export function FilesSection(props: { settings: Settings }) {
         ))}
         <p className="kern-settings-note">
           The file manager has the places on the left and Pinned and Recent on the right. The editor
-          keeps a folder tree on the left whatever tab is shown. A window you have switched keeps
-          its own layout; this is for a window that has none yet. Open as editor always makes an
-          editor window.
+          keeps a folder tree on the left whatever tab is shown. This is the layout of the main
+          window when it has none remembered yet: the first time Kern starts, and a main window made
+          anew. A layout you switch to is remembered and wins. Open as editor always makes an editor
+          window.
         </p>
       </fieldset>
       <Terminal settings={settings} />

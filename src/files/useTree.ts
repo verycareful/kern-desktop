@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   EVENT_DIR_CHANGED,
   EVENT_DIR_GONE,
@@ -10,6 +10,7 @@ import {
   on,
   parent,
   pathKey,
+  tabWindow,
   toWireError,
   unwatchDir,
   watchDir,
@@ -33,7 +34,7 @@ import {
   type TreeModel,
 } from "./tree";
 
-// The folder tree's state (design D4.3, Task 28a): the folders the user expanded, each listed
+// The folder tree's state (design D4.3): the folders the user expanded, each listed
 // lazily when it is opened and watched under a key of its own for as long as it stays open, so a
 // change shows and a folder that is closed costs nothing. A watch that cannot be set is said in
 // the tree beside the folder, a folder that cannot be listed shows its error in place, and a
@@ -67,7 +68,11 @@ export interface TreeOptions {
   root: WirePath;
   /** Whether hidden items are listed. */
   hidden: boolean;
-  /** Names this tree's watches; unique among the trees of the application. */
+  /**
+   * Names this tree's watches. The default is the window's label and a random id, so no two trees
+   * of the application share a key: the watches live in one registry for all windows, and a
+   * collapse in one tree must not end the watch another tree holds on the same folder.
+   */
   treeId?: string;
   /**
    * The root is gone: `nearest` is the closest folder above it that lists, or null. The caller
@@ -104,7 +109,7 @@ const NONE: Controller = {
 };
 
 export function useTree(opts: TreeOptions): TreeApi {
-  const own = useId();
+  const [own] = useState(() => `${tabWindow()}:${crypto.randomUUID()}`);
   const treeId = opts.treeId ?? own;
   const [model, setModel] = useState<TreeModel>(() => newModel(opts.root));
   const [notes, setNotes] = useState<TreeNote[]>([]);

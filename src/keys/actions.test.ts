@@ -361,3 +361,24 @@ test("the_tree_action_is_aimed_at_the_entry_the_menu_was_opened_on", () => {
   // It is not part of any tab's main menu.
   expect(menuSections(null).some((s) => s.actions.includes(a))).toBe(false);
 });
+
+test("move_to_new_window_is_offered_for_a_document_tab_of_an_editor_window_too", () => {
+  useTabs.getState().openDoc(p("/a/n.md"));
+  const detach = getAction("tab.detach");
+  const labelled = (label: string | null) => {
+    if (label === null) delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    else
+      (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {
+        metadata: { currentWindow: { label } },
+      };
+    return isEnabled(detach, currentContext());
+  };
+  try {
+    expect(labelled("main")).toBe(true);
+    expect(labelled("editor-3")).toBe(true);
+    // A document window is the document: there is nothing to move it out of.
+    expect(labelled("doc-1")).toBe(false);
+  } finally {
+    labelled(null);
+  }
+});

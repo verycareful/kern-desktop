@@ -12,7 +12,7 @@ import {
 } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { useOps } from "../ops/useOps";
-import { useLayout } from "../store/layout";
+import { LEFT_WIDTH_DEFAULT, useLayout } from "../store/layout";
 
 // Keeps the layout store and layout.json in step (store.rs WindowLayout). On start it reads the
 // stored layout and the default layout setting; the main window then writes every change of its
@@ -24,6 +24,23 @@ import { useLayout } from "../store/layout";
 export const WRITE_DELAY_MS = 300;
 
 const say = (text: string) => useOps.getState().notify(text);
+
+/** What the store holds when nothing could be read: no layout chosen, the defaults. */
+const UNREAD: WindowLayout = {
+  layout: null,
+  left_width: LEFT_WIDTH_DEFAULT,
+  left_open: true,
+  tree_root: null,
+};
+
+/** Writes the main window's last change to disk now (see `flushLayout`); null while nothing syncs. */
+let flushNow: (() => Promise<void>) | null = null;
+
+/**
+ * Settles every change of the layout not yet written. A window that is closing waits for this
+ * before it goes, so the last change reaches the disk; a write that fails is said, as any other.
+ */
+export const flushLayout = (): Promise<void> => flushNow?.() ?? Promise.resolve();
 
 /** The patch that brings `stored` to what the store holds; null when nothing differs. */
 function patchFor(stored: WindowLayout, s: ReturnType<typeof useLayout.getState>) {
@@ -78,6 +95,8 @@ export function useLayoutSync(persist: boolean): void {
       } catch (e) {
         if (!alive) return;
         say(`The stored layout could not be read: ${errorText(toWireError(e))}`);
+        // The next change is written all the same (and said again if that fails too).
+        stored = UNREAD;
         if (persist) useLayout.getState().applyDefaults(fallback);
         else useLayout.getState().applyToEditorWindow(null);
       }
@@ -90,14 +109,20 @@ export function useLayoutSync(persist: boolean): void {
           timer = setTimeout(flush, WRITE_DELAY_MS);
         })
       : () => undefined;
-    return () => {
-      alive = false;
-      off();
-      // What was changed last is written now, not lost with the window.
+    const settle = async () => {
       if (timer !== undefined) {
         clearTimeout(timer);
         flush();
       }
+      await writing;
+    };
+    if (persist) flushNow = settle;
+    return () => {
+      alive = false;
+      off();
+      if (flushNow === settle) flushNow = null;
+      // What was changed last is written now, not lost with the window.
+      void settle();
     };
   }, [persist]);
 }

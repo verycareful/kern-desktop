@@ -195,7 +195,11 @@ const say = (text: string) => useOps.getState().notify(text);
 const tabPlace = (tabId: string): Location => ({ kind: "tab", window: tabWindow(), tab_id: tabId });
 
 const placeKey = (l: Location): string =>
-  l.kind === "tab" ? `tab:${l.window}:${l.tab_id}` : `window:${l.label}`;
+  l.kind === "tab"
+    ? `tab:${l.window}:${l.tab_id}`
+    : l.kind === "window"
+      ? `window:${l.label}`
+      : `opening:${l.window}`;
 
 /** The key a document tab watches its file's folder under; folder tabs use the bare tab id. */
 export const watchKeyOf = (tabId: string): string => `doc:${tabId}`;
@@ -241,7 +245,11 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
   const here = location ?? tabPlace(tabId);
   const locationKey = placeKey(here);
 
+  // Set when the backend refused to register this document because another place has the file
+  // open: the document stays read-only whatever a reload finds.
+  const heldElsewhere = useRef<WireReadOnly | null>(null);
   const patch = useCallback((p: Partial<State>) => {
+    if (heldElsewhere.current && "readOnly" in p) p = { ...p, readOnly: heldElsewhere.current };
     st.current = { ...st.current, ...p };
     setState(st.current);
   }, []);
@@ -398,12 +406,22 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
       .then(
         () => true,
         (e: unknown) => {
-          say(`${baseName(target)} could not be registered as open: ${errorText(toWireError(e))}`);
+          const err = toWireError(e);
+          if (err.kind === "AlreadyOpen") {
+            // Another place has the file open: this copy is shown, never saved over it.
+            heldElsewhere.current = { kind: "OpenElsewhere", detail: err.message };
+            patch({ readOnly: heldElsewhere.current });
+          } else {
+            say(`${baseName(target)} could not be registered as open: ${errorText(err)}`);
+          }
           return false;
         }
       );
     registration.current = registered;
-    void registered.then((ok) => latestOpts.current.onRegistered?.(ok));
+    void registered.then((ok) => {
+      if (ok) everRegistered.current = true;
+      latestOpts.current.onRegistered?.(ok);
+    });
 
     const stopWatch = () => {
       if (!watching) return;
@@ -484,6 +502,23 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
       });
     };
   }, [ready, tabId, key, locationKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A tab that closes without ever registering (its file did not open) lets go of the path the
+  // backend held for it when the file was routed here.
+  const everRegistered = useRef(false);
+  const latestPlace = useRef({ path, here });
+  useEffect(() => {
+    latestPlace.current = { path, here };
+  });
+  useEffect(
+    () => () => {
+      // An adopted document was registered by the caller.
+      if (everRegistered.current || latestOpts.current.registered) return;
+      const { path: p, here: h } = latestPlace.current;
+      docClosed(p, h).catch(() => undefined);
+    },
+    []
+  );
 
   // ---- the tab's dirty flag and the status bar's facts ----
   // A tab starts clean, so only a change of the flag is written to it.
@@ -659,117 +694,129 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
           return { status: "failed", message: "That file is open in another tab. Close it first." };
         }
         // Open anywhere else, by any name (another tab, a document window, an editor window; a
-        // link or a hard link to it too): never written over. The document's own registration
-        // must have landed first, or the registry could not tell the file is its own.
-        const held = async (): Promise<SaveAsResult | null> => {
-          await registration.current;
-          try {
-            const h = await docOpenElsewhere(target, here);
-            if (h.state === "own") {
-              return {
-                status: "failed",
-                message: "That is this file under another name. Use Save to write it.",
-              };
-            }
-            return h.state === "elsewhere"
-              ? { status: "open-elsewhere", location: h.location }
-              : null;
-          } catch (e) {
-            return {
-              status: "failed",
-              message: `Kern could not tell whether that file is open elsewhere, so nothing was saved: ${errorText(toWireError(e))}`,
-            };
-          }
-        };
-        const refused = await held();
-        if (refused) return refused;
-        // What the last look found decides what the write may replace: what the user agreed to
-        // replace, still as they were shown it, is replaced; where nothing is, the file is
-        // created only if nothing appears meanwhile.
-        let expect: TextExpect = { kind: "nothing" };
+        // link or a hard link to it too): never written over. A path found free is held for this
+        // document in the same step, so nothing can open it between this check and the write; the
+        // hold is let go when nothing is written, and replaced by the document's own registration
+        // when the save lands. The document's own registration must have landed first, or the
+        // registry could not tell the file is its own.
+        await registration.current;
+        let held: Awaited<ReturnType<typeof docOpenElsewhere>>;
         try {
-          const entry = await entryOf(target);
-          if (entry.kind === "dir") {
-            return { status: "failed", message: "That is a folder. Enter a file name in it." };
-          }
-          if (!replace || !sameEntry(entry, replace)) return { status: "exists", entry };
-          expect = { kind: "anything" };
+          held = await docOpenElsewhere(target, here, true);
         } catch (e) {
-          const err = toWireError(e);
-          // Nothing there is the case that goes on; anything else is not guessed at.
-          if (err.kind !== "NotFound") return { status: "failed", message: errorText(err) };
-        }
-        // Looked at again right before the write: a window may have opened the file meanwhile.
-        const refusedNow = await held();
-        if (refusedNow) return refusedNow;
-        patch({ saving: true, problem: null });
-        let next: WireStamp;
-        try {
-          next = await textSave(target, snap.toString(), f.ending, f.bom, expect);
-        } catch (e) {
-          patch({ saving: false });
-          const err = toWireError(e);
-          if (err.kind === "Exists") {
-            // Something appeared at the path since it was found free: the user is asked about it.
-            try {
-              return { status: "exists", entry: await entryOf(target) };
-            } catch (again) {
-              return { status: "failed", message: errorText(toWireError(again)) };
-            }
-          }
-          return { status: "failed", message: errorText(err) };
-        }
-        // The new file as read back gives its ending and read-only state. The baseline is the
-        // stamp of the write itself: a read-back that differs means another program wrote in
-        // between, and that is said, not taken as what was saved.
-        let changedSince = false;
-        let facts: FileFacts = {
-          path: target,
-          stamp: next,
-          ending: f.ending,
-          bom: f.bom,
-          readOnly: null,
-        };
-        let readBack = true;
-        try {
-          const t = await textOpen(target);
-          changedSince = t.stamp !== next;
-          facts = {
-            path: t.path,
-            stamp: next,
-            ending: t.ending,
-            bom: t.bom,
-            readOnly: t.read_only,
+          return {
+            status: "failed",
+            message: `Kern could not tell whether that file is open elsewhere, so nothing was saved: ${errorText(toWireError(e))}`,
           };
-        } catch (e) {
-          readBack = false;
-          say(
-            `${baseName(target)} was saved, but could not be read back to confirm it: ${errorText(toWireError(e))}`
-          );
         }
-        file.current = facts;
-        saved.current = snap;
-        ownedKey.current = pathKey(facts.path);
-        const now = current.current;
-        patch({
-          saving: false,
-          stamp: facts.stamp,
-          ending: facts.ending,
-          bom: facts.bom,
-          readOnly: facts.readOnly,
-          dirty: now ? !now.eq(snap) : false,
-          changedOnDisk: changedSince,
-          deletedOnDisk: false,
-          prompt: null,
-          problem: null,
-        });
-        useDocStatus.getState().patch(tabId, { bom: facts.bom, ending: facts.ending });
-        useTabs.getState().retargetDoc(tabId, facts.path);
-        say(readBack ? `Saved ${baseName(target)}` : `Saved ${baseName(target)} (not read back)`);
-        recentTouch(target).catch((e: unknown) =>
-          say(`${baseName(target)} could not be added to Recent: ${errorText(toWireError(e))}`)
-        );
-        return { status: "saved" };
+        if (held.state === "own") {
+          return {
+            status: "failed",
+            message: "That is this file under another name. Use Save to write it.",
+          };
+        }
+        if (held.state === "elsewhere")
+          return { status: "open-elsewhere", location: held.location };
+        const letGo = () =>
+          docClosed(target, here).catch((e: unknown) =>
+            say(`${baseName(target)} could not be let go: ${errorText(toWireError(e))}`)
+          );
+        let outcome: SaveAsResult;
+        try {
+          outcome = await writeTo(f, snap);
+        } catch (e) {
+          await letGo();
+          throw e;
+        }
+        if (outcome.status !== "saved") await letGo();
+        return outcome;
+
+        async function writeTo(f: FileFacts, snap: Text): Promise<SaveAsResult> {
+          // What the last look found decides what the write may replace: what the user agreed to
+          // replace, still as they were shown it, is replaced; where nothing is, the file is
+          // created only if nothing appears meanwhile.
+          let expect: TextExpect = { kind: "nothing" };
+          try {
+            const entry = await entryOf(target);
+            if (entry.kind === "dir") {
+              return { status: "failed", message: "That is a folder. Enter a file name in it." };
+            }
+            if (!replace || !sameEntry(entry, replace)) return { status: "exists", entry };
+            expect = { kind: "anything" };
+          } catch (e) {
+            const err = toWireError(e);
+            // Nothing there is the case that goes on; anything else is not guessed at.
+            if (err.kind !== "NotFound") return { status: "failed", message: errorText(err) };
+          }
+          patch({ saving: true, problem: null });
+          let next: WireStamp;
+          try {
+            next = await textSave(target, snap.toString(), f.ending, f.bom, expect);
+          } catch (e) {
+            patch({ saving: false });
+            const err = toWireError(e);
+            if (err.kind === "Exists") {
+              // Something appeared at the path since it was found free: the user is asked about it.
+              try {
+                return { status: "exists", entry: await entryOf(target) };
+              } catch (again) {
+                return { status: "failed", message: errorText(toWireError(again)) };
+              }
+            }
+            return { status: "failed", message: errorText(err) };
+          }
+          // The new file as read back gives its ending and read-only state. The baseline is the
+          // stamp of the write itself: a read-back that differs means another program wrote in
+          // between, and that is said, not taken as what was saved.
+          let changedSince = false;
+          let facts: FileFacts = {
+            path: target,
+            stamp: next,
+            ending: f.ending,
+            bom: f.bom,
+            readOnly: null,
+          };
+          let readBack = true;
+          try {
+            const t = await textOpen(target);
+            changedSince = t.stamp !== next;
+            facts = {
+              path: t.path,
+              stamp: next,
+              ending: t.ending,
+              bom: t.bom,
+              readOnly: t.read_only,
+            };
+          } catch (e) {
+            readBack = false;
+            say(
+              `${baseName(target)} was saved, but could not be read back to confirm it: ${errorText(toWireError(e))}`
+            );
+          }
+          file.current = facts;
+          saved.current = snap;
+          ownedKey.current = pathKey(facts.path);
+          const now = current.current;
+          patch({
+            saving: false,
+            stamp: facts.stamp,
+            ending: facts.ending,
+            bom: facts.bom,
+            readOnly: facts.readOnly,
+            dirty: now ? !now.eq(snap) : false,
+            changedOnDisk: changedSince,
+            deletedOnDisk: false,
+            prompt: null,
+            problem: null,
+          });
+          useDocStatus.getState().patch(tabId, { bom: facts.bom, ending: facts.ending });
+          useTabs.getState().retargetDoc(tabId, facts.path);
+          say(readBack ? `Saved ${baseName(target)}` : `Saved ${baseName(target)} (not read back)`);
+          recentTouch(target).catch((e: unknown) =>
+            say(`${baseName(target)} could not be added to Recent: ${errorText(toWireError(e))}`)
+          );
+          return { status: "saved" };
+        }
       }),
     // `here` is the same place for as long as the tab id and the location are.
     // eslint-disable-next-line react-hooks/exhaustive-deps

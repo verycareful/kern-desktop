@@ -11,6 +11,7 @@ import { tabWindow, type Location } from "../ipc";
  */
 export function whereOpen(location: Location, here: string = tabWindow()): string {
   if (location.kind === "window") return "in a window of its own";
+  // A tab that has not finished opening is in that window all the same.
   if (location.window === here) return "in another tab of this window";
   return location.window === "main"
     ? "in a tab of the main window"

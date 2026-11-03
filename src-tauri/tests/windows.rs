@@ -130,13 +130,14 @@ fn doc_window_labels_are_not_reused() {
             .unwrap();
         assert_eq!(label, json!("doc-3"));
         // The wrong tab id is refused.
+        let d = e.text("d.txt");
         e.call(
             "doc_opened",
-            json!({"path": wp(&a), "location": tab("probe", "t2")}),
+            json!({"path": wp(&d), "location": tab("probe", "t2")}),
         )
         .unwrap();
         let err = e
-            .call("detach_doc", json!({"tabId": "t9", "path": wp(&a)}))
+            .call("detach_doc", json!({"tabId": "t9", "path": wp(&d)}))
             .unwrap_err();
         assert_eq!(err["kind"], json!("TabMismatch"));
     });
@@ -1024,5 +1025,368 @@ fn a_registration_for_a_move_that_is_waiting_is_accepted() {
         e.call_from("main", "adopted", json!({"label": "doc-1"}))
             .unwrap();
         mover.join().unwrap().unwrap();
+    });
+}
+
+// ---- a path is held for the tab it was routed to ----
+
+fn inside(e: &common::Ctx, from: &str, f: &std::path::Path) -> Value {
+    e.call_from(
+        from,
+        "open_paths",
+        json!({"paths": [wp(f)], "origin": "inside", "gesture": "default"}),
+    )
+    .unwrap()[0]
+        .clone()
+}
+
+fn opening(window: &str) -> Value {
+    json!({"kind": "opening", "window": window})
+}
+
+#[test]
+fn a_text_file_is_held_for_its_window_until_the_tab_registers_so_a_second_open_is_focused() {
+    let e = env(Duration::from_secs(5));
+    let a = e.text("a.txt");
+    let hard = e.files.join("hard.txt");
+    std::fs::hard_link(&a, &hard).unwrap();
+    editor(&e);
+    // main and editor-1 open the same file one after the other, before either tab registered.
+    let first = inside(&e, "main", &a);
+    assert_eq!(first["action"], json!("doc_tab"));
+    for name in [&a, &hard] {
+        let second = inside(&e, "editor-1", name);
+        assert_eq!(second["action"], json!("focus"), "{name:?}");
+        assert_eq!(second["location"], opening("main"));
+    }
+    // Only one tab was asked for.
+    let asked = |label: &str| {
+        e.take(label)
+            .iter()
+            .filter(|q| q["payload"]["kind"] == json!("doc_tab"))
+            .count()
+    };
+    assert_eq!((asked("main"), asked("editor-1")), (1, 0));
+    // The tab registers: the hold becomes its place.
+    e.call_from(
+        "main",
+        "doc_opened",
+        json!({"path": wp(&a), "location": tab("main", "t1")}),
+    )
+    .unwrap();
+    assert_eq!(inside(&e, "editor-1", &hard)["location"], tab("main", "t1"));
+}
+
+#[test]
+fn two_windows_opening_one_file_at_once_make_one_tab() {
+    let e = env(Duration::from_secs(5));
+    editor(&e);
+    for n in 0..12 {
+        let f = e.text(&format!("race{n}.txt"));
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let results: Vec<Value> = std::thread::scope(|s| {
+            ["main", "editor-1"]
+                .map(|from| {
+                    let (h, b, f) = (e.handle.clone(), barrier.clone(), f.clone());
+                    s.spawn(move || {
+                        b.wait();
+                        invoke(
+                            &h,
+                            from,
+                            "open_paths",
+                            json!({"paths": [wp(&f)], "origin": "inside", "gesture": "default"}),
+                        )
+                        .unwrap()[0]
+                            .clone()
+                    })
+                })
+                .into_iter()
+                .map(|t| t.join().unwrap())
+                .collect()
+        });
+        let tabs = results
+            .iter()
+            .filter(|r| r["action"] == json!("doc_tab"))
+            .count();
+        let focuses = results
+            .iter()
+            .filter(|r| r["action"] == json!("focus"))
+            .count();
+        assert_eq!((tabs, focuses), (1, 1), "round {n}: {results:?}");
+    }
+}
+
+#[test]
+fn a_registration_for_a_file_open_at_another_place_is_refused_and_unseats_nothing() {
+    let e = env(Duration::from_secs(5));
+    let a = e.text("a.txt");
+    editor(&e);
+    e.call_from(
+        "editor-1",
+        "doc_opened",
+        json!({"path": wp(&a), "location": tab("editor-1", "t1")}),
+    )
+    .unwrap();
+    let err = e
+        .call_from(
+            "main",
+            "doc_opened",
+            json!({"path": wp(&a), "location": tab("main", "t9")}),
+        )
+        .unwrap_err();
+    assert_eq!(err["kind"], json!("AlreadyOpen"));
+    assert_eq!(
+        err["message"],
+        json!("this file is already open in a tab of an editor window")
+    );
+    // The editor window's tab is still the place.
+    assert_eq!(inside(&e, "main", &a)["location"], tab("editor-1", "t1"));
+    // The same place registering again (after a save, say) is not a conflict.
+    e.call_from(
+        "editor-1",
+        "doc_opened",
+        json!({"path": wp(&a), "location": tab("editor-1", "t1")}),
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_tab_that_never_registers_lets_go_of_the_path_it_was_held_for() {
+    let e = env(Duration::from_secs(5));
+    let a = e.text("a.txt");
+    e.with_main();
+    assert_eq!(inside(&e, "main", &a)["action"], json!("doc_tab"));
+    assert_eq!(inside(&e, "main", &a)["action"], json!("focus"));
+    // The file could not be opened, and its tab went: it releases what was held for it.
+    e.call_from(
+        "main",
+        "doc_closed",
+        json!({"path": wp(&a), "location": tab("main", "t1")}),
+    )
+    .unwrap();
+    assert_eq!(inside(&e, "main", &a)["action"], json!("doc_tab"));
+}
+
+#[test]
+fn a_hold_goes_with_its_window() {
+    let e = env(Duration::from_secs(5));
+    let a = e.text("a.txt");
+    editor(&e);
+    assert_eq!(inside(&e, "editor-1", &a)["action"], json!("doc_tab"));
+    let wv = e.handle.get_webview_window("editor-1").unwrap();
+    let w = AsRef::<tauri::Webview<MockRuntime>>::as_ref(&wv).window();
+    kern_lib::windows::on_window_event(&w, &tauri::WindowEvent::Destroyed);
+    assert_eq!(inside(&e, "main", &a)["action"], json!("doc_tab"));
+}
+
+#[test]
+fn save_as_holds_its_target_so_an_open_in_between_is_focused_and_a_failed_save_lets_go() {
+    let e = env(Duration::from_secs(5));
+    let (a, target) = (e.text("a.txt"), e.files.join("target.txt"));
+    e.with_main();
+    let own = tab("main", "t1");
+    e.call_from(
+        "main",
+        "doc_opened",
+        json!({"path": wp(&a), "location": own}),
+    )
+    .unwrap();
+    let ask = |from: &str, own: &Value, reserve: bool| {
+        e.call_from(
+            from,
+            "doc_open_elsewhere",
+            json!({"path": wp(&target), "own": own, "reserve": reserve}),
+        )
+        .unwrap()
+    };
+    assert_eq!(ask("main", &own, true), json!({"state": "free"}));
+    // Held for the tab: a window opening the file meanwhile is sent to it, and another Save As is refused.
+    std::fs::write(&target, "x").unwrap();
+    assert_eq!(inside(&e, "main", &target)["action"], json!("focus"));
+    editor(&e);
+    let other = tab("editor-1", "t5");
+    assert_eq!(
+        ask("editor-1", &other, true),
+        json!({"state": "elsewhere", "location": own})
+    );
+    // The save did not happen: the tab lets go, and the file is free again.
+    e.call_from(
+        "main",
+        "doc_closed",
+        json!({"path": wp(&target), "location": own}),
+    )
+    .unwrap();
+    assert_eq!(ask("editor-1", &other, false), json!({"state": "free"}));
+    // A check that does not reserve holds nothing.
+    assert_eq!(inside(&e, "main", &target)["action"], json!("doc_tab"));
+}
+
+#[test]
+fn save_as_through_a_dangling_link_finds_a_document_deleted_on_disk() {
+    let e = env(Duration::from_secs(5));
+    let a = e.text("a.txt");
+    e.with_main();
+    e.call_from(
+        "main",
+        "doc_opened",
+        json!({"path": wp(&a), "location": tab("main", "t1")}),
+    )
+    .unwrap();
+    // The file is deleted under its open document, and a link to where it was dangles.
+    std::fs::remove_file(&a).unwrap();
+    let link = e.files.join("link.txt");
+    std::os::unix::fs::symlink(&a, &link).unwrap();
+    editor(&e);
+    let held = e
+        .call_from(
+            "editor-1",
+            "doc_open_elsewhere",
+            json!({"path": wp(&link), "own": tab("editor-1", "t2")}),
+        )
+        .unwrap();
+    assert_eq!(
+        held,
+        json!({"state": "elsewhere", "location": tab("main", "t1")})
+    );
+}
+
+#[test]
+fn a_file_replaced_by_a_save_is_still_found_by_a_hard_link_made_after() {
+    let e = env(Duration::from_secs(5));
+    let a = e.text("a.txt");
+    editor(&e);
+    e.call_from(
+        "editor-1",
+        "doc_opened",
+        json!({"path": wp(&a), "location": tab("editor-1", "t1")}),
+    )
+    .unwrap();
+    // A save replaces the file by rename: a new inode.
+    let tmp = e.files.join(".a.txt.tmp");
+    std::fs::write(&tmp, "saved").unwrap();
+    std::fs::rename(&tmp, &a).unwrap();
+    let link = e.files.join("after.txt");
+    std::fs::hard_link(&a, &link).unwrap();
+    let out = e.open(&[&link], "outside", "default");
+    assert_eq!(out[0]["action"], json!("focus"));
+    assert_eq!(out[0]["location"], tab("editor-1", "t1"));
+}
+
+// ---- who may call what ----
+
+#[test]
+fn only_main_registers_a_move_homes_tab_and_only_the_holder_detaches() {
+    let e = env(Duration::from_secs(5));
+    let (a, b) = (e.text("a.txt"), e.text("b.txt"));
+    editor(&e);
+    let denied = e
+        .call_from(
+            "editor-1",
+            "doc_opened",
+            json!({"path": wp(&a), "location": tab("editor-1", "t1"), "adoptingFrom": "doc-1"}),
+        )
+        .unwrap_err();
+    assert_eq!(denied["kind"], json!("Denied"));
+    // A path no tab registered cannot be detached by whoever asks.
+    for from in ["main", "editor-1"] {
+        let err = e
+            .call_from(from, "detach_doc", json!({"tabId": "t1", "path": wp(&b)}))
+            .unwrap_err();
+        assert_eq!(err["kind"], json!("NotRegistered"), "{from}");
+    }
+    assert!(!e.exists("doc-1"));
+}
+
+#[test]
+fn a_document_window_may_not_open_an_editor_window_and_each_window_answers_only_for_itself() {
+    let e = env(Duration::from_secs(5));
+    let a = e.text("a.txt");
+    e.open(&[&a], "outside", "default");
+    assert!(e.exists("doc-1"));
+    let denied = e
+        .call_from("doc-1", "open_editor", json!({"root": wp(&e.files)}))
+        .unwrap_err();
+    assert_eq!(denied["kind"], json!("Denied"));
+    for (cmd, args) in [
+        ("detached", json!({"label": "doc-9"})),
+        ("refuse_detach", json!({"label": "doc-9", "reason": "x"})),
+    ] {
+        let err = e.call_from("doc-1", cmd, args).unwrap_err();
+        assert_eq!(err["kind"], json!("Denied"), "{cmd}");
+    }
+}
+
+// ---- Move to new window from an editor window ----
+
+#[test]
+fn a_tab_of_an_editor_window_moves_to_a_new_window_once_that_window_answers() {
+    env(Duration::from_secs(30)).run(|e| {
+        let f = e.text("a.txt");
+        let label = editor(&e);
+        e.call_from(
+            &label,
+            "doc_opened",
+            json!({"path": wp(&f), "location": tab(&label, "t1")}),
+        )
+        .unwrap();
+        std::thread::scope(|s| {
+            let handle = e.handle.clone();
+            let args = json!({"tabId": "t1", "path": wp(&f), "textState": {"text": "unsaved"}});
+            let from = label.clone();
+            let call = s.spawn(move || invoke(&handle, &from, "detach_doc", args));
+            wait_for("the new window", || e.exists("doc-1"));
+            std::thread::sleep(QUIET);
+            assert!(!call.is_finished(), "returns only after the window answers");
+            e.call_from("doc-1", "detached", json!({"label": "doc-1"}))
+                .unwrap();
+            assert_eq!(call.join().unwrap().unwrap(), json!("doc-1"));
+        });
+        // The window owns the file; the editor tab releasing its registration leaves that alone.
+        e.call_from(
+            &label,
+            "doc_closed",
+            json!({"path": wp(&f), "location": tab(&label, "t1")}),
+        )
+        .unwrap();
+        let out = e.open(&[&f], "outside", "default");
+        assert_eq!(
+            out[0]["location"],
+            json!({"kind": "window", "label": "doc-1"})
+        );
+    });
+}
+
+#[test]
+fn a_move_from_an_editor_window_that_is_refused_or_unanswered_keeps_the_tab() {
+    env(Duration::from_millis(400)).run(|e| {
+        let (f, g) = (e.text("a.txt"), e.text("b.txt"));
+        let label = editor(&e);
+        for (path, tab_id) in [(&f, "t1"), (&g, "t2")] {
+            e.call_from(
+                &label,
+                "doc_opened",
+                json!({"path": wp(path), "location": tab(&label, tab_id)}),
+            )
+            .unwrap();
+        }
+        let refused = e
+            .detach(
+                &label,
+                "t1",
+                &f,
+                json!({"text": "unsaved"}),
+                "doc-1",
+                Answer::Refuses("the text did not arrive"),
+            )
+            .unwrap_err();
+        assert_eq!(refused["kind"], json!("DetachRefused"));
+        let silent = e
+            .detach(&label, "t2", &g, Value::Null, "doc-2", Answer::Silent)
+            .unwrap_err();
+        assert_eq!(silent["kind"], json!("DetachTimeout"));
+        // Both tabs still hold their files.
+        for (path, tab_id) in [(&f, "t1"), (&g, "t2")] {
+            assert_eq!(inside(&e, "main", path)["location"], tab(&label, tab_id));
+        }
     });
 }

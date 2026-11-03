@@ -18,12 +18,12 @@ import {
 } from "./tree";
 import { useTree } from "./useTree";
 
-// The folder tree of the editor layout (design D4.1 to D4.3, Task 28a): the window's folder at the
+// The folder tree of the editor layout (design D4.1 to D4.3): the window's folder at the
 // top, its entries below, a folder opening in place when it is clicked or opened with the keyboard
 // and a file opening as D4.3 says (text as a tab, any other file in its default application). Only
 // the rows in view exist in the page, so a folder of 100 000 entries scrolls like a small one.
 // It is a WAI-ARIA tree (tree.ts lists the keys); keyboard focus shows on the current row only,
-// as in the folder view (R62).
+// as in the folder view.
 
 /** Rows drawn beyond the visible ones on each side, so a fast scroll does not show blanks. */
 const OVERSCAN = 12;

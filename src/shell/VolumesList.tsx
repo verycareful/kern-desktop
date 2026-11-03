@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useState } from "react";
 import { HardDrive, Usb, X } from "lucide-react";
-import { displayPath, type Device, type Identity } from "../ipc";
+import { displayPath, isMainWindow, type Device, type Identity } from "../ipc";
 import { formatSize } from "../files/format";
 import { ActionMenu } from "../keys/ActionMenu";
 import { showFolder } from "./place-nav";
@@ -48,7 +48,10 @@ export function VolumesList() {
     };
   }, []);
 
-  const volumes = s.volumes();
+  // Mounting, unmounting and ejecting are the main window's: an editor window shows the volumes
+  // that are mounted, as places, and has no menu or button for them.
+  const manage = isMainWindow();
+  const volumes = s.volumes().filter((v) => manage || v.kind === "mounted");
   const label = (v: Volume) =>
     v.kind === "mounted" ? v.mount.label : v.device.label || v.device.device;
 
@@ -114,9 +117,10 @@ export function VolumesList() {
                   onClick={() => showFolder(v.mount.mount_point)}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    openMenu(v, { x: e.clientX, y: e.clientY }, e.currentTarget);
+                    if (manage) openMenu(v, { x: e.clientX, y: e.clientY }, e.currentTarget);
                   }}
                   onKeyDown={(e) => {
+                    if (!manage) return;
                     if (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10")) return;
                     e.preventDefault();
                     const r = e.currentTarget.getBoundingClientRect();

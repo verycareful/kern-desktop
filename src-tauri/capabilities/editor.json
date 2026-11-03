@@ -1,11 +1,22 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "editor",
-  "description": "Capability for the editor windows: tabs of documents, a folder tree, no file operations",
+  "description": "Capability for the editor windows: tabs of documents, a folder tree and the places strip. Of kernkraft's commands only what that page calls (listing, watching, text open, save and check, the theme, volumes to look at); no file operation, trash, mount, launcher or default-application command",
   "windows": ["editor-*"],
   "permissions": [
     "core:default",
-    "kernkraft-tauri:default",
+    "kernkraft-tauri:allow-list-dir",
+    "kernkraft-tauri:allow-entry-of",
+    "kernkraft-tauri:allow-watch-dir",
+    "kernkraft-tauri:allow-unwatch-dir",
+    "kernkraft-tauri:allow-user-dirs",
+    "kernkraft-tauri:allow-text-open",
+    "kernkraft-tauri:allow-text-save",
+    "kernkraft-tauri:allow-text-check",
+    "kernkraft-tauri:allow-theme-get",
+    "kernkraft-tauri:allow-volumes-list",
+    "kernkraft-tauri:allow-volumes-problems-take",
+    "kernkraft-tauri:allow-open-default",
     "allow-settings-get",
     "allow-settings-set",
     "allow-layout-get",
@@ -23,6 +34,7 @@
     "allow-doc-closed",
     "allow-open-pending-take",
     "allow-doc-open-elsewhere",
+    "allow-detach-doc",
     "allow-open-editor",
     "allow-confirm-close"
   ]

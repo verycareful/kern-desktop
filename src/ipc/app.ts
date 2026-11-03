@@ -122,7 +122,10 @@ export type Gesture = "default" | "new_window";
 
 /** Where a document is open: a tab of a window (the main window or an editor window), or a window of its own. */
 export type Location =
-  { kind: "tab"; window: string; tab_id: string } | { kind: "window"; label: string };
+  | { kind: "tab"; window: string; tab_id: string }
+  | { kind: "window"; label: string }
+  /** A text file routed to a tab of `window` that has not registered yet: held for that window. */
+  | { kind: "opening"; window: string };
 
 /** How a path stands against the open documents, for one place that holds a document (windows.rs doc_open_elsewhere). */
 export type Held =
@@ -167,9 +170,13 @@ export const docOpened = (path: WirePath, location: Location, adoptingFrom?: str
 export const docClosed = (path: WirePath, location: Location) =>
   invoke<void>("doc_closed", { path, location });
 
-/** Whether `path`, by any name, is open in a place other than `own`; Save As asks before it writes. */
-export const docOpenElsewhere = (path: WirePath, own: Location) =>
-  invoke<Held>("doc_open_elsewhere", { path, own });
+/**
+ * Whether `path`, by any name, is open in a place other than `own`; Save As asks before it writes.
+ * With `reserve`, a path found free is held for `own` in the same step; let it go with `docClosed`
+ * when nothing is written.
+ */
+export const docOpenElsewhere = (path: WirePath, own: Location, reserve = false) =>
+  invoke<Held>("doc_open_elsewhere", { path, own, reserve });
 
 /** Hands over, once, what was queued for the calling window. */
 export const openPendingTake = () => invoke<Queued[]>("open_pending_take");

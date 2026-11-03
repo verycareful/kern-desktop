@@ -541,7 +541,7 @@
 }
 
 /*
- * The editor layout (Task 28a): a left column (the places strip over the folder tree) docked
+ * The editor layout: a left column (the places strip over the folder tree) docked
  * beside the centre, whatever tab is shown. The column's width is --editor-left-width, set from
  * the layout store; the divider is a 6px strip that can be dragged or moved with the arrow keys.
  */

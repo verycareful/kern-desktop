@@ -181,8 +181,8 @@ test("notes_are_not_stops_for_the_keyboard", () => {
   expect(rows.map((r) => r.kind)).toEqual(["entry", "note", "entry"]);
   expect(treeKey(rows, 0, "ArrowDown")).toEqual({ move: 2 });
   expect(treeKey(rows, 2, "ArrowUp")).toEqual({ move: 0 });
-  // An open folder with no entry to go into: Right does nothing.
-  expect(treeKey(rows, 0, "ArrowRight")).toBeNull();
+  // An open folder with no entry to go into: Right stays where it is.
+  expect(treeKey(rows, 0, "ArrowRight")).toEqual({ move: 0 });
 });
 
 test("right_opens_a_closed_folder_then_enters_it_and_left_closes_then_goes_to_the_parent", () => {
