@@ -15,6 +15,8 @@ const ipc = vi.hoisted(() => ({
   unwatchDir: vi.fn(),
   docOpened: vi.fn(),
   docClosed: vi.fn(),
+  docOpenElsewhere: vi.fn(),
+  openPaths: vi.fn(),
   recentTouch: vi.fn(),
   on: vi.fn(),
   settingsGet: vi.fn(),
@@ -74,6 +76,7 @@ beforeEach(() => {
   ipc.unwatchDir.mockResolvedValue(undefined);
   ipc.docOpened.mockResolvedValue(undefined);
   ipc.docClosed.mockResolvedValue(undefined);
+  ipc.docOpenElsewhere.mockResolvedValue({ state: "free" });
   ipc.recentTouch.mockResolvedValue({ entries: [] });
   ipc.settingsGet.mockResolvedValue({ terminal: "kitty" });
   ipc.openDefault.mockResolvedValue(undefined);
@@ -508,4 +511,29 @@ test("save_as_is_the_way_out_of_a_read_only_file", async () => {
   key(content, "s", { ctrlKey: true, shiftKey: true });
   const dialog = await screen.findByTestId("save-as-dialog");
   expect(dialog).toHaveTextContent(/lossy copy/);
+});
+
+test("save_as_into_a_file_open_in_another_window_says_where_and_offers_to_show_it", async () => {
+  const { content } = await mount();
+  ipc.docOpenElsewhere.mockResolvedValue({
+    state: "elsewhere",
+    location: { kind: "tab", window: "editor-1", tab_id: "t7" },
+  });
+  ipc.openPaths.mockResolvedValue([
+    { path: p("/home/a/other.txt"), action: "focus", location: null, error: null },
+  ]);
+  key(content, "s", { ctrlKey: true, shiftKey: true });
+  const dialog = await screen.findByTestId("save-as-dialog");
+  fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "/home/a/other.txt" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  const note = await within(dialog).findByTestId("open-elsewhere");
+  expect(note).toHaveTextContent("other.txt is open in a tab of an editor window");
+  expect(note).toHaveTextContent(/never writes over a file that is open/);
+  // Nothing was written, and there is no Replace to choose.
+  expect(ipc.textSave).not.toHaveBeenCalled();
+  expect(screen.queryByTestId("replace-prompt")).toBeNull();
+  fireEvent.click(within(note).getByRole("button", { name: "Show it there" }));
+  await waitFor(() =>
+    expect(ipc.openPaths).toHaveBeenCalledWith([p("/home/a/other.txt")], "inside")
+  );
 });

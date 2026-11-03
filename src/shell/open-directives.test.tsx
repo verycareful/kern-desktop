@@ -38,6 +38,9 @@ const ipc = vi.hoisted(() => ({
   recentTouch: vi.fn(),
   docOpened: vi.fn(),
   docClosed: vi.fn(),
+  docOpenElsewhere: vi.fn(),
+  detached: vi.fn(),
+  refuseDetach: vi.fn(),
   adopted: vi.fn(),
   refuseAdoption: vi.fn(),
   moveDocToMain: vi.fn(),
@@ -89,6 +92,9 @@ beforeEach(() => {
   ipc.recentTouch.mockResolvedValue({ entries: [] });
   ipc.docOpened.mockResolvedValue(undefined);
   ipc.docClosed.mockResolvedValue(undefined);
+  ipc.docOpenElsewhere.mockResolvedValue({ state: "free" });
+  ipc.detached.mockResolvedValue(undefined);
+  ipc.refuseDetach.mockResolvedValue(undefined);
   usePinnedRecent.getState().reset();
   useCloseGuard.getState().reset();
   useOps.setState({ notice: null });
@@ -564,7 +570,7 @@ test("adopt_doc_of_a_path_already_open_in_a_tab_is_refused", async () => {
   expect(useTabs.getState().tabs.filter((t) => t.kind === "doc")).toHaveLength(1);
 });
 
-test("a_failed_acknowledgement_drops_the_tab_registers_the_window_again_and_says_why", async () => {
+test("a_failed_acknowledgement_drops_the_tab_and_says_why", async () => {
   ipc.adopted.mockRejectedValue({ kind: "NoAdoption", message: "too late", path: null });
   render(<App />);
   await screen.findByRole("tab", { name: "t" });
@@ -572,15 +578,45 @@ test("a_failed_acknowledgement_drops_the_tab_registers_the_window_again_and_says
   await emit("kern://adopt-doc", { path: p("/d/n.md"), text_state: null, from: "doc-1" });
   expect(screen.queryByRole("tab", { name: /n\.md/ })).toBeNull();
   expect(await screen.findByRole("alert")).toHaveTextContent("too late");
-  // The window keeps the document, so the path is registered there again, and last.
-  await waitFor(() =>
-    expect(ipc.docOpened).toHaveBeenLastCalledWith(p("/d/n.md"), {
-      kind: "window",
-      label: "doc-1",
-    })
-  );
+  // The backend registered the window for the document again when it took the move back: this
+  // window registers nothing for it, so it cannot take the path from the window that keeps it.
   await act(async () => {});
+  expect(ipc.docOpened.mock.calls.filter((c) => c[1].kind === "window")).toHaveLength(0);
   expect(ipc.docOpened.mock.calls.filter((c) => c[1].kind === "tab")).toHaveLength(1);
+});
+
+test("the_tab_made_for_a_move_is_registered_as_the_result_of_that_move", async () => {
+  render(<App />);
+  await screen.findByRole("tab", { name: "t" });
+  ipc.docOpened.mockClear();
+  await emit("kern://adopt-doc", { path: p("/d/n.md"), text_state: null, from: "doc-7" });
+  const tab = useTabs.getState().tabs.find((t) => t.kind === "doc")!;
+  expect(ipc.docOpened).toHaveBeenCalledWith(
+    p("/d/n.md"),
+    { kind: "tab", window: "main", tab_id: tab.id },
+    "doc-7"
+  );
+});
+
+test("a_registration_refused_because_the_move_was_taken_back_drops_the_tab_and_releases_nothing", async () => {
+  render(<App />);
+  await screen.findByRole("tab", { name: "t" });
+  ipc.docOpened.mockClear();
+  ipc.docClosed.mockClear();
+  ipc.docOpened.mockRejectedValueOnce({
+    kind: "AdoptionOver",
+    message: "the move is over",
+    path: null,
+  });
+  await emit("kern://adopt-doc", { path: p("/d/n.md"), text_state: null, from: "doc-1" });
+  // The window keeps the document and nobody waits for a refusal or an acknowledgement.
+  expect(screen.queryByRole("tab", { name: /n\.md/ })).toBeNull();
+  expect(ipc.adopted).not.toHaveBeenCalled();
+  expect(ipc.refuseAdoption).not.toHaveBeenCalled();
+  expect(await screen.findByText(/stays in its own window/)).toBeInTheDocument();
+  // The tab never registered, so releasing the path would take it from the window.
+  await act(async () => {});
+  expect(ipc.docClosed).not.toHaveBeenCalled();
 });
 
 function asDocWindow() {
@@ -724,4 +760,177 @@ test("a_loading_line_shows_until_the_queue_is_applied", async () => {
   await act(async () => release([folder("/d/docs")]));
   expect(await screen.findByRole("tab", { name: "docs" })).toBeInTheDocument();
   expect(screen.queryByText(/starting/i)).toBeNull();
+});
+
+// ---- a document window made for a tab's move answers once it holds the document ----
+
+test("a_document_window_made_for_a_move_answers_once_it_holds_and_has_registered_the_document", async () => {
+  asDocWindow();
+  const order: string[] = [];
+  ipc.docOpened.mockImplementation(() => {
+    order.push("registered");
+    return Promise.resolve();
+  });
+  ipc.detached.mockImplementation((label: string) => {
+    order.push(`detached ${label}`);
+    return Promise.resolve();
+  });
+  const handed = {
+    text: "unsaved",
+    saved: "hello",
+    stamp: "s1:5:0:1:1:0",
+    ending: "lf",
+    bom: false,
+    read_only: null,
+  };
+  queue(open({ kind: "load_doc", path: p("/d/n.md"), text_state: handed, ack: true }));
+  render(<App />);
+  await waitFor(() => expect(ipc.detached).toHaveBeenCalledWith("doc-1"));
+  // Registered first: the tab gives the document up only when the window can be found for it.
+  expect(order).toEqual(["registered", "detached doc-1"]);
+  expect(ipc.refuseDetach).not.toHaveBeenCalled();
+});
+
+test("a_document_window_opened_plainly_answers_nobody", async () => {
+  asDocWindow();
+  queue(open({ kind: "load_doc", path: p("/d/n.md") }));
+  render(<App />);
+  await waitFor(() => expect(ipc.docOpened).toHaveBeenCalled());
+  await act(async () => {});
+  expect(ipc.detached).not.toHaveBeenCalled();
+  expect(ipc.refuseDetach).not.toHaveBeenCalled();
+});
+
+test("a_document_window_that_cannot_use_the_text_it_was_given_refuses_the_move", async () => {
+  asDocWindow();
+  queue(open({ kind: "load_doc", path: p("/d/n.md"), text_state: { text: 5 }, ack: true }));
+  render(<App />);
+  await waitFor(() =>
+    expect(ipc.refuseDetach).toHaveBeenCalledWith("doc-1", expect.stringMatching(/did not arrive/))
+  );
+  expect(ipc.detached).not.toHaveBeenCalled();
+});
+
+test("a_document_window_that_cannot_register_the_document_refuses_the_move", async () => {
+  asDocWindow();
+  ipc.docOpened.mockRejectedValue({ kind: "Io", message: "registry gone", path: null });
+  queue(open({ kind: "load_doc", path: p("/d/n.md"), ack: true }));
+  render(<App />);
+  await waitFor(() =>
+    expect(ipc.refuseDetach).toHaveBeenCalledWith("doc-1", expect.stringMatching(/registered/))
+  );
+  expect(ipc.detached).not.toHaveBeenCalled();
+});
+
+test("a_document_window_whose_file_cannot_be_opened_refuses_the_move", async () => {
+  asDocWindow();
+  ipc.textOpen.mockRejectedValue({ kind: "NotFound", message: "gone", path: null });
+  queue(open({ kind: "load_doc", path: p("/d/n.md"), ack: true }));
+  render(<App />);
+  await waitFor(() =>
+    expect(ipc.refuseDetach).toHaveBeenCalledWith(
+      "doc-1",
+      expect.stringMatching(/could not be opened/)
+    )
+  );
+  expect(ipc.detached).not.toHaveBeenCalled();
+});
+
+// ---- an editor window ----
+
+function asEditorWindow() {
+  (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {
+    metadata: { currentWindow: { label: "editor-1" } },
+  };
+}
+
+test("an_editor_window_is_told_its_folder_and_opens_documents_in_tabs_of_its_own", async () => {
+  asEditorWindow();
+  queue(
+    open({ kind: "editor_root", path: p("/d/project") }),
+    open({ kind: "doc_tab", path: p("/d/project/n.md") })
+  );
+  render(<App />);
+  expect(await screen.findByTestId("editor-window")).toBeInTheDocument();
+  await waitFor(() => expect(ipc.textOpen).toHaveBeenCalledWith(p("/d/project/n.md")));
+  // Registered under this window: the registry names the window that holds the tab.
+  await waitFor(() =>
+    expect(ipc.docOpened).toHaveBeenCalledWith(p("/d/project/n.md"), {
+      kind: "tab",
+      window: "editor-1",
+      tab_id: useTabs.getState().tabs[0]!.id,
+    })
+  );
+  expect((await import("../store/layout")).useLayout.getState().treeRoot).toEqual(p("/d/project"));
+  // The directives an editor window answers to; nothing of the main window's.
+  const directives = ["open", "open-error", "close-requested", "adopt-doc", "select", "properties"];
+  expect(calls.filter((c) => directives.some((d) => c === `on kern://${d}`))).toEqual([
+    "on kern://open",
+    "on kern://open-error",
+    "on kern://close-requested",
+  ]);
+  // Neither the Home folder nor the places of the main window.
+  expect(ipc.userDirs).not.toHaveBeenCalled();
+  expect(screen.queryByTestId("places-strip")).toBeNull();
+});
+
+test("an_editor_window_focuses_a_tab_it_is_asked_to", async () => {
+  asEditorWindow();
+  queue(
+    open({ kind: "doc_tab", path: p("/d/a.md") }),
+    open({ kind: "doc_tab", path: p("/d/b.md") })
+  );
+  render(<App />);
+  await waitFor(() => expect(useTabs.getState().tabs).toHaveLength(2));
+  const [first] = useTabs.getState().tabs;
+  await emit("kern://open", { kind: "focus_tab", tab_id: first!.id });
+  expect(useTabs.getState().activeId).toBe(first!.id);
+  await emit("kern://open", { kind: "focus_tab", tab_id: "gone" });
+  expect(await screen.findByRole("alert")).toHaveTextContent(/tab that is gone/);
+});
+
+test("closing_an_editor_window_with_unsaved_text_asks_and_closes_only_when_answered", async () => {
+  asEditorWindow();
+  queue(open({ kind: "doc_tab", path: p("/d/n.md") }));
+  render(<App />);
+  await editEveryDocument("x", 1);
+  await emit("kern://close-requested", null);
+  const prompt = await screen.findByTestId("close-prompt");
+  expect(prompt).toHaveTextContent("Save the changes to n.md before closing?");
+  // The window stays until the question is answered.
+  await act(async () => {});
+  expect(ipc.confirmClose).not.toHaveBeenCalled();
+  fireEvent.click(within(prompt).getByRole("button", { name: "Cancel" }));
+  await act(async () => {});
+  expect(ipc.confirmClose).not.toHaveBeenCalled();
+  expect(screen.getByTestId("editor-window")).toBeInTheDocument();
+  await emit("kern://close-requested", null);
+  fireEvent.click(
+    within(await screen.findByTestId("close-prompt")).getByRole("button", {
+      name: "Close without saving",
+    })
+  );
+  await waitFor(() => expect(ipc.confirmClose).toHaveBeenCalledTimes(1));
+});
+
+test("an_editor_window_with_nothing_unsaved_closes_at_once", async () => {
+  asEditorWindow();
+  render(<App />);
+  await waitFor(() => expect(handlers["kern://close-requested"]).toBeDefined());
+  await emit("kern://close-requested", null);
+  expect(ipc.confirmClose).toHaveBeenCalledTimes(1);
+});
+
+test("closing_a_tab_of_an_editor_window_leaves_the_window_open", async () => {
+  asEditorWindow();
+  queue(
+    open({ kind: "doc_tab", path: p("/d/a.md") }),
+    open({ kind: "doc_tab", path: p("/d/b.md") })
+  );
+  render(<App />);
+  await waitFor(() => expect(useTabs.getState().tabs).toHaveLength(2));
+  fireEvent.click(screen.getByRole("button", { name: "Close b.md" }));
+  await waitFor(() => expect(useTabs.getState().tabs).toHaveLength(1));
+  await act(async () => {});
+  expect(ipc.confirmClose).not.toHaveBeenCalled();
 });

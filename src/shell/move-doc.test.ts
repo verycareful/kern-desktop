@@ -85,6 +85,33 @@ test("a_failed_move_keeps_the_tab_editable_and_says_why", async () => {
   );
 });
 
+test("a_move_the_new_window_did_not_acknowledge_keeps_the_tab_and_its_text_and_says_why", async () => {
+  off = registerDoc("d", controller());
+  ipc.detachDoc.mockRejectedValue({
+    kind: "DetachTimeout",
+    message: "the new window did not take the document; it stays in its tab",
+    path: null,
+  });
+  await moveTabToWindow("d");
+  // The tab is still there with its text, editable again; nothing closed it.
+  expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["f", "d"]);
+  expect(moving).toEqual([true, false]);
+  expect(useOps.getState().notice?.text).toMatch(/stays in its tab/);
+});
+
+test("the_tab_closes_only_after_the_move_has_been_acknowledged", async () => {
+  off = registerDoc("d", controller());
+  let acknowledge!: (label: string) => void;
+  ipc.detachDoc.mockImplementation(() => new Promise<string>((r) => (acknowledge = r)));
+  const moved = moveTabToWindow("d");
+  await Promise.resolve();
+  // The backend has not answered: the window may not hold the text yet.
+  expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["f", "d"]);
+  acknowledge("doc-1");
+  await moved;
+  expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["f"]);
+});
+
 test("a_document_that_holds_no_text_moves_without_a_state_and_the_window_reads_it", async () => {
   off = registerDoc("d", controller({ snapshot: () => null }));
   ipc.detachDoc.mockResolvedValue("doc-1");

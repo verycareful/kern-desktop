@@ -10,19 +10,30 @@ use std::path::{Path, PathBuf};
 
 use kern_lib::cli::{self, parse_args, parse_args_report, Plan};
 use kern_lib::instance::{pack_args, unpack};
-use kern_lib::open::{route, Gesture, Kind, Location, OpenRegistry, Origin, Target};
+use kern_lib::open::{route, FileId, Gesture, Held, Kind, Location, OpenRegistry, Origin, Target};
 use kern_lib::prelaunch::{needs_window, status, Class};
-use kern_lib::windows::next_doc_label;
+use kern_lib::windows::{next_doc_label, next_editor_label, window_kind, WindowKind};
 
 /// `route` with the caller's part done: links resolved from the disk.
 fn go(path: &Path, origin: Origin, gesture: Gesture, kind: Kind, reg: &OpenRegistry) -> Target {
-    let canonical = fs::canonicalize(path).ok();
-    route(path, canonical.as_deref(), origin, gesture, kind, reg)
+    route(path, &FileId::of(path), origin, gesture, kind, reg)
 }
 
 /// Registers `path` the way the commands do.
 fn register(reg: &OpenRegistry, path: &Path, loc: Location) {
-    reg.insert(path, fs::canonicalize(path).ok(), loc);
+    reg.insert(path, FileId::of(path), loc);
+}
+
+fn tab(window: &str, id: &str) -> Location {
+    Location::Tab {
+        window: window.to_owned(),
+        tab_id: id.to_owned(),
+    }
+}
+
+/// A look at a file that names nothing, for a path asked about by its text alone.
+fn none() -> FileId {
+    FileId::default()
 }
 
 fn os(s: &str) -> OsString {
@@ -117,9 +128,7 @@ fn already_open_focuses() {
     let t = tempfile::tempdir().unwrap();
     let f = file(t.path(), "a.txt");
     let reg = OpenRegistry::new();
-    let loc = Location::Tab {
-        tab_id: "t1".to_owned(),
-    };
+    let loc = tab("main", "t1");
     register(&reg, &f, loc.clone());
     assert_eq!(
         go(&f, Origin::Outside, Gesture::Default, Kind::Text, &reg),
@@ -155,16 +164,10 @@ fn removing_a_deleted_file_still_forgets_it() {
     let t = tempfile::tempdir().unwrap();
     let f = file(t.path(), "a.txt");
     let reg = OpenRegistry::new();
-    register(
-        &reg,
-        &f,
-        Location::Tab {
-            tab_id: "t".to_owned(),
-        },
-    );
+    register(&reg, &f, tab("main", "t"));
     fs::remove_file(&f).unwrap();
     reg.remove(&f);
-    assert_eq!(reg.get(&f, None), None);
+    assert_eq!(reg.get(&f, &FileId::default()), None);
 }
 
 #[test]
@@ -177,19 +180,18 @@ fn window_and_tab_cleanup() {
             label: "doc-1".to_owned(),
         },
     );
-    register(
-        &reg,
-        Path::new("/b"),
-        Location::Tab {
-            tab_id: "t".to_owned(),
-        },
-    );
+    register(&reg, Path::new("/b"), tab("main", "t"));
+    register(&reg, Path::new("/c"), tab("editor-1", "u"));
     assert_eq!(reg.path_of_window("doc-1"), Some(PathBuf::from("/a")));
     reg.remove_window("doc-1");
-    assert_eq!(reg.get(Path::new("/a"), None), None);
-    assert!(reg.get(Path::new("/b"), None).is_some());
-    reg.remove_tabs();
-    assert_eq!(reg.get(Path::new("/b"), None), None);
+    assert_eq!(reg.get(Path::new("/a"), &none()), None);
+    assert!(reg.get(Path::new("/b"), &none()).is_some());
+    // A window going takes its own tabs and no other window's.
+    reg.remove_window("editor-1");
+    assert_eq!(reg.get(Path::new("/c"), &none()), None);
+    assert!(reg.get(Path::new("/b"), &none()).is_some());
+    reg.remove_window("main");
+    assert_eq!(reg.get(Path::new("/b"), &none()), None);
 }
 
 #[test]
@@ -315,18 +317,16 @@ fn windowless_launches_are_decided_before_the_bus() {
 fn remove_if_keeps_a_registration_that_moved() {
     let reg = OpenRegistry::new();
     let p = Path::new("/a");
-    let tab = Location::Tab {
-        tab_id: "t1".to_owned(),
-    };
+    let t = tab("main", "t1");
     let win = Location::Window {
         label: "doc-1".to_owned(),
     };
     register(&reg, p, win.clone());
     // The old tab closing must not erase the window's claim.
-    reg.remove_if(p, &tab);
-    assert_eq!(reg.get(p, None), Some(win.clone()));
+    reg.remove_if(p, &t);
+    assert_eq!(reg.get(p, &none()), Some(win.clone()));
     reg.remove_if(p, &win);
-    assert_eq!(reg.get(p, None), None);
+    assert_eq!(reg.get(p, &none()), None);
 }
 
 #[test]
@@ -446,4 +446,98 @@ fn file_uri_dot_segments_are_removed_but_plain_paths_are_not() {
     let got = parse_args(&[os("file:///a/../b"), os("/a/../c")], cwd);
     // Only a URI path is normalised (RFC 3986 section 5.2.4).
     assert_eq!(got, vec![PathBuf::from("/b"), PathBuf::from("/a/../c")]);
+}
+
+#[test]
+fn a_hard_link_is_the_same_open_file() {
+    let t = tempfile::tempdir().unwrap();
+    let f = file(t.path(), "a.txt");
+    let link = t.path().join("hard.txt");
+    fs::hard_link(&f, &link).unwrap();
+    let reg = OpenRegistry::new();
+    let loc = tab("main", "t1");
+    register(&reg, &f, loc.clone());
+    // A hard link has its own resolved path, so only the file's identity finds it.
+    assert_ne!(FileId::of(&f).canonical, FileId::of(&link).canonical);
+    assert_eq!(FileId::of(&f).ident, FileId::of(&link).ident);
+    assert_eq!(
+        go(&link, Origin::Inside, Gesture::Default, Kind::Text, &reg),
+        Target::Focus(loc)
+    );
+}
+
+#[test]
+fn a_different_file_is_not_the_open_one() {
+    let t = tempfile::tempdir().unwrap();
+    let (a, b) = (file(t.path(), "a.txt"), file(t.path(), "b.txt"));
+    let reg = OpenRegistry::new();
+    register(&reg, &a, tab("main", "t1"));
+    assert_eq!(reg.get(&b, &FileId::of(&b)), None);
+}
+
+#[test]
+fn held_by_tells_own_free_and_elsewhere_by_any_name() {
+    let t = tempfile::tempdir().unwrap();
+    let (a, b, c) = (
+        file(t.path(), "a.txt"),
+        file(t.path(), "b.txt"),
+        file(t.path(), "c.txt"),
+    );
+    let (hard, soft) = (t.path().join("hard.txt"), t.path().join("soft.txt"));
+    fs::hard_link(&b, &hard).unwrap();
+    std::os::unix::fs::symlink(&b, &soft).unwrap();
+    let reg = OpenRegistry::new();
+    let mine = tab("main", "t1");
+    let theirs = tab("editor-1", "t2");
+    register(&reg, &a, mine.clone());
+    register(&reg, &b, theirs.clone());
+    let held = |p: &Path| reg.held_by(p, &FileId::of(p), &mine);
+    assert_eq!(held(&a), Held::Own);
+    assert_eq!(held(&c), Held::Free);
+    // The file another place has open, under its own name and under both kinds of other name.
+    let elsewhere = Held::Elsewhere { location: theirs };
+    assert_eq!(held(&b), elsewhere);
+    assert_eq!(held(&hard), elsewhere);
+    assert_eq!(held(&soft), elsewhere);
+    // A name that does not exist yet is free.
+    assert_eq!(held(&t.path().join("new.txt")), Held::Free);
+}
+
+#[test]
+fn a_tab_place_names_its_window_on_the_wire() {
+    let loc = tab("editor-2", "t9");
+    let json = serde_json::to_value(&loc).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({"kind": "tab", "window": "editor-2", "tab_id": "t9"})
+    );
+    assert_eq!(serde_json::from_value::<Location>(json).unwrap(), loc);
+    assert_eq!(loc.window(), "editor-2");
+    assert_eq!(
+        Location::Window {
+            label: "doc-3".to_owned()
+        }
+        .window(),
+        "doc-3"
+    );
+}
+
+#[test]
+fn editor_labels_never_reuse_an_open_one() {
+    let mut n = 1;
+    assert_eq!(next_editor_label(&mut n, |_| false), "editor-1");
+    assert_eq!(next_editor_label(&mut n, |l| l == "editor-2"), "editor-3");
+    assert_eq!(next_editor_label(&mut n, |_| false), "editor-4");
+}
+
+#[test]
+fn windows_are_told_apart_by_label() {
+    assert_eq!(window_kind("main"), Some(WindowKind::Main));
+    assert_eq!(window_kind("doc-12"), Some(WindowKind::Document));
+    assert_eq!(window_kind("editor-3"), Some(WindowKind::Editor));
+    for other in [
+        "", "doc-", "editor-", "editor-x", "doc-1a", "probe", "editor",
+    ] {
+        assert_eq!(window_kind(other), None, "{other:?}");
+    }
 }

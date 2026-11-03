@@ -42,6 +42,17 @@ fn env(label: &str) -> Env {
             kern_lib::store_cmds::settings_get,
             kern_lib::store_cmds::settings_set,
             kern_lib::windows::open_pending_take,
+            kern_lib::windows::doc_opened,
+            kern_lib::windows::doc_closed,
+            kern_lib::windows::doc_open_elsewhere,
+            kern_lib::windows::detach_doc,
+            kern_lib::windows::detached,
+            kern_lib::windows::refuse_detach,
+            kern_lib::windows::open_editor,
+            kern_lib::windows::move_doc_to_main,
+            kern_lib::windows::adopted,
+            kern_lib::windows::refuse_adoption,
+            kern_lib::clipboard::clip_get,
             kern_lib::clipboard::clip_clear_if,
             kern_lib::dnd::dnd_target,
         ])
@@ -186,4 +197,99 @@ fn a_window_the_capability_does_not_name_may_not_say_where_a_drag_is() {
     )
     .unwrap_err();
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+}
+
+/// What an editor window's page calls: it opens documents into tabs of its own, asks where a
+/// file is open, takes its queue and closes itself after the close question.
+const EDITOR_COMMANDS: [&str; 6] = [
+    "open_pending_take",
+    "doc_opened",
+    "doc_closed",
+    "doc_open_elsewhere",
+    "open_editor",
+    "settings_get",
+];
+
+/// What only the main window (or a document window) needs: moving a tab or a document between
+/// windows, and the clipboard of the file manager. An editor window has none of these.
+const NOT_FOR_EDITORS: [&str; 7] = [
+    "detach_doc",
+    "detached",
+    "refuse_detach",
+    "move_doc_to_main",
+    "adopted",
+    "refuse_adoption",
+    "clip_get",
+];
+
+#[test]
+fn an_editor_window_is_granted_what_its_page_calls() {
+    let e = env("editor-1");
+    for cmd in EDITOR_COMMANDS {
+        // Reached or refused by the command itself, never by the access control.
+        if let Err(err) = invoke(&e, cmd, json!({"path": {"k": "Utf8", "v": "/a"}})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "{cmd}: {err}"
+            );
+        }
+    }
+    invoke(&e, &kernkraft("user_dirs"), json!({})).unwrap();
+    invoke(
+        &e,
+        &kernkraft("list_dir"),
+        json!({"path": {"k": "Utf8", "v": "/"}, "hidden": false}),
+    )
+    .unwrap();
+}
+
+#[test]
+fn an_editor_window_is_refused_what_only_the_main_window_needs() {
+    let e = env("editor-1");
+    for cmd in NOT_FOR_EDITORS {
+        let err = invoke(&e, cmd, json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{cmd}: {err}"
+        );
+    }
+}
+
+#[test]
+fn the_main_window_and_document_windows_are_granted_the_window_commands() {
+    for label in ["main", "doc-1"] {
+        let e = env(label);
+        for cmd in ["detached", "refuse_detach", "doc_open_elsewhere"] {
+            // Reached: the command refuses a window that answers for another, which is its own error.
+            if let Err(err) = invoke(
+                &e,
+                cmd,
+                json!({"label": "x", "reason": "r", "path": {"k": "Utf8", "v": "/a"}, "own": {"kind": "window", "label": "x"}}),
+            ) {
+                assert!(
+                    !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                    "{label} {cmd}: {err}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn an_editor_window_registers_its_own_tabs_and_not_another_windows() {
+    let e = env("editor-1");
+    let path = json!({"k": "Utf8", "v": "/no/such/file.txt"});
+    invoke(
+        &e,
+        "doc_opened",
+        json!({"path": path, "location": {"kind": "tab", "window": "editor-1", "tab_id": "t"}}),
+    )
+    .unwrap();
+    let err = invoke(
+        &e,
+        "doc_opened",
+        json!({"path": path, "location": {"kind": "tab", "window": "main", "tab_id": "t"}}),
+    )
+    .unwrap_err();
+    assert_eq!(err["kind"], "Denied", "{err}");
 }

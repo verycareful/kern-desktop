@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { create } from "zustand";
-import { confirmClose, isMainWindow, toWireError } from "../ipc";
+import { confirmClose, isDocumentWindow, toWireError } from "../ipc";
 import { docController } from "../editor/doc-controller";
 import { errorText } from "../ops/error-text";
 import { useOps } from "../ops/useOps";
@@ -123,10 +123,11 @@ async function ask(items: AtRisk[], what: "tab" | "window"): Promise<Outcome> {
 
 /**
  * Closes tab `id`: at once when nothing would be lost, else once the question is answered. In a
- * document window the document is the window, so the window closes.
+ * document window the document is the window, so the window closes; the main window and an editor
+ * window close the tab and stay.
  */
 export function closeTab(id: string): void {
-  if (!isMainWindow()) {
+  if (isDocumentWindow()) {
     void closeWindow();
     return;
   }

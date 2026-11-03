@@ -49,13 +49,44 @@ export function TextEditor(props: {
   handed?: HandedDoc;
   /** Registered as open here before the editor mounted. */
   registered?: boolean;
+  /**
+   * Called once: with ok when the document is open and registered with the backend, else with why
+   * it is not (the file could not be opened, the registration was refused). A document moved here
+   * from another window is acknowledged on it.
+   */
+  onSettled?: (result: { ok: true } | { ok: false; reason: string }) => void;
 }) {
   const { tabId, path, active } = props;
+  const settled = useRef(false);
+  const onSettled = useRef(props.onSettled);
+  useEffect(() => {
+    onSettled.current = props.onSettled;
+  });
+  const settle = (result: { ok: true } | { ok: false; reason: string }) => {
+    if (settled.current) return;
+    settled.current = true;
+    onSettled.current?.(result);
+  };
   const doc = useTextDoc(tabId, path, {
     location: props.location,
     handed: props.handed,
     registered: props.registered,
+    onRegistered: (ok) =>
+      settle(
+        ok
+          ? { ok: true }
+          : { ok: false, reason: "the document could not be registered as open in this window" }
+      ),
   });
+  useEffect(() => {
+    if (doc.phase === "failed") {
+      settle({
+        ok: false,
+        reason: `${baseName(path)} could not be opened${doc.error ? `: ${errorText(doc.error)}` : ""}`,
+      });
+    }
+    // `settle` only reads refs.
+  }, [doc.phase]); // eslint-disable-line react-hooks/exhaustive-deps
   const wordWrap = useViewSettings((s) => s.wordWrap);
   const zoom = safeZoom(useViewSettings((s) => s.editorZoom));
   const host = useRef<HTMLDivElement>(null);

@@ -33,7 +33,7 @@ test("outcomes_that_the_directive_also_carries_are_not_applied_again", async () 
   for (const o of [
     outcome({ action: "doc_tab" }),
     outcome({ action: "folder_tab" }),
-    outcome({ action: "focus", location: { kind: "tab", tab_id: id } }),
+    outcome({ action: "focus", location: { kind: "tab", window: "main", tab_id: id } }),
     outcome({ action: "doc_window", location: { kind: "window", label: "doc-1" } }),
     outcome({ action: "default_app" }),
   ]) {

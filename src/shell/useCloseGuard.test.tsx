@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { WirePath } from "../ipc";
 
-const ipc = vi.hoisted(() => ({ confirmClose: vi.fn(), isMainWindow: vi.fn() }));
+const ipc = vi.hoisted(() => ({ confirmClose: vi.fn(), isDocumentWindow: vi.fn() }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
 import { registerDoc as register, type DocController } from "../editor/doc-controller";
@@ -38,7 +38,7 @@ const deleted = { dirty: false, deleted: true, readOnly: false };
 beforeEach(() => {
   vi.clearAllMocks();
   ipc.confirmClose.mockResolvedValue(undefined);
-  ipc.isMainWindow.mockReturnValue(true);
+  ipc.isDocumentWindow.mockReturnValue(false);
   useCloseGuard.getState().reset();
   useOps.setState({ notice: null });
   useTabs.setState({
@@ -155,7 +155,7 @@ test("a_question_asked_right_after_another_was_cancelled_stays_open", async () =
 });
 
 test("closing_the_document_of_a_document_window_closes_the_window", async () => {
-  ipc.isMainWindow.mockReturnValue(false);
+  ipc.isDocumentWindow.mockReturnValue(true);
   useTabs.setState({
     tabs: [{ id: "doc-1", kind: "doc", path: p("/home/a/a.md"), dirty: false }],
     activeId: "doc-1",

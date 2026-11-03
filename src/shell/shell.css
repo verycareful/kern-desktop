@@ -515,6 +515,13 @@
   white-space: nowrap;
 }
 
+/* An editor window: the tab row on top, the document below, the status bar last. */
+.kern-editor-window > .kern-editor-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
 /* Design 4.4: a document window, Home at the top left, the document below, the status bar last. */
 .kern-doc-window > .kern-doc-area {
   display: flex;

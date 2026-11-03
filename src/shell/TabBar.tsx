@@ -17,6 +17,7 @@ import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
 import {
   actions,
   currentContext,
+  type Action,
   getAction,
   isEnabled,
   menuSections,
@@ -26,6 +27,14 @@ import { FILE_KEYS_ATTR } from "../keys/file-keys";
 import { activeTab, tabTitle, useTabs } from "../store/tabs";
 
 const TAB_MENU: MenuSection[] = [{ actions: actions.filter((a) => a.id.startsWith("tab.")) }];
+
+/** The sections of a menu limited to the actions `allow` lets through; a section left empty goes. */
+function allowed(sections: MenuSection[], allow?: (a: Action) => boolean): MenuSection[] {
+  if (!allow) return sections;
+  return sections
+    .map((s) => ({ ...s, actions: s.actions.filter(allow) }))
+    .filter((s) => s.actions.length > 0);
+}
 
 function NavButton(props: { id: string; icon: typeof ArrowLeft }) {
   const action = getAction(props.id);
@@ -53,7 +62,8 @@ type OpenMenu =
 // Design 4.1: the tab row and the navigation buttons sit over the
 // folder area. The breadcrumb and editable location bar are in the folder
 // view, under this row.
-export function TabBar() {
+export function TabBar(props: { allow?: (a: Action) => boolean }) {
+  const { allow } = props;
   const { tabs, activeId, activate } = useTabs();
   const active = useTabs((s) => activeTab(s));
   const [menu, setMenu] = useState<OpenMenu | null>(null);
@@ -151,7 +161,7 @@ export function TabBar() {
       </div>
       {menu && (
         <ActionMenu
-          sections={menu.kind === "tab" ? TAB_MENU : menuSections(active)}
+          sections={menu.kind === "tab" ? TAB_MENU : allowed(menuSections(active), allow)}
           x={menu.x}
           y={menu.y}
           targetId={menu.kind === "tab" ? menu.targetId : undefined}

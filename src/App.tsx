@@ -1,8 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useRef, useState } from "react";
-import { currentWindowLabel, isMainWindow, toWireError, type WireError } from "./ipc";
+import {
+  currentWindowLabel,
+  isEditorWindow,
+  isMainWindow,
+  toWireError,
+  type WireError,
+} from "./ipc";
 import { DocumentWindow } from "./shell/DocumentWindow";
+import { EditorWindow } from "./shell/EditorWindow";
 import MainWindow from "./shell/MainWindow";
 import { useOpenDirectives } from "./shell/useOpenDirectives";
 import { useUserDirs } from "./shell/user-dirs-store";
@@ -15,8 +22,10 @@ export default function App() {
   const tabCount = useTabs((s) => s.tabs.length);
   // The main window browses; a document window (design 4.4) shows one document.
   const [isMain] = useState(isMainWindow);
+  // An editor window has tabs of its own and a folder tree; a document window shows one document.
+  const [isEditor] = useState(isEditorWindow);
   const [label] = useState(currentWindowLabel);
-  const directives = useOpenDirectives(isMain ? "main" : "doc");
+  const directives = useOpenDirectives(isMain ? "main" : isEditor ? "editor" : "doc");
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -89,7 +98,12 @@ export default function App() {
           ))}
         </ul>
       )}
-      {!isMain && label && (
+      {isEditor && (
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <EditorWindow starting={!directives.ready} />
+        </div>
+      )}
+      {!isMain && !isEditor && label && (
         <div style={{ flex: 1, minHeight: 0 }}>
           <DocumentWindow label={label} starting={!directives.ready} />
         </div>

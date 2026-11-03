@@ -29,17 +29,37 @@ pub const QUIET: Duration = Duration::from_millis(300);
 /// The window [`Env::run`] makes after a driver panics; no test uses it.
 const TEARDOWN: &str = "harness-teardown";
 
-pub const COMMANDS: [&str; 9] = [
+pub const COMMANDS: [&str; 13] = [
     "open_paths",
     "doc_opened",
     "doc_closed",
+    "doc_open_elsewhere",
     "open_pending_take",
     "detach_doc",
+    "detached",
+    "refuse_detach",
+    "open_editor",
     "move_doc_to_main",
     "adopted",
     "refuse_adoption",
     "confirm_close",
 ];
+
+/// The place of a tab of window `window`, as it travels.
+pub fn tab(window: &str, id: &str) -> Value {
+    json!({"kind": "tab", "window": window, "tab_id": id})
+}
+
+/// How the window a tab moves to answers `detach_doc`.
+#[derive(Clone, Copy, Debug)]
+pub enum Answer {
+    /// It holds the document and has registered it.
+    Holds,
+    /// It will not take it, with this reason.
+    Refuses(&'static str),
+    /// It never answers.
+    Silent,
+}
 
 /// What a test drives the app with; it can move to a thread.
 #[derive(Clone)]
@@ -166,8 +186,12 @@ pub fn env_with(
             kern_lib::windows::open_paths,
             kern_lib::windows::doc_opened,
             kern_lib::windows::doc_closed,
+            kern_lib::windows::doc_open_elsewhere,
             kern_lib::windows::open_pending_take,
             kern_lib::windows::detach_doc,
+            kern_lib::windows::detached,
+            kern_lib::windows::refuse_detach,
+            kern_lib::windows::open_editor,
             kern_lib::windows::move_doc_to_main,
             kern_lib::windows::adopted,
             kern_lib::windows::refuse_adoption,
@@ -207,6 +231,51 @@ impl Ctx {
             )
             .unwrap();
         out.as_array().unwrap().clone()
+    }
+
+    /// Calls `detach_doc` from window `from` for tab `tab_id` holding `path`,
+    /// and plays the new window `label` answering as `answer` once it exists.
+    /// Resolves to the call's result.
+    pub fn detach(
+        &self,
+        from: &str,
+        tab_id: &str,
+        path: &Path,
+        state: Value,
+        label: &str,
+        answer: Answer,
+    ) -> Result<Value, Value> {
+        std::thread::scope(|s| {
+            let handle = self.handle.clone();
+            let args = json!({"tabId": tab_id, "path": wp(path), "textState": state});
+            let from = from.to_owned();
+            let call = s.spawn(move || invoke(&handle, &from, "detach_doc", args));
+            wait_for("the new window", || self.exists(label));
+            match answer {
+                Answer::Holds => {
+                    self.call_from(label, "detached", json!({"label": label}))
+                        .unwrap();
+                }
+                Answer::Refuses(reason) => {
+                    self.call_from(
+                        label,
+                        "refuse_detach",
+                        json!({"label": label, "reason": reason}),
+                    )
+                    .unwrap();
+                }
+                Answer::Silent => {}
+            }
+            call.join().unwrap()
+        })
+    }
+
+    /// Makes sure `main` exists (a folder opened from outside creates it,
+    /// and its folder tab is the first thing queued for it).
+    pub fn with_main(&self) {
+        if !self.exists("main") {
+            self.open(&[&self.files], "outside", "default");
+        }
     }
 
     pub fn take(&self, label: &str) -> Vec<Value> {

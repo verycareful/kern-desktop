@@ -3,8 +3,9 @@
 
 //! Windows, the open rules applied, and what the frontend is told.
 //!
-//! Windows are `main` (browsing, created on demand) and `doc-<n>`
-//! (standalone documents, design D4.4). Directives for a window go out as
+//! Windows are `main` (browsing, created on demand), `doc-<n>` (standalone
+//! documents, design D4.4) and `editor-<n>` (an editor window rooted at one
+//! folder, with tabs of its own). Directives for a window go out as
 //! events on [`EVENT_OPEN`] (and [`EVENT_ADOPT_DOC`]). A window that has not
 //! yet asked for its backlog with `open_pending_take` has them queued, so a
 //! directive sent while its page loads is not lost; once it has asked, they
@@ -34,7 +35,7 @@ use tauri::{
 
 use crate::cli::{self, ArgError, Plan};
 use crate::instance::{exit_when_drained, Launches};
-use crate::open::{route, Gesture, Kind, Location, OpenRegistry, Origin, Target};
+use crate::open::{route, FileId, Gesture, Held, Kind, Location, OpenRegistry, Origin, Target};
 use crate::store_cmds::StoreState;
 
 pub const EVENT_OPEN: &str = "kern://open";
@@ -52,6 +53,32 @@ pub const EVENT_PROPERTIES: &str = "kern://properties";
 
 pub const MAIN: &str = "main";
 const DOC_PREFIX: &str = "doc-";
+const EDITOR_PREFIX: &str = "editor-";
+
+/// The three kinds of window, told apart by label.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WindowKind {
+    Main,
+    Document,
+    Editor,
+}
+
+/// The kind of window labelled `label`, or `None` for a label Kern does not make.
+pub fn window_kind(label: &str) -> Option<WindowKind> {
+    if label == MAIN {
+        Some(WindowKind::Main)
+    } else if label.strip_prefix(DOC_PREFIX).is_some_and(is_number) {
+        Some(WindowKind::Document)
+    } else if label.strip_prefix(EDITOR_PREFIX).is_some_and(is_number) {
+        Some(WindowKind::Editor)
+    } else {
+        None
+    }
+}
+
+fn is_number(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
+}
 
 /// How long `move_doc_to_main` waits for `main` to acknowledge. A freshly
 /// created window has to load the frontend and answer `open_pending_take`
@@ -62,6 +89,11 @@ pub const ADOPT_TIMEOUT: Duration = Duration::from_secs(15);
 /// Size of a standalone document window (my call, D4.4 gives none).
 const DOC_SIZE: (f64, f64) = (900.0, 700.0);
 const DOC_MIN_SIZE: (f64, f64) = (480.0, 320.0);
+
+/// Size of an editor window: the tree and the document side by side need the
+/// main window's room, so it starts at its size and floor (tauri.conf.json).
+const EDITOR_SIZE: (f64, f64) = (1200.0, 800.0);
+const EDITOR_MIN_SIZE: (f64, f64) = (800.0, 560.0);
 
 /// What a window is told to do, on [`EVENT_OPEN`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -75,11 +107,20 @@ pub enum Directive {
     },
     /// For a `doc-<n>` window: load this document. `text_state` is the
     /// editor state of the tab it left (unsaved text included), passed
-    /// through untouched; without it the window reads the file.
+    /// through untouched; without it the window reads the file. `ack` is
+    /// set when a tab is being moved here: the window answers with
+    /// `detached` once it holds the document and has registered it, or with
+    /// `refuse_detach`, and the tab closes only on the first.
     LoadDoc {
         path: WirePath,
         #[serde(skip_serializing_if = "Option::is_none")]
         text_state: Option<Value>,
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        ack: bool,
+    },
+    /// For an `editor-<n>` window: the folder its tree is rooted at.
+    EditorRoot {
+        path: WirePath,
     },
     HomeTab,
     FocusTab {
@@ -95,11 +136,15 @@ pub struct Queued {
 
 struct Inner {
     next_doc: u64,
+    next_editor: u64,
     ready: HashSet<String>,
     pending: HashMap<String, Vec<Queued>>,
     /// Moves waiting for main's answer: `Ok` it took the document, `Err`
     /// it refused, with its reason.
     adopting: HashMap<String, Sender<Result<(), String>>>,
+    /// Tabs moving to a new window, by that window's label, waiting for its
+    /// answer: `Ok` it holds the document, `Err` it refused or went away.
+    detaching: HashMap<String, Sender<Result<(), String>>>,
     /// Labels reserved whose window is still being built, with the latest
     /// activation token of a launch that landed on them.
     creating: HashMap<String, String>,
@@ -140,9 +185,11 @@ impl WindowState {
             open: OpenRegistry::new(),
             inner: Mutex::new(Inner {
                 next_doc: 1,
+                next_editor: 1,
                 ready: HashSet::new(),
                 pending: HashMap::new(),
                 adopting: HashMap::new(),
+                detaching: HashMap::new(),
                 creating: HashMap::new(),
             }),
             adopt_timeout,
@@ -164,16 +211,26 @@ impl WindowState {
     }
 }
 
-/// The next `doc-<n>` label. The counter only grows, so a label is never
+/// The next `<prefix><n>` label. The counter only grows, so a label is never
 /// reused, and `is_open` skips a label a window still holds.
-pub fn next_doc_label(counter: &mut u64, is_open: impl Fn(&str) -> bool) -> String {
+fn next_label(prefix: &str, counter: &mut u64, is_open: impl Fn(&str) -> bool) -> String {
     loop {
-        let label = format!("{DOC_PREFIX}{counter}");
+        let label = format!("{prefix}{counter}");
         *counter += 1;
         if !is_open(&label) {
             return label;
         }
     }
+}
+
+/// The next `doc-<n>` label (see `next_label`).
+pub fn next_doc_label(counter: &mut u64, is_open: impl Fn(&str) -> bool) -> String {
+    next_label(DOC_PREFIX, counter, is_open)
+}
+
+/// The next `editor-<n>` label; its counter is the document windows' twin.
+pub fn next_editor_label(counter: &mut u64, is_open: impl Fn(&str) -> bool) -> String {
+    next_label(EDITOR_PREFIX, counter, is_open)
 }
 
 pub fn wire_error(kind: &str, message: impl Into<String>, path: Option<&Path>) -> WireError {
@@ -285,6 +342,17 @@ fn reserve_doc_label<R: Runtime>(app: &AppHandle<R>, st: &WindowState, token: &s
     label
 }
 
+/// Reserves the next `editor-<n>` label, marked as being built like a
+/// document window's.
+fn reserve_editor_label<R: Runtime>(app: &AppHandle<R>, st: &WindowState) -> String {
+    let mut inner = st.lock();
+    let label = next_editor_label(&mut inner.next_editor, |l| {
+        app.get_webview_window(l).is_some()
+    });
+    inner.creating.insert(label.clone(), String::new());
+    label
+}
+
 /// The reserved window `label` is built or has failed to be. Returns the
 /// activation token to present it with: the latest one of any launch that
 /// landed on it while it was being built.
@@ -300,6 +368,19 @@ fn build_doc_window<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), W
         .disable_drag_drop_handler()
         .inner_size(DOC_SIZE.0, DOC_SIZE.1)
         .min_inner_size(DOC_MIN_SIZE.0, DOC_MIN_SIZE.1)
+        .build()
+        .map(|_| ())
+        .map_err(window_error)
+}
+
+/// Builds the window for a reserved editor label. Never call with the gate held.
+fn build_editor_window<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), WireError> {
+    WebviewWindowBuilder::new(app, label, WebviewUrl::default())
+        .title("Kern")
+        // Kern's own handler takes drops of files (dnd.rs); Tauri's would take them first.
+        .disable_drag_drop_handler()
+        .inner_size(EDITOR_SIZE.0, EDITOR_SIZE.1)
+        .min_inner_size(EDITOR_MIN_SIZE.0, EDITOR_MIN_SIZE.1)
         .build()
         .map(|_| ())
         .map_err(window_error)
@@ -376,12 +457,12 @@ async fn open_default_apps<R: Runtime>(
 
 /// What a path is and which file it resolves to, or why that is unknown.
 struct Resolved {
-    canonical: Option<PathBuf>,
+    id: FileId,
     kind: Result<Kind, WireError>,
 }
 
 async fn resolve<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Resolved {
-    let canonical = std::fs::canonicalize(path).ok();
+    let id = FileId::of(path);
     // Follows links: a link to a folder is a folder.
     let kind = match std::fs::metadata(path) {
         Err(e) => Err(io_error(path, &e)),
@@ -392,7 +473,7 @@ async fn resolve<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Resolved {
             Err(e) => Err(e),
         },
     };
-    Resolved { canonical, kind }
+    Resolved { id, kind }
 }
 
 /// Applies the rules to `paths` and does what they say, one outcome per
@@ -407,11 +488,25 @@ pub async fn open_paths_impl<R: Runtime>(
     gesture: Gesture,
     token: &str,
 ) -> Vec<OpenOutcome> {
+    open_paths_in(app, MAIN, paths, origin, gesture, token).await
+}
+
+/// [`open_paths_impl`] for a request that came from window `home`: a text
+/// file that opens as a tab opens in `home` when that window holds tabs (the
+/// main window or an editor window), else in `main`. Folders open in `main`.
+pub async fn open_paths_in<R: Runtime>(
+    app: &AppHandle<R>,
+    home: &str,
+    paths: Vec<PathBuf>,
+    origin: Origin,
+    gesture: Gesture,
+    token: &str,
+) -> Vec<OpenOutcome> {
     let mut out = Vec::with_capacity(paths.len());
     // Index in `out`, and the file to open.
     let mut defaults: Vec<(usize, PathBuf)> = Vec::new();
     for path in paths {
-        match try_open(app, &path, origin, gesture, token).await {
+        match try_open(app, home, &path, origin, gesture, token).await {
             Ok(Step::Done(o)) => out.push(o),
             Ok(Step::DefaultApp(p)) => {
                 defaults.push((out.len(), p));
@@ -458,6 +553,7 @@ enum Step {
 
 async fn try_open<R: Runtime>(
     app: &AppHandle<R>,
+    home: &str,
     path: &Path,
     origin: Origin,
     gesture: Gesture,
@@ -467,12 +563,13 @@ async fn try_open<R: Runtime>(
     // and the reservation are one step under the gate; the window is built
     // after it (see the gate's rule).
     let resolved = resolve(app, path).await;
-    place(app, path, &resolved, origin, gesture, token)
+    place(app, home, path, &resolved, origin, gesture, token)
 }
 
 /// Decides under the gate, then carries the decision out without it.
 fn place<R: Runtime>(
     app: &AppHandle<R>,
+    home: &str,
     path: &Path,
     resolved: &Resolved,
     origin: Origin,
@@ -504,15 +601,21 @@ fn place<R: Runtime>(
             Ok(done("folder_tab", None))
         }
         Placement::DocTab(p) => {
-            ensure_main(app)?;
+            // The window that asked, when it holds tabs; otherwise main.
+            let target = if window_kind(home) == Some(WindowKind::Editor) {
+                home
+            } else {
+                ensure_main(app)?;
+                MAIN
+            };
             send_directive(
                 app,
-                MAIN,
+                target,
                 &Directive::DocTab {
                     path: WirePath::from(&p),
                 },
             )?;
-            focus(app, MAIN, token)?;
+            focus(app, target, token)?;
             Ok(done("doc_tab", None))
         }
         Placement::NewDoc { path: p, label } => {
@@ -534,6 +637,7 @@ fn place<R: Runtime>(
                 &Directive::LoadDoc {
                     path: WirePath::from(&p),
                     text_state: None,
+                    ack: false,
                 },
             )?;
             focus(app, &label, &token)?;
@@ -541,15 +645,15 @@ fn place<R: Runtime>(
         }
         Placement::Focus(loc) => {
             match &loc {
-                Location::Tab { tab_id } => {
+                Location::Tab { window, tab_id } => {
                     send_directive(
                         app,
-                        MAIN,
+                        window,
                         &Directive::FocusTab {
                             tab_id: tab_id.clone(),
                         },
                     )?;
-                    focus(app, MAIN, token)?;
+                    focus(app, window, token)?;
                 }
                 Location::Window { label } => {
                     // A window still being built is presented by the launch
@@ -592,18 +696,18 @@ fn decide<R: Runtime>(
     token: &str,
 ) -> Result<Placement, WireError> {
     let _gate = st.lock_gate();
-    let canonical = resolved.canonical.as_deref();
+    let id = &resolved.id;
     // Twice at most: a registry entry whose window is gone is dropped and
     // the path routed afresh.
     for _ in 0..2 {
-        let known = st.open.get(path, canonical).is_some();
+        let known = st.open.get(path, id).is_some();
         let kind = match (&resolved.kind, known) {
             (Ok(k), _) => *k,
             // A document already open stays focusable after its file is gone.
             (Err(_), true) => Kind::Other,
             (Err(e), false) => return Err(e.clone()),
         };
-        match route(path, canonical, origin, gesture, kind, &st.open) {
+        match route(path, id, origin, gesture, kind, &st.open) {
             Target::FolderTab(p) => return Ok(Placement::FolderTab(p)),
             Target::DocTab(p) => return Ok(Placement::DocTab(p)),
             Target::DefaultApp(p) => return Ok(Placement::DefaultApp(p)),
@@ -611,7 +715,7 @@ fn decide<R: Runtime>(
                 let label = reserve_doc_label(app, st, token);
                 st.open.insert(
                     &p,
-                    resolved.canonical.clone(),
+                    id.clone(),
                     Location::Window {
                         label: label.clone(),
                     },
@@ -620,7 +724,7 @@ fn decide<R: Runtime>(
             }
             Target::Focus(loc) => {
                 let gone = match &loc {
-                    Location::Tab { .. } => app.get_webview_window(MAIN).is_none(),
+                    Location::Tab { window, .. } => app.get_webview_window(window).is_none(),
                     Location::Window { label } => {
                         app.get_webview_window(label).is_none()
                             && !st.lock().creating.contains_key(label)
@@ -702,6 +806,7 @@ pub(crate) fn show_errors<R: Runtime>(app: &AppHandle<R>, errors: &[WireError], 
 #[tauri::command]
 pub async fn open_paths<R: Runtime>(
     app: AppHandle<R>,
+    window: WebviewWindow<R>,
     paths: Vec<WirePath>,
     origin: Origin,
     gesture: Gesture,
@@ -723,7 +828,7 @@ pub async fn open_paths<R: Runtime>(
             })),
         }
     }
-    let mut opened = open_paths_impl(&app, good, origin, gesture, "")
+    let mut opened = open_paths_in(&app, window.label(), good, origin, gesture, "")
         .await
         .into_iter();
     // `open_paths_impl` gives one outcome per path, so none is missing.
@@ -733,31 +838,94 @@ pub async fn open_paths<R: Runtime>(
         .ok_or_else(|| wire_error("Internal", "an open outcome is missing", None))
 }
 
-/// The frontend opened `path` at `location`.
+/// A window registers and releases only its own places: its tabs and, for a
+/// document window, itself.
+fn own_place(window_label: &str, location: &Location) -> Result<(), WireError> {
+    if location.window() == window_label {
+        Ok(())
+    } else {
+        Err(wire_error(
+            "Denied",
+            format!(
+                "window {window_label} may not register a place of window {}",
+                location.window()
+            ),
+            None,
+        ))
+    }
+}
+
+/// The frontend opened `path` at `location`, a place of the calling window.
+/// `adopting_from` is set by the main window when `location` is the tab it
+/// made for the document of window `adopting_from` (a move Home): the
+/// registration is refused once the backend has taken that move back, so a
+/// late registration cannot take the path from the window that kept it.
 #[tauri::command]
 pub async fn doc_opened<R: Runtime>(
     app: AppHandle<R>,
+    window: WebviewWindow<R>,
     path: WirePath,
     location: Location,
+    adopting_from: Option<String>,
 ) -> Result<(), WireError> {
+    own_place(window.label(), &location)?;
     let p = path.to_path_buf()?;
     let q = p.clone();
-    let canonical = blocking(move || Ok(std::fs::canonicalize(&q).ok())).await?;
-    state(&app)?.open.insert(&p, canonical, location);
+    let id = blocking(move || Ok(FileId::of(&q))).await?;
+    let st = state(&app)?;
+    match adopting_from {
+        None => st.open.insert(&p, id, location),
+        Some(from) => {
+            // Checked and registered under the lock `cancel_adoption` takes to
+            // end the move, so the two cannot interleave.
+            let inner = st.lock();
+            if !inner.adopting.contains_key(&from) {
+                return Err(wire_error(
+                    "AdoptionOver",
+                    format!("the move from window {from} is over; it keeps the document"),
+                    Some(&p),
+                ));
+            }
+            st.open.insert(&p, id, location);
+            drop(inner);
+        }
+    }
     Ok(())
 }
 
-/// The frontend closed `path` at `location`. Only that registration goes: a
-/// tab closing after its document moved to a window leaves the window's.
+/// The frontend closed `path` at `location`, a place of the calling window.
+/// Only that registration goes: a tab closing after its document moved to a
+/// window leaves the window's.
 #[tauri::command]
 pub fn doc_closed<R: Runtime>(
     app: AppHandle<R>,
+    window: WebviewWindow<R>,
     path: WirePath,
     location: Location,
 ) -> Result<(), WireError> {
+    own_place(window.label(), &location)?;
     let p = path.to_path_buf()?;
     state(&app)?.open.remove_if(&p, &location);
     Ok(())
+}
+
+/// Whether `path`, by any name, is open in a place other than `own`, a place
+/// of the calling window that holds a document. Save As asks this before it
+/// writes: a file open in another place is never written over (two editors
+/// on one file lose one user's text), and a path that leads to the document's
+/// own file is that file, not another.
+#[tauri::command]
+pub async fn doc_open_elsewhere<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+    path: WirePath,
+    own: Location,
+) -> Result<Held, WireError> {
+    own_place(window.label(), &own)?;
+    let p = path.to_path_buf()?;
+    let q = p.clone();
+    let id = blocking(move || Ok(FileId::of(&q))).await?;
+    Ok(state(&app)?.open.held_by(&p, &id, &own))
 }
 
 /// Hands over, once, what was queued for the calling window, and from then
@@ -773,12 +941,20 @@ pub fn open_pending_take<R: Runtime>(
     Ok(inner.pending.remove(window.label()).unwrap_or_default())
 }
 
-/// Detaches a document tab of `main` into its own window (D4.5).
-/// `text_state` is the tab's editor state, handed to the window untouched,
-/// so unsaved text moves with the document.
+/// Detaches a document tab of the calling window into a window of its own
+/// (D4.5). `text_state` is the tab's editor state, handed to the window
+/// untouched, so unsaved text moves with the document.
+///
+/// The tab is not given up until the new window says it holds the document
+/// and has registered it (`detached`); the call returns then, and the
+/// frontend closes the tab. If the window refuses (`refuse_detach`), is
+/// closed, or does not answer within the timeout, the call fails with the
+/// reason, the half-made window is closed without asking (it holds no text
+/// the tab does not hold) and the tab keeps its registration.
 #[tauri::command]
 pub async fn detach_doc<R: Runtime>(
     app: AppHandle<R>,
+    window: WebviewWindow<R>,
     tab_id: String,
     path: WirePath,
     text_state: Option<Value>,
@@ -786,11 +962,11 @@ pub async fn detach_doc<R: Runtime>(
     let p = path.to_path_buf()?;
     let st = state(&app)?;
     let q = p.clone();
-    let canonical = blocking(move || Ok(std::fs::canonicalize(&q).ok())).await?;
+    let id = blocking(move || Ok(FileId::of(&q))).await?;
     // Check and reserve under the gate; build the window after it.
-    let (label, prior) = {
+    let (label, prior, rx) = {
         let _gate = st.lock_gate();
-        let prior = st.open.get(&p, canonical.as_deref());
+        let prior = st.open.get(&p, &id);
         match &prior {
             Some(Location::Window { label }) => {
                 return Err(wire_error(
@@ -799,39 +975,190 @@ pub async fn detach_doc<R: Runtime>(
                     Some(&p),
                 ));
             }
-            Some(Location::Tab { tab_id: registered }) if registered != &tab_id => {
+            Some(Location::Tab {
+                window: w,
+                tab_id: registered,
+            }) if w != window.label() || registered != &tab_id => {
                 return Err(wire_error(
                     "TabMismatch",
-                    format!("the document is open in tab {registered}, not {tab_id}"),
+                    format!("the document is open in tab {registered} of window {w}, not tab {tab_id} of window {}", window.label()),
                     Some(&p),
                 ));
             }
             _ => {}
         }
         let label = reserve_doc_label(&app, &st, "");
+        let (tx, rx) = mpsc::channel();
+        st.lock().detaching.insert(label.clone(), tx);
         // The window takes the registration over from the tab now.
         st.open.insert(
             &p,
-            canonical.clone(),
+            id.clone(),
             Location::Window {
                 label: label.clone(),
             },
         );
-        (label, prior)
+        (label, prior, rx)
     };
     let result = build_doc_window(&app, &label);
     let token = built(&st, &label);
     if let Err(e) = result {
-        let mine = Location::Window {
-            label: label.clone(),
-        };
-        match prior {
-            Some(old) => st.open.insert(&p, canonical, old),
-            None => st.open.remove_if(&p, &mine),
-        }
+        undo_detach(&app, &st, &label, &p, id, prior);
         return Err(e);
     }
-    send_directive(&app, &label, &Directive::LoadDoc { path, text_state })?;
+    let started = send_directive(
+        &app,
+        &label,
+        &Directive::LoadDoc {
+            path,
+            text_state,
+            ack: true,
+        },
+    )
+    .and_then(|()| focus(&app, &label, &token));
+    if let Err(e) = started {
+        undo_detach(&app, &st, &label, &p, id, prior);
+        return Err(e);
+    }
+    let timeout = st.adopt_timeout;
+    let answer = match blocking(move || Ok(rx.recv_timeout(timeout).ok())).await {
+        Ok(a) => a,
+        Err(e) => {
+            undo_detach(&app, &st, &label, &p, id, prior);
+            return Err(e);
+        }
+    };
+    match answer {
+        Some(Ok(())) => {
+            st.lock().detaching.remove(&label);
+            Ok(label)
+        }
+        Some(Err(reason)) => {
+            undo_detach(&app, &st, &label, &p, id, prior);
+            Err(wire_error("DetachRefused", reason, Some(&p)))
+        }
+        None => {
+            undo_detach(&app, &st, &label, &p, id, prior);
+            Err(wire_error(
+                "DetachTimeout",
+                "the new window did not take the document; it stays in its tab",
+                Some(&p),
+            ))
+        }
+    }
+}
+
+/// Takes a tab's move to a new window back: the window is closed without
+/// asking and the path is registered at the tab again (or forgotten, if it
+/// was not open before).
+fn undo_detach<R: Runtime>(
+    app: &AppHandle<R>,
+    st: &WindowState,
+    label: &str,
+    path: &Path,
+    id: FileId,
+    prior: Option<Location>,
+) {
+    st.lock().detaching.remove(label);
+    st.lock().creating.remove(label);
+    let mine = Location::Window {
+        label: label.to_owned(),
+    };
+    match prior {
+        Some(old) => st.open.insert(path, id, old),
+        None => st.open.remove_if(path, &mine),
+    }
+    if let Some(w) = app.get_webview_window(label) {
+        if let Err(e) = w.destroy() {
+            eprintln!("kern: could not close the half-made window {label}: {e}");
+        }
+    }
+}
+
+/// The calling document window holds the document it was sent for a tab's
+/// move (`detach_doc`) and has registered it.
+#[tauri::command]
+pub fn detached<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+    label: String,
+) -> Result<(), WireError> {
+    answer_detach(&app, &window, &label, Ok(()))
+}
+
+/// The calling document window will not take the document of a tab's move:
+/// the move ends at once with `reason` and the tab keeps the document.
+#[tauri::command]
+pub fn refuse_detach<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+    label: String,
+    reason: String,
+) -> Result<(), WireError> {
+    answer_detach(&app, &window, &label, Err(reason))
+}
+
+fn answer_detach<R: Runtime>(
+    app: &AppHandle<R>,
+    window: &WebviewWindow<R>,
+    label: &str,
+    answer: Result<(), String>,
+) -> Result<(), WireError> {
+    if window.label() != label {
+        return Err(wire_error(
+            "Denied",
+            "a window answers only for itself",
+            None,
+        ));
+    }
+    let tx = state(app)?.lock().detaching.remove(label);
+    match tx {
+        Some(tx) => {
+            // A receiver that is gone has given the move up already.
+            let _ = tx.send(answer);
+            Ok(())
+        }
+        None => Err(wire_error(
+            "NoDetach",
+            format!("no move to window {label} is waiting; this window is closing"),
+            None,
+        )),
+    }
+}
+
+/// Opens a new editor window rooted at the folder `root`. Resolves to the
+/// window's label. Asked for by the main window and by editor windows.
+#[tauri::command]
+pub async fn open_editor<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+    root: WirePath,
+) -> Result<String, WireError> {
+    if !matches!(
+        window_kind(window.label()),
+        Some(WindowKind::Main | WindowKind::Editor)
+    ) {
+        return Err(wire_error(
+            "Denied",
+            "only the main window and editor windows open editor windows",
+            None,
+        ));
+    }
+    let p = root.to_path_buf()?;
+    let q = p.clone();
+    // Follows links: a link to a folder is a folder.
+    blocking(move || match std::fs::metadata(&q) {
+        Ok(m) if m.is_dir() => Ok(()),
+        Ok(_) => Err(wire_error("NotAFolder", "that is not a folder", Some(&q))),
+        Err(e) => Err(io_error(&q, &e)),
+    })
+    .await?;
+    let st = state(&app)?;
+    let label = reserve_editor_label(&app, &st);
+    let result = build_editor_window(&app, &label);
+    let token = built(&st, &label);
+    result?;
+    send_directive(&app, &label, &Directive::EditorRoot { path: root })?;
     focus(&app, &label, &token)?;
     Ok(label)
 }
@@ -917,7 +1244,7 @@ fn cancel_adoption<R: Runtime>(app: &AppHandle<R>, st: &WindowState, label: &str
     st.lock().adopting.remove(label);
     st.open.insert(
         path,
-        std::fs::canonicalize(path).ok(),
+        FileId::of(path),
         Location::Window {
             label: label.to_owned(),
         },
@@ -1020,13 +1347,17 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
             let app = window.app_handle();
             crate::zoom::forget(app, window.label());
             if let Some(st) = app.try_state::<WindowState>() {
-                if window.label() == MAIN {
-                    st.open.remove_tabs();
-                }
+                // Its own document and its tabs; other windows' tabs stay.
                 st.open.remove_window(window.label());
                 let mut inner = st.lock();
                 inner.ready.remove(window.label());
                 inner.pending.remove(window.label());
+                // A tab's move to this window ends: nothing will answer.
+                if let Some(tx) = inner.detaching.remove(window.label()) {
+                    let _ = tx.send(Err(
+                        "the new window was closed before it took the document".to_owned()
+                    ));
+                }
             }
         }
         _ => {}

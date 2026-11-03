@@ -15,6 +15,7 @@ const ipc = vi.hoisted(() => ({
   unwatchDir: vi.fn(),
   docOpened: vi.fn(),
   docClosed: vi.fn(),
+  docOpenElsewhere: vi.fn(),
   recentTouch: vi.fn(),
   on: vi.fn(),
 }));
@@ -67,6 +68,7 @@ beforeEach(() => {
   ipc.unwatchDir.mockResolvedValue(undefined);
   ipc.docOpened.mockResolvedValue(undefined);
   ipc.docClosed.mockResolvedValue(undefined);
+  ipc.docOpenElsewhere.mockResolvedValue({ state: "free" });
   ipc.recentTouch.mockResolvedValue({ entries: [] });
   ipc.on.mockImplementation((name: string, h: (payload: unknown) => void) => {
     handlers[name] = h;
@@ -363,12 +365,12 @@ test("a_changed_file_is_flagged_and_a_check_that_fails_is_said", async () => {
 
 test("the_document_is_registered_recent_and_watched_and_released_with_the_tab", async () => {
   const hook = await mount();
-  expect(ipc.docOpened).toHaveBeenCalledWith(FILE, { kind: "tab", tab_id: "t1" });
+  expect(ipc.docOpened).toHaveBeenCalledWith(FILE, { kind: "tab", window: "main", tab_id: "t1" });
   expect(ipc.recentTouch).toHaveBeenCalledWith(FILE);
   expect(ipc.watchDir).toHaveBeenCalledWith("doc:t1", p("/home/a"));
   hook.unmount();
   await waitFor(() =>
-    expect(ipc.docClosed).toHaveBeenCalledWith(FILE, { kind: "tab", tab_id: "t1" })
+    expect(ipc.docClosed).toHaveBeenCalledWith(FILE, { kind: "tab", window: "main", tab_id: "t1" })
   );
   expect(ipc.unwatchDir).toHaveBeenCalledWith("doc:t1");
   expect(useDocStatus.getState().byTab.t1).toBeUndefined();
@@ -454,9 +456,13 @@ test("save_as_to_a_free_path_creates_it_only_if_nothing_is_there_and_the_tab_fol
   expect(useTabs.getState().tabs[0]).toMatchObject({ path: target, dirty: false });
   // The new file is read back once; the move to its path does not open it again.
   await waitFor(() =>
-    expect(ipc.docOpened).toHaveBeenCalledWith(target, { kind: "tab", tab_id: "t1" })
+    expect(ipc.docOpened).toHaveBeenCalledWith(target, {
+      kind: "tab",
+      window: "main",
+      tab_id: "t1",
+    })
   );
-  expect(ipc.docClosed).toHaveBeenCalledWith(FILE, { kind: "tab", tab_id: "t1" });
+  expect(ipc.docClosed).toHaveBeenCalledWith(FILE, { kind: "tab", window: "main", tab_id: "t1" });
   expect(ipc.watchDir).toHaveBeenLastCalledWith("doc:t1", p("/home/a"));
   expect(ipc.recentTouch).toHaveBeenCalledWith(target);
   expect(ipc.textOpen).toHaveBeenCalledTimes(1);
@@ -858,4 +864,89 @@ test("save_for_close_of_a_deleted_file_taken_meanwhile_does_not_close", async ()
   ipc.textSave.mockRejectedValueOnce(wireError("Exists"));
   expect(await saveForClose()).toBe(false);
   expect(hook.result.current.prompt).toBe("external");
+});
+
+// ---- Save As and the files other places have open ----
+
+const ELSEWHERE = { state: "elsewhere", location: { kind: "window", label: "doc-3" } } as const;
+
+/** Mounts the hook and asks Save As to write the text to `target`. */
+async function saveAsTo(target: WirePath, replace: WireEntry | null = null) {
+  const hook = await mount();
+  type(hook, "hello world");
+  let result!: Awaited<ReturnType<typeof hook.result.current.saveAs>>;
+  await act(async () => {
+    result = await hook.result.current.saveAs(target, replace);
+  });
+  return { hook, result };
+}
+
+test("save_as_into_a_file_open_elsewhere_is_refused_before_anything_is_written", async () => {
+  ipc.docOpenElsewhere.mockResolvedValue(ELSEWHERE);
+  const { result } = await saveAsTo(p("/home/a/other.txt"));
+  expect(result).toEqual({ status: "open-elsewhere", location: ELSEWHERE.location });
+  expect(ipc.textSave).not.toHaveBeenCalled();
+  // Asked about the target, from the place this document is registered at.
+  expect(ipc.docOpenElsewhere).toHaveBeenCalledWith(p("/home/a/other.txt"), {
+    kind: "tab",
+    window: "main",
+    tab_id: "t1",
+  });
+});
+
+test("save_as_is_refused_even_when_the_user_agreed_to_replace_what_is_there", async () => {
+  ipc.docOpenElsewhere.mockResolvedValue(ELSEWHERE);
+  const entry = { kind: "file", len: 3, modified_ms: 1 } as WireEntry;
+  ipc.entryOf.mockResolvedValue(entry);
+  const { result } = await saveAsTo(p("/home/a/other.txt"), entry);
+  expect(result.status).toBe("open-elsewhere");
+  expect(ipc.textSave).not.toHaveBeenCalled();
+});
+
+test("save_as_to_the_same_file_under_another_name_is_this_file_not_another", async () => {
+  ipc.docOpenElsewhere.mockResolvedValue({ state: "own" });
+  const { result } = await saveAsTo(p("/home/a/hard-link.txt"));
+  expect(result).toEqual({
+    status: "failed",
+    message: "That is this file under another name. Use Save to write it.",
+  });
+  expect(ipc.textSave).not.toHaveBeenCalled();
+});
+
+test("save_as_looks_again_right_before_the_write_and_a_window_that_opened_the_file_meanwhile_stops_it", async () => {
+  ipc.docOpenElsewhere.mockResolvedValueOnce({ state: "free" }).mockResolvedValue(ELSEWHERE);
+  const { result } = await saveAsTo(p("/home/a/new.txt"));
+  expect(result.status).toBe("open-elsewhere");
+  expect(ipc.docOpenElsewhere).toHaveBeenCalledTimes(2);
+  expect(ipc.textSave).not.toHaveBeenCalled();
+});
+
+test("save_as_writes_nothing_when_the_registry_cannot_be_asked", async () => {
+  ipc.docOpenElsewhere.mockRejectedValue(wireError("Ipc", "no backend"));
+  const { result } = await saveAsTo(p("/home/a/new.txt"));
+  expect(result).toMatchObject({
+    status: "failed",
+    message: expect.stringMatching(
+      /could not tell whether that file is open elsewhere.*no backend/
+    ),
+  });
+  expect(ipc.textSave).not.toHaveBeenCalled();
+});
+
+test("a_tab_of_an_editor_window_registers_under_that_window", async () => {
+  (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {
+    metadata: { currentWindow: { label: "editor-2" } },
+  };
+  try {
+    await mount();
+    await waitFor(() =>
+      expect(ipc.docOpened).toHaveBeenCalledWith(FILE, {
+        kind: "tab",
+        window: "editor-2",
+        tab_id: "t1",
+      })
+    );
+  } finally {
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  }
 });

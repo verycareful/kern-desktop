@@ -84,7 +84,13 @@ export const storeErrorsTake = () => invoke<CorruptReport[]>("store_errors_take"
 export type Origin = "inside" | "outside";
 export type Gesture = "default" | "new_window";
 
-export type Location = { kind: "tab"; tab_id: string } | { kind: "window"; label: string };
+/** Where a document is open: a tab of a window (the main window or an editor window), or a window of its own. */
+export type Location =
+  { kind: "tab"; window: string; tab_id: string } | { kind: "window"; label: string };
+
+/** How a path stands against the open documents, for one place that holds a document (windows.rs doc_open_elsewhere). */
+export type Held =
+  { state: "free" } | { state: "own" } | { state: "elsewhere"; location: Location };
 
 export type OpenAction =
   "folder_tab" | "doc_tab" | "doc_window" | "focus" | "default_app" | "failed";
@@ -100,7 +106,8 @@ export interface OpenOutcome {
 export type Directive =
   | { kind: "folder_tab"; path: WirePath }
   | { kind: "doc_tab"; path: WirePath }
-  | { kind: "load_doc"; path: WirePath; text_state?: unknown }
+  | { kind: "load_doc"; path: WirePath; text_state?: unknown; ack?: boolean }
+  | { kind: "editor_root"; path: WirePath }
   | { kind: "home_tab" }
   | { kind: "focus_tab"; tab_id: string };
 
@@ -113,21 +120,44 @@ export interface Queued {
 export const openPaths = (paths: WirePath[], origin: Origin, gesture: Gesture = "default") =>
   invoke<OpenOutcome[]>("open_paths", { paths, origin, gesture });
 
-export const docOpened = (path: WirePath, location: Location) =>
-  invoke<void>("doc_opened", { path, location });
+/**
+ * Registers `path` as open at `location`, a place of the calling window. `adoptingFrom` names the
+ * document window whose move Home this tab is the result of: the backend refuses the registration
+ * (AdoptionOver) once it has taken that move back.
+ */
+export const docOpened = (path: WirePath, location: Location, adoptingFrom?: string) =>
+  invoke<void>("doc_opened", { path, location, adoptingFrom: adoptingFrom ?? null });
 
 export const docClosed = (path: WirePath, location: Location) =>
   invoke<void>("doc_closed", { path, location });
 
+/** Whether `path`, by any name, is open in a place other than `own`; Save As asks before it writes. */
+export const docOpenElsewhere = (path: WirePath, own: Location) =>
+  invoke<Held>("doc_open_elsewhere", { path, own });
+
 /** Hands over, once, what was queued for the calling window. */
 export const openPendingTake = () => invoke<Queued[]>("open_pending_take");
 
-/** Detaches a document tab into its own window; resolves to the window label. */
+/**
+ * Detaches a document tab into its own window; resolves to the window label once that window
+ * holds the document and has registered it. Rejects (DetachRefused, DetachTimeout) when it does
+ * not, and the tab keeps the document.
+ */
 export const detachDoc = (tabId: string, path: WirePath, textState?: unknown) =>
   invoke<string>("detach_doc", { tabId, path, textState: textState ?? null });
 
 export const moveDocToMain = (label: string, textState?: unknown) =>
   invoke<void>("move_doc_to_main", { label, textState: textState ?? null });
+
+/** A document window holds the document a tab was moved to it with, and has registered it. */
+export const detached = (label: string) => invoke<void>("detached", { label });
+
+/** A document window will not take the document a tab was moved to it with. */
+export const refuseDetach = (label: string, reason: string) =>
+  invoke<void>("refuse_detach", { label, reason });
+
+/** Opens an editor window rooted at the folder `root`; resolves to its label. */
+export const openEditor = (root: WirePath) => invoke<string>("open_editor", { root });
 
 /** Main acknowledges that it took the document of window `label`. */
 export const adopted = (label: string) => invoke<void>("adopted", { label });

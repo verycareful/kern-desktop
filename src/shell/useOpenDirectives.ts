@@ -12,6 +12,8 @@ import {
   adopted,
   currentWindowLabel,
   refuseAdoption,
+  refuseDetach,
+  tabWindow,
   displayPath,
   docOpened,
   on,
@@ -27,6 +29,7 @@ import {
 } from "../ipc";
 import { parseHanded } from "../editor/handed-doc";
 import { errorText } from "../ops/error-text";
+import { useLayout } from "../store/layout";
 import { useTabs } from "../store/tabs";
 import { closeWindow, isClosing } from "./useCloseGuard";
 import { useProperties } from "../files/properties-store";
@@ -40,7 +43,10 @@ import { useProperties } from "../files/properties-store";
 // A window asked to close goes through the close question (useCloseGuard.ts),
 // which closes it at once when no document would lose anything. A document
 // window takes its queue the same way and is told which document to show
-// (load_doc). The main window takes over a document a document window sends
+// (load_doc); when a tab is being moved to it, it answers the backend once it
+// holds the document (DocumentWindow), or refuses here when it cannot. An editor
+// window (`editor-<n>`) is told its folder (editor_root) and opens documents into
+// tabs of its own (doc_tab, focus_tab). The main window takes over a document a document window sends
 // with Home (adopt-doc): it opens a tab from the state handed over, registers
 // it, and only then acknowledges, so the backend closes the other window once
 // the tab holds the document; adopt-cancelled drops such a tab again. Events
@@ -58,7 +64,7 @@ const EVENTS = [
   EVENT_CLOSE_REQUESTED,
 ] as const;
 
-/** What a document window listens to. */
+/** What a document window and an editor window listen to. */
 const DOC_EVENTS = [EVENT_OPEN, EVENT_OPEN_ERROR, EVENT_CLOSE_REQUESTED] as const;
 
 export interface Notice {
@@ -81,9 +87,10 @@ const unhandled = (name: string, detail = ""): string =>
 
 /**
  * In the main window the full set. A document window (`doc-<n>`) is told which document to
- * show, of errors, and of its close request.
+ * show, of errors, and of its close request; an editor window (`editor-<n>`) its folder, the
+ * documents to open in its tabs, the same errors and its close request.
  */
-export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
+export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectives {
   const [ready, setReady] = useState(false);
   const [errors, setErrors] = useState<WireError[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -109,12 +116,21 @@ export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
     const adoptions = new Map<string, string>();
 
     /** A document window: show the document it was given, from the state handed over if any. */
-    const loadDoc = (path: WirePath, state: unknown) => {
+    const loadDoc = async (path: WirePath, state: unknown, ack: boolean) => {
       const label = currentWindowLabel();
       if (!label) {
         notice(`Kern was asked to show ${displayPath(path)}, but this window has no label.`);
         return;
       }
+      /** A tab is waiting for this window: it keeps the document, and is told why. */
+      const refuseMove = async (reason: string) => {
+        if (!ack) return;
+        try {
+          await refuseDetach(label, reason);
+        } catch (e) {
+          addError(toWireError(e));
+        }
+      };
       let handed = undefined;
       if (state !== undefined && state !== null) {
         const parsed = parseHanded(state);
@@ -128,12 +144,15 @@ export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
             path,
             details: null,
           });
+          await refuseMove("the text did not arrive in a form the new window can read");
           return;
         }
         handed = parsed;
       }
-      if (!tabs().openDocAs(label, path, handed)) {
+      // The window answers once the document is open and registered (DocumentWindow).
+      if (!tabs().openDocAs(label, path, handed, undefined, ack)) {
         notice(`This window already shows a document; ${displayPath(path)} was not opened here.`);
+        await refuseMove("the new window already shows a document");
       }
     };
 
@@ -174,11 +193,17 @@ export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
         return;
       }
       try {
-        await docOpened(path, { kind: "tab", tab_id: id });
+        await docOpened(path, { kind: "tab", window: tabWindow(), tab_id: id }, from);
       } catch (e) {
-        // Nothing was acknowledged: the window keeps the document and is told at once.
+        // Nothing was acknowledged: the window keeps the document.
         tabs().close(id);
         const err = toWireError(e);
+        if (err.kind === "AdoptionOver") {
+          // The backend took the move back before this tab registered; the window's registration
+          // stands and the tab goes without releasing anything. Nobody waits for a refusal.
+          notice("A document could not move to this window, so it stays in its own window.");
+          return;
+        }
         addError(err);
         await refuse(from, `the main window could not register the document: ${errorText(err)}`);
         return;
@@ -187,13 +212,10 @@ export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
         await adopted(from);
         adoptions.set(from, id);
       } catch (e) {
-        // The backend took the move back (or never had it): the window keeps the document, so
-        // it is registered there again, and the tab made for it goes with nothing asked.
+        // The backend took the move back (or never had it) and registered the window for the
+        // document again; the tab made for it goes with nothing asked.
         tabs().close(id);
         addError(toWireError(e));
-        await docOpened(path, { kind: "window", label: from }).catch((err: unknown) =>
-          addError(toWireError(err))
-        );
       }
     };
 
@@ -202,9 +224,26 @@ export function useOpenDirectives(mode: "main" | "doc"): OpenDirectives {
         case EVENT_OPEN: {
           const d = item.payload as Directive;
           if (mode === "doc") {
-            if (d.kind === "load_doc") loadDoc(d.path, d.text_state);
+            if (d.kind === "load_doc") await loadDoc(d.path, d.text_state, d.ack === true);
             else notice(unhandled(EVENT_OPEN, ` (${d.kind})`));
             return;
+          }
+          if (mode === "editor") {
+            switch (d.kind) {
+              case "editor_root":
+                useLayout.getState().setTreeRoot(d.path);
+                return;
+              case "doc_tab":
+                tabs().openDoc(d.path);
+                return;
+              case "focus_tab":
+                if (tabs().tabs.some((t) => t.id === d.tab_id)) tabs().activate(d.tab_id);
+                else notice(`Kern was asked to show a tab that is gone (${d.tab_id}).`);
+                return;
+              default:
+                notice(unhandled(EVENT_OPEN, ` (${d.kind})`));
+                return;
+            }
           }
           switch (d.kind) {
             case "folder_tab":

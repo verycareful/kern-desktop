@@ -6,12 +6,14 @@ import {
   EVENT_DIR_CHANGED,
   EVENT_DIR_GONE,
   docClosed,
+  docOpenElsewhere,
   docOpened,
   entryOf,
   on,
   parent,
   pathKey,
   recentTouch,
+  tabWindow,
   textCheck,
   textOpen,
   textSave,
@@ -76,6 +78,8 @@ export type SaveAsResult =
   | { status: "saved" }
   /** Something is at the target: the user has to agree to replace it. */
   | { status: "exists"; entry: WireEntry }
+  /** The target, by whatever name, is open in another place: nothing is written over it, whatever the user says. */
+  | { status: "open-elsewhere"; location: Location }
   /** Nothing was written. */
   | { status: "failed"; message: string };
 
@@ -187,6 +191,12 @@ const sameEntry = (a: WireEntry, b: WireEntry): boolean =>
 
 const say = (text: string) => useOps.getState().notify(text);
 
+/** The place a tab of this window is registered under. */
+const tabPlace = (tabId: string): Location => ({ kind: "tab", window: tabWindow(), tab_id: tabId });
+
+const placeKey = (l: Location): string =>
+  l.kind === "tab" ? `tab:${l.window}:${l.tab_id}` : `window:${l.label}`;
+
 /** The key a document tab watches its file's folder under; folder tabs use the bare tab id. */
 export const watchKeyOf = (tabId: string): string => `doc:${tabId}`;
 
@@ -197,6 +207,8 @@ export interface TextDocOptions {
   handed?: HandedDoc | null;
   /** The caller registered the document as open here already (an adopted tab): not again. */
   registered?: boolean;
+  /** Called with whether the backend took the registration, each time the document registers. */
+  onRegistered?: (ok: boolean) => void;
 }
 
 export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions = {}): TextDoc {
@@ -221,12 +233,13 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
   const handed = useRef({ key, doc: opts.handed ?? null });
   // The path the caller registered already, until this hook's first registration would repeat it.
   const preRegistered = useRef(opts.registered ? key : null);
+  const latestOpts = useRef(opts);
+  useEffect(() => {
+    latestOpts.current = opts;
+  });
   const location = opts.location ?? null;
-  const locationKey = location
-    ? location.kind === "tab"
-      ? `tab:${location.tab_id}`
-      : `window:${location.label}`
-    : `tab:${tabId}`;
+  const here = location ?? tabPlace(tabId);
+  const locationKey = placeKey(here);
 
   const patch = useCallback((p: Partial<State>) => {
     st.current = { ...st.current, ...p };
@@ -368,7 +381,7 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
   useEffect(() => {
     if (!ready) return;
     const target = path;
-    const where: Location = location ?? { kind: "tab", tab_id: tabId };
+    const where: Location = location ?? tabPlace(tabId);
     const watchKey = watchKeyOf(tabId);
     let alive = true;
     let watching = false;
@@ -390,6 +403,7 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
         }
       );
     registration.current = registered;
+    void registered.then((ok) => latestOpts.current.onRegistered?.(ok));
 
     const stopWatch = () => {
       if (!watching) return;
@@ -644,6 +658,31 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
         if (other) {
           return { status: "failed", message: "That file is open in another tab. Close it first." };
         }
+        // Open anywhere else, by any name (another tab, a document window, an editor window; a
+        // link or a hard link to it too): never written over. The document's own registration
+        // must have landed first, or the registry could not tell the file is its own.
+        const held = async (): Promise<SaveAsResult | null> => {
+          await registration.current;
+          try {
+            const h = await docOpenElsewhere(target, here);
+            if (h.state === "own") {
+              return {
+                status: "failed",
+                message: "That is this file under another name. Use Save to write it.",
+              };
+            }
+            return h.state === "elsewhere"
+              ? { status: "open-elsewhere", location: h.location }
+              : null;
+          } catch (e) {
+            return {
+              status: "failed",
+              message: `Kern could not tell whether that file is open elsewhere, so nothing was saved: ${errorText(toWireError(e))}`,
+            };
+          }
+        };
+        const refused = await held();
+        if (refused) return refused;
         // What the last look found decides what the write may replace: what the user agreed to
         // replace, still as they were shown it, is replaced; where nothing is, the file is
         // created only if nothing appears meanwhile.
@@ -660,6 +699,9 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
           // Nothing there is the case that goes on; anything else is not guessed at.
           if (err.kind !== "NotFound") return { status: "failed", message: errorText(err) };
         }
+        // Looked at again right before the write: a window may have opened the file meanwhile.
+        const refusedNow = await held();
+        if (refusedNow) return refusedNow;
         patch({ saving: true, problem: null });
         let next: WireStamp;
         try {
@@ -729,7 +771,9 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
         );
         return { status: "saved" };
       }),
-    [patch, run, tabId]
+    // `here` is the same place for as long as the tab id and the location are.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [patch, run, tabId, locationKey]
   );
 
   const reload = useCallback(

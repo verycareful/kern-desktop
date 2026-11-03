@@ -1,0 +1,27 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "editor",
+  "description": "Capability for the editor windows: tabs of documents, a folder tree, no file operations",
+  "windows": ["editor-*"],
+  "permissions": [
+    "core:default",
+    "kernkraft-tauri:default",
+    "allow-settings-get",
+    "allow-settings-set",
+    "allow-pins-get",
+    "allow-pin",
+    "allow-unpin",
+    "allow-pins-reorder",
+    "allow-recents-get",
+    "allow-recent-touch",
+    "allow-prune",
+    "allow-store-errors-take",
+    "allow-open-paths",
+    "allow-doc-opened",
+    "allow-doc-closed",
+    "allow-open-pending-take",
+    "allow-doc-open-elsewhere",
+    "allow-open-editor",
+    "allow-confirm-close"
+  ]
+}

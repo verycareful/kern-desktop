@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useId, useRef, useState } from "react";
-import { displayPath, type WireEntry, type WirePath } from "../ipc";
+import { displayPath, openPaths, toWireError, type WireEntry, type WirePath } from "../ipc";
+import { errorText } from "../ops/error-text";
 import { formatDate, formatSize } from "../files/format";
 import { parseLocation } from "../files/path-input";
 import { useUserDirs } from "../shell/user-dirs-store";
 import { Modal } from "../ops/Modal";
 import { baseName } from "../ops/labels";
+import { whereOpen } from "./open-elsewhere";
 import type { SaveAsResult } from "./useTextDoc";
 
 // The questions a save can ask. Each dialog names what the
@@ -115,6 +117,8 @@ export function SaveAsDialog(props: {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [existing, setExisting] = useState<{ target: WirePath; entry: WireEntry } | null>(null);
+  // The target is a file another place has open: shown with a way to go there.
+  const [elsewhere, setElsewhere] = useState<{ target: WirePath; where: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
   // The question opens on the choice that writes nothing, so a key held down replaces nothing.
   const anotherName = useRef<HTMLButtonElement>(null);
@@ -132,10 +136,14 @@ export function SaveAsDialog(props: {
   const attempt = async (target: WirePath, replace: WireEntry | null) => {
     setBusy(true);
     setError(null);
+    setElsewhere(null);
     try {
       const r = await props.save(target, replace);
       if (!alive.current) return;
-      if (r.status === "exists") {
+      if (r.status === "open-elsewhere") {
+        setExisting(null);
+        setElsewhere({ target, where: whereOpen(r.location) });
+      } else if (r.status === "exists") {
         setExisting({ target, entry: r.entry });
         // What the question described is not what is there now: it is asked again.
         if (replace) setError("It changed since you were asked. This is what is there now.");
@@ -146,6 +154,17 @@ export function SaveAsDialog(props: {
       // "saved": the document closes this dialog by clearing its prompt.
     } finally {
       if (alive.current) setBusy(false);
+    }
+  };
+
+  /** Brings the window that has the target open to the front; the dialog stays for another name. */
+  const show = async (target: WirePath) => {
+    try {
+      const out = await openPaths([target], "inside");
+      const failed = out.find((o) => o.error);
+      if (alive.current && failed?.error) setError(errorText(failed.error));
+    } catch (e) {
+      if (alive.current) setError(errorText(toWireError(e)));
     }
   };
 
@@ -248,6 +267,17 @@ export function SaveAsDialog(props: {
         <p id={`${id}-error`} role="alert" className="kern-modal-error">
           {error}
         </p>
+      )}
+      {elsewhere && (
+        <div role="alert" className="kern-modal-error" data-testid="open-elsewhere">
+          <p>
+            {baseName(elsewhere.target)} is open {elsewhere.where}. Kern never writes over a file
+            that is open in an editor, so nothing was saved. Close it there, or choose another name.
+          </p>
+          <button type="button" className="kern-button" onClick={() => void show(elsewhere.target)}>
+            Show it there
+          </button>
+        </div>
       )}
       <div className="kern-modal-actions">
         <button type="button" className="kern-button" disabled={busy} onClick={() => void submit()}>

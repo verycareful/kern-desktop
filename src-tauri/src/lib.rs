@@ -39,7 +39,9 @@ pub fn run() {
     let role = instance::start(&own, launches.clone());
     tauri::Builder::default()
         // Document windows are not remembered: a new doc-1 is unrelated to
-        // an earlier one. The main window keeps its place.
+        // an earlier one. The main window and the editor windows keep their
+        // place and size (an editor window is not reopened at launch, but
+        // the next editor-1 opens where the last one was).
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_filter(|label| !label.starts_with("doc-"))
@@ -104,7 +106,11 @@ pub fn run() {
             windows::doc_opened,
             windows::doc_closed,
             windows::open_pending_take,
+            windows::doc_open_elsewhere,
             windows::detach_doc,
+            windows::detached,
+            windows::refuse_detach,
+            windows::open_editor,
             windows::move_doc_to_main,
             windows::adopted,
             windows::refuse_adoption,
