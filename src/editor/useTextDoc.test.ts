@@ -607,7 +607,7 @@ test("a_release_never_lands_after_the_next_registration_of_the_same_document", a
   ]);
 });
 
-// ---- handed over between windows, and closing (Task 27) ----
+// ---- handed over between windows, and closing ----
 
 const HANDED = {
   text: "mine\nhello",

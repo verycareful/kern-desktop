@@ -4,7 +4,7 @@ import { useId } from "react";
 import type { Settings } from "../ipc";
 import { useSettings } from "./settings-store";
 
-// Editor (plan Task 28): word wrap, and the zoom of the text editor's font.
+// Editor: word wrap, and the zoom of the text editor's font.
 
 /** The zoom the store accepts (src-tauri/src/store.rs ZOOM_MIN, ZOOM_MAX). */
 const ZOOM_MIN = 0.25;

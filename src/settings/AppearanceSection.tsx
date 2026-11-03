@@ -7,10 +7,11 @@ import { useThemeState } from "../theme/theme-state";
 import { ACCENTS, fallbackNote } from "./appearance";
 import { useSettings } from "./settings-store";
 
-// Appearance (plan Task 28, design 6.5): the theme mode, Kern's 12 accents,
-// the density, and the four Follow system switches. With a switch on, Kern
-// takes that part from the system (Hyprland, the portal, GTK, fontconfig) and
-// the pick below it is not used, so it is shown disabled with the reason.
+// Appearance (design 6.5): the theme mode, Kern's 12 accents, the density,
+// and the four Follow system switches. With a switch on, Kern takes that
+// part from the system (Hyprland, the portal, GTK, fontconfig). Only the
+// accent has a pick the system then replaces, so the accents are shown
+// disabled with the reason; the mode and the density stay Kern's own.
 // The tokens the system gave that fail WCAG AA are named, each with a note:
 // Kern uses its own there, and the user should know why their colours differ.
 

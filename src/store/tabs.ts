@@ -31,11 +31,11 @@ export type DocTab = {
  */
 export type TrashTab = { id: string; kind: "trash" };
 /**
- * Every document under the folders the settings name (plan Task 25), found by
+ * Every document under the folders the settings name, found by
  * a walk. Like the Trash a place of its own, with no path, and at most one.
  */
 export type DocumentsTab = { id: string; kind: "documents" };
-/** Kern's settings (plan Task 28): a place of its own, at most one. */
+/** Kern's settings: a place of its own, at most one. */
 export type SettingsTab = { id: string; kind: "settings" };
 export type Tab = FolderTab | DocTab | TrashTab | DocumentsTab | SettingsTab;
 /** A tab that shows a place of Kern's own (the Trash, All documents, Settings), not a folder or a document. */

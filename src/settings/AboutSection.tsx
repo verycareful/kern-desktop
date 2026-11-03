@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useId, useState } from "react";
-import { openUrl, settingsGet, toWireError } from "../ipc";
+import { openUrl, toWireError } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { LICENCE_TEXT } from "./licence";
+import { useSettings } from "./settings-store";
 import { VERSION_LABEL } from "./version";
 
-// About (plan Task 28): the version label, the licence, and links to Kern's
+// About: the version label, the licence, and links to Kern's
 // source and to the Android app. A link is opened by the default application
 // for https links (kernkraft open_url); Kern itself connects to nothing.
 
@@ -18,11 +19,12 @@ const LINKS = [
 export function AboutSection() {
   const id = useId();
   const [error, setError] = useState<string | null>(null);
+  // The settings view shows About only once the settings are read.
+  const terminal = useSettings((s) => s.settings?.terminal ?? null);
 
   const open = async (url: string) => {
     setError(null);
     try {
-      const terminal = (await settingsGet()).terminal;
       await openUrl(url, terminal ?? undefined);
     } catch (e) {
       setError(`${url} could not be opened: ${errorText(toWireError(e))}`);

@@ -8,21 +8,19 @@ import { AboutSection } from "./AboutSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { EditorSection } from "./EditorSection";
 import { FilesSection } from "./FilesSection";
-import { useSettings } from "./settings-store";
+import { SETTINGS_FILE, useSettings } from "./settings-store";
 import "./settings.css";
 
-// The Settings tab (plan Task 28): Appearance, Files, Editor and About. Each
+// The Settings tab: Appearance, Files, Editor and About. Each
 // change is stored at once (settings-store.ts); one that fails is said at the
 // top until the next one succeeds. A settings.json Kern could not read is
 // reported here, as it was found: what was wrong and where the file went.
-
-/** The store file this view reports on (store.rs). */
-const SETTINGS_FILE = "settings.json";
 
 export function SettingsView() {
   const settings = useSettings((s) => s.settings);
   const loadError = useSettings((s) => s.loadError);
   const problem = useSettings((s) => s.problem);
+  const listenError = useSettings((s) => s.listenError);
   // The whole list is selected and filtered here: a filtered list made in the selector is a new
   // array on every read, which the store takes for a change.
   const reports = useStoreErrors((s) => s.reports).filter((r) => r.file === SETTINGS_FILE);
@@ -58,18 +56,18 @@ export function SettingsView() {
           {problem}
         </div>
       )}
+      {listenError && (
+        <div role="alert" className="kern-banner">
+          Settings changed in another window will not show here: {errorText(listenError)}
+        </div>
+      )}
       {loadError && (
         <div role="alert" className="kern-banner">
           The settings could not be read: {errorText(loadError)}{" "}
           <button
             type="button"
             className="kern-button"
-            onClick={() =>
-              void useSettings
-                .getState()
-                .follow()
-                .then((stop) => stop())
-            }
+            onClick={() => void useSettings.getState().reload()}
           >
             Retry
           </button>

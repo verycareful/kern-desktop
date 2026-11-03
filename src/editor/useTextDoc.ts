@@ -37,7 +37,7 @@ import { registerDoc } from "./doc-controller";
 import { useDocStatus } from "./doc-status";
 import type { HandedDoc } from "./handed-doc";
 
-// One open text document (design 4.3, 5.4; plan Task 26). The hook owns what
+// One open text document (design 4.3, 5.4). The hook owns what
 // the editor must not lose: the file as it was opened or last saved (stamp,
 // line ending, byte order mark, read-only reason), whether the text differs
 // from it, what the disk says about the file since, and every save.

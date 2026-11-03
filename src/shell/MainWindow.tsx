@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useViewSettingsSync } from "../files/view-settings";
 import { useShortcuts } from "../keys/useShortcuts";
+import { useSettingsReportNotice } from "../settings/settings-reports";
 import { OpsHost } from "../ops/OpsHost";
 import { usePanels } from "../store/panels";
 import { TextEditor } from "../editor/TextEditor";
@@ -26,6 +27,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
   useShortcuts();
   // The interface size actions step the stored size whatever tab is shown.
   useViewSettingsSync();
+  useSettingsReportNotice();
   // Pinned and Recent is followed while the window is open, not only while its panel shows:
   // a document tab folds the panel away, and Ctrl+D there reads whether the document is pinned.
   useEffect(() => {

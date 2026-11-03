@@ -9,7 +9,7 @@ import { Modal } from "../ops/Modal";
 import { baseName } from "../ops/labels";
 import type { SaveAsResult } from "./useTextDoc";
 
-// The questions a save can ask (plan Task 26). Each dialog names what the
+// The questions a save can ask. Each dialog names what the
 // answer does to the file, and the safe answer, Cancel, has the focus.
 
 /** The file changed on disk since it was opened: Reload, Overwrite, Save As or Cancel. */

@@ -21,7 +21,7 @@ import { ScanResults } from "./ScanResults";
 import { useScan } from "./use-scan";
 import { setScanFolder, useViewSettings } from "./view-settings";
 
-// All documents (plan Task 25): every document under the Documents and
+// All documents: every document under the Documents and
 // Downloads folders, each when its switch is on, and under the folders the
 // settings add (scan_roots), found by a walk and shown as found. A switch
 // is the stored setting, so it holds in every window and after a restart;

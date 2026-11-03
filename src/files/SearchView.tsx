@@ -11,7 +11,7 @@ import { ScanResults } from "./ScanResults";
 import { useScan } from "./use-scan";
 import { useViewSettings } from "./view-settings";
 
-// Name search (Ctrl+F, plan Task 25): every name under the folder on show that
+// Name search (Ctrl+F): every name under the folder on show that
 // contains what is typed, case aside, found as the folder tree is walked and
 // shown as it is found. Hidden items are searched when they are shown. A new
 // query cancels the walk before it, and so does closing the search (Escape,

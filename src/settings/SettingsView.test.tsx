@@ -243,10 +243,78 @@ test("about_links_open_through_the_default_app_and_say_when_they_cannot", async 
   await waitFor(() =>
     expect(ipc.openUrl).toHaveBeenCalledWith("https://github.com/verycareful/kern", "kitty")
   );
+  // The terminal is the one the view shows, not a second read of the settings.
+  expect(ipc.settingsGet).toHaveBeenCalledTimes(1);
   ipc.openUrl.mockRejectedValueOnce({ kind: "NoUrlHandler", message: "no browser", path: null });
   fireEvent.click(screen.getByRole("button", { name: "Source code" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
     /https:\/\/github\.com\/verycareful\/kern-desktop could not be opened: .*no browser/
   );
   expect(screen.queryByText(/[Qq]yra/)).toBeNull();
+});
+
+test("a_listener_that_failed_stays_said_after_a_change", async () => {
+  ipc.on.mockRejectedValueOnce({ kind: "Io", message: "no events", path: null });
+  await shown();
+  expect(
+    screen.getByText(/changed in another window will not show here: .*no events/)
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Wrap long lines" }));
+  await waitFor(() => expect(ipc.settingsSet).toHaveBeenCalled());
+  expect(screen.getByText(/changed in another window will not show here/)).toBeInTheDocument();
+});
+
+test("retry_reads_again_and_keeps_following", async () => {
+  ipc.settingsGet.mockRejectedValueOnce({ kind: "Io", message: "busy", path: null });
+  render(<SettingsView />);
+  fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+  await screen.findByRole("heading", { name: "Appearance" });
+  // One subscription to settings changes, kept through the retry.
+  expect(ipc.on.mock.calls.filter(([name]) => name === "kern://settings-changed")).toHaveLength(1);
+  await act(async () =>
+    handlers["kern://settings-changed"]!({ ...stored, word_wrap: true } satisfies Settings)
+  );
+  expect(screen.getByRole("checkbox", { name: "Wrap long lines" })).toBeChecked();
+});
+
+test("an_earlier_answer_arriving_late_does_not_put_the_control_back", async () => {
+  await shown();
+  const answers: ((s: Settings) => void)[] = [];
+  ipc.settingsSet.mockImplementation(
+    (patch: Partial<Settings>) =>
+      new Promise<Settings>((resolve) => {
+        const next = { ...stored, ...patch };
+        stored = next;
+        answers.push(() => resolve(next));
+      })
+  );
+  const zoom = screen.getByLabelText("Text size");
+  fireEvent.change(zoom, { target: { value: "1.25" } });
+  fireEvent.change(zoom, { target: { value: "1.5" } });
+  await waitFor(() => expect(answers).toHaveLength(2));
+  await act(async () => answers[1]!(stored));
+  await act(async () => answers[0]!(stored));
+  expect(screen.getByText("150%")).toBeInTheDocument();
+});
+
+test("a_folder_added_while_another_window_added_one_keeps_both", async () => {
+  let dirs!: (v: unknown) => void;
+  ipc.userDirs.mockReturnValue(new Promise((r) => (dirs = r)));
+  await shown();
+  fireEvent.change(screen.getByLabelText("Add a folder"), { target: { value: "/b" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await act(async () =>
+    handlers["kern://settings-changed"]!({ ...stored, scan_roots: [p("/a")] } satisfies Settings)
+  );
+  await act(async () => dirs({ home: p("/home/t"), dirs: [] }));
+  await waitFor(() =>
+    expect(ipc.settingsSet).toHaveBeenCalledWith({ scan_roots: [p("/a"), p("/b")] })
+  );
+});
+
+test("a_terminal_that_differs_only_by_spaces_is_not_a_change", async () => {
+  stored.terminal = "kitty";
+  await shown();
+  fireEvent.change(screen.getByLabelText("Terminal program"), { target: { value: " kitty " } });
+  expect(within(fieldset("Terminal")).getByRole("button", { name: "Save" })).toBeDisabled();
 });

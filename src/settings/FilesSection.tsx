@@ -19,10 +19,10 @@ import { errorText } from "../ops/error-text";
 import { useUserDirs } from "../shell/user-dirs-store";
 import { useSettings } from "./settings-store";
 
-// Files (plan Task 28): the folders All documents walks (Documents and
+// Files: the folders All documents walks (Documents and
 // Downloads, and folders of the user's own), whether hidden items show and
 // list or grid in a new folder view, the Terminal command, and whether Kern
-// is the default file manager (Task 17: the inode/directory default, and the
+// is the default file manager (default_fm.rs: the inode/directory default, and the
 // org.freedesktop.FileManager1 name other programs ask to show folders).
 
 const VIEWS: { value: ViewMode; label: string }[] = [
@@ -42,24 +42,27 @@ function ScanRoots(props: { settings: Settings }) {
   const roots = settings.scan_roots;
 
   const add = async () => {
+    const typed = text;
     let home = null;
     try {
       home = (await useUserDirs.getState().load()).home;
     } catch {
       // ~ is then refused by parseLocation with its own words.
     }
-    const parsed = parseLocation(text, home);
+    const parsed = parseLocation(typed, home);
     if (!parsed.ok) {
       setError(parsed.message);
       return;
     }
+    // The list as it is now: it may have changed while the home folder was looked up.
+    const now = useSettings.getState().settings?.scan_roots ?? roots;
     const key = pathKey(parsed.path);
-    if (roots.some((r) => pathKey(r) === key)) {
+    if (now.some((r) => pathKey(r) === key)) {
       setError(`${displayPath(parsed.path)} is already in the list.`);
       return;
     }
     setError(null);
-    if (await change({ scan_roots: [...roots, parsed.path] }, "The folder")) setText("");
+    if (await change({ scan_roots: [...now, parsed.path] }, "The folder")) setText("");
   };
 
   return (
@@ -147,7 +150,12 @@ function Terminal(props: { settings: Settings }) {
           }
         }}
       />
-      <button type="button" className="kern-button" disabled={text === stored} onClick={save}>
+      <button
+        type="button"
+        className="kern-button"
+        disabled={text.trim() === stored}
+        onClick={save}
+      >
         Save
       </button>
       <p className="kern-settings-note">

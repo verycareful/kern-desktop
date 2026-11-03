@@ -23,7 +23,7 @@ import { isFolder } from "./file-type";
 import { formatSize } from "./format";
 import { modeOctal, modeText } from "./permissions";
 
-// Properties (design 5.1, plan Task 25): for one item its type, place, size,
+// Properties (design 5.1): for one item its type, place, size,
 // modification time, permissions as letters and octal, MIME type and, for a
 // file, the application that opens it; for several, how many and their size
 // together. Sizes come from the properties operation, which walks folders in
