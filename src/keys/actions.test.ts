@@ -362,6 +362,18 @@ test("the_tree_action_is_aimed_at_the_entry_the_menu_was_opened_on", () => {
   expect(menuSections(null).some((s) => s.actions.includes(a))).toBe(false);
 });
 
+test("move_to_new_window_is_in_the_menu_of_a_document_tab_and_not_in_a_folder_tabs", () => {
+  useTabs.getState().openDoc(p("/a/n.md"));
+  const detach = getAction("tab.detach");
+  const tabs = useTabs.getState().tabs;
+  const folder = tabs.find((t) => t.kind === "folder") ?? null;
+  const doc = tabs.find((t) => t.kind === "doc")!;
+  // Hidden, not greyed: a folder tab cannot be moved, so the entry is not there to be greyed.
+  expect(menuSections(doc).some((s) => s.actions.includes(detach))).toBe(true);
+  if (folder) expect(menuSections(folder).some((s) => s.actions.includes(detach))).toBe(false);
+  expect(menuSections(null).some((s) => s.actions.includes(detach))).toBe(false);
+});
+
 test("move_to_new_window_is_offered_for_a_document_tab_of_an_editor_window_too", () => {
   useTabs.getState().openDoc(p("/a/n.md"));
   const detach = getAction("tab.detach");

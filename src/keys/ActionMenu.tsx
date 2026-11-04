@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useDocStatus } from "../editor/doc-status";
 import { currentContext, isEnabled, runAction, type Action } from "./actions";
 import { clampToViewport } from "./menu-position";
 import "./action-menu.css";
@@ -29,6 +30,8 @@ export function ActionMenu(props: {
   const ref = useRef<HTMLUListElement>(null);
   const opener = useRef(document.activeElement);
   const [pos, setPos] = useState({ x: props.x, y: props.y });
+  // A document becoming busy changes what an open menu may offer (Move to new window).
+  useDocStatus((s) => s.byTab);
   const ctx = currentContext(targetId);
 
   useLayoutEffect(() => {

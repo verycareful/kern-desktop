@@ -4,7 +4,7 @@ import { displayPath } from "../ipc";
 import { encodingText, endingText, useDocStatus } from "../editor/doc-status";
 import { useFolderStatus } from "../files/folder-status";
 import { formatSize } from "../files/format";
-import { useOps } from "../ops/useOps";
+import { noticesShown, useOps } from "../ops/useOps";
 import { activeTab, useTabs, isPlaceTab, tabTitle } from "../store/tabs";
 
 const plural = (n: number, one: string, many: string) =>
@@ -22,6 +22,7 @@ export function StatusBar() {
   );
   const docStatus = useDocStatus((s) => (tab?.kind === "doc" ? s.byTab[tab.id] : undefined));
   const notice = useOps((s) => s.notice);
+  const earlier = useOps((s) => s.earlier);
   const place = !tab ? "" : isPlaceTab(tab) ? tabTitle(tab) : displayPath(tab.path);
   return (
     <footer className="kern-status" data-testid="status-bar">
@@ -60,7 +61,12 @@ export function StatusBar() {
       )}
       {notice && (
         <span role="status" data-testid="status-notice">
-          {notice.text}
+          {noticesShown({ notice, earlier }).map((n, i) => (
+            <span key={n.id}>
+              {i > 0 && " "}
+              {n.text}
+            </span>
+          ))}
         </span>
       )}
     </footer>

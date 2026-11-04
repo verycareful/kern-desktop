@@ -99,6 +99,12 @@ export type Action = {
   scope?: "view";
   /** Absent means always enabled where `when` holds. A disabled menu entry is shown greyed. */
   enabled?(ctx: ActionContext): boolean;
+  /**
+   * Why the action does nothing now, for a key pressed while it is disabled: said in the status
+   * bar, so a key that is claimed is not a key that fails silently. Null says nothing (the
+   * action has nothing to do, as Save has on a clean document).
+   */
+  refusal?(ctx: ActionContext): string | null;
   run(ctx: ActionContext): void;
 };
 
@@ -165,7 +171,8 @@ export const actions: Action[] = [
     label: "Move to new window",
     area: "Tabs",
     keys: [],
-    when: "any",
+    // Only a document tab can move, so the entry is not in the menu of any other tab.
+    when: "doc",
     enabled: (c) =>
       c.target?.kind === "doc" &&
       (isMainWindow() || isEditorWindow()) &&
@@ -945,6 +952,7 @@ const docActions: Action[] = [
     when: "doc",
     inEditable: true,
     enabled: (c) => docOf(c)?.canSave() ?? false,
+    refusal: (c) => docOf(c)?.whySaveRefused() ?? null,
     run: (c) => docOf(c)?.save(),
   },
   {

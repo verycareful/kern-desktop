@@ -37,6 +37,7 @@ const controller = (over: Partial<DocController> = {}): DocController => ({
   askSaveAs: vi.fn(),
   canSave: () => true,
   canSaveAs: () => true,
+  whySaveRefused: () => null,
   // Unsaved text: closing it the ordinary way would ask.
   closeRisk: () => ({ dirty: true, deleted: false, readOnly: false }),
   saveForClose: () => Promise.resolve(true),

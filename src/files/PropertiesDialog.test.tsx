@@ -79,6 +79,14 @@ test("one_file_shows_its_type_size_time_permissions_and_application", async () =
   expect(screen.queryByText("Contains")).toBeNull();
 });
 
+test("the_root_folder_is_named_slash_and_not_left_blank", async () => {
+  // The listing gives the root no name of its own.
+  ipc.entryOf.mockResolvedValue(dir("", { mode: 0o755 }));
+  render(<PropertiesDialog paths={[p("/")]} onClose={onClose} />);
+  await waitFor(() => expect(rowOf("Name")).toHaveTextContent("/"));
+  expect(rowOf("Name").textContent).toBe("/");
+});
+
 test("a_folder_counts_what_it_holds_and_says_what_it_could_not_read", async () => {
   ipc.entryOf.mockResolvedValue(dir("Work", { mode: 0o755 }));
   render(<PropertiesDialog paths={[p("/d/Work")]} onClose={onClose} />);

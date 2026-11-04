@@ -71,6 +71,8 @@ export type DocPrompt =
   | "external"
   /** The file was deleted on disk and saving would create it again. */
   | "recreate"
+  /** The name is now a link to a file that does not exist: saving would create that file. */
+  | "dangling"
   /** Save As asks for a path. */
   | "saveAs";
 
@@ -116,7 +118,8 @@ export interface TextDoc {
   save(): Promise<void>;
   /**
    * The user confirmed the question of `prompt`: for "external" whatever is there now is replaced;
-   * for "recreate" the file is created, only while nothing is there.
+   * for "dangling" the file the link points to is created with the text; for "recreate" the file
+   * is created, only while nothing is there.
    */
   overwrite(): Promise<void>;
   /** Opens the Save As question. */
@@ -191,6 +194,23 @@ const sameEntry = (a: WireEntry, b: WireEntry): boolean =>
   a.kind === b.kind && a.len === b.len && a.modified_ms === b.modified_ms;
 
 const say = (text: string) => useOps.getState().notify(text);
+
+/**
+ * Whether the name is a symbolic link whose target is not there: the entry itself is a link, and
+ * the check, which follows links, finds nothing. A look that fails answers false (the ordinary
+ * question about a changed file is then asked, which is also true).
+ */
+async function isDanglingLink(path: WirePath, stamp: WireStamp): Promise<boolean> {
+  try {
+    const entry = await entryOf(path);
+    return entry.kind === "symlink" && (await textCheck(path, stamp)) === "deleted";
+  } catch {
+    return false;
+  }
+}
+
+/** What Ctrl+S says about a document that cannot be saved where it is. */
+const READ_ONLY_SAVE = "This file is read-only. Use Save As to keep your changes in another file.";
 
 /** The place a tab of this window is registered under. */
 const tabPlace = (tabId: string): Location => ({ kind: "tab", window: tabWindow(), tab_id: tabId });
@@ -317,6 +337,9 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
       // added to Recent when it was first opened.
       const doc = toDoc(given.text);
       const savedDoc = given.saved === given.text ? doc : toDoc(given.saved);
+      // The editor holds it now (and this hook, for a run of the effect again for this path): the
+      // tab store need not keep a second copy of the whole document.
+      useTabs.getState().spent(tabId, "handed");
       take(
         {
           path,
@@ -415,6 +438,7 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
     // document back to another window, and take the path from it.
     const skip = preRegistered.current === key;
     preRegistered.current = null;
+    useTabs.getState().spent(tabId, "registered");
     registrationRan.current = true;
     // True once the backend holds this document for this place (the first try or a later one).
     let taken = false;
@@ -590,6 +614,11 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
     useTabs.getState().setDirty(tabId, state.dirty);
   }, [tabId, state.dirty]);
   useEffect(() => () => useDocStatus.getState().clear(tabId), [tabId]);
+  // A save or a move under way, for a menu that is open (the controller answers `busy` itself).
+  const busy = state.saving || state.moving;
+  useEffect(() => {
+    useDocStatus.getState().patch(tabId, { busy });
+  }, [tabId, busy]);
 
   // ---- editing ----
   const edited = useCallback(
@@ -632,11 +661,13 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
           // The file was to be created again, and something took its place meanwhile: nothing
           // was written, and the user is asked about what is there now.
           ensureWatch.current();
+          // A link that points to nothing is not a file that changed: it has words of its own.
+          const dangling = await isDanglingLink(f.path, f.stamp);
           patch({
             saving: false,
-            prompt: "external",
+            prompt: dangling ? "dangling" : "external",
             deletedOnDisk: false,
-            changedOnDisk: true,
+            changedOnDisk: !dangling,
           });
         } else if (err.kind === "ExternalModification" && expect.kind === "unchanged") {
           // A deleted file counts as changed to the backend; the user is told which it is.
@@ -670,7 +701,7 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
         const s = st.current;
         if (!f || s.phase !== "ready" || s.saving || s.moving) return;
         if (s.readOnly) {
-          say("This file is read-only. Use Save As to keep your changes in another file.");
+          say(READ_ONLY_SAVE);
           return;
         }
         if (s.deletedOnDisk) {
@@ -688,7 +719,7 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
         const s = st.current;
         const f = file.current;
         if (!f || s.phase !== "ready" || s.saving || s.moving || s.readOnly) return;
-        if (s.prompt !== "external" && s.prompt !== "recreate") return;
+        if (s.prompt !== "external" && s.prompt !== "recreate" && s.prompt !== "dangling") return;
         if (s.prompt === "recreate") {
           // The user agreed to create a file that is gone. If something is at the path again
           // (restored, or written by another program) that is not what they agreed to.
@@ -1010,6 +1041,14 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
           !st.current.moving &&
           (st.current.dirty || st.current.deletedOnDisk),
         canSaveAs: () => st.current.phase === "ready" && !st.current.saving && !st.current.moving,
+        whySaveRefused: () => {
+          const s = st.current;
+          if (s.phase !== "ready") return null;
+          if (s.moving)
+            return "The document is being moved to another window, so it cannot be saved now.";
+          if (s.saving) return "A save is already under way.";
+          return s.readOnly ? READ_ONLY_SAVE : null;
+        },
       }),
     [tabId, save, askSaveAs, saveForClose, snapshot, patch]
   );

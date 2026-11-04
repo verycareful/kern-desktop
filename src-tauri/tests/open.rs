@@ -801,21 +801,23 @@ fn a_look_that_never_returned_is_not_started_again_and_is_not_waited_for_again()
     let reg = OpenRegistry::new();
     register(&reg, &a, tab("main", "t1"));
     let (stat, release, calls) = blocking_stat(&[&a]);
-    let bound = Duration::from_millis(150);
+    // The first survey waits the whole bound; later ones must not wait for it again, which
+    // would take the bound each. Half the bound is the line between them, far from both a
+    // survey that returns at once and one that waits, so a loaded machine does not cross it.
+    let bound = Duration::from_secs(2);
     let first = reg.survey(&c, &stat, bound);
     assert_eq!(first.lookup(&FileId::of(&c)).unanswered, vec![a.clone()]);
     // Later surveys find the look still going: no second thread, and no wait for it once it has
     // run for the bound.
-    std::thread::sleep(bound);
-    let again = std::time::Instant::now();
     for _ in 0..3 {
+        let again = std::time::Instant::now();
         let s = reg.survey(&c, &stat, bound);
         assert_eq!(s.lookup(&FileId::of(&c)).unanswered, vec![a.clone()]);
+        assert!(
+            again.elapsed() < bound / 2,
+            "a look that ran its bound is not waited for"
+        );
     }
-    assert!(
-        again.elapsed() < bound,
-        "a look that ran its bound is not waited for"
-    );
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     // Once the stat returns the path answers again, with a new look.
     drop(release);
@@ -828,6 +830,78 @@ fn a_look_that_never_returned_is_not_started_again_and_is_not_waited_for_again()
         assert!(std::time::Instant::now() < end, "the look never finished");
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+#[test]
+fn a_stat_that_panics_leaves_no_look_behind_and_its_path_can_be_looked_at_again() {
+    let t = tempfile::tempdir().unwrap();
+    let (a, c) = (file(t.path(), "a.txt"), file(t.path(), "c.txt"));
+    let reg = OpenRegistry::new();
+    register(&reg, &a, tab("main", "t1"));
+    let panicking: Stat = {
+        let a = a.clone();
+        Arc::new(move |p: &Path| {
+            assert_ne!(p, a, "this stat cannot look at a.txt");
+            FileId::of(p)
+        })
+    };
+    // The panic is an answer of no answer, at once: nothing waits for the bound.
+    let started = std::time::Instant::now();
+    let survey = reg.survey(&c, &panicking, Duration::from_secs(30));
+    assert!(
+        started.elapsed() < Duration::from_secs(15),
+        "waited for the bound"
+    );
+    assert_eq!(survey.lookup(&FileId::of(&c)).unanswered, vec![a.clone()]);
+    // The look is gone from the registry: the same path answers to the next survey.
+    let later = (0..200).find_map(|_| {
+        let s = reg.survey(&c, &disk(), BOUND);
+        if s.lookup(&FileId::of(&c)).unanswered.is_empty() {
+            Some(s)
+        } else {
+            std::thread::sleep(Duration::from_millis(10));
+            None
+        }
+    });
+    assert!(
+        later.is_some(),
+        "the path stayed unanswered after its stat panicked"
+    );
+}
+
+#[test]
+fn the_asked_path_is_looked_at_like_the_registered_ones_shared_and_bounded() {
+    let t = tempfile::tempdir().unwrap();
+    let (a, c) = (file(t.path(), "a.txt"), file(t.path(), "c.txt"));
+    let reg = OpenRegistry::new();
+    register(&reg, &a, tab("main", "t1"));
+    let (stat, release, calls) = blocking_stat(&[&c]);
+    let bound = Duration::from_millis(150);
+    let own = tab("main", "t9");
+    // The asked path does not answer: the survey says so, naming it, and does not wait longer.
+    let survey = reg.survey(&c, &stat, bound);
+    let found = survey.lookup_asked();
+    assert_eq!(found.location, None);
+    assert!(found.unanswered.contains(&c), "{:?}", found.unanswered);
+    assert!(survey.held_by_asked(&own).is_err());
+    // A second survey finds that look still going and starts no second one.
+    let again = reg.survey(&c, &stat, bound);
+    assert!(again.held_by_asked(&own).is_err());
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    // Once it answers the asked path is free, and a path registered by its text is never looked at.
+    drop(release);
+    let free = (0..300).find_map(|_| {
+        let s = reg.survey(&c, &stat, BOUND);
+        if s.held_by_asked(&own) == Ok(Held::Free) {
+            Some(())
+        } else {
+            std::thread::sleep(Duration::from_millis(10));
+            None
+        }
+    });
+    assert!(free.is_some(), "the asked path never answered");
+    let registered = reg.survey(&a, &stat, bound);
+    assert_eq!(registered.held_by_asked(&tab("main", "t1")), Ok(Held::Own));
 }
 
 #[test]

@@ -23,6 +23,19 @@ import { isFolder } from "./file-type";
 // on show. What goes wrong is kept as a note for the view to show until it is
 // dismissed; what succeeds is said in the status bar.
 
+/**
+ * Why `paths` cannot be copied as text one per line, or null when they can: a list of several
+ * where a name has a line break would read as more paths than there are. One path on its own is
+ * copied exactly as it is.
+ */
+export function listProblem(paths: readonly WirePath[]): string | null {
+  if (paths.length < 2) return null;
+  const odd = paths.find((p) => /[\r\n]/.test(displayPath(p)));
+  return odd
+    ? `the name of ${baseName(odd).replace(/[\r\n]+/g, " ")} has a line break in it, so one path per line would read as more paths than there are; copy it on its own`
+    : null;
+}
+
 /** Why `path` cannot be copied as text, or null when it can. */
 export function copyProblem(path: WirePath): string | null {
   // A Bytes path is one whose name is not UTF-8; its text has U+FFFD in it and names no file.
@@ -74,7 +87,7 @@ export function useFolderTools(args: {
   const copyPath = useCallback(() => {
     const picked = latest.current.selected().map((e) => e.path);
     const paths = picked.length > 0 ? picked : [latest.current.folder];
-    const problem = paths.map(copyProblem).find((p) => p !== null);
+    const problem = paths.map(copyProblem).find((p) => p !== null) ?? listProblem(paths);
     if (problem) {
       note(`The path was not copied: ${problem}.`);
       return;

@@ -186,16 +186,27 @@ struct Book {
 /// test passes one that can block.
 pub type Stat = Arc<dyn Fn(&Path) -> FileId + Send + Sync>;
 
+/// How a look stands.
+enum Answer {
+    Pending,
+    Done(FileId),
+    /// The stat panicked: there will be no answer from this look.
+    Lost,
+}
+
 /// The look at one path: the answer, once it is in.
 struct Look {
     started: Instant,
-    answer: Mutex<Option<FileId>>,
+    answer: Mutex<Answer>,
     done: Condvar,
 }
 
 /// The looks in progress, by path. A path whose stat does not return keeps
 /// its one look (and its one thread) until it does, however many surveys
-/// ask, so a hung mount costs one thread, not one per open.
+/// ask, so a hung mount costs one thread, not one per open. A look is shared
+/// by path whatever `stat` the asking survey passed: a registry has one stat
+/// (the application's, or a test's), and the first one to start a look is the
+/// one that answers it.
 type Looking = Arc<Mutex<HashMap<PathBuf, Arc<Look>>>>;
 
 /// The documents open in Kern: path to place.
@@ -381,6 +392,14 @@ impl Snapshot {
                 .map(|(p, _)| start_look(&self.looking, p, stat))
                 .collect()
         };
+        // The asked path is looked at the same way, shared and bounded like the registered ones:
+        // a path on a mount that stopped answering costs one thread and one wait, not one of
+        // each per attempt.
+        let asked = if exact.is_some() {
+            None
+        } else {
+            start_look(&self.looking, path, stat).and_then(|l| wait_for(&l, deadline, bound))
+        };
         let mut entries = Vec::with_capacity(self.entries.len());
         for (i, (p, location)) in self.entries.into_iter().enumerate() {
             let id = looks
@@ -395,6 +414,9 @@ impl Snapshot {
         }
         Survey {
             generation: self.generation,
+            asked_path: path.to_path_buf(),
+            asked,
+            looked: true,
             exact,
             entries,
         }
@@ -403,10 +425,15 @@ impl Snapshot {
 
 impl Snapshot {
     /// A survey in which no registered path was looked at, so each is
-    /// compared by its text only. Takes no step on the file system.
-    pub fn unlooked(self, path: &Path) -> Survey {
+    /// compared by its text only. Takes no step on the file system. `asked`
+    /// is the look at the asked path that an earlier survey made, if it got
+    /// one.
+    pub fn unlooked(self, path: &Path, asked: Option<FileId>) -> Survey {
         Survey {
             generation: self.generation,
+            asked_path: path.to_path_buf(),
+            asked,
+            looked: false,
             exact: self
                 .entries
                 .iter()
@@ -434,7 +461,7 @@ fn start_look(looking: &Looking, path: &Path, stat: &Stat) -> Option<Arc<Look>> 
     }
     let look = Arc::new(Look {
         started: Instant::now(),
-        answer: Mutex::new(None),
+        answer: Mutex::new(Answer::Pending),
         done: Condvar::new(),
     });
     let (l, p, stat, looking) = (
@@ -446,17 +473,44 @@ fn start_look(looking: &Looking, path: &Path, stat: &Stat) -> Option<Arc<Look>> 
     std::thread::Builder::new()
         .name("kern-open-stat".to_owned())
         .spawn(move || {
-            let id = stat(&p);
-            looking
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .remove(&p);
-            *l.answer.lock().unwrap_or_else(PoisonError::into_inner) = Some(id);
-            l.done.notify_all();
+            // Whatever happens to the stat, the look leaves the map and its waiters are told:
+            // a stat that panics would otherwise leave the path unanswered for good.
+            let mut over = EndLook {
+                looking,
+                path: p.clone(),
+                look: l,
+                answer: Answer::Lost,
+            };
+            over.answer = Answer::Done(stat(&p));
         })
         .ok()?;
     map.insert(path.to_path_buf(), Arc::clone(&look));
     Some(look)
+}
+
+/// Ends a look when dropped, also when the stat unwinds: the look is taken out of the map and
+/// its waiters get `answer`.
+struct EndLook {
+    looking: Looking,
+    path: PathBuf,
+    look: Arc<Look>,
+    answer: Answer,
+}
+
+impl Drop for EndLook {
+    fn drop(&mut self) {
+        self.looking
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&self.path);
+        let answer = std::mem::replace(&mut self.answer, Answer::Lost);
+        *self
+            .look
+            .answer
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = answer;
+        self.look.done.notify_all();
+    }
 }
 
 /// The answer of `look`, waiting no later than `deadline`. A look that has
@@ -464,8 +518,10 @@ fn start_look(looking: &Looking, path: &Path, stat: &Stat) -> Option<Arc<Look>> 
 fn wait_for(look: &Look, deadline: Instant, bound: Duration) -> Option<FileId> {
     let mut answer = look.answer.lock().unwrap_or_else(PoisonError::into_inner);
     loop {
-        if let Some(id) = answer.as_ref() {
-            return Some(id.clone());
+        match &*answer {
+            Answer::Done(id) => return Some(id.clone()),
+            Answer::Lost => return None,
+            Answer::Pending => {}
         }
         let now = Instant::now();
         if now >= deadline || look.started.elapsed() >= bound {
@@ -492,6 +548,12 @@ pub struct Survey {
     /// made on this survey is sound only if the registry's generation is
     /// still this number when it is carried out.
     pub generation: u64,
+    asked_path: PathBuf,
+    /// The look at the asked path, when it was made and answered in time.
+    asked: Option<FileId>,
+    /// False for a survey in which nothing was looked at ([`Snapshot::unlooked`]), so what is
+    /// unanswered was never asked, as against a path that was asked and did not answer.
+    pub looked: bool,
     exact: Option<Location>,
     entries: Vec<Surveyed>,
 }
@@ -553,6 +615,38 @@ impl Survey {
         }
     }
 
+    /// What this survey found out about the asked path itself, for a later pass that looks at
+    /// nothing ([`Snapshot::unlooked`]).
+    pub fn into_asked(self) -> Option<FileId> {
+        self.asked
+    }
+
+    /// The asked path and what could not be told about it: where it is open (by its name, or by
+    /// its file as the survey's own look at it found), and the paths that did not answer. The
+    /// asked path is among them when its own look did not answer in time.
+    pub fn lookup_asked(&self) -> Lookup {
+        self.lookup_asked_for(None)
+    }
+
+    fn lookup_asked_for(&self, own: Option<&Location>) -> Lookup {
+        if self.exact.is_some() {
+            return self.lookup_skipping(&FileId::default(), own);
+        }
+        match &self.asked {
+            Some(id) => self.lookup_skipping(id, own),
+            None => {
+                let mut found = self.lookup_skipping(&FileId::default(), own);
+                found.unanswered.push(self.asked_path.clone());
+                found
+            }
+        }
+    }
+
+    /// [`Survey::held_by`] for the asked path, with the survey's own look at it.
+    pub fn held_by_asked(&self, own: &Location) -> Result<Held, Vec<PathBuf>> {
+        Self::held_from(self.lookup_asked_for(Some(own)), own)
+    }
+
     /// How the asked path stands for the place `own` that holds a document:
     /// the file is its own, free, or open somewhere else. `Err` names the
     /// registered paths that did not answer when the answer depends on them.
@@ -562,7 +656,10 @@ impl Survey {
     /// mount. A path that matches the unanswered file's text is still found
     /// to be the place's own.
     pub fn held_by(&self, id: &FileId, own: &Location) -> Result<Held, Vec<PathBuf>> {
-        let found = self.lookup_skipping(id, Some(own));
+        Self::held_from(self.lookup_skipping(id, Some(own)), own)
+    }
+
+    fn held_from(found: Lookup, own: &Location) -> Result<Held, Vec<PathBuf>> {
         match found.location {
             Some(loc) if &loc == own => Ok(Held::Own),
             Some(location) => Ok(Held::Elsewhere { location }),

@@ -32,7 +32,7 @@ import { parseHanded } from "../editor/handed-doc";
 import { errorText } from "../ops/error-text";
 import { useLayout } from "../store/layout";
 import { useTabs } from "../store/tabs";
-import { closeWindow, isClosing } from "./useCloseGuard";
+import { closeTab, closeWindow, isClosing } from "./useCloseGuard";
 import { useProperties } from "../files/properties-store";
 
 // What the backend tells the main window to do. The
@@ -303,8 +303,13 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
           if (tab?.kind === "doc") {
             // The document stays in its window, which still has it; this tab was a second copy.
             // The backend registered the window again; the tab's release does not touch that.
-            tabs().close(tab.id);
-            notice("A document could not move to this window, so it stays in its own window.");
+            // A copy with edits made here is asked about before it goes.
+            closeTab(tab.id);
+            notice(
+              tab.dirty
+                ? "A document could not move to this window, so it stays in its own window. This copy has unsaved changes, so you are asked before it closes."
+                : "A document could not move to this window, so it stays in its own window."
+            );
           }
           return;
         }

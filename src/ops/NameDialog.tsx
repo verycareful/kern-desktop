@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useId, useRef, useState } from "react";
 import { toWireError } from "../ipc";
+import { editErrorText } from "./edit-error";
 import { Modal } from "./Modal";
 import { nameProblem } from "./names";
 
@@ -45,7 +46,7 @@ export function NameDialog(props: {
       await props.onSubmit(text);
     } catch (e) {
       const err = toWireError(e);
-      if (alive.current) setError(`${err.kind}: ${err.message}`);
+      if (alive.current) setError(editErrorText(err));
     } finally {
       if (alive.current) setBusy(false);
     }

@@ -10,6 +10,7 @@ import {
   isEnabled,
   type Action,
 } from "./actions";
+import { useOps } from "../ops/useOps";
 import { inFileKeysArea } from "./file-keys";
 
 /** True when keystrokes in `el` are text input: input, textarea, select or contenteditable. */
@@ -72,6 +73,10 @@ export function useShortcuts(allow?: (a: Action) => boolean): void {
       if (!hit) return;
       e.preventDefault();
       if (isEnabled(hit, ctx)) runAction(hit, ctx);
+      else {
+        const why = hit.refusal?.(ctx);
+        if (why) useOps.getState().notify(why);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

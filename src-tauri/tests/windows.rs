@@ -16,7 +16,7 @@ use common::{env, env_with, invoke, tab, wait_for, wp, Answer, QUIET};
 use kern_lib::open::{FileId, Location, Stat};
 use kern_lib::windows::{
     WindowState, EVENT_ADOPT_CANCELLED, EVENT_ADOPT_DOC, EVENT_CLOSE_REQUESTED, EVENT_DOC_RELEASED,
-    EVENT_OPEN,
+    EVENT_OPEN, MAX_SWEEPS,
 };
 use serde_json::{json, Value};
 use tauri::test::MockRuntime;
@@ -1646,6 +1646,50 @@ fn save_as_of_a_document_on_a_stuck_mount_is_not_held_up_by_its_own_file() {
 }
 
 #[test]
+fn a_path_that_does_not_answer_is_neither_registered_nor_moved_nor_waited_for_twice() {
+    let t = tempfile::tempdir().unwrap();
+    let stuck = Stuck::new(&[]);
+    let e = env_looking(&stuck, Duration::from_millis(300));
+    let target = e.files.join("on-a-dead-mount.txt");
+    std::fs::write(&target, "x").unwrap();
+    e.with_main();
+    editor(&e);
+    let own = tab("editor-1", "t9");
+    stuck.hung.lock().unwrap().insert(target.clone());
+    // Save As to it: refused, naming it, after one bounded wait.
+    let err = save_as_to(&e, "editor-1", &target, &own, true).unwrap_err();
+    assert_eq!(err["kind"], json!("OpenCheck"), "{err}");
+    let words = err["message"].as_str().unwrap();
+    assert!(
+        words.contains(target.to_str().unwrap()) && words.contains("did not answer"),
+        "{words}"
+    );
+    // Registering a tab for it is refused the same way, and nothing is registered.
+    let err = e
+        .call_from(
+            "editor-1",
+            "doc_opened",
+            json!({"path": wp(&target), "location": own}),
+        )
+        .unwrap_err();
+    assert_eq!(err["kind"], json!("OpenCheck"), "{err}");
+    // One look was started for all of that, however many times it was asked.
+    assert_eq!(stuck.calls(&target), 1);
+    // The mount answers: the same calls go through.
+    stuck.release();
+    drop(t);
+    wait_for("the stuck look to finish", || {
+        save_as_to(&e, "editor-1", &target, &own, false).is_ok()
+    });
+    e.call_from(
+        "editor-1",
+        "doc_opened",
+        json!({"path": wp(&target), "location": own}),
+    )
+    .unwrap();
+}
+
+#[test]
 fn a_look_made_stale_by_a_change_is_made_again_not_used() {
     let stuck = Stuck::new(&[]);
     let e = env_looking(&stuck, Duration::from_secs(5));
@@ -1654,6 +1698,8 @@ fn a_look_made_stale_by_a_change_is_made_again_not_used() {
     std::fs::hard_link(&a, &hard).unwrap();
     e.with_main();
     register(&e, "main", "t1", &a);
+    // Registering a.txt looked at it once, as the asked path.
+    let registered = stuck.calls(&a);
     // While the first look at a.txt is made, its tab closes: the look says the file is open, and
     // the registry no longer does.
     let handle = e.handle.clone();
@@ -1671,7 +1717,11 @@ fn a_look_made_stale_by_a_change_is_made_again_not_used() {
     // Not a focus on a tab that is gone: the look was taken again, on a registry that holds the
     // path for the open that is making a tab now.
     assert_eq!(out["action"], json!("doc_tab"), "{out}");
-    assert_eq!(stuck.calls(&a), 1, "the second look had nothing to look at");
+    assert_eq!(
+        stuck.calls(&a) - registered,
+        1,
+        "the second look had nothing to look at"
+    );
 }
 
 #[test]
@@ -1695,13 +1745,24 @@ fn a_registry_that_keeps_changing_is_given_up_and_answered_as_for_a_timeout() {
             );
         }
     }));
-    // Save As is refused, as when a stat does not answer.
+    // Save As is refused, as when a stat does not answer. The registry was looked at the most
+    // times a call may look at it, no more, and then it was decided as for a timeout.
+    let before = stuck.calls(&a);
     let err = save_as_to(&e, "editor-1", &target, &tab("editor-1", "t9"), true).unwrap_err();
+    assert_eq!(stuck.calls(&a) - before, MAX_SWEEPS);
     assert_eq!(err["kind"], json!("OpenCheck"), "{err}");
+    // Nothing was asked of the disk and nothing was silent: the words say the paths could not be
+    // checked, and not that they did not answer.
+    let words = err["message"].as_str().unwrap();
+    assert!(words.contains("could not be checked"), "{words}");
+    assert!(!words.contains("did not answer"), "{words}");
     // An open goes on by the path's text.
     let out = inside(&e, "main", &c);
     assert_eq!(out["action"], json!("doc_tab"), "{out}");
     assert_eq!(out["error"]["kind"], json!("OpenCheck"), "{out}");
+    let words = out["error"]["message"].as_str().unwrap();
+    assert!(words.contains("could not be checked"), "{words}");
+    assert!(!words.contains("did not answer"), "{words}");
 }
 
 // ---- a tab that closes holds nothing ----

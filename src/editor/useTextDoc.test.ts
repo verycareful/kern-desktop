@@ -491,6 +491,28 @@ test("a_retry_that_fails_for_another_reason_is_said_and_the_tab_stays_read_only"
   expect(hook.result.current.readOnly?.kind).toBe("OpenElsewhere");
 });
 
+test("a_close_the_backend_cannot_register_is_said_and_names_the_file", async () => {
+  const hook = await mount();
+  ipc.docClosed.mockRejectedValue(wireError("Internal", "registry gone"));
+  hook.unmount();
+  await waitFor(() =>
+    expect(useOps.getState().notice?.text).toMatch(
+      /notes\.txt could not be released.*registry gone/
+    )
+  );
+});
+
+test("a_watch_that_does_not_end_is_said_and_names_the_folder_of_the_file", async () => {
+  const hook = await mount();
+  ipc.unwatchDir.mockRejectedValue(wireError("Io", "inotify refused"));
+  hook.unmount();
+  await waitFor(() =>
+    expect(useOps.getState().notice?.text).toMatch(
+      /watch on the folder of notes\.txt did not end.*inotify refused/
+    )
+  );
+});
+
 test("a_watch_that_cannot_be_set_is_said", async () => {
   ipc.watchDir.mockRejectedValue(wireError("Io", "no inotify watches left"));
   const hook = renderHook(() => useTextDoc("t1", FILE));
@@ -519,6 +541,55 @@ test("a_read_only_file_is_not_saved", async () => {
   expect(useOps.getState().notice?.text).toMatch(/read-only/);
   expect(docController("t1")?.canSave()).toBe(false);
   expect(docController("t1")?.canSaveAs()).toBe(true);
+});
+
+test("the_reason_a_save_is_refused_is_given_for_a_read_only_document_and_during_a_save", async () => {
+  // A clean document has nothing to save and nothing to explain.
+  const hook = await mount();
+  expect(docController("t1")?.whySaveRefused()).toBeNull();
+  // During a save the key is refused, and the reason says a save is under way.
+  let finish: (stamp: string) => void = () => undefined;
+  ipc.textSave.mockReturnValue(new Promise<string>((r) => (finish = r)));
+  type(hook, "edited");
+  let saving: Promise<void> = Promise.resolve();
+  act(() => {
+    saving = hook.result.current.save();
+  });
+  await waitFor(() => expect(ipc.textSave).toHaveBeenCalled());
+  expect(docController("t1")?.canSave()).toBe(false);
+  expect(docController("t1")?.whySaveRefused()).toMatch(/save is already under way/);
+  await act(async () => {
+    finish(S1);
+    await saving;
+  });
+  expect(docController("t1")?.whySaveRefused()).toBeNull();
+});
+
+test("a_save_under_way_is_published_as_busy_so_a_menu_can_follow_it", async () => {
+  const hook = await mount();
+  expect(useDocStatus.getState().byTab["t1"]?.busy ?? false).toBe(false);
+  let finish: (stamp: string) => void = () => undefined;
+  ipc.textSave.mockReturnValue(new Promise<string>((r) => (finish = r)));
+  type(hook, "edited");
+  let saving: Promise<void> = Promise.resolve();
+  act(() => {
+    saving = hook.result.current.save();
+  });
+  await waitFor(() => expect(useDocStatus.getState().byTab["t1"]?.busy).toBe(true));
+  await act(async () => {
+    finish(S1);
+    await saving;
+  });
+  await waitFor(() => expect(useDocStatus.getState().byTab["t1"]?.busy).toBe(false));
+});
+
+test("a_read_only_document_says_why_it_cannot_be_saved_and_points_to_save_as", async () => {
+  ipc.textOpen.mockResolvedValue(
+    opened({ read_only: { kind: "MixedLineEndings", detail: "mixed" } })
+  );
+  await mount();
+  expect(docController("t1")?.canSave()).toBe(false);
+  expect(docController("t1")?.whySaveRefused()).toMatch(/read-only.*Save As/);
 });
 
 test("a_failed_save_is_said_and_the_edit_is_kept", async () => {
@@ -757,6 +828,24 @@ test("a_handed_document_saves_with_its_handed_stamp_ending_and_bom", async () =>
   });
 });
 
+test("what_a_tab_was_handed_and_registered_with_leaves_the_tab_store_once_it_is_used", async () => {
+  useTabs.setState({
+    tabs: [{ id: "t1", kind: "doc", path: FILE, dirty: false, handed: HANDED, registered: true }],
+    activeId: "t1",
+  });
+  const hook = renderHook(() => useTextDoc("t1", FILE, { handed: HANDED, registered: true }), {
+    wrapper: StrictMode,
+  });
+  await waitFor(() => expect(hook.result.current.phase).toBe("ready"));
+  await waitFor(() => expect(useTabs.getState().tabs[0]).not.toHaveProperty("handed"));
+  await waitFor(() => expect(useTabs.getState().tabs[0]).not.toHaveProperty("registered"));
+  // The editor holds the text it was handed and did not register the document again.
+  expect(hook.result.current.doc?.toString()).toBe("mine\nhello");
+  await act(async () => {});
+  expect(ipc.docOpened).not.toHaveBeenCalled();
+  expect(ipc.textOpen).not.toHaveBeenCalled();
+});
+
 test("a_handed_document_is_not_replaced_by_the_file_when_strict_mode_runs_the_effect_again", async () => {
   const hook = renderHook(() => useTextDoc("t1", FILE, { handed: HANDED }), {
     wrapper: StrictMode,
@@ -933,6 +1022,34 @@ test("a_recreate_that_finds_something_there_at_the_write_asks_about_it_and_write
   expect(hook.result.current.changedOnDisk).toBe(true);
   expect(hook.result.current.deletedOnDisk).toBe(false);
   expect(hook.result.current.dirty).toBe(true);
+});
+
+const LINK = { path: FILE, name: "notes.txt", kind: "symlink", len: 12, modified_ms: 3 };
+
+test("a_recreate_that_finds_a_link_to_nothing_asks_about_the_link_and_writes_nothing", async () => {
+  const hook = await askedToRecreate();
+  // A link took the name, and what it points to is not there either: the check still says gone.
+  ipc.textSave.mockRejectedValueOnce(wireError("Exists"));
+  ipc.entryOf.mockResolvedValue(LINK);
+  await act(() => hook.result.current.overwrite());
+  expect(ipc.textSave).toHaveBeenCalledTimes(1);
+  expect(hook.result.current.prompt).toBe("dangling");
+  expect(hook.result.current.dirty).toBe(true);
+  // Confirmed, the text is written where the link points (the backend follows it).
+  ipc.textSave.mockResolvedValueOnce(S1);
+  await act(() => hook.result.current.overwrite());
+  expect(ipc.textSave).toHaveBeenLastCalledWith(FILE, "mine", "lf", false, { kind: "anything" });
+  expect(hook.result.current.prompt).toBeNull();
+});
+
+test("a_link_to_a_file_that_exists_is_a_changed_file_and_not_a_dangling_link", async () => {
+  const hook = await askedToRecreate();
+  ipc.textSave.mockRejectedValueOnce(wireError("Exists"));
+  ipc.entryOf.mockResolvedValue(LINK);
+  // The link's target is there (the check follows links): something other than the opened file.
+  ipc.textCheck.mockResolvedValueOnce("deleted").mockResolvedValue("changed");
+  await act(() => hook.result.current.overwrite());
+  expect(hook.result.current.prompt).toBe("external");
 });
 
 test("save_as_to_a_path_taken_meanwhile_asks_to_replace_what_is_there_now", async () => {

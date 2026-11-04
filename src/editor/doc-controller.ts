@@ -11,6 +11,8 @@ export interface DocController {
   askSaveAs(): void;
   canSave(): boolean;
   canSaveAs(): boolean;
+  /** Why Ctrl+S saves nothing now, in words for the status bar; null when there is nothing to say. */
+  whySaveRefused(): string | null;
   /**
    * What closing would lose: unsaved edits, or the only copy of a file deleted on disk; null
    * when nothing. `readOnly` says it cannot be saved where it is.

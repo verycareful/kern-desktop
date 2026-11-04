@@ -14,7 +14,12 @@ import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { KEYS } from "./editor-keys";
 import { ChangedOnDiskBanner } from "./ChangedOnDiskBanner";
-import { ExternalModificationPrompt, RecreatePrompt, SaveAsDialog } from "./DocPrompts";
+import {
+  DanglingLinkPrompt,
+  ExternalModificationPrompt,
+  RecreatePrompt,
+  SaveAsDialog,
+} from "./DocPrompts";
 import { columnOf, useDocStatus } from "./doc-status";
 import type { HandedDoc } from "./handed-doc";
 import { ReadOnlyBanner } from "./ReadOnlyBanner";
@@ -157,7 +162,15 @@ export function TextEditor(props: {
     const v = new EditorView({ state, parent: host.current });
     view.current = v;
     publish(state);
+    // The offset is taken as the user scrolls, while the tab is shown: a hidden element reports
+    // none, so it cannot be read once the tab has been hidden.
+    const scroller = v.scrollDOM;
+    const onScroll = () => {
+      if (!scroller.closest("[hidden]")) scrollTop.current = scroller.scrollTop;
+    };
+    scroller.addEventListener("scroll", onScroll);
     return () => {
+      scroller.removeEventListener("scroll", onScroll);
       v.destroy();
       view.current = null;
     };
@@ -186,8 +199,6 @@ export function TextEditor(props: {
     if (active) {
       v.scrollDOM.scrollTop = scrollTop.current;
       v.focus();
-    } else {
-      scrollTop.current = v.scrollDOM.scrollTop;
     }
   }, [active, ready, initial]);
 
@@ -283,6 +294,14 @@ export function TextEditor(props: {
           dirty={doc.dirty}
           onReload={() => void doc.reload()}
           onOverwrite={() => void doc.overwrite()}
+          onSaveAs={doc.askSaveAs}
+          onCancel={doc.cancelPrompt}
+        />
+      )}
+      {ready && active && doc.prompt === "dangling" && (
+        <DanglingLinkPrompt
+          path={path}
+          onCreate={() => void doc.overwrite()}
           onSaveAs={doc.askSaveAs}
           onCancel={doc.cancelPrompt}
         />

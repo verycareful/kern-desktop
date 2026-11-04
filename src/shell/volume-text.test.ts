@@ -11,6 +11,11 @@ const err = (kind: string, message: string): WireError => ({
   details: null,
 });
 
+test("a_count_that_is_a_lower_bound_keeps_its_at_least", () => {
+  const text = volumeErrorText(err("ProblemsNotShown", "at least 4096 more not shown"));
+  expect(text).toContain("at least 4096 more not shown");
+});
+
 test("problems_beyond_the_ones_kept_are_explained_in_plain_words", () => {
   const text = volumeErrorText(
     err(

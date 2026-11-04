@@ -11,6 +11,7 @@ import {
   type WirePath,
 } from "../ipc";
 import { REPORT_PAGE, type Outcome } from "./outcome";
+import { errorText } from "./error-text";
 import { plural } from "./labels";
 
 // What a finished operation or command has to tell: every item that was skipped, failed, warned about or not
@@ -22,11 +23,7 @@ import { plural } from "./labels";
 
 function ErrorLine(props: { error: WireError }) {
   const { error } = props;
-  return (
-    <>
-      {error.kind}: {error.message}
-    </>
-  );
+  return <>{errorText(error)}</>;
 }
 
 /** What an undo that stopped partway did and did not do. */

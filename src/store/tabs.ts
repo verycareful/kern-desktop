@@ -109,6 +109,12 @@ export interface TabsState {
   /** Document tab `id` now shows the file at `path` (after Save As); the title follows. */
   retargetDoc(id: string, path: WirePath): void;
   /** Close a tab; the active tab becomes its right neighbour, else its left. */
+  /**
+   * Drops what a document tab was opened with once the editor has used it, so the text handed
+   * over (the whole document, kept in memory) and the flag that the caller registered it do not
+   * stay in the store for the tab's life.
+   */
+  spent(id: string, what: "handed" | "registered"): void;
   close(id: string): void;
   activate(id: string): void;
   /** Wraps around. */
@@ -312,6 +318,15 @@ export const useTabs = create<TabsState>()((set, get) => ({
       if (!t || t.kind !== "doc") return {};
       return { tabs: s.tabs.map((x) => (x.id === id ? { ...t, path } : x)) };
     });
+  },
+  spent(id, what) {
+    set((s) => ({
+      tabs: s.tabs.map((t) => {
+        if (t.id !== id || t.kind !== "doc" || !(what in t)) return t;
+        const { [what]: _used, ...rest } = t;
+        return rest;
+      }),
+    }));
   },
   close(id) {
     set((s) => {

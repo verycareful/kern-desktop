@@ -79,6 +79,10 @@ test("a_retry_that_fails_again_keeps_the_banner_with_the_new_reason", async () =
   await act(() => useOps.getState().refreshUndo());
   ipc.undoState.mockRejectedValue(err("second"));
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  await waitFor(() => expect(screen.getByTestId("undo-error")).toHaveTextContent("second"));
-  expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+  // The new reason is stored when the read settles and Retry is enabled again one update later,
+  // so both are waited for together: asserting the button right after the text raced the second.
+  await waitFor(() => {
+    expect(screen.getByTestId("undo-error")).toHaveTextContent("second");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+  });
 });

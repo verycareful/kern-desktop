@@ -4,6 +4,8 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { ActionMenu } from "./ActionMenu";
 import { actions } from "./actions";
+import { registerDoc } from "../editor/doc-controller";
+import { useDocStatus } from "../editor/doc-status";
 import { useTabs } from "../store/tabs";
 
 function Host() {
@@ -67,4 +69,41 @@ test("a_store_change_does_not_move_focus", () => {
   items[1]!.focus();
   act(() => useTabs.getState().openFolder({ k: "Utf8", v: "/c" }, true));
   expect(screen.getAllByRole("menuitem")[1]).toHaveFocus();
+});
+
+test("an_open_menu_follows_a_document_becoming_busy", () => {
+  // A save or a move starts while the menu is open: Move to new window greys without reopening.
+  useTabs.getState().openDoc({ k: "Utf8", v: "/a/n.md" });
+  const id = useTabs.getState().activeId!;
+  let busy = false;
+  const off = registerDoc(id, {
+    save: () => undefined,
+    askSaveAs: () => undefined,
+    canSave: () => true,
+    canSaveAs: () => true,
+    whySaveRefused: () => null,
+    closeRisk: () => null,
+    saveForClose: () => Promise.resolve(true),
+    snapshot: () => null,
+    setMoving: () => undefined,
+    busy: () => busy,
+  });
+  const detach = actions.filter((a) => a.id === "tab.detach");
+  const w = window as { __TAURI_INTERNALS__?: unknown };
+  w.__TAURI_INTERNALS__ = { metadata: { currentWindow: { label: "main" } } };
+  try {
+    render(<ActionMenu sections={[{ actions: detach }]} x={0} y={0} onClose={() => undefined} />);
+    const item = () => screen.getByRole("menuitem", { name: /Move to new window/ });
+    expect(item()).toBeEnabled();
+    busy = true;
+    act(() => useDocStatus.getState().patch(id, { busy: true }));
+    expect(item()).toBeDisabled();
+    busy = false;
+    act(() => useDocStatus.getState().patch(id, { busy: false }));
+    expect(item()).toBeEnabled();
+  } finally {
+    delete w.__TAURI_INTERNALS__;
+    off();
+    useDocStatus.getState().clear(id);
+  }
 });

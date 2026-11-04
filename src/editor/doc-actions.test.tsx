@@ -37,6 +37,7 @@ const fakeDoc = (over: Partial<DocController>): DocController => ({
   snapshot: () => null,
   setMoving: vi.fn(),
   busy: () => false,
+  whySaveRefused: () => null,
   ...over,
 });
 
@@ -142,6 +143,30 @@ test("ctrl_s_and_ctrl_shift_s_reach_the_editor_of_the_active_document_in_an_edit
   expect(askSaveAs).toHaveBeenCalledTimes(1);
   off();
   expect(docController("d")).toBeUndefined();
+});
+
+test("ctrl_s_that_cannot_save_says_why_in_the_status_bar_and_a_clean_document_says_nothing", () => {
+  const save = vi.fn();
+  registerDoc(
+    "d",
+    fakeDoc({
+      save,
+      canSave: () => false,
+      whySaveRefused: () => "This file is read-only. Use Save As.",
+    })
+  );
+  const { getByTestId } = render(<Host />);
+  const ce = getByTestId("ce");
+  ce.focus();
+  // The key is claimed, nothing is saved, and the reason is in the status bar.
+  expect(fireEvent.keyDown(ce, { key: "s", ctrlKey: true })).toBe(false);
+  expect(save).not.toHaveBeenCalled();
+  expect(useOps.getState().notice?.text).toBe("This file is read-only. Use Save As.");
+  // A document with nothing to save has no reason to give.
+  useOps.setState({ notice: null });
+  registerDoc("d", fakeDoc({ save, canSave: () => false, whySaveRefused: () => null }));
+  fireEvent.keyDown(ce, { key: "s", ctrlKey: true });
+  expect(useOps.getState().notice).toBeNull();
 });
 
 test("save_is_greyed_when_the_editor_says_there_is_nothing_to_save", () => {

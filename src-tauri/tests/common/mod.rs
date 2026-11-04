@@ -112,16 +112,28 @@ impl Env {
                     assert!(started, "the event loop ended before Ready");
                     driver(ctx.clone())
                 }));
+                // The teardown is what ends the loop, so a panic in it must not end this
+                // thread before the windows are destroyed: each step is guarded, and the
+                // destroying goes on whatever the building did. (A loop that has no window
+                // left and cannot be given one is the one case this cannot end.)
+                let guarded = |step: &dyn Fn()| {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(step));
+                };
                 if r.is_err() {
                     failed.store(true, Ordering::SeqCst);
                     // A runtime window the loop removes, whatever the
                     // driver already destroyed.
-                    let _ = WebviewWindowBuilder::new(&ctx.handle, TEARDOWN, Default::default())
-                        .build();
+                    guarded(&|| {
+                        let _ =
+                            WebviewWindowBuilder::new(&ctx.handle, TEARDOWN, Default::default())
+                                .build();
+                    });
                 }
-                for w in ctx.handle.webview_windows().values() {
-                    let _ = w.destroy();
-                }
+                guarded(&|| {
+                    for w in ctx.handle.webview_windows().values() {
+                        let _ = w.destroy();
+                    }
+                });
                 r
             }
         });
@@ -330,8 +342,11 @@ pub fn wp(p: &Path) -> Value {
     serde_json::to_value(WirePath::from(p)).unwrap()
 }
 
+/// The longest [`wait_for`] waits: the longest these tests let anything take.
+pub const WAIT_BOUND: Duration = Duration::from_secs(30);
+
 pub fn wait_for(what: &str, f: impl Fn() -> bool) {
-    let end = Instant::now() + Duration::from_secs(30);
+    let end = Instant::now() + WAIT_BOUND;
     while !f() {
         assert!(Instant::now() < end, "timed out waiting for {what}");
         std::thread::sleep(Duration::from_millis(10));

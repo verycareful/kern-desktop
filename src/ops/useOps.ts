@@ -47,6 +47,29 @@ export interface OpView {
   cancelling: boolean;
 }
 
+/** A status bar message. */
+export interface Notice {
+  id: number;
+  text: string;
+  /** When it was raised (ms since the epoch). */
+  at: number;
+}
+
+/**
+ * A message stays beside a newer one only if it is younger than this: messages that belong to one
+ * action arrive within moments of each other, and an older one is simply replaced. Two seconds is
+ * well over the time the failures of one action take to arrive and well under the 6 s a message
+ * lives.
+ */
+export const NOTICE_TOGETHER_MS = 2000;
+
+/** How many messages the status bar shows at once; a further one makes the oldest give way. */
+export const MAX_NOTICES = 4;
+
+/** The messages on show, oldest first. */
+export const noticesShown = (s: { notice: Notice | null; earlier: Notice[] }): Notice[] =>
+  s.notice ? [...s.earlier, s.notice] : [];
+
 export interface QueuedReport {
   id: number;
   outcome: Outcome;
@@ -68,7 +91,13 @@ export interface OpSpec {
 interface OpsState {
   ops: OpView[];
   reports: QueuedReport[];
-  notice: { id: number; text: string } | null;
+  notice: Notice | null;
+  /**
+   * The messages that were shown before `notice` and are still on their time, oldest first. A
+   * second message does not wipe the first (two failures at one open are both read); each runs
+   * out on its own. Only meaningful while `notice` is set.
+   */
+  earlier: Notice[];
   /** What undo and redo would do now (kernkraft's undo_state), for the Edit menu. */
   undoLabel: string | null;
   redoLabel: string | null;
@@ -98,7 +127,13 @@ let nextKey = 1;
 let nextReport = 1;
 let nextNotice = 1;
 let nextAsked = 1;
-let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+const noticeTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+/** Ends the timer of a message that is leaving. */
+function stopNotice(id: number) {
+  clearTimeout(noticeTimers.get(id));
+  noticeTimers.delete(id);
+}
 
 const BUSY_TEXT = (which: "Undo" | "Redo") =>
   `${which} is not possible while a file operation or another undo or redo is running. Try again when it has finished.`;
@@ -114,6 +149,7 @@ export const useOps = create<OpsState>()((set, get) => ({
   ops: [],
   reports: [],
   notice: null,
+  earlier: [],
   undoLabel: null,
   redoLabel: null,
   undoError: null,
@@ -209,14 +245,30 @@ export const useOps = create<OpsState>()((set, get) => ({
   },
 
   notify(text) {
-    clearTimeout(noticeTimer);
     const id = nextNotice++;
-    set({ notice: { id, text } });
-    noticeTimer = setTimeout(() => get().clearNotice(id), NOTICE_MS);
+    set((s) => {
+      // The same words are shown once, from the newest; the oldest gives way when full.
+      const now = Date.now();
+      const shown = noticesShown(s).filter((n) => {
+        if (n.text !== text && now - n.at < NOTICE_TOGETHER_MS) return true;
+        stopNotice(n.id);
+        return false;
+      });
+      while (shown.length >= MAX_NOTICES) stopNotice(shown.shift()!.id);
+      return { notice: { id, text, at: now }, earlier: shown };
+    });
+    noticeTimers.set(
+      id,
+      setTimeout(() => get().clearNotice(id), NOTICE_MS)
+    );
   },
 
   clearNotice(id) {
-    set((s) => (s.notice?.id === id ? { notice: null } : {}));
+    stopNotice(id);
+    set((s) => {
+      const left = noticesShown(s).filter((n) => n.id !== id);
+      return { notice: left[left.length - 1] ?? null, earlier: left.slice(0, -1) };
+    });
   },
 
   async runUndo(which) {
@@ -244,7 +296,16 @@ export const useOps = create<OpsState>()((set, get) => ({
       if (err.kind === "Busy") get().notify(BUSY_TEXT(which === "undo" ? "Undo" : "Redo"));
       else if (err.kind === "NothingToUndo") get().notify("Nothing to undo.");
       else if (err.kind === "NothingToRedo") get().notify("Nothing to redo.");
-      else get().report({ title, report: null, error: err });
+      else {
+        get().report({ title, report: null, error: err });
+        // An entry whose items could not be checked is taken off the stack by the refusal: it is
+        // not tried again, and the labels read below are those of the entry before it.
+        if (err.details?.k === "Changed" && err.details.what === "Unverified") {
+          get().notify(
+            `${title} was dropped from the history because it could not be checked, so it is not worth trying again.`
+          );
+        }
+      }
     }
     // Even a refused undo can change what is next on the stack, and part of one may have been done.
     set((s) => ({ changes: s.changes + 1 }));
@@ -261,12 +322,13 @@ export const useOps = create<OpsState>()((set, get) => ({
   },
 
   reset() {
-    clearTimeout(noticeTimer);
+    for (const id of [...noticeTimers.keys()]) stopNotice(id);
     handles.clear();
     set({
       ops: [],
       reports: [],
       notice: null,
+      earlier: [],
       undoLabel: null,
       redoLabel: null,
       undoError: null,

@@ -15,6 +15,11 @@ export interface DocStatus {
   col: number;
   bom: boolean;
   ending: LineEnding;
+  /**
+   * A save or a move to another window is under way. The controller (doc-controller.ts) is what
+   * answers whether the document is busy; this flag is how a menu that is open learns it changed.
+   */
+  busy: boolean;
 }
 
 interface DocStatusState {
@@ -24,7 +29,7 @@ interface DocStatusState {
   clear(tabId: string): void;
 }
 
-const START: DocStatus = { line: 1, col: 1, bom: false, ending: "lf" };
+const START: DocStatus = { line: 1, col: 1, bom: false, ending: "lf", busy: false };
 
 export const useDocStatus = create<DocStatusState>()((set) => ({
   byTab: {},
@@ -37,7 +42,8 @@ export const useDocStatus = create<DocStatusState>()((set) => ({
         old.line === next.line &&
         old.col === next.col &&
         old.bom === next.bom &&
-        old.ending === next.ending
+        old.ending === next.ending &&
+        old.busy === next.busy
       ) {
         return s;
       }

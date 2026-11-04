@@ -376,6 +376,24 @@ test("f2_edits_the_name_in_place_and_renames_the_item_by_its_path", async () => 
   await waitFor(() => expect(rowNamed("todo.md")).toHaveAttribute("aria-selected", "true"));
 });
 
+test("a_rename_refused_as_busy_names_the_operation_that_runs_here", async () => {
+  await mount([entry("notes.md"), entry("b")], "/d", { ops: true });
+  // A copy of this window's is under way (its end has not arrived).
+  ipc.startOp.mockResolvedValue(9);
+  void useOps.getState().start({ kind: "copy", sources: [p("/d/b")], dest: p("/e") });
+  await waitFor(() => expect(useOps.getState().ops).toHaveLength(1));
+  select("notes.md");
+  key("F2");
+  const input = await screen.findByRole("textbox", { name: "Rename notes.md" });
+  ipc.rename.mockRejectedValue(err("Busy", "busy: a file operation is running"));
+  fireEvent.change(input, { target: { value: "todo.md" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  const alert = await screen.findByText(/while a file operation is running \(Copying b to e\)/);
+  expect(alert).toHaveTextContent(/listed above the status bar/);
+  // The editor stays open for another try.
+  expect(screen.getByRole("textbox", { name: /rename/i })).toBeInTheDocument();
+});
+
 test("a_folder_is_renamed_with_its_whole_name_selected", async () => {
   await mount([dir("v1.2")]);
   select("v1.2");

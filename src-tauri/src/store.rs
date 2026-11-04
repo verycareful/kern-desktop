@@ -38,11 +38,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use kernkraft_fs::{write_bytes_atomic, BaseDirs, Expect};
+use kernkraft_fs::{rename_noreplace, write_bytes_atomic, BaseDirs, Expect, FsError};
 use kernkraft_tauri::{WireError, WireItemError, WirePath};
 use kernkraft_theme::{Density, Follow, KernAccent, Mode};
-use rustix::fs::{renameat_with, RenameFlags, CWD};
-use rustix::io::Errno;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -302,11 +300,9 @@ fn unix_ms() -> Result<u64, WireError> {
 }
 
 /// Moves `path` to `<path>.corrupt-<unix_secs>`, or `-1`, `-2`, ... after
-/// it when that name is taken. The kernel does the move with
-/// `renameat2(RENAME_NOREPLACE)`, so nothing is ever overwritten; on a
-/// filesystem without that flag (`EINVAL`, or `ENOSYS` on an old kernel) a
-/// hard link, which also fails if the name exists, followed by removing the
-/// original does the same. Returns the new path.
+/// it when that name is taken. The move is kernkraft's `rename_noreplace`,
+/// which never overwrites anything, also on a filesystem without
+/// `renameat2(RENAME_NOREPLACE)`. Returns the new path.
 pub fn move_aside(path: &Path, unix_secs: u64) -> Result<PathBuf, WireError> {
     let name = path
         .file_name()
@@ -321,20 +317,11 @@ pub fn move_aside(path: &Path, unix_secs: u64) -> Result<PathBuf, WireError> {
             format!("{name}.corrupt-{unix_secs}-{n}")
         };
         let to = dir.join(candidate);
-        let moved = match renameat_with(CWD, path, CWD, &to, RenameFlags::NOREPLACE) {
-            Ok(()) => Ok(()),
-            Err(Errno::INVAL | Errno::NOSYS) => fs::hard_link(path, &to)
-                .and_then(|()| fs::remove_file(path))
-                .map_err(|e| (e.kind(), e)),
-            Err(e) => {
-                let e = io::Error::from(e);
-                Err((e.kind(), e))
-            }
-        };
-        match moved {
+        match rename_noreplace(path, &to) {
             Ok(()) => return Ok(to),
-            Err((ErrorKind::AlreadyExists, _)) => {}
-            Err((_, e)) => return Err(io_err(&to, &e)),
+            // The name is taken: the next one.
+            Err(FsError::Exists { .. }) => {}
+            Err(e) => return Err(WireError::from(e)),
         }
     }
     unreachable!("the loop ends by returning")

@@ -36,6 +36,30 @@ test("nothing_is_shown_without_a_report", () => {
   expect(screen.queryByTestId("report-dialog")).toBeNull();
 });
 
+test("a_mount_point_that_was_not_moved_says_to_copy_it_instead", () => {
+  useOps.getState().report({
+    title: "Move of usb to /b",
+    error: null,
+    report: report({
+      failed: [
+        {
+          path: p("/mnt/usb"),
+          error: {
+            kind: "MountPoint",
+            message: "/mnt/usb is a mount point",
+            path: p("/mnt/usb"),
+            details: null,
+          },
+        },
+      ],
+    }),
+  });
+  render(<ReportDialog />);
+  expect(screen.getByTestId("report-item").textContent).toBe(
+    "/mnt/usb usb is a mount point and cannot be moved, copy it instead."
+  );
+});
+
 test("every_skipped_failed_warned_and_unreached_item_is_listed_with_its_reason", () => {
   useOps.getState().report({
     title: "Copy of 6 items to /b",

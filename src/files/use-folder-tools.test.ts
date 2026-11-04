@@ -58,6 +58,28 @@ test("a_path_that_is_not_utf8_is_not_copied", () => {
   );
 });
 
+test("several_paths_one_of_which_has_a_line_break_are_not_copied_one_per_line", () => {
+  // One path per line would split the name in two; nothing is copied and the note says why.
+  selection = [entry("a.txt"), entry("two\nlines.txt")];
+  const { result } = tools();
+  act(() => result.current.copyPath());
+  expect(ipc.clipText).not.toHaveBeenCalled();
+  expect(result.current.notes[0]).toMatch(
+    /^The path was not copied: .*line break.*one path per line.*on its own/
+  );
+  selection = [entry("a.txt"), entry("old\rmac.txt")];
+  act(() => result.current.copyPath());
+  expect(ipc.clipText).not.toHaveBeenCalled();
+});
+
+test("one_path_with_a_line_break_is_copied_exactly_as_it_is", () => {
+  selection = [entry("two\nlines.txt")];
+  const { result } = tools();
+  act(() => result.current.copyPath());
+  expect(ipc.clipText).toHaveBeenCalledExactlyOnceWith("/d/two\nlines.txt");
+  expect(result.current.notes).toEqual([]);
+});
+
 test("the_terminal_opens_in_the_one_selected_folder_else_the_folder_on_show", async () => {
   selection = [dir("sub")];
   const { result } = tools();

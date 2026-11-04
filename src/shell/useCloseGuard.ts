@@ -105,7 +105,9 @@ async function ask(items: AtRisk[], what: "tab" | "window"): Promise<Outcome> {
   const saving: CloseQuestion = { items, what, saving: true };
   useCloseGuard.setState({ question: saving });
   try {
-    for (const item of items) {
+    // A document that cannot be saved where it is (read-only) is not written; it stays at risk
+    // and the next look at the window asks about it again, with no Save in the question.
+    for (const item of items.filter((i) => !i.readOnly)) {
       const doc = docController(item.id);
       // A document gone meanwhile (its tab closed) has nothing left to save.
       if (doc && !(await doc.saveForClose())) {

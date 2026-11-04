@@ -373,6 +373,55 @@ test("a_file_deleted_on_disk_shows_the_banner_and_save_asks_before_recreating", 
   await waitFor(() => expect(screen.queryByTestId("deleted-banner")).toBeNull());
 });
 
+test("a_name_that_became_a_link_to_nothing_says_so_and_creates_its_target_only_when_told", async () => {
+  const { view, content } = await mount();
+  ipc.textCheck.mockResolvedValue("deleted");
+  await act(async () => handlers["kernkraft://dir-changed"]?.({ key: "doc:t1" }));
+  await screen.findByTestId("deleted-banner");
+  act(() => view.dispatch({ changes: { from: 0, insert: "mine " } }));
+  key(content, "s", { ctrlKey: true });
+  const recreate = await screen.findByTestId("recreate-prompt");
+  // A link took the name before the file was created, and it points to a file that is not there.
+  ipc.textSave.mockRejectedValueOnce(wireError("Exists"));
+  ipc.entryOf.mockResolvedValue({ path: FILE, name: "notes.txt", kind: "symlink", len: 9 });
+  fireEvent.click(within(recreate).getByRole("button", { name: "Create the file again" }));
+  const prompt = await screen.findByTestId("dangling-prompt");
+  expect(prompt).toHaveTextContent(/now points to a file that does not exist/);
+  expect(prompt).toHaveTextContent(/Create the file the link points to puts your text/);
+  expect(prompt).toHaveTextContent(/link stays/);
+  // The safe answer has the focus, and nothing was written but the attempt that was refused.
+  expect(within(prompt).getByRole("button", { name: "Cancel" })).toHaveFocus();
+  expect(ipc.textSave).toHaveBeenCalledTimes(1);
+  ipc.textSave.mockResolvedValueOnce(S1);
+  fireEvent.click(
+    within(prompt).getByRole("button", { name: "Create the file the link points to" })
+  );
+  await waitFor(() => expect(ipc.textSave).toHaveBeenCalledTimes(2));
+  expect(ipc.textSave).toHaveBeenLastCalledWith(FILE, "mine hello\nworld", "lf", false, {
+    kind: "anything",
+  });
+});
+
+test("replace_on_a_link_says_it_replaces_what_the_link_points_to", async () => {
+  const { content } = await mount();
+  ipc.entryOf.mockResolvedValue({
+    path: p("/home/a/alias.txt"),
+    name: "alias.txt",
+    kind: "symlink",
+    len: 9,
+    modified_ms: 1,
+  });
+  key(content, "s", { ctrlKey: true, shiftKey: true });
+  const dialog = await screen.findByTestId("save-as-dialog");
+  fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "/home/a/alias.txt" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  const replace = await screen.findByTestId("replace-prompt");
+  expect(replace).toHaveTextContent(/A link with this name/);
+  expect(replace).toHaveTextContent(/writes this document to the file the link points to/);
+  expect(replace).toHaveTextContent(/the link itself stays/);
+  expect(replace).not.toHaveTextContent(/Replacing it overwrites it/);
+});
+
 test("a_changed_file_shows_a_banner_that_names_what_reload_discards", async () => {
   const { view } = await mount();
   ipc.textCheck.mockResolvedValue("changed");
@@ -569,4 +618,31 @@ test("a_tab_with_edits_for_a_file_open_elsewhere_stays_read_only_and_says_why", 
   expect(useTabs.getState().tabs).toHaveLength(1);
   expect(view.state.doc.toString()).toBe("mine hello\nworld");
   expect(ipc.openPaths).not.toHaveBeenCalled();
+});
+
+test("the_scroll_position_is_kept_from_before_the_tab_is_hidden", async () => {
+  // A hidden element reports no scroll offset, so the position has to be taken while the tab is
+  // shown: the scroller here answers 0 once its tab is hidden, as a browser's does.
+  const { rerender } = render(<TextEditor tabId="t1" path={FILE} active />);
+  const host = await screen.findByTestId("editor-host");
+  await waitFor(() => expect(host.querySelector(".cm-content")).not.toBeNull());
+  const scroller = EditorView.findFromDOM(host)!.scrollDOM;
+  let offset = 0;
+  Object.defineProperty(scroller, "scrollTop", {
+    configurable: true,
+    get: () => (scroller.closest("[hidden]") ? 0 : offset),
+    set: (v: number) => {
+      offset = v;
+    },
+  });
+  // The user scrolls.
+  offset = 340;
+  fireEvent.scroll(scroller);
+  // Another tab is shown: this one is hidden.
+  rerender(<TextEditor tabId="t1" path={FILE} active={false} />);
+  expect(screen.getByTestId("text-editor")).toHaveAttribute("hidden");
+  // Back again: the offset is where it was left.
+  offset = 0;
+  rerender(<TextEditor tabId="t1" path={FILE} active />);
+  expect(scroller.scrollTop).toBe(340);
 });

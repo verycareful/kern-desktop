@@ -22,6 +22,7 @@ const doc = (over: Partial<DocController>): DocController => ({
   askSaveAs: vi.fn(),
   canSave: () => false,
   canSaveAs: () => false,
+  whySaveRefused: () => null,
   closeRisk: () => null,
   saveForClose: vi.fn(() => Promise.resolve(true)),
   snapshot: () => null,
@@ -132,6 +133,42 @@ test("a_read_only_document_offers_no_save_and_says_save_as", async () => {
   expect(within(prompt).queryByRole("button", { name: /^Save/ })).toBeNull();
   expect(prompt).toHaveTextContent(/a\.md is read-only here\. Cancel, then use Save As/);
   expect(within(prompt).getByRole("button", { name: "Cancel" })).toHaveFocus();
+});
+
+test("one_read_only_document_does_not_take_save_from_the_others_in_a_window_close", async () => {
+  const saveA = vi.fn(() => Promise.resolve(true));
+  // b.md is clean once it has been written, as a saved document is.
+  let savedB = false;
+  const saveB = vi.fn(() => {
+    savedB = true;
+    return Promise.resolve(true);
+  });
+  const risk = { dirty: true, deleted: false, readOnly: true };
+  registerDoc("a", doc({ closeRisk: () => risk, saveForClose: saveA }));
+  registerDoc("b", doc({ closeRisk: () => (savedB ? null : dirty), saveForClose: saveB }));
+  render(<ClosePrompt />);
+  const closing = closeWindow();
+  const prompt = await screen.findByTestId("close-prompt");
+  // Save is there, for the one that can be saved; the other is told to use Save As.
+  const save = within(prompt).getByRole("button", { name: "Save the others" });
+  expect(prompt).toHaveTextContent(/a\.md is read-only here\. Cancel, then use Save As/);
+  expect(prompt).toHaveTextContent("Save writes the others.");
+  expect(save).toHaveFocus();
+  fireEvent.click(save);
+  // Only b.md is written; a.md, which cannot be, is asked about next with no Save in it.
+  await vi.waitFor(() => expect(saveB).toHaveBeenCalledTimes(1));
+  expect(saveA).not.toHaveBeenCalled();
+  const again = await vi.waitFor(() => {
+    const q = useCloseGuard.getState().question;
+    expect(q?.items.map((i) => i.id)).toEqual(["a"]);
+    return screen.getByTestId("close-prompt");
+  });
+  expect(within(again).queryByRole("button", { name: /^Save/ })).toBeNull();
+  expect(ipc.confirmClose).not.toHaveBeenCalled();
+  // The user closes it without saving: now the window goes.
+  answer("discard");
+  await closing;
+  expect(ipc.confirmClose).toHaveBeenCalledTimes(1);
 });
 
 test("escape_is_cancel", async () => {

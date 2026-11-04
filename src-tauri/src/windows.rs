@@ -105,7 +105,7 @@ pub const SWEEP_BOUND: Duration = Duration::from_secs(2);
 /// without a look (see [`under_gate`]). Each change is another window's open
 /// or close landing in the milliseconds a look takes, so a few tries are
 /// enough in practice and the bound only stops a storm of them.
-const MAX_SWEEPS: usize = 5;
+pub const MAX_SWEEPS: usize = 5;
 
 /// Size of a standalone document window (no size is specified; this fits a page of text).
 const DOC_SIZE: (f64, f64) = (900.0, 700.0);
@@ -264,6 +264,8 @@ async fn under_gate<T>(
     path: &Path,
     mut act: impl FnMut(&Survey) -> Option<T>,
 ) -> Result<Option<T>, WireError> {
+    // What the last look found out about the asked path itself, for the pass without a look.
+    let mut asked = None;
     for _ in 0..MAX_SWEEPS {
         let snapshot = st.open.snapshot();
         let (stat, bound, p) = (Arc::clone(&st.stat), st.sweep_bound, path.to_path_buf());
@@ -275,9 +277,10 @@ async fn under_gate<T>(
             }
         }
         drop(gate);
+        asked = survey.into_asked();
     }
     let _gate = st.lock_gate();
-    Ok(act(&st.open.snapshot().unlooked(path)))
+    Ok(act(&st.open.snapshot().unlooked(path, asked)))
 }
 
 /// Makes the registry tell every window (`EVENT_DOC_RELEASED`) when a path is let go.
@@ -292,12 +295,17 @@ pub fn announce_releases<R: Runtime>(app: &AppHandle<R>) -> Result<(), WireError
 }
 
 /// What is said when the registered documents could not all be looked at.
-fn unanswered_words(paths: &[PathBuf]) -> String {
-    paths
+fn unanswered_words(paths: &[PathBuf], looked: bool) -> String {
+    let list = paths
         .iter()
         .map(|p| p.display().to_string())
         .collect::<Vec<_>>()
-        .join(", ")
+        .join(", ");
+    if looked {
+        format!("{list} did not answer")
+    } else {
+        format!("{list} could not be checked because the open documents kept changing")
+    }
 }
 
 /// The next `<prefix><n>` label. The counter only grows, so a label is never
@@ -595,12 +603,10 @@ fn apply_default_results(
 
 /// What a path is and which file it resolves to, or why that is unknown.
 struct Resolved {
-    id: FileId,
     kind: Result<Kind, WireError>,
 }
 
 async fn resolve<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Resolved {
-    let id = FileId::of(path);
     // Follows links: a link to a folder is a folder.
     let kind = match std::fs::metadata(path) {
         Err(e) => Err(io_error(path, &e)),
@@ -611,7 +617,7 @@ async fn resolve<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Resolved {
             Err(e) => Err(e),
         },
     };
-    Resolved { id, kind }
+    Resolved { kind }
 }
 
 /// Applies the rules to `paths` and does what they say, one outcome per
@@ -729,7 +735,11 @@ async fn place<R: Runtime>(
         .transpose()
     })
     .await?;
-    let Decision { plan, unanswered } = decided.ok_or_else(|| {
+    let Decision {
+        plan,
+        unanswered,
+        looked,
+    } = decided.ok_or_else(|| {
         wire_error(
             "Internal",
             "the open registry kept naming a window that does not exist",
@@ -743,9 +753,9 @@ async fn place<R: Runtime>(
         wire_error(
             "OpenCheck",
             format!(
-                "could not check whether {} is already open under another name: {} did not answer; it was opened by its path",
+                "could not check whether {} is already open under another name: {}; it was opened by its path",
                 path.display(),
-                unanswered_words(&unanswered)
+                unanswered_words(&unanswered, looked)
             ),
             Some(path),
         )
@@ -874,6 +884,8 @@ async fn place<R: Runtime>(
 struct Decision {
     plan: Placement,
     unanswered: Vec<PathBuf>,
+    /// Whether the registered paths were asked at all (see [`Survey::looked`]).
+    looked: bool,
 }
 
 /// The registry check and the reservation, on the look `survey`, under the
@@ -891,7 +903,7 @@ fn decide<R: Runtime>(
     token: &str,
     survey: &Survey,
 ) -> Result<Option<Decision>, WireError> {
-    let found = survey.lookup(&resolved.id);
+    let found = survey.lookup_asked();
     let kind = match (&resolved.kind, found.location.is_some()) {
         (Ok(k), _) => *k,
         // A document already open stays focusable after its file is gone.
@@ -946,7 +958,11 @@ fn decide<R: Runtime>(
             Placement::Focus(loc)
         }
     };
-    Ok(Some(Decision { plan, unanswered }))
+    Ok(Some(Decision {
+        plan,
+        unanswered,
+        looked: survey.looked,
+    }))
 }
 
 /// `main` with a Home folder tab, or just raised when it exists.
@@ -1094,23 +1110,34 @@ pub async fn doc_opened<R: Runtime>(
 ) -> Result<(), WireError> {
     own_place(window.label(), &location)?;
     let p = path.to_path_buf()?;
-    let q = p.clone();
-    let id = blocking(move || Ok(FileId::of(&q))).await?;
     let st = state(&app)?;
     match adopting_from {
         None => {
             // Looked at and registered in one step, with the opens that reserve a path. A
             // registered document that did not answer the look is compared by its text; the
-            // open that routed the file here said so.
-            let done = under_gate(&st, &p, |survey| match survey.lookup(&id).location {
-                Some(held) if !may_take_over(&held, &location) => Some(Err(wire_error(
-                    "AlreadyOpen",
-                    format!("this file is already open in {}", describe_place(&held)),
-                    Some(&p),
-                ))),
-                _ => {
-                    st.open.insert(&p, location.clone());
-                    Some(Ok(()))
+            // open that routed the file here said so. A path that itself does not answer is
+            // not registered: whether another place has the file cannot be told.
+            let done = under_gate(&st, &p, |survey| {
+                let found = survey.lookup_asked();
+                match found.location {
+                    Some(held) if !may_take_over(&held, &location) => Some(Err(wire_error(
+                        "AlreadyOpen",
+                        format!("this file is already open in {}", describe_place(&held)),
+                        Some(&p),
+                    ))),
+                    None if found.unanswered.contains(&p) => Some(Err(wire_error(
+                        "OpenCheck",
+                        format!(
+                            "could not check whether {} is open elsewhere: {}",
+                            p.display(),
+                            unanswered_words(std::slice::from_ref(&p), survey.looked)
+                        ),
+                        Some(&p),
+                    ))),
+                    _ => {
+                        st.open.insert(&p, location.clone());
+                        Some(Ok(()))
+                    }
                 }
             })
             .await?;
@@ -1203,15 +1230,13 @@ pub async fn doc_open_elsewhere<R: Runtime>(
 ) -> Result<Held, WireError> {
     own_place(window.label(), &own)?;
     let p = path.to_path_buf()?;
-    let q = p.clone();
-    let id = blocking(move || Ok(FileId::of(&q))).await?;
     let st = state(&app)?;
-    let answer = under_gate(&st, &p, |survey| {
-        let held = survey.held_by(&id, &own);
+    let (answer, looked) = under_gate(&st, &p, |survey| {
+        let held = survey.held_by_asked(&own);
         if reserve == Some(true) && held == Ok(Held::Free) {
             st.open.reserve(&p, own.clone());
         }
-        Some(held)
+        Some((held, survey.looked))
     })
     .await?
     .ok_or_else(registry_busy)?;
@@ -1219,9 +1244,9 @@ pub async fn doc_open_elsewhere<R: Runtime>(
         wire_error(
             "OpenCheck",
             format!(
-                "could not check whether {} is open elsewhere: {} did not answer",
+                "could not check whether {} is open elsewhere: {}",
                 p.display(),
-                unanswered_words(&silent)
+                unanswered_words(&silent, looked)
             ),
             Some(&p),
         )
@@ -1261,11 +1286,21 @@ pub async fn detach_doc<R: Runtime>(
 ) -> Result<String, WireError> {
     let p = path.to_path_buf()?;
     let st = state(&app)?;
-    let q = p.clone();
-    let id = blocking(move || Ok(FileId::of(&q))).await?;
     // Check and reserve under the gate; build the window after it.
     let reserved = under_gate(&st, &p, |survey| {
-        let prior = survey.lookup(&id).location;
+        let found = survey.lookup_asked();
+        if found.location.is_none() && found.unanswered.contains(&p) {
+            return Some(Err(wire_error(
+                "OpenCheck",
+                format!(
+                    "could not check where {} is open: {}",
+                    p.display(),
+                    unanswered_words(std::slice::from_ref(&p), survey.looked)
+                ),
+                Some(&p),
+            )));
+        }
+        let prior = found.location;
         match &prior {
             Some(Location::Window { label }) => {
                 return Some(Err(wire_error(

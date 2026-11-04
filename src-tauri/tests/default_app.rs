@@ -224,3 +224,24 @@ fn a_running_kern_marks_only_the_files_of_the_application_that_did_not_start() {
     assert!(err.contains("broken.desktop"), "{out:?}");
     assert_eq!(launches(&dir, 2), vec![vec![s(&png)], vec![s(&gif)]]);
 }
+
+#[test]
+fn without_a_running_kern_an_application_that_cannot_start_does_not_stop_the_ones_after_it() {
+    xdg();
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path().canonicalize().unwrap().join("pre-partial");
+    fs::create_dir_all(&dir).unwrap();
+    let (png, jpg, gif) = (
+        file(&dir, "a.png", b"png"),
+        file(&dir, "b.jpg", b"jpg"),
+        file(&dir, "c.gif", b"gif"),
+    );
+    let inv = Invocation {
+        argv: vec![png.clone().into(), jpg.into(), gif.clone().into()],
+        cwd: dir.clone(),
+        activation_token: String::new(),
+    };
+    // One failure is reported (status 1); the application after the broken one still starts.
+    assert_eq!(kern_lib::prelaunch::run(&inv), Some(1));
+    assert_eq!(launches(&dir, 2), vec![vec![s(&png)], vec![s(&gif)]]);
+}

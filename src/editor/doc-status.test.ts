@@ -25,11 +25,23 @@ test("encoding_and_ending_words", () => {
 
 test("patch_merges_and_an_unchanged_patch_keeps_the_state_object", () => {
   useDocStatus.getState().patch("t", { bom: true });
-  expect(useDocStatus.getState().byTab.t).toEqual({ line: 1, col: 1, bom: true, ending: "lf" });
+  expect(useDocStatus.getState().byTab.t).toEqual({
+    line: 1,
+    col: 1,
+    bom: true,
+    ending: "lf",
+    busy: false,
+  });
   useDocStatus.getState().patch("t", { line: 4, col: 2 });
   const before = useDocStatus.getState();
   useDocStatus.getState().patch("t", { line: 4, col: 2 });
   expect(useDocStatus.getState()).toBe(before);
+  // Busy is part of the state: changing it is a change, repeating it is not.
+  useDocStatus.getState().patch("t", { busy: true });
+  expect(useDocStatus.getState()).not.toBe(before);
+  const busy = useDocStatus.getState();
+  useDocStatus.getState().patch("t", { busy: true });
+  expect(useDocStatus.getState()).toBe(busy);
   useDocStatus.getState().clear("t");
   expect(useDocStatus.getState().byTab.t).toBeUndefined();
   const empty = useDocStatus.getState();

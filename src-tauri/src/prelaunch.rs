@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 
 use kernkraft_fs::base_dirs;
-use kernkraft_xdg_apps::{launch_in_terminal, AppRegistry, DesktopEntry, MimeDb, Targets};
+use kernkraft_xdg_apps::{default_groups, launch_groups, AppRegistry, MimeDb};
 
 use crate::cli::{self, Plan};
 use crate::instance::Invocation;
@@ -97,8 +97,10 @@ pub fn run(inv: &Invocation) -> Option<i32> {
 }
 
 /// Starts each file's default application, one launch per application with
-/// all its files. Every file is checked first: if one has no default
-/// application nothing is started, as with kernkraft's `open_default`.
+/// all its files, as kernkraft's `open_default` does. Every file is checked
+/// first: if one has no default application nothing is started. An
+/// application that fails to start is reported and does not stop the ones
+/// after it; there is one failure line per such application.
 fn launch_default(base: &kernkraft_fs::BaseDirs, db: &MimeDb, files: &[PathBuf]) -> Vec<String> {
     if files.is_empty() {
         return Vec::new();
@@ -107,22 +109,12 @@ fn launch_default(base: &kernkraft_fs::BaseDirs, db: &MimeDb, files: &[PathBuf])
         Ok(r) => r,
         Err(e) => return vec![e.to_string()],
     };
-    let mut groups: Vec<(&DesktopEntry, Vec<PathBuf>)> = Vec::new();
-    for f in files {
-        let mime = db.guess(f);
-        let Some(app) = registry.default_for(&mime, db) else {
-            return vec![format!(
-                "{}: no default application for {mime}",
-                f.display()
-            )];
-        };
-        match groups.iter_mut().find(|(a, _)| a.id == app.id) {
-            Some((_, g)) => g.push(f.clone()),
-            None => groups.push((app, vec![f.clone()])),
-        }
-    }
+    let groups = match default_groups(&registry, db, files) {
+        Ok(g) => g,
+        Err(e) => return vec![e.to_string()],
+    };
     // The terminal setting matters only to an application that wants one.
-    let terminal = if groups.iter().any(|(a, _)| a.terminal) {
+    let terminal = if groups.iter().any(|g| g.app.terminal) {
         match Store::from_base_dirs(base).settings_get() {
             Ok(l) => l.value.terminal,
             Err(e) => return vec![format!("reading the terminal setting: {}", e.message)],
@@ -130,12 +122,8 @@ fn launch_default(base: &kernkraft_fs::BaseDirs, db: &MimeDb, files: &[PathBuf])
     } else {
         None
     };
-    let mut failures = Vec::new();
-    for (app, group) in groups {
-        if let Err(e) = launch_in_terminal(app, Targets::Files(&group), None, terminal.as_deref()) {
-            failures.push(format!("{}: {e}", app.id));
-            break;
-        }
-    }
-    failures
+    launch_groups(&groups, terminal.as_deref())
+        .into_iter()
+        .filter_map(|o| o.result.err().map(|e| format!("{}: {e}", o.app)))
+        .collect()
 }

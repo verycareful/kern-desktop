@@ -232,7 +232,7 @@ function One(props: { path: WirePath }) {
   const e = entry.value;
   return (
     <dl className="kern-properties">
-      <Row label="Name">{e.name}</Row>
+      <Row label="Name">{e.name || baseName(props.path)}</Row>
       <Row label="Type">
         {kindText(e)} ({e.mime})
       </Row>

@@ -21,7 +21,7 @@ const ipc = vi.hoisted(() => ({
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
-import { NOTICE_MS, useOps } from "./useOps";
+import { MAX_NOTICES, NOTICE_MS, NOTICE_TOGETHER_MS, noticesShown, useOps } from "./useOps";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 const err = (kind: string, message = kind, details: WireError["details"] = null): WireError => ({
@@ -150,13 +150,62 @@ test("a_notice_goes_away_by_itself", async () => {
   expect(useOps.getState().notice).toBeNull();
 });
 
-test("a_newer_notice_replaces_the_older_and_keeps_its_own_time", async () => {
+test("a_newer_notice_is_the_main_one_and_each_keeps_its_own_time", async () => {
   vi.useFakeTimers();
   useOps.getState().notify("first");
   vi.advanceTimersByTime(NOTICE_MS - 10);
   useOps.getState().notify("second");
   vi.advanceTimersByTime(20);
+  // The first has run its time; the second has not.
   expect(useOps.getState().notice?.text).toBe("second");
+  expect(noticesShown(useOps.getState()).map((n) => n.text)).toEqual(["second"]);
+});
+
+test("two_notices_raised_together_are_both_shown_until_each_has_run_its_time", async () => {
+  vi.useFakeTimers();
+  // Two things that failed at one open: neither overwrites the other.
+  useOps.getState().notify("recent list not updated");
+  vi.advanceTimersByTime(500);
+  useOps.getState().notify("registration failed");
+  const texts = () => noticesShown(useOps.getState()).map((n) => n.text);
+  expect(texts()).toEqual(["recent list not updated", "registration failed"]);
+  expect(useOps.getState().notice?.text).toBe("registration failed");
+  vi.advanceTimersByTime(NOTICE_MS - 500);
+  expect(texts()).toEqual(["registration failed"]);
+  vi.advanceTimersByTime(500);
+  expect(texts()).toEqual([]);
+  expect(useOps.getState().notice).toBeNull();
+});
+
+test("a_notice_older_than_the_moment_of_one_action_is_replaced_not_kept_beside", async () => {
+  vi.useFakeTimers();
+  useOps.getState().notify("Moved a.txt to the Trash");
+  vi.advanceTimersByTime(NOTICE_TOGETHER_MS);
+  useOps.getState().notify("Undone: trash of a.txt");
+  expect(noticesShown(useOps.getState()).map((n) => n.text)).toEqual(["Undone: trash of a.txt"]);
+});
+
+test("the_same_text_is_shown_once_and_the_oldest_of_many_makes_room", async () => {
+  vi.useFakeTimers();
+  const { notify } = useOps.getState();
+  notify("same");
+  notify("same");
+  expect(noticesShown(useOps.getState()).map((n) => n.text)).toEqual(["same"]);
+  for (let i = 0; i < MAX_NOTICES + 2; i++) notify(`n${i}`);
+  const shown = noticesShown(useOps.getState()).map((n) => n.text);
+  expect(shown).toHaveLength(MAX_NOTICES);
+  expect(shown[shown.length - 1]).toBe(`n${MAX_NOTICES + 1}`);
+  expect(shown).not.toContain("same");
+});
+
+test("a_cleared_main_notice_leaves_the_others_to_run_out", async () => {
+  vi.useFakeTimers();
+  useOps.getState().notify("a");
+  useOps.getState().notify("b");
+  const id = useOps.getState().notice!.id;
+  useOps.getState().clearNotice(id);
+  expect(noticesShown(useOps.getState()).map((n) => n.text)).toEqual(["a"]);
+  expect(useOps.getState().notice?.text).toBe("a");
 });
 
 test("an_operation_that_cannot_start_is_reported_with_the_reason", async () => {
@@ -271,6 +320,27 @@ test("undo_busy_message", async () => {
   const { notice, reports } = useOps.getState();
   expect(notice?.text).toMatch(/while a file operation/);
   expect(reports).toEqual([]);
+});
+
+test("an_undo_whose_entry_could_not_be_verified_is_gone_from_the_stack_and_the_labels_follow", async () => {
+  ipc.undoState.mockResolvedValue({ undo: "Undo trash of x", redo: null });
+  await useOps.getState().refreshUndo();
+  expect(useOps.getState().undoLabel).toBe("Undo trash of x");
+  // The entry is dropped from the stack by the refusal: the history now offers the one before.
+  ipc.undo.mockRejectedValueOnce({
+    kind: "Changed",
+    message: "/a/x could not be checked",
+    path: p("/a/x"),
+    details: { k: "Changed", what: "Unverified" },
+  });
+  ipc.undoState.mockResolvedValue({ undo: "Undo copy of y", redo: null });
+  await useOps.getState().runUndo("undo");
+  expect(useOps.getState().undoLabel).toBe("Undo copy of y");
+  // The report says it is not a try-again, and the status bar says what Undo offers now.
+  const { reports, notice } = useOps.getState();
+  expect(reports).toHaveLength(1);
+  expect(reports[0]!.outcome.title).toBe("Undo trash of x");
+  expect(notice?.text).toMatch(/dropped from the history.*not worth trying again/);
 });
 
 test("an_undo_that_cannot_be_done_shows_its_reason", async () => {

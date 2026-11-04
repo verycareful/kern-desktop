@@ -5,9 +5,9 @@ import { Modal } from "../ops/Modal";
 import { useCloseGuard, type AtRisk } from "./useCloseGuard";
 
 // The question useCloseGuard.ts asks before a document is closed: Save, Close
-// without saving, or Cancel. Escape is Cancel. Save is offered only when every
-// document listed can be saved where it is; a read-only one needs Save As,
-// which the user reaches by cancelling.
+// without saving, or Cancel. Escape is Cancel. Save is offered while some document listed can be
+// saved where it is, and saves those; a read-only one needs Save As, which the user reaches by
+// cancelling, and is asked about again once the others are saved.
 
 function why(item: AtRisk): string {
   if (item.deleted && item.dirty) return "has unsaved changes, and its file was deleted on disk";
@@ -23,7 +23,7 @@ export function ClosePrompt() {
   if (!question) return null;
   const { items, what, saving } = question;
   const readOnly = items.filter((i) => i.readOnly);
-  const canSave = readOnly.length === 0;
+  const canSave = readOnly.length < items.length;
   const only = items.length === 1 ? items[0]! : null;
   const title = only
     ? only.deleted && !only.dirty
@@ -59,11 +59,12 @@ export function ClosePrompt() {
           </ul>
         </>
       )}
-      {!canSave && (
+      {readOnly.length > 0 && (
         <p className="kern-modal-text">
           {readOnly.map((i) => i.name).join(", ")} {readOnly.length === 1 ? "is" : "are"} read-only
           here. Cancel, then use Save As (Ctrl+Shift+S) to keep{" "}
           {readOnly.length === 1 ? "it" : "them"} in another file.
+          {canSave ? " Save writes the others." : ""}
         </p>
       )}
       {saving && (
@@ -80,7 +81,7 @@ export function ClosePrompt() {
             disabled={saving}
             onClick={() => answer("save")}
           >
-            {only ? "Save" : "Save all"}
+            {only ? "Save" : readOnly.length > 0 ? "Save the others" : "Save all"}
           </button>
         )}
         <button

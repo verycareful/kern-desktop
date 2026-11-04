@@ -11,7 +11,7 @@ use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use common::{env, wait_for, wp};
+use common::{env, wait_for, wp, WAIT_BOUND};
 use kern_lib::instance::{Invocation, Launches};
 use kern_lib::windows::{handle_launch, page_reloading, EVENT_OPEN, EVENT_OPEN_ERROR};
 use serde_json::json;
@@ -152,12 +152,12 @@ fn a_driver_failing_while_a_launch_holds_the_app_fails_the_run() {
     assert_eq!(r, Err(Some(FAILURE.to_owned())));
 }
 
-/// How long a run whose driver failed may take to end. Ending takes one
-/// loop turn per window the harness destroys, at most the probe and its own
-/// here, and the mock runtime sleeps 1 s per turn (tauri 2.12.4
-/// `MockRuntime::run`). The bound is [`wait_for`]'s 30 s, the longest these
-/// tests let anything take.
-const RUN_BOUND: Duration = Duration::from_secs(30);
+/// How long a run whose driver failed may take to end: the driver may wait
+/// [`WAIT_BOUND`] before it fails, and ending takes one loop turn per window
+/// the harness destroys, at most the probe and its own here, with the mock
+/// runtime sleeping 1 s per turn (tauri 2.12.4 `MockRuntime::run`); the
+/// slack is for a loaded machine.
+const RUN_BOUND: Duration = Duration::from_secs(WAIT_BOUND.as_secs() + 2 + 10);
 
 fn panic_message(p: &(dyn std::any::Any + Send)) -> Option<String> {
     p.downcast_ref::<String>()

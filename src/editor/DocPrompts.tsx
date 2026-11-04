@@ -98,6 +98,49 @@ export function RecreatePrompt(props: {
   );
 }
 
+/** The name became a link to a file that does not exist: saving would create that file. */
+export function DanglingLinkPrompt(props: {
+  path: WirePath;
+  onCreate(): void;
+  onSaveAs(): void;
+  onCancel(): void;
+}) {
+  const cancel = useRef<HTMLButtonElement>(null);
+  const name = baseName(props.path);
+  return (
+    <Modal
+      role="alertdialog"
+      label="The name is now a link to nothing"
+      initialFocus={cancel}
+      onEscape={props.onCancel}
+      testId="dangling-prompt"
+    >
+      <h2 className="kern-modal-title">{name} is now a link to a file that does not exist</h2>
+      <p className="kern-modal-text">
+        The name now points to a file that does not exist. Your text was not saved.
+      </p>
+      <ul className="kern-modal-text">
+        <li>
+          Create the file the link points to puts your text in the place the link leads to; the link
+          stays as it is.
+        </li>
+        <li>Save As keeps your text in another file and leaves the link alone.</li>
+      </ul>
+      <div className="kern-modal-actions">
+        <button type="button" className="kern-button" onClick={props.onCreate}>
+          Create the file the link points to
+        </button>
+        <button type="button" className="kern-button" onClick={props.onSaveAs}>
+          Save As…
+        </button>
+        <button ref={cancel} type="button" className="kern-button" onClick={props.onCancel}>
+          Cancel
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 const KIND_WORD: Record<string, string> = { file: "file", symlink: "link", other: "item" };
 
 /**
@@ -198,9 +241,19 @@ export function SaveAsDialog(props: {
       >
         <h2 className="kern-modal-title">Replace {baseName(target)}?</h2>
         <p className="kern-modal-text">
-          A {what} with this name is already at {displayPath(target)} ({formatSize(entry.len)},
-          modified {formatDate(entry.modified_ms)}). Replacing it overwrites it with this document,
-          and what it holds now is lost.
+          {entry.kind === "symlink" ? (
+            <>
+              A link with this name is already at {displayPath(target)}. Replacing it writes this
+              document to the file the link points to (the link itself stays), and what that file
+              holds now, if anything, is lost.
+            </>
+          ) : (
+            <>
+              A {what} with this name is already at {displayPath(target)} ({formatSize(entry.len)},
+              modified {formatDate(entry.modified_ms)}). Replacing it overwrites it with this
+              document, and what it holds now is lost.
+            </>
+          )}
         </p>
         {error && (
           <p role="alert" className="kern-modal-error">

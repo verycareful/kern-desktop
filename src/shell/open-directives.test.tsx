@@ -546,10 +546,37 @@ test("adopt_doc_opens_a_tab_from_the_handed_text_registers_it_then_acknowledges"
   await act(async () => {});
   expect(order.filter((o) => o.startsWith("opened"))).toEqual(["opened /d/n.md tab"]);
 
-  // The backend took the move back: the tab goes, with nothing asked.
+  // The backend took the move back, and this copy has unsaved text: the tab is asked about before
+  // it goes, and stays while the question is open.
   await emit("kern://adopt-cancelled", { label: "doc-1" });
+  const prompt = await screen.findByTestId("close-prompt");
+  expect(screen.getByRole("tab", { name: /n\.md/ })).toBeInTheDocument();
+  fireEvent.click(within(prompt).getByRole("button", { name: "Cancel" }));
+  await act(async () => {});
+  // Cancel keeps it: the user's text is not dropped on their behalf.
+  expect(screen.getByRole("tab", { name: /n\.md/ })).toBeInTheDocument();
+});
+
+test("a_move_taken_back_drops_a_clean_copy_at_once_and_asks_about_one_with_edits", async () => {
+  render(<App />);
+  await screen.findByRole("tab", { name: "t" });
+  // Clean: handed over with nothing unsaved.
+  await emit("kern://adopt-doc", { path: p("/d/n.md"), text_state: null, from: "doc-2" });
+  await screen.findByRole("tab", { name: /n\.md/ });
+  await emit("kern://adopt-cancelled", { label: "doc-2" });
   expect(screen.queryByRole("tab", { name: /n\.md/ })).toBeNull();
   expect(screen.queryByTestId("close-prompt")).toBeNull();
+  // With edits made here after it arrived: asked first, and "Close without saving" drops it.
+  await emit("kern://adopt-doc", { path: p("/d/n.md"), text_state: null, from: "doc-3" });
+  await screen.findByRole("tab", { name: /n\.md/ });
+  await editEveryDocument("x", 1);
+  await emit("kern://adopt-cancelled", { label: "doc-3" });
+  fireEvent.click(
+    within(await screen.findByTestId("close-prompt")).getByRole("button", {
+      name: "Close without saving",
+    })
+  );
+  await waitFor(() => expect(screen.queryByRole("tab", { name: /n\.md/ })).toBeNull());
 });
 
 test("adopt_doc_with_an_unreadable_state_is_refused_with_the_reason", async () => {

@@ -401,7 +401,8 @@ test("trash_then_undo_restores", async ({ page, mockTauri }) => {
   await page.keyboard.press("Control+z");
   await expect(rows(page)).toHaveCount(2);
   await expect(rowNamed(page, "a.txt")).toBeVisible();
-  await expect(page.getByTestId("status-notice")).toHaveText("Undone: trash of a.txt");
+  // Both messages are still on show: they came moments apart.
+  await expect(page.getByTestId("status-notice")).toContainText("Undone: trash of a.txt");
 });
 
 test("non_utf8_name_renames", async ({ page, mockTauri, invokeCalls }) => {

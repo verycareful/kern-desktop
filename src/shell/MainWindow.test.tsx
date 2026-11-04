@@ -210,6 +210,18 @@ test("save_in_the_close_question_writes_then_closes", async () => {
   expect(screen.getByTestId("status-notice")).toHaveTextContent("Saved n.md");
 });
 
+test("two_notices_at_once_are_both_in_the_status_bar", () => {
+  useTabs.getState().openFolder(p("/home/a"), false);
+  render(<MainWindow />);
+  act(() => {
+    useOps.getState().notify("The recent list could not be updated.");
+    useOps.getState().notify("n.md could not be registered as open.");
+  });
+  const notice = screen.getByTestId("status-notice");
+  expect(notice).toHaveTextContent("The recent list could not be updated.");
+  expect(notice).toHaveTextContent("n.md could not be registered as open.");
+});
+
 test("tab_bar_buttons_and_menu_follow_the_action_table", () => {
   useTabs.getState().openFolder(p("/home/a"), false);
   useTabs.getState().openFolder(p("/home/a/b"), false);

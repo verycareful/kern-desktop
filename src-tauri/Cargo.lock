@@ -2038,7 +2038,7 @@ dependencies = [
 
 [[package]]
 name = "kern"
-version = "0.1.0+0.66"
+version = "0.1.0+0.67"
 dependencies = [
  "gtk",
  "kernkraft-bus",
@@ -2046,7 +2046,6 @@ dependencies = [
  "kernkraft-tauri",
  "kernkraft-theme",
  "kernkraft-xdg-apps",
- "rustix",
  "serde",
  "serde_json",
  "tauri",

@@ -42,7 +42,7 @@ jobs:
             echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ steps.tag.outputs.value }}
 
@@ -70,7 +70,7 @@ jobs:
           echo "notes that will be published:"
           cat release-notes.md
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm

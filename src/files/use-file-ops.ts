@@ -16,6 +16,7 @@ import {
 } from "../ipc";
 import type { DropChoice } from "../ops/dnd";
 import { dropItems } from "../ops/drop-items";
+import { editErrorText } from "../ops/edit-error";
 import { baseName, itemsText, namesText } from "../ops/labels";
 import { nameIsText, nameProblem } from "../ops/names";
 import { clearSpentCut } from "../ops/spent-cut";
@@ -297,9 +298,7 @@ export function useFileOps(args: FileOpsArgs) {
     } catch (e) {
       if (!alive.current) return;
       const err = toWireError(e);
-      setRenaming((cur) =>
-        cur ? { ...cur, busy: false, error: `${err.kind}: ${err.message}` } : cur
-      );
+      setRenaming((cur) => (cur ? { ...cur, busy: false, error: editErrorText(err) } : cur));
     }
   }, [cancelRename, showResult]);
 

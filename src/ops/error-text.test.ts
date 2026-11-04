@@ -24,6 +24,13 @@ test("a_path_without_a_name_is_explained_in_plain_words", () => {
   expect(text).not.toContain("InvalidName");
 });
 
+test("a_mount_point_that_cannot_be_moved_says_to_copy_it_instead", () => {
+  const text = errorText({ ...err("MountPoint"), path: { k: "Utf8", v: "/mnt/usb" } });
+  expect(text).toBe("usb is a mount point and cannot be moved, copy it instead.");
+  // Without a path the words still say it.
+  expect(errorText(err("MountPoint"))).toMatch(/cannot be moved, copy it instead/);
+});
+
 test("any_other_error_is_its_kind_and_the_backends_message", () => {
   expect(errorText(err("NotFound", "no such file: /a"))).toBe("NotFound: no such file: /a");
 });
