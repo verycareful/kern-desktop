@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (c) 2026 Sricharan Suresh (github.com/verycareful) -->
+<!-- AppStream 1.0 component metadata. The metadata itself is FSFAP so catalogues may copy it. -->
+<component type="desktop-application">
+  <id>io.github.verycareful.kern</id>
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+  <name>Kern</name>
+  <summary>Browse, organise and edit your files</summary>
+  <description>
+    <p>
+      Kern is a file manager and text editor in one window. Folders and
+      documents open as tabs beside each other, and every file is read and
+      written in place.
+    </p>
+    <ul>
+      <li>Copy, move, rename, trash and restore, with progress, cancel and undo</li>
+      <li>Places, volumes, pinned folders and recent files in the sidebar</li>
+      <li>A text editor for every text format the system knows</li>
+      <li>Follows the system theme: colours, accent and fonts</li>
+      <li>Works entirely offline: Kern never uses the network</li>
+    </ul>
+  </description>
+  <developer id="io.github.verycareful">
+    <name>Sricharan Suresh</name>
+  </developer>
+  <launchable type="desktop-id">io.github.verycareful.kern.desktop</launchable>
+  <provides>
+    <binary>kern</binary>
+    <dbus type="user">io.github.verycareful.kern</dbus>
+    <dbus type="user">org.freedesktop.FileManager1</dbus>
+  </provides>
+  <url type="homepage">https://github.com/verycareful/kern-desktop</url>
+  <url type="vcs-browser">https://github.com/verycareful/kern-desktop</url>
+  <url type="bugtracker">https://github.com/verycareful/kern-desktop/issues</url>
+  <categories>
+    <category>System</category>
+    <category>FileManager</category>
+    <category>TextEditor</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0.0" type="development" date="2026-11-04"/>
+  </releases>
+</component>

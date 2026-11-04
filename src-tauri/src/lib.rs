@@ -38,6 +38,12 @@ pub fn run() {
     launches.begin();
     let fm1_launches = launches.clone();
     let role = instance::start(&own, launches.clone());
+    // GTK takes the Wayland app id and the X11 window class from GLib's
+    // program name, and a compositor or dock finds a window's desktop entry
+    // (its name and icon) by that id. The entry is installed under the
+    // application id, which is also the bus name. Tauri's GTK application id
+    // option is not used: it would claim the bus name the instance owns.
+    gtk::glib::set_prgname(Some(instance::BUS_NAME));
     tauri::Builder::default()
         // Document windows are not remembered: a new doc-1 is unrelated to
         // an earlier one. The main window and the editor windows keep their

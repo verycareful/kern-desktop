@@ -2038,7 +2038,7 @@ dependencies = [
 
 [[package]]
 name = "kern"
-version = "0.1.0+0.68"
+version = "0.1.0+0.69"
 dependencies = [
  "gtk",
  "kernkraft-bus",
