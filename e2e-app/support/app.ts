@@ -22,8 +22,21 @@ export function appBinary(): string {
 
 export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** How long the app gets to show something a launch or a file change asked for. */
+/**
+ * How long the app gets to show something a launch or a file change asked
+ * for. It showed within about a second on a development machine; 15 seconds
+ * leaves room for a runner that renders in software and starts slowly. A
+ * positive check that waits this long fails with what was on screen.
+ */
 export const SHOWS_WITHIN_MS = 15_000;
+
+/**
+ * The longest a launched `kern` or `gdbus` process may take. A forwarding
+ * launch returns once the running instance has taken the arguments, which is
+ * well under a second; the bound only keeps a hang from stalling the run, so
+ * it is a few times the wait for a window.
+ */
+const PROCESS_BOUND_MS = 30_000;
 
 /**
  * Registers the hooks that give every test an app of its own: the session
@@ -55,11 +68,13 @@ export interface Launched {
  * exits.
  */
 export function kern(args: string[], cwd?: string): Launched {
+  // Refuses to launch anything outside the isolated world.
+  const w = world();
   const r = spawnSync(appBinary(), args, {
-    cwd: cwd ?? world().home,
+    cwd: cwd ?? w.home,
     env: process.env,
     encoding: "utf8",
-    timeout: 30_000,
+    timeout: PROCESS_BOUND_MS,
   });
   if (r.error) throw r.error;
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -81,6 +96,8 @@ export function fileUri(p: string): string {
  * and an empty startup id.
  */
 export function fileManager1(method: "ShowFolders" | "ShowItems", uris: string[]): Launched {
+  // Refuses to call anything but the run's own session bus.
+  world();
   const list = `[${uris.map((u) => `'${u}'`).join(", ")}]`;
   const r = spawnSync(
     "gdbus",
@@ -96,7 +113,7 @@ export function fileManager1(method: "ShowFolders" | "ShowItems", uris: string[]
       list,
       "",
     ],
-    { env: process.env, encoding: "utf8", timeout: 30_000 }
+    { env: process.env, encoding: "utf8", timeout: PROCESS_BOUND_MS }
   );
   if (r.error) throw r.error;
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
@@ -207,18 +224,30 @@ export function only(ws: Shown[], kind: Shown["kind"]): Shown {
   return found[0] as Shown;
 }
 
-/** Waits until the windows have stayed `count` for `quietMs`: nothing more is on its way. */
-export async function settleAt(count: number, quietMs = 2500): Promise<Shown[]> {
+/**
+ * The time a window the app was asked for is given to appear before the
+ * absence of one is believed. Windows appeared within about a second on a
+ * development machine, so this is more than twice that.
+ */
+const ABSENCE_QUIET_MS = 2500;
+
+/**
+ * Waits until the app has had `quietMs` to open another window and has not:
+ * the number of windows the driver lists stays `count`. The count is the
+ * driver's list of handles, not the windows that could be read, so a window
+ * whose content cannot be read still counts.
+ */
+export async function settleAt(count: number, quietMs = ABSENCE_QUIET_MS): Promise<Shown[]> {
   const until = Date.now() + quietMs;
-  let ws: Shown[] = [];
-  while (Date.now() < until) {
-    ws = await windows();
-    if (ws.length !== count) {
-      throw new Error(`expected ${count} windows to stay open, found ${ws.length}`);
+  for (;;) {
+    const open = (await browser.getWindowHandles()).length;
+    if (open !== count) {
+      throw new Error(`expected ${count} windows to stay open, found ${open}`);
     }
+    if (Date.now() >= until) break;
     await sleep(250);
   }
-  return ws;
+  return windows();
 }
 
 const ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf";

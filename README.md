@@ -20,7 +20,7 @@
 [![Playwright](https://img.shields.io/badge/Playwright-1.49-2EAD33?style=flat-square&logo=playwright&logoColor=white)](https://playwright.dev/)
 [![WebdriverIO](https://img.shields.io/badge/WebdriverIO-10.1-EA5906?style=flat-square&logo=webdriverio&logoColor=white)](https://webdriver.io/)
 <!-- Release -->
-[![Version](https://img.shields.io/badge/Version-0.1.0.0.71-informational?style=flat-square)](VERSION)
+[![Version](https://img.shields.io/badge/Version-0.1.0.0.72-informational?style=flat-square)](VERSION)
 <!-- Licence and status -->
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Early%20Development-orange?style=flat-square)](#)
@@ -53,7 +53,7 @@ formats come in later versions.
 ## Building
 
 ```bash
-npm ci
+npm ci --ignore-scripts
 npx tauri dev                       # run in development
 npx tauri build --bundles deb       # build a package
 ```
@@ -76,6 +76,14 @@ and WebKitWebDriver (`cargo install tauri-driver --locked`; WebKitWebDriver is
 in `webkit2gtk-driver` on Debian and Ubuntu and in `webkitgtk-6.0` on Arch),
 with `xvfb-run` and `dbus-run-session`. Each spec file runs on a session bus
 and in a home directory of its own, so it never touches the running session.
+The worlds and logs go to `src-tauri/target/e2e-app-runs/`, or to the directory
+in `KERN_E2E_RUNS`.
+
+The no-network check is `scripts/trace-in-empty-netns.sh`, which runs a command
+under `strace` in a network namespace with no interfaces, and
+`scripts/inet_calls.py`, which fails on any `connect`, `sendto`, `sendmsg` or
+`sendmmsg` to an IPv4 or IPv6 address. CI runs it on the release binary after
+a control that must trip it.
 
 ## License
 

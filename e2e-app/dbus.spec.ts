@@ -2,10 +2,12 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 //
 // Kern on the session bus: a second launch forwards its arguments to the
-// running instance (plan Task 16, "Single instance"), a file already open is
-// focused and never opened twice (design D4.5), and org.freedesktop.FileManager1
-// shows items in a folder (plan Task 17; freedesktop.org FileManager1 wiki,
-// "ShowItems"). The bus is the run's own (support/world.ts).
+// running instance, which opens them as a launch from outside does; a file
+// that is already open is brought forward and never opened twice; and
+// org.freedesktop.FileManager1 shows items in a folder (freedesktop.org
+// FileManager1 wiki, "ShowItems": the URIs name the items, which the file
+// manager shows selected in their parent folder). The bus is the run's own
+// (support/world.ts).
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -91,11 +93,14 @@ describe("dbus", () => {
     );
     await focusWindow(only(listed, "main").handle);
     await doubleClick(rowSelector("other.txt"));
-    await waitForWindows(
+    const tabbed = await waitForWindows(
       (w) => w.some((x) => x.kind === "main" && x.tabs.some((t) => t.title === "other.txt")),
       "a tab for the file"
     );
     // Another tab is active, so that bringing the file's tab forward is visible.
+    // The main window is chosen by what it shows; the driver's order of
+    // windows is not specified.
+    await focusWindow(only(tabbed, "main").handle);
     await activateTab("already-open");
     const away = await waitForWindows(
       (w) =>

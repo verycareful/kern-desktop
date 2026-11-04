@@ -2,16 +2,15 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 //
 // The isolated world every app of the driver suite runs in. `e2e-app/run.sh`
-// builds it: a fresh directory under local/e2e-app-runs/, a session bus of
-// its own (dbus-run-session, listening on an abstract socket), and HOME and
-// every XDG directory pointing into that directory. This module refuses to
-// let the suite start anywhere else, so a spec can never reach the
-// maintainer's session bus (where Kern would take io.github.verycareful.kern
-// and org.freedesktop.FileManager1 from the running file manager) or files.
+// builds it: a fresh directory under the runs directory (KERN_E2E_RUNS), a
+// session bus of its own (dbus-run-session, listening on an abstract socket),
+// and HOME and every XDG directory pointing into that directory. This module
+// refuses to let the suite start anywhere else, so a spec can never reach the
+// user's session bus (where Kern would take io.github.verycareful.kern and
+// org.freedesktop.FileManager1 from the running file manager) or files.
 
 import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 export interface World {
   /** The directory everything of this run lives in. */
@@ -20,9 +19,6 @@ export interface World {
   /** The session bus every process of the run shares. */
   bus: string;
 }
-
-const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const RUNS = path.join(REPO, "local", "e2e-app-runs");
 
 /** The bus address run.sh's config listens on: abstract, so nothing is written to /tmp. */
 const BUS_PREFIX = "unix:abstract=/kern-e2e-";
@@ -43,9 +39,14 @@ function inside(parent: string, child: string): boolean {
 
 /** The world of this run. Throws unless every part of the isolation is in place. */
 export function world(): World {
+  const runsDir = need("KERN_E2E_RUNS");
+  if (!path.isAbsolute(runsDir)) {
+    throw new Error(`KERN_E2E_RUNS ${runsDir} is not an absolute path: ${REFUSED}`);
+  }
+  const runs = path.resolve(runsDir);
   const root = path.resolve(need("KERN_E2E_ROOT"));
-  if (!inside(RUNS, root)) {
-    throw new Error(`KERN_E2E_ROOT ${root} is not inside ${RUNS}: ${REFUSED}`);
+  if (!inside(runs, root)) {
+    throw new Error(`KERN_E2E_ROOT ${root} is not inside ${runs}: ${REFUSED}`);
   }
   const want: Record<string, string> = {
     HOME: "home",

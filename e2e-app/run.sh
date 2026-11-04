@@ -7,7 +7,7 @@
 #
 # Every spec file runs in a world of its own, so no app of the suite can
 # reach the session it is started from:
-#   - a fresh directory under local/e2e-app-runs/ holds HOME, XDG_CONFIG_HOME,
+#   - a fresh directory under the runs directory holds HOME, XDG_CONFIG_HOME,
 #     XDG_STATE_HOME, XDG_DATA_HOME, XDG_CACHE_HOME, XDG_RUNTIME_DIR and TMPDIR,
 #     and every file the specs open, create or watch;
 #   - dbus-run-session gives it a session bus of its own (Kern claims
@@ -22,7 +22,12 @@
 #   --check   exit 0 if everything the suite needs is installed, else 1,
 #             saying what is missing; runs nothing
 #   spec-name  run only e2e-app/<spec-name>.spec.ts (default: all)
-# Environment: KERN_E2E_NO_BUILD=1 skips building the debug binary.
+# Environment:
+#   KERN_E2E_NO_BUILD=1  skips building the debug binary
+#   KERN_E2E_RUNS        the runs directory: the worlds, the logs of every run
+#                        and of the build. Default: src-tauri/target/e2e-app-runs
+#                        (build output, which git ignores). A passing world is
+#                        removed, a failing one is kept.
 
 set -euo pipefail
 
@@ -62,15 +67,22 @@ if ((${#missing[@]})); then
 fi
 
 APP=$REPO/src-tauri/target/debug/kern
-LOGS=$REPO/local/test-runs/0.1.0.0
-mkdir -p "$LOGS" "$REPO/local/e2e-app-runs"
+RUNS=$(realpath -m -- "${KERN_E2E_RUNS:-$REPO/src-tauri/target/e2e-app-runs}")
+mkdir -p "$RUNS"
 stamp=$(date +%Y%m%d-%H%M%S)
+
+# The longest a spec file may run before it and everything it started are
+# stopped. A file measured 1, 6 and 9 seconds on a development machine; 300 is
+# over thirty times the longest, for a slower machine. The CI step limit is
+# the file count times this, plus 5 minutes for starting the displays (see
+# .github/workflows/ci.yml).
+SPEC_BOUND_S=300
 
 # The debug build with the frontend bundled in (as tauri dev would serve it
 # from a dev server, the suite would need one).
 if [[ ${KERN_E2E_NO_BUILD:-} != 1 ]]; then
-    npx tauri build --debug --no-bundle >"$LOGS/e2e-app-$stamp-build.log" 2>&1 \
-        || { echo "error: debug build failed, see $LOGS/e2e-app-$stamp-build.log" >&2; exit 1; }
+    npx tauri build --debug --no-bundle >"$RUNS/e2e-app-$stamp-build.log" 2>&1 \
+        || { echo "error: debug build failed, see $RUNS/e2e-app-$stamp-build.log" >&2; exit 1; }
 fi
 [[ -x $APP ]] || { echo "error: $APP is not built" >&2; exit 1; }
 
@@ -92,12 +104,38 @@ for v in WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS WEBKIT_DISABLE_COMPOSITING_MOD
     [[ -z ${!v:-} ]] || pass+=("$v=${!v}")
 done
 
+# Two free ports on the loopback interface for the driver and the native
+# driver behind it, so a driver left over from an earlier run is never the
+# one a new run reaches. Both are held open until both are known.
+free_ports() {
+    node -e '
+const net = require("node:net");
+const open = () => new Promise((resolve) => {
+  const s = net.createServer().listen(0, "127.0.0.1", () => resolve(s));
+});
+Promise.all([open(), open()]).then((s) => {
+  console.log(s.map((x) => x.address().port).join(" "));
+  s.forEach((x) => x.close());
+});'
+}
+
+child=""
+world=""
+interrupted() {
+    if [[ -n $child ]]; then
+        kill -TERM "$child" 2>/dev/null || true
+        wait "$child" 2>/dev/null || true
+    fi
+    echo "error: interrupted, world kept at $world" >&2
+    exit 130
+}
+trap interrupted INT TERM
+
 failed=0
-port=47144
 for name in "${specs[@]}"; do
     spec=e2e-app/$name.spec.ts
     [[ -f $spec ]] || { echo "error: no such spec file: $spec" >&2; exit 1; }
-    world=$REPO/local/e2e-app-runs/$stamp-$name
+    world=$RUNS/$stamp-$name
     mkdir -p "$world"/{home,config,state,data,cache,runtime,tmp}
     chmod 700 "$world/runtime"
     # Interface size 100 %. At the default (90 %, applied as webview zoom)
@@ -122,34 +160,45 @@ for name in "${specs[@]}"; do
   </policy>
 </busconfig>
 EOF
-    log=$LOGS/e2e-app-$stamp-$name.log
+    log=$RUNS/e2e-app-$stamp-$name.log
+    read -r port native_port < <(free_ports)
     # The environment is rebuilt, not filtered: nothing of the calling
     # session (Wayland, Hyprland, its bus, its runtime directory) is passed on.
     set +e
-    timeout 600 env -i \
+    timeout -k 10 "$SPEC_BOUND_S" env -i \
         PATH="$PATH" LANG="${LANG:-C.UTF-8}" TERM=dumb \
         HOME="$world/home" XDG_CONFIG_HOME="$world/config" XDG_STATE_HOME="$world/state" \
         XDG_DATA_HOME="$world/data" XDG_CACHE_HOME="$world/cache" \
         XDG_RUNTIME_DIR="$world/runtime" TMPDIR="$world/tmp" \
         GDK_BACKEND=x11 NO_AT_BRIDGE=1 "${pass[@]}" \
-        KERN_E2E_ROOT="$world" KERN_E2E_APP="$APP" KERN_E2E_TAURI_DRIVER="$DRIVER" \
-        KERN_E2E_WEBKIT_DRIVER="$WEBKIT_DRIVER" KERN_E2E_DRIVER_PORT="$port" \
+        KERN_E2E_ROOT="$world" KERN_E2E_RUNS="$RUNS" KERN_E2E_APP="$APP" \
+        KERN_E2E_TAURI_DRIVER="$DRIVER" KERN_E2E_WEBKIT_DRIVER="$WEBKIT_DRIVER" \
+        KERN_E2E_DRIVER_PORT="$port" KERN_E2E_NATIVE_PORT="$native_port" \
         xvfb-run -a -s "-screen 0 1600x1000x24" \
         dbus-run-session --config-file="$world/bus.conf" -- \
-        "$REPO/node_modules/.bin/wdio" run e2e-app/wdio.conf.ts --spec "$spec" >"$log" 2>&1
+        "$REPO/node_modules/.bin/wdio" run e2e-app/wdio.conf.ts --spec "$spec" >"$log" 2>&1 &
+    child=$!
+    wait "$child"
     status=$?
+    child=""
     set -e
-    port=$((port + 2))
     passing=$(grep -c '✓' "$log" || true)
     failing=$(grep -c '✖' "$log" || true)
+    # A run that exits 0 without running a test has checked nothing.
+    if ((status == 0 && passing == 0)); then status=1; fi
     if ((status == 0)); then
         echo "== e2e-app $name: passed ($passing tests), log $log"
-        # Nothing of a passing run is kept but its log.
-        case $world in "$REPO"/local/e2e-app-runs/*) rm -rf -- "$world" ;; esac
+        # Nothing of a passing run is kept but its log. The world is a
+        # directory this script made under the runs directory just above.
+        rm -rf -- "$world"
     else
         failed=1
-        echo "== e2e-app $name: FAILED (status $status, $failing failing), log $log, world kept at $world"
-        grep -m1 -E '^[A-Za-z]*Error' "$log" || true
+        reason="status $status"
+        ((status != 124)) || reason="stopped after the ${SPEC_BOUND_S} s bound"
+        echo "== e2e-app $name: FAILED ($reason, $failing failing), log $log, world kept at $world"
+        # What the log ends with, so a failure on a machine whose files are
+        # gone afterwards (CI) is still readable.
+        tail -n 60 "$log"
     fi
 done
 

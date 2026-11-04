@@ -2,8 +2,8 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 //
 // A folder on show follows the file system: a file another program creates
-// appears without any action by the user (inotify, plan Task 13 and the
-// design's "inotify-driven refresh").
+// appears in the listing without any action by the user (the app watches the
+// folder with inotify(7)).
 
 import { writeFileSync } from "node:fs";
 import path from "node:path";

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 //
-// Windows of the real app: where a file opened from outside goes, Home, and
-// the Ctrl+double-click gesture (plan Tasks 16 and 27; design D4.3 and D4.4).
-// Each test reads what the windows show.
+// Windows of the real app: a file opened from outside gets a window of its
+// own, whose Home button moves the document into the main window as a tab, and
+// Ctrl+double-click opens a file in a window of its own where a plain double
+// click opens a tab. Each test reads what the windows show.
 
 import { writeFileSync } from "node:fs";
 import path from "node:path";
@@ -38,7 +39,7 @@ describe("windows", () => {
     );
     const doc = only(ws, "doc");
     expect(doc.docTitle).toBe("outside.txt");
-    // Home is how the document goes to the main window (D4.4).
+    // Home is how the document goes to the main window.
     expect(doc.home).toBe(true);
     // The main window is still the file manager, with no tab for the document.
     const main = only(ws, "main");

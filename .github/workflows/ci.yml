@@ -19,10 +19,17 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     # Every step has a limit of its own, so a hang costs that step's limit and
-    # not the job's. Measured on a runner with nothing cached: the job takes
-    # 18 minutes, the Rust tests 3, the release-mode timing tests 8.5 (the
-    # longest step, limit 30), Clippy 1.6, the deb build 1.2 and everything
-    # else under a minute each. The job limit is over three times the whole.
+    # not the job's. Measured on a runner with nothing cached, before the
+    # driver suite and the smoke checks were added: the job took 18 minutes,
+    # the Rust tests 3, the release-mode timing tests 8.5 (the longest step,
+    # limit 30), Clippy 1.6, the deb build 1.2 and everything else under a
+    # minute each. Steps that need no more than that carry a limit of 5 or 10
+    # minutes. The steps added since carry their own estimate in the comment
+    # above them (nothing of them has run on a runner yet): about 1 minute for
+    # tauri-driver, 3 for the debug build, 3 for the driver suite and under 1
+    # for the two smoke steps, some 8 minutes in all, so about 26 minutes in
+    # total (an estimate, to be replaced by the first measured run). The job
+    # limit is over twice that.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -34,7 +41,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
             libayatana-appindicator3-dev librsvg2-dev xvfb \
-            desktop-file-utils appstream webkit2gtk-driver dbus libglib2.0-bin xauth
+            desktop-file-utils appstream webkit2gtk-driver dbus libglib2.0-bin xauth \
+            strace
 
       - uses: dtolnay/rust-toolchain@stable
         timeout-minutes: 5
@@ -47,7 +55,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      # Install scripts are off: nothing in the build needs one (the
+      # platform binaries of esbuild and the Tauri CLI come as optional
+      # packages), and a script that downloads a binary is a way to fetch
+      # something the lock file does not pin.
+      - run: npm ci --ignore-scripts
         timeout-minutes: 10
 
       - name: Format
@@ -113,6 +125,10 @@ jobs:
         timeout-minutes: 5
         run: python3 -I scripts/test_changelog_section.py
 
+      - name: Network filter tests
+        timeout-minutes: 5
+        run: python3 -I scripts/test_inet_calls.py
+
       - name: Desktop entry and metainfo
         timeout-minutes: 15
         run: python3 -I scripts/test_desktop_entry.py
@@ -121,30 +137,10 @@ jobs:
         timeout-minutes: 30
         run: npx tauri build --bundles deb
 
-      # The driver is part of the test harness and listens on localhost; the
-      # application it drives opens no socket. The version is pinned.
-      - name: tauri-driver
-        timeout-minutes: 20
-        run: cargo install tauri-driver --locked --version 2.1.0
-
-      - name: Debug build for the driver suite
-        timeout-minutes: 30
-        run: npx tauri build --debug --no-bundle
-
-      # Each spec file runs under its own session bus and home directory
-      # (e2e-app/run.sh). The runner forbids unprivileged user namespaces,
-      # which the WebKitGTK sandbox needs, so the sandbox is off for this step
-      # and this step only.
-      - name: Driver suite
-        timeout-minutes: 20
-        env:
-          KERN_E2E_NO_BUILD: "1"
-          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1"
-        run: e2e-app/run.sh
-
       # The runner forbids unprivileged user namespaces, so the empty network
       # namespace is made as root; setpriv then drops back to the runner user
-      # before anything else runs, so Kern itself is unprivileged.
+      # before anything else runs, so Kern itself is unprivileged. Takes under
+      # a second; the limit is the shortest one in the job.
       - name: Network namespace for the smoke run
         timeout-minutes: 2
         run: |
@@ -153,27 +149,77 @@ jobs:
             exit 1
           fi
 
-      # The built binary runs in a network namespace with no interfaces, under
-      # a virtual display. It must still be running when timeout stops it
-      # (exit 124); any other status is a crash. Its output is then searched
-      # for a failed lookup or an unreachable network: in an empty namespace
-      # even a connection to loopback fails with "Network is unreachable", so
-      # any attempt to use the network leaves one of these.
+      # The filter that decides the smoke run below must be able to fail: a
+      # command that does connect to an inet address (bash's /dev/tcp, to
+      # loopback, which fails in the empty namespace but is still traced) runs
+      # under the same strace and the same filter, and the filter must report
+      # it. A dead strace or a dead filter fails here, not by passing the
+      # smoke run. The command ends at once; the limit allows for sudo and
+      # strace starting slowly.
+      - name: Positive control for the network filter
+        timeout-minutes: 2
+        run: |
+          log="$RUNNER_TEMP/inet-control.strace"
+          scripts/trace-in-empty-netns.sh "$log" 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/9' || true
+          found=0
+          python3 -I scripts/inet_calls.py --min-calls 1 "$log" || found=$?
+          if [ "$found" -ne 1 ]; then
+            echo "::error::the filter did not report a connect to 127.0.0.1 (status $found): the smoke run below would prove nothing"
+            exit 1
+          fi
+
+      # The built binary runs for 5 seconds in a network namespace with no
+      # interfaces, under a virtual display and strace. It must still be
+      # running when timeout stops it (exit 124); any other status is a crash.
+      # Every connect, sendto, sendmsg and sendmmsg of the binary and of what
+      # it starts is then checked: none may use an IPv4 or IPv6 address (Unix
+      # sockets, for D-Bus and X11, are fine). The log must hold traced calls,
+      # so a strace that did not run cannot pass. Estimate: 5 seconds of run
+      # plus the display starting, under 20 seconds in all.
       - name: Smoke run without network
         timeout-minutes: 5
         run: |
-          log="$RUNNER_TEMP/kern-smoke.log"
-          set +e
-          timeout 5 sudo unshare -n setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups \
-            env HOME="$HOME" PATH="$PATH" xvfb-run -a src-tauri/target/release/kern >"$log" 2>&1
-          status=$?
-          set -e
-          cat "$log"
+          log="$RUNNER_TEMP/kern-smoke.strace"
+          status=0
+          scripts/trace-in-empty-netns.sh "$log" 5 xvfb-run -a src-tauri/target/release/kern || status=$?
           if [ "$status" -ne 124 ]; then
             echo "::error::kern exited with status $status before the timeout"
             exit 1
           fi
-          if grep -Ei 'network is unreachable|name or service not known|temporary failure in name resolution|no route to host|ENETUNREACH|EHOSTUNREACH|getaddrinfo|failed to lookup address' "$log"; then
-            echo "::error::kern's output names a network error"
+          found=0
+          python3 -I scripts/inet_calls.py --min-calls 1 "$log" || found=$?
+          if [ "$found" -ne 0 ]; then
+            echo "::error::kern used an inet address, or the trace is unusable (filter status $found)"
             exit 1
           fi
+
+      # The driver is part of the test harness and listens on localhost; the
+      # application it drives opens no socket. The version is pinned. Measured
+      # on a machine with nothing cached: 25 seconds of CPU, 6 seconds in all
+      # on 24 cores. Estimate for the runner: 1 minute.
+      - name: tauri-driver
+        timeout-minutes: 10
+        run: cargo install tauri-driver --locked --version 2.1.0
+
+      # The same build as the deb above, in the debug profile, whose
+      # dependencies the Rust tests have built. The deb build measured 1.2
+      # minutes; this one measured 15 seconds with a warm cache locally.
+      # Estimate for the runner: 3 minutes.
+      - name: Debug build for the driver suite
+        timeout-minutes: 15
+        run: npx tauri build --debug --no-bundle
+
+      # Each spec file runs under its own session bus and home directory
+      # (e2e-app/run.sh). The runner forbids unprivileged user namespaces,
+      # which the WebKitGTK sandbox needs, so the sandbox is off for this step
+      # and this step only. run.sh stops a spec file after 300 seconds, so the
+      # three files take at most 15 minutes, and the limit is that plus 5
+      # for starting the displays. Measured locally: 1, 6 and 9 seconds for
+      # the three files. Estimate for the runner, with software rendering and
+      # slower starts: 3 minutes.
+      - name: Driver suite
+        timeout-minutes: 20
+        env:
+          KERN_E2E_NO_BUILD: "1"
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1"
+        run: e2e-app/run.sh

@@ -25,7 +25,9 @@ function need(name: string): string {
 
 const application = need("KERN_E2E_APP");
 const driverBinary = need("KERN_E2E_TAURI_DRIVER");
+// Two free loopback ports chosen by run.sh for each run.
 const port = Number(need("KERN_E2E_DRIVER_PORT"));
+const nativePort = Number(need("KERN_E2E_NATIVE_PORT"));
 
 if (!existsSync(application)) {
   throw new Error(
@@ -33,9 +35,12 @@ if (!existsSync(application)) {
   );
 }
 
+/** How long tauri-driver gets to start listening: it binds within a fraction of a second. */
+const DRIVER_START_MS = 20_000;
+
 /** Resolves once something accepts connections on the harness port (localhost only). */
 async function listening(p: number): Promise<void> {
-  const until = Date.now() + 20_000;
+  const until = Date.now() + DRIVER_START_MS;
   for (;;) {
     const open = await new Promise<boolean>((resolve) => {
       const s = connect({ host: "127.0.0.1", port: p });
@@ -68,15 +73,20 @@ export const config: WebdriverIO.Config = {
     } as WebdriverIO.Capabilities,
   ],
   logLevel: "warn",
+  // The wait for an element is the wait for a window to show something.
   waitforTimeout: 15_000,
+  // Starting a session starts the app, which takes seconds; a minute is WebdriverIO's
+  // own default for it.
   connectionRetryTimeout: 60_000,
   connectionRetryCount: 1,
   framework: "mocha",
   reporters: ["spec"],
+  // A test restarts the app and then waits up to 15 seconds for each thing it
+  // checks, of which the longest test has four or five.
   mochaOpts: { ui: "bdd", timeout: 90_000 },
 
-  // tauri-driver listens on `port` and forwards to WebKitWebDriver on the
-  // next port up.
+  // tauri-driver listens on `port` and forwards to WebKitWebDriver on
+  // `nativePort`.
   beforeSession: async () => {
     driver = spawn(
       driverBinary,
@@ -84,7 +94,7 @@ export const config: WebdriverIO.Config = {
         "--port",
         String(port),
         "--native-port",
-        String(port + 1),
+        String(nativePort),
         "--native-driver",
         need("KERN_E2E_WEBKIT_DRIVER"),
       ],
