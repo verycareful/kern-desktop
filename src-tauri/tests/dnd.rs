@@ -11,7 +11,9 @@ use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 
 use gtk::gdk::DragAction;
-use kern_lib::dnd::{action_names, drop_payload, offers_files, uri_list_paths, DropGeometry};
+use kern_lib::dnd::{
+    action_names, drop_payload, offers_files, uri_list_paths, DropGeometry, DropKind,
+};
 use kernkraft_tauri::WirePath;
 
 fn raw(bytes: &[u8]) -> PathBuf {
@@ -149,4 +151,25 @@ fn tauris_own_drag_and_drop_handling_is_off_for_the_main_window() {
         !main.drag_drop_enabled,
         "Tauri's handler would take the drop before Kern's own handler sees its action"
     );
+}
+
+// ---- the kinds of operation a drop on a window may start ----
+
+#[test]
+fn a_drop_starts_a_copy_or_a_move_and_nothing_else() {
+    let kind = |text: &str| serde_json::from_value::<DropKind>(serde_json::json!(text));
+    assert_eq!(kind("copy").unwrap().as_str(), "copy");
+    assert_eq!(kind("move").unwrap().as_str(), "move");
+    // Every other operation kernkraft starts by name, and the near misses.
+    for other in [
+        "trash",
+        "delete",
+        "empty_trash",
+        "Copy",
+        "MOVE",
+        " copy",
+        "",
+    ] {
+        assert!(kind(other).is_err(), "{other:?}");
+    }
 }

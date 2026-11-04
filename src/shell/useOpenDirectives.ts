@@ -307,7 +307,7 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
             closeTab(tab.id);
             notice(
               tab.dirty
-                ? "A document could not move to this window, so it stays in its own window. This copy has unsaved changes, so you are asked before it closes."
+                ? "A document could not move to this window, so it stays in its own window. This copy has unsaved changes, so you are asked before it closes; Save writes this copy over the file the other window holds."
                 : "A document could not move to this window, so it stays in its own window."
             );
           }

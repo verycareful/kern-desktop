@@ -45,6 +45,7 @@ fn env(label: &str) -> Env {
             kern_lib::store_cmds::layout_set,
             kern_lib::windows::open_pending_take,
             kern_lib::identity::file_identity,
+            kern_lib::identity::link_target,
             kern_lib::windows::doc_opened,
             kern_lib::windows::doc_closed,
             kern_lib::windows::doc_open_elsewhere,
@@ -64,6 +65,7 @@ fn env(label: &str) -> Env {
             kern_lib::default_fm::default_fm_status,
             kern_lib::default_fm::make_default_fm,
             kern_lib::dnd::dnd_target,
+            kern_lib::dnd::drop_start_op,
         ])
         .build(tauri::generate_context!())
         .unwrap();
@@ -256,10 +258,13 @@ const NOT_FOR_EDITORS: [&str; 14] = [
 ];
 
 /// The kernkraft commands that change files, the Trash, volumes and applications and that the
-/// editor window's page does not send: it has no file manager. (It runs the copy or move of a file
-/// dropped on its tree, so `start_op`, `cancel_op`, `answer_conflict`, `undo_state` and
-/// `same_filesystem` are granted; see `EDITOR_DROP_GRANTS`.)
-const KERNKRAFT_NOT_FOR_EDITORS: [&str; 18] = [
+/// editor window's page does not send: it has no file manager. `start_op` is among them: it takes
+/// the kind of operation as a string, a capability cannot look at an argument, and so granting it
+/// would let the page delete for good or empty the Trash. (The page copies or moves a file dropped
+/// on its tree through `drop_start_op`, which takes only those two; `cancel_op`, `answer_conflict`,
+/// `undo_state` and `same_filesystem` are granted; see `EDITOR_DROP_GRANTS`.)
+const KERNKRAFT_NOT_FOR_EDITORS: [&str; 19] = [
+    "start_op",
     "trash_purge",
     "trash_restore",
     "trash_list",
@@ -359,7 +364,7 @@ fn an_editor_window_has_no_file_operation_of_kernkraft() {
 /// pointer can be told where the drop would land.
 const EDITOR_DROP_GRANTS: [(&str, bool); 6] = [
     ("same_filesystem", true),
-    ("start_op", true),
+    ("drop_start_op", false),
     ("cancel_op", true),
     ("answer_conflict", true),
     ("undo_state", true),
@@ -406,6 +411,59 @@ fn an_editor_window_is_granted_what_a_drop_on_its_tree_needs() {
             "{cmd}: {err}"
         );
     }
+}
+
+#[test]
+fn an_editor_window_starts_a_copy_or_move_and_no_other_operation() {
+    let e = env("editor-1");
+    let dest = json!({"k": "Utf8", "v": "/no/such/folder"});
+    let source = json!([{"k": "Utf8", "v": "/no/such/file"}]);
+    // The general command is refused by the access control, whatever it is asked to do.
+    for kind in ["copy", "move", "delete", "empty_trash"] {
+        let err = invoke(
+            &e,
+            &kernkraft("start_op"),
+            json!({"kind": kind, "sources": source, "dest": null}),
+        )
+        .unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{kind}: {err}"
+        );
+    }
+    // The narrow one is reached for a copy or a move: the answer is the operation's own refusal
+    // of a destination that is not there, not the access control's and not a bad argument.
+    for kind in ["copy", "move"] {
+        let err = invoke(
+            &e,
+            "drop_start_op",
+            json!({"kind": kind, "sources": source, "dest": dest}),
+        )
+        .unwrap_err();
+        let text = err.to_string();
+        assert!(!text.contains("not allowed"), "{kind}: {text}");
+        assert!(!text.contains("invalid args"), "{kind}: {text}");
+    }
+    // Any other kind is refused before the command runs, by the kind not being one it takes.
+    for kind in ["delete", "empty_trash", "trash", "Copy", ""] {
+        let err = invoke(
+            &e,
+            "drop_start_op",
+            json!({"kind": kind, "sources": source, "dest": dest}),
+        )
+        .unwrap_err();
+        let text = err.as_str().unwrap();
+        assert!(text.contains("invalid args `kind`"), "{kind}: {text}");
+    }
+    // A window the capability does not name has neither.
+    let stranger = env("stranger");
+    let err = invoke(
+        &stranger,
+        "drop_start_op",
+        json!({"kind": "copy", "sources": source, "dest": dest}),
+    )
+    .unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
 }
 
 #[test]

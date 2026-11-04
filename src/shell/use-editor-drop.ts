@@ -69,6 +69,8 @@ export function useEditorDrop(): void {
         return;
       }
       void dropItems(decideDrop(modsOf(drop.modifier), drop.offered), drop.paths, landing.path, {
+        // The editor window is not granted the general start command, which can delete.
+        copyOrMoveOnly: true,
         failed: (e, about) =>
           useOps.getState().report({
             title: about ? `Dropping ${baseName(about)}` : "Dropping files",

@@ -56,7 +56,7 @@ test("a_mount_point_that_was_not_moved_says_to_copy_it_instead", () => {
   });
   render(<ReportDialog />);
   expect(screen.getByTestId("report-item").textContent).toBe(
-    "/mnt/usb usb is a mount point and cannot be moved, copy it instead."
+    "/mnt/usb is a mount point and cannot be moved, copy it instead."
   );
 });
 

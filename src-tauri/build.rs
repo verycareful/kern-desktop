@@ -18,6 +18,7 @@ const COMMANDS: &[&str] = &[
     "prune",
     "store_errors_take",
     "file_identity",
+    "link_target",
     "open_paths",
     "doc_opened",
     "doc_closed",
@@ -40,6 +41,7 @@ const COMMANDS: &[&str] = &[
     "clip_text",
     "drag_out",
     "dnd_target",
+    "drop_start_op",
 ];
 
 fn main() {

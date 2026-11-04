@@ -78,7 +78,7 @@ use std::time::Instant;
 use gtk::gdk::{self, DragAction};
 use gtk::glib::{self, SignalHandlerId};
 use gtk::prelude::*;
-use kernkraft_tauri::{WireError, WirePath};
+use kernkraft_tauri::{KernkraftExt, OpId, WireError, WirePath};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::plugin::{Builder, TauriPlugin};
@@ -92,7 +92,7 @@ use crate::drop_rule::{
     unsupported_choice, user_modifier, verdict, Gate, Listing, Stance, Throttle, Verdict, Whereto,
     HOVER_INTERVAL,
 };
-use crate::windows::wire_error;
+use crate::windows::{blocking, wire_error};
 
 /// A drop from another application, sent to the window that received it.
 pub const EVENT_DROP: &str = "kern://drop";
@@ -768,6 +768,40 @@ pub async fn dnd_target<R: Runtime>(
             }
         })
         .map_err(|e| wire_error("Window", format!("the main thread is gone: {e}"), None))
+}
+
+/// The operations a drop of files may start. The page of an editor window starts them through
+/// [`drop_start_op`] rather than kernkraft's `start_op`, which takes the kind as text and so would
+/// let that window delete for good or empty the Trash; anything else fails to deserialize.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DropKind {
+    Copy,
+    Move,
+}
+
+impl DropKind {
+    /// The name kernkraft's `start_op` knows the operation by.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DropKind::Copy => "copy",
+            DropKind::Move => "move",
+        }
+    }
+}
+
+/// Starts a copy or a move of `sources` into the folder `dest`, as kernkraft's `start_op` does
+/// for the calling window (closing that window cancels it), and returns its id.
+#[tauri::command]
+pub async fn drop_start_op<R: Runtime>(
+    window: WebviewWindow<R>,
+    kind: DropKind,
+    sources: Vec<WirePath>,
+    dest: WirePath,
+) -> Result<OpId, WireError> {
+    let kk = window.kernkraft();
+    let origin = Some(window.label().to_owned());
+    blocking(move || kk.start_op(kind.as_str(), sources, Some(dest), origin)).await
 }
 
 /// The plugin that lets every webview take drops of files. Register it

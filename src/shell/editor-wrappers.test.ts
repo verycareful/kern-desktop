@@ -124,6 +124,8 @@ const NOT_FOR_EDITORS: Record<string, string[]> = {
     "volumeMount",
     "volumeUnmount",
   ],
+  "kernkraft's start_op takes any kind of operation, delete and empty Trash among them, and the editor window starts only a copy or a move, through dropStartOp":
+    ["startOp"],
   "Undo and Redo run from the Edit menu, which only the main window has": ["redo", "undo"],
   "Settings (theme, default file manager, links) is a tab of the main window": [
     "defaultFmStatus",
@@ -148,7 +150,7 @@ test("every_wrapper_a_file_the_editor_window_mounts_imports_is_granted_or_listed
   expect(permissions.size).toBeGreaterThan(40);
   const imported = importedWrappers(ENTRY, new Set(permissions.keys()));
   // The walk reaches the page's real imports.
-  for (const must of ["listDir", "textOpen", "docOpened", "openPaths", "startOp"]) {
+  for (const must of ["listDir", "textOpen", "docOpened", "openPaths", "dropStartOp"]) {
     expect(imported, must).toContain(must);
   }
   const listed = new Set(Object.values(NOT_FOR_EDITORS).flat());

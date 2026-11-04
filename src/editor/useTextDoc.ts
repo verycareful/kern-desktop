@@ -10,6 +10,7 @@ import {
   docOpenElsewhere,
   docOpened,
   entryOf,
+  linkTarget,
   on,
   parent,
   pathKey,
@@ -118,8 +119,9 @@ export interface TextDoc {
   save(): Promise<void>;
   /**
    * The user confirmed the question of `prompt`: for "external" whatever is there now is replaced;
-   * for "dangling" the file the link points to is created with the text; for "recreate" the file
-   * is created, only while nothing is there.
+   * for "dangling" the file the link points to is created with the text, only while nothing is
+   * there (and the question of "external" is asked instead when something is); for "recreate" the
+   * file is created, only while nothing is there.
    */
   overwrite(): Promise<void>;
   /** Opens the Save As question. */
@@ -632,15 +634,18 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
   );
 
   // ---- saving ----
-  /** Writes the current text to the file at its path, as far as `expect` allows. */
+  /**
+   * Writes the current text to the file at its path, as far as `expect` allows; to `at` instead
+   * when given (the file a link leads to), the document keeping its own path.
+   */
   const write = useCallback(
-    async (expect: TextExpect) => {
+    async (expect: TextExpect, at?: WirePath) => {
       const f = file.current;
       const snap = current.current;
       if (!f || !snap) return;
       patch({ saving: true, problem: null });
       try {
-        const next = await textSave(f.path, snap.toString(), f.ending, f.bom, expect);
+        const next = await textSave(at ?? f.path, snap.toString(), f.ending, f.bom, expect);
         file.current = { ...f, stamp: next };
         saved.current = snap;
         const now = current.current;
@@ -751,6 +756,34 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
           // Still gone: created, and only if nothing has appeared there by the time it is written.
           patch({ prompt: null });
           await write({ kind: "nothing" });
+          return;
+        }
+        if (s.prompt === "dangling") {
+          // The user agreed to create the file a link leads to, which was not there. The link is
+          // looked at again and its target read; the file is created at that path, and only if
+          // nothing is there by the time it is written, since a write through the link itself
+          // cannot say "only if nothing is there".
+          let target: WirePath;
+          try {
+            if (!(await isDanglingLink(f.path, f.stamp))) {
+              // Something is there now, or the link is no longer a link: not what they agreed to.
+              if (st.current.prompt !== "dangling") return;
+              ensureWatch.current();
+              patch({ prompt: "external", deletedOnDisk: false, changedOnDisk: true });
+              return;
+            }
+            target = await linkTarget(f.path);
+          } catch (e) {
+            if (st.current.prompt === "dangling") patch({ prompt: null });
+            patch({
+              problem: `${baseName(f.path)} was not saved: Kern could not read where the link points: ${errorText(toWireError(e))}`,
+            });
+            return;
+          }
+          // Cancelled while the look ran: the user no longer wants the file created.
+          if (st.current.prompt !== "dangling") return;
+          patch({ prompt: null });
+          await write({ kind: "nothing" }, target);
           return;
         }
         // The user chose to replace the file that changed on disk.

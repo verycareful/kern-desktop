@@ -78,15 +78,6 @@ function atRisk(ids: readonly string[]): AtRisk[] {
   });
 }
 
-/**
- * Asks about the documents among `ids` that closing would lose something of, and saves them if
- * the user says so. True when they may all be closed now.
- */
-export async function mayClose(ids: readonly string[], what: "tab" | "window"): Promise<boolean> {
-  const items = atRisk(ids);
-  return items.length === 0 || (await ask(items, what)) !== "stop";
-}
-
 /** "saved": each was written; "discard": the user gave them up; "stop": nothing may close. */
 type Outcome = "saved" | "discard" | "stop";
 

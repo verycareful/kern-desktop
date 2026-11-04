@@ -21,9 +21,9 @@ import { plural } from "./labels";
 // body, which the banner (src/files/TrashView.tsx) and the dialog
 // (ReportDialog.tsx) both show.
 
-function ErrorLine(props: { error: WireError }) {
-  const { error } = props;
-  return <>{errorText(error)}</>;
+function ErrorLine(props: { error: WireError; afterPath?: boolean }) {
+  const { error, afterPath } = props;
+  return <>{errorText(error, afterPath)}</>;
 }
 
 /** What an undo that stopped partway did and did not do. */
@@ -83,7 +83,7 @@ function ErrorRows(props: { heading: string; items: readonly WireItemError[] }) 
         row={(f, i) => (
           <li key={`${pathKey(f.path)}\n${f.error.kind}\n${i}`} data-testid="report-item">
             <span className="kern-report-path">{displayPath(f.path)}</span>{" "}
-            <ErrorLine error={f.error} />
+            <ErrorLine error={f.error} afterPath />
           </li>
         )}
       />

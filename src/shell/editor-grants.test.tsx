@@ -191,7 +191,7 @@ function answer(cmd: string, args: Record<string, unknown>): unknown {
       }));
     case "same_filesystem":
       return (args.sources as WirePath[]).map(() => ({ state: "checked", same: true }));
-    case "start_op":
+    case "drop_start_op":
       return 7;
     case "undo_state":
       return { undo: null, redo: null };
@@ -311,7 +311,8 @@ test("every_command_an_editor_windows_page_sends_is_granted_to_editor_windows", 
     modifier: null,
     drag: 1,
   });
-  await waitFor(() => expect(wire.sent.has(`${KERNKRAFT}start_op`)).toBe(true));
+  await waitFor(() => expect(wire.sent.has("drop_start_op")).toBe(true));
+  expect(wire.sent.has(`${KERNKRAFT}start_op`)).toBe(false);
   const docs = document.querySelector("[data-drop-docs]")!;
   expect(docs).not.toBeNull();
   elementAt(docs);
@@ -350,7 +351,6 @@ test("every_command_an_editor_windows_page_sends_is_granted_to_editor_windows", 
     "theme_get",
     "volumes_list",
     "same_filesystem",
-    "start_op",
     "undo_state",
   ].map((c) => `${KERNKRAFT}${c}`)) {
     expect(wire.sent, must).toContain(must);
@@ -374,6 +374,7 @@ test("every_command_an_editor_windows_page_sends_is_granted_to_editor_windows", 
     "recent_touch",
     "confirm_close",
     "dnd_target",
+    "drop_start_op",
   ]) {
     expect(wire.sent, must).toContain(must);
   }

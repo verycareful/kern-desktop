@@ -10,7 +10,8 @@ use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 
-use kern_lib::identity::{identity_of, Identity};
+use kern_lib::identity::{identity_of, link_target_of, Identity};
+use kernkraft_fs::{write_atomic, Expect, FsError};
 
 fn known(i: Identity) -> (String, String) {
     match i {
@@ -80,4 +81,77 @@ fn the_identity_travels_as_strings() {
     let v = serde_json::to_value(identity_of(t.path())).unwrap();
     assert_eq!(v["state"], "known");
     assert!(v["dev"].is_string() && v["ino"].is_string(), "{v}");
+}
+
+/// Makes a link at `at` to `to`.
+fn link(to: &std::path::Path, at: &std::path::Path) {
+    std::os::unix::fs::symlink(to, at).unwrap();
+}
+
+#[test]
+fn a_link_to_a_missing_file_leads_to_the_path_it_holds() {
+    let t = tempfile::tempdir().unwrap();
+    let absolute = t.path().join("gone/where.txt");
+    let l = t.path().join("l");
+    link(&absolute, &l);
+    assert_eq!(link_target_of(&l).unwrap(), absolute);
+}
+
+#[test]
+fn a_relative_link_is_taken_from_the_folder_of_the_link() {
+    let t = tempfile::tempdir().unwrap();
+    fs::create_dir(t.path().join("dir")).unwrap();
+    let l = t.path().join("dir/l");
+    link(std::path::Path::new("sub/x.txt"), &l);
+    assert_eq!(
+        link_target_of(&l).unwrap(),
+        t.path().join("dir").join("sub/x.txt")
+    );
+}
+
+#[test]
+fn a_chain_of_links_leads_to_the_end_of_the_chain() {
+    let t = tempfile::tempdir().unwrap();
+    let (a, b) = (t.path().join("a"), t.path().join("b"));
+    let end = t.path().join("end.txt");
+    link(&b, &a);
+    link(std::path::Path::new("end.txt"), &b);
+    assert_eq!(link_target_of(&a).unwrap(), end);
+}
+
+#[test]
+fn a_path_that_is_no_link_or_a_loop_of_links_is_an_error() {
+    let t = tempfile::tempdir().unwrap();
+    let file = t.path().join("f");
+    fs::write(&file, "x").unwrap();
+    assert!(link_target_of(&file).is_err());
+    assert!(link_target_of(&t.path().join("missing")).is_err());
+    let (a, b) = (t.path().join("a"), t.path().join("b"));
+    link(&b, &a);
+    link(&a, &b);
+    let err = link_target_of(&a).unwrap_err();
+    assert_eq!(err.kind, "TooManyLinks", "{err:?}");
+}
+
+#[test]
+fn a_file_created_only_if_nothing_is_there_lands_at_the_end_of_a_link_and_replaces_nothing() {
+    let t = tempfile::tempdir().unwrap();
+    let l = t.path().join("l");
+    link(std::path::Path::new("made.txt"), &l);
+    let target = link_target_of(&l).unwrap();
+    // Created at the target; the link stays and now reaches it.
+    write_atomic(&target, Expect::Nothing, |w| {
+        std::io::Write::write_all(w, b"mine")
+    })
+    .unwrap();
+    assert_eq!(fs::read(t.path().join("made.txt")).unwrap(), b"mine");
+    assert!(fs::symlink_metadata(&l).unwrap().file_type().is_symlink());
+    // Something else there by the next time: refused, and what is there is left as it is.
+    fs::write(t.path().join("made.txt"), "theirs").unwrap();
+    let err = write_atomic(&target, Expect::Nothing, |w| {
+        std::io::Write::write_all(w, b"again")
+    })
+    .unwrap_err();
+    assert!(matches!(err, FsError::Exists { .. }), "{err:?}");
+    assert_eq!(fs::read(t.path().join("made.txt")).unwrap(), b"theirs");
 }

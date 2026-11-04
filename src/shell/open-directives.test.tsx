@@ -551,6 +551,10 @@ test("adopt_doc_opens_a_tab_from_the_handed_text_registers_it_then_acknowledges"
   await emit("kern://adopt-cancelled", { label: "doc-1" });
   const prompt = await screen.findByTestId("close-prompt");
   expect(screen.getByRole("tab", { name: /n\.md/ })).toBeInTheDocument();
+  // The notice says what Save would do here: write this copy over the file the other window holds.
+  expect(
+    screen.getByText(/Save writes this copy over the file the other window holds/)
+  ).toBeVisible();
   fireEvent.click(within(prompt).getByRole("button", { name: "Cancel" }));
   await act(async () => {});
   // Cancel keeps it: the user's text is not dropped on their behalf.

@@ -13,7 +13,8 @@ import { registerDoc as register, type DocController } from "../editor/doc-contr
 import { useOps } from "../ops/useOps";
 import { useTabs } from "../store/tabs";
 import { ClosePrompt } from "./ClosePrompt";
-import { closeTab, closeWindow, mayClose, useCloseGuard } from "./useCloseGuard";
+import * as guard from "./useCloseGuard";
+import { closeTab, closeWindow, useCloseGuard } from "./useCloseGuard";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 
@@ -74,12 +75,14 @@ test("save_all_stops_at_the_first_document_that_was_not_saved_and_closes_nothing
   const saveB = vi.fn(() => Promise.resolve(true));
   registerDoc("a", doc({ closeRisk: () => dirty, saveForClose: saveA }));
   registerDoc("b", doc({ closeRisk: () => dirty, saveForClose: saveB }));
-  let result: Promise<boolean> = Promise.resolve(true);
+  render(<ClosePrompt />);
+  let closing: Promise<void> = Promise.resolve();
   act(() => {
-    result = mayClose(["a", "b"], "window");
+    closing = closeWindow();
   });
   answer("save");
-  expect(await result).toBe(false);
+  await closing;
+  expect(ipc.confirmClose).not.toHaveBeenCalled();
   expect(saveA).toHaveBeenCalledTimes(1);
   expect(saveB).not.toHaveBeenCalled();
   // The user is taken to it; its editor shows why.
@@ -92,25 +95,31 @@ test("save_all_saves_each_in_turn_then_lets_the_close_go_on", async () => {
   const order: string[] = [];
   let release!: () => void;
   const held = new Promise<void>((r) => (release = r));
+  // Each document stops being at risk once it is saved.
+  const risk = { a: dirty as typeof dirty | null, b: deleted as typeof dirty | null };
   registerDoc(
     "a",
     doc({
-      closeRisk: () => dirty,
+      closeRisk: () => risk.a,
       saveForClose: async () => {
         order.push("a");
         await held;
+        risk.a = null;
         return true;
       },
     })
   );
   registerDoc(
     "b",
-    doc({ closeRisk: () => deleted, saveForClose: async () => (order.push("b"), true) })
+    doc({
+      closeRisk: () => risk.b,
+      saveForClose: async () => ((risk.b = null), order.push("b"), true),
+    })
   );
   render(<ClosePrompt />);
-  let result: Promise<boolean> = Promise.resolve(false);
+  let closing: Promise<void> = Promise.resolve();
   act(() => {
-    result = mayClose(["f", "a", "b"], "window");
+    closing = closeWindow();
   });
   expect(useCloseGuard.getState().question?.items.map((i) => i.id)).toEqual(["a", "b"]);
   answer("save");
@@ -120,8 +129,9 @@ test("save_all_saves_each_in_turn_then_lets_the_close_go_on", async () => {
   expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
   expect(order).toEqual(["a"]);
   await act(async () => release());
-  expect(await result).toBe(true);
+  await closing;
   expect(order).toEqual(["a", "b"]);
+  expect(ipc.confirmClose).toHaveBeenCalledTimes(1);
   expect(screen.queryByTestId("close-prompt")).toBeNull();
 });
 
@@ -266,4 +276,16 @@ test("a_window_closes_only_after_its_layout_has_been_written", async () => {
   written();
   await closing;
   expect(ipc.confirmClose).toHaveBeenCalledTimes(1);
+});
+
+test("closing_goes_through_the_two_entry_points_that_ask_again_after_a_read_only_document", () => {
+  // A helper answering "may all close now" after saving the others would be true while a
+  // read-only document, which is not saved, still has unsaved text. Only closeTab (one document)
+  // and closeWindow (which looks again after each answer) decide a close.
+  expect(Object.keys(guard).sort()).toEqual([
+    "closeTab",
+    "closeWindow",
+    "isClosing",
+    "useCloseGuard",
+  ]);
 });

@@ -388,7 +388,9 @@ test("a_rename_refused_as_busy_names_the_operation_that_runs_here", async () => 
   ipc.rename.mockRejectedValue(err("Busy", "busy: a file operation is running"));
   fireEvent.change(input, { target: { value: "todo.md" } });
   fireEvent.keyDown(input, { key: "Enter" });
-  const alert = await screen.findByText(/while a file operation is running \(Copying b to e\)/);
+  const alert = await screen.findByText(
+    /while a file operation, such as a Properties measurement, is running \(listed here: Copying b to e\)/
+  );
   expect(alert).toHaveTextContent(/listed above the status bar/);
   // The editor stays open for another try.
   expect(screen.getByRole("textbox", { name: /rename/i })).toBeInTheDocument();

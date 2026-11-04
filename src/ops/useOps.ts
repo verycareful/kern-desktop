@@ -4,6 +4,7 @@ import { create } from "zustand";
 import {
   answerConflict,
   redo,
+  dropStartOp,
   startOp,
   toWireError,
   undo,
@@ -84,6 +85,11 @@ export interface OpSpec {
   kind: OpKind;
   sources: WirePath[];
   dest?: WirePath;
+  /**
+   * Start a copy or a move through the command that takes only those two (`dropStartOp`), which
+   * is the one an editor window is granted, rather than the general one.
+   */
+  copyOrMoveOnly?: boolean;
   /** Called once the operation has ended and been reported. */
   onEnd?(end: OpEnd): void;
 }
@@ -177,7 +183,10 @@ export const useOps = create<OpsState>()((set, get) => ({
     let outcome: Outcome;
     try {
       const op = runOp(
-        () => startOp(spec.kind, spec.sources, spec.dest),
+        () =>
+          spec.copyOrMoveOnly && spec.dest && (spec.kind === "copy" || spec.kind === "move")
+            ? dropStartOp(spec.kind, spec.sources, spec.dest)
+            : startOp(spec.kind, spec.sources, spec.dest),
         (progress) => patch((o) => ({ ...o, progress })),
         // A cancelled operation asks nothing more; a late question is not shown.
         (conflict) => patch((o) => (o.cancelling ? o : { ...o, conflict, askedAt: nextAsked++ }))

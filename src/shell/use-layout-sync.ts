@@ -18,10 +18,40 @@ import { LEFT_WIDTH_DEFAULT, useLayout } from "../store/layout";
 // stored layout and the default layout setting; the main window then writes every change of its
 // layout, column width, column visibility and tree root back, a moment after the last one so a
 // drag of the divider is one write. What is read or written wrong is said, never dropped, and the
-// window runs on its defaults meanwhile. An editor window only reads (for the column width).
+// window runs on its defaults meanwhile. A read that does not answer within a bound counts as one
+// that failed. An editor window only reads (for the column width).
 
 /** How long a change waits for the next before it is written. */
 export const WRITE_DELAY_MS = 300;
+
+/**
+ * How long a read of the stored layout or the default layout setting is waited for. Both are small
+ * JSON files in Kern's config folder, read at once on any healthy disk; a read that takes longer
+ * means the folder is stuck (a mount that does not answer), and the main window, which draws
+ * nothing until the layout is known, would stay blank. Five seconds is past any slow-but-working
+ * disk and short enough that the window is not mistaken for crashed.
+ */
+export const LAYOUT_READ_BOUND_MS = 5000;
+
+/** `read`, or a Timeout error if it has not answered within [`LAYOUT_READ_BOUND_MS`]. */
+function boundedRead<T>(read: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () =>
+        reject({
+          kind: "Timeout",
+          message: `the read did not answer within ${LAYOUT_READ_BOUND_MS / 1000} seconds`,
+          path: null,
+          details: null,
+        }),
+      LAYOUT_READ_BOUND_MS
+    );
+    read.then(
+      (v) => (clearTimeout(timer), resolve(v)),
+      (e: unknown) => (clearTimeout(timer), reject(e))
+    );
+  });
+}
 
 const say = (text: string) => useOps.getState().notify(text);
 
@@ -80,14 +110,14 @@ export function useLayoutSync(persist: boolean): void {
     (async () => {
       let fallback: LayoutKind = "file_manager";
       try {
-        fallback = (await settingsGet()).default_layout;
+        fallback = (await boundedRead(settingsGet())).default_layout;
       } catch (e) {
         say(
           `The default layout could not be read, so the file manager layout is used: ${errorText(toWireError(e))}`
         );
       }
       try {
-        const got = await layoutGet();
+        const got = await boundedRead(layoutGet());
         if (!alive) return;
         stored = got;
         if (persist) useLayout.getState().apply(got, fallback);

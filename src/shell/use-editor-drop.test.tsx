@@ -15,6 +15,7 @@ import { useEditorDrop } from "./use-editor-drop";
 const ipc = vi.hoisted(() => ({
   on: vi.fn(),
   startOp: vi.fn(),
+  dropStartOp: vi.fn(),
   answerConflict: vi.fn(),
   cancelOp: vi.fn(),
   undoState: vi.fn(),
@@ -83,7 +84,7 @@ beforeEach(() => {
     (subscribed[name] ??= []).push(h);
     return Promise.resolve(() => undefined);
   });
-  ipc.startOp.mockResolvedValue(1);
+  ipc.dropStartOp.mockResolvedValue(1);
   ipc.undoState.mockResolvedValue({ undo: null, redo: null });
   ipc.dndTarget.mockResolvedValue(undefined);
   ipc.sameFilesystem.mockImplementation((s: WirePath[]) => Promise.resolve(s.map(() => same)));
@@ -111,10 +112,12 @@ test("a_drop_on_a_folder_of_the_tree_moves_what_is_on_its_filesystem_and_copies_
   pointerOver("row");
   ipc.sameFilesystem.mockResolvedValue([different, same]);
   await drop({ paths: [p("/x/f"), p("/x/g")] });
-  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(ipc.dropStartOp).toHaveBeenCalledTimes(2));
   expect(ipc.sameFilesystem).toHaveBeenCalledExactlyOnceWith([p("/x/f"), p("/x/g")], p("/d/sub"));
-  expect(ipc.startOp).toHaveBeenCalledWith("move", [p("/x/g")], p("/d/sub"));
-  expect(ipc.startOp).toHaveBeenCalledWith("copy", [p("/x/f")], p("/d/sub"));
+  expect(ipc.dropStartOp).toHaveBeenCalledWith("move", [p("/x/g")], p("/d/sub"));
+  expect(ipc.dropStartOp).toHaveBeenCalledWith("copy", [p("/x/f")], p("/d/sub"));
+  // The editor window's capability does not grant the general command, which can delete.
+  expect(ipc.startOp).not.toHaveBeenCalled();
   expect(ipc.openPaths).not.toHaveBeenCalled();
 });
 
@@ -122,10 +125,14 @@ test("what_the_other_program_offers_and_the_key_held_decide_before_any_disk_is_l
   render(<Window />);
   pointerOver("row");
   await drop({ offered: ["copy"] });
-  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledWith("copy", [p("/x/f")], p("/d/sub")));
-  ipc.startOp.mockClear();
+  await waitFor(() =>
+    expect(ipc.dropStartOp).toHaveBeenCalledWith("copy", [p("/x/f")], p("/d/sub"))
+  );
+  ipc.dropStartOp.mockClear();
   await drop({ modifier: "move" });
-  await waitFor(() => expect(ipc.startOp).toHaveBeenCalledWith("move", [p("/x/f")], p("/d/sub")));
+  await waitFor(() =>
+    expect(ipc.dropStartOp).toHaveBeenCalledWith("move", [p("/x/f")], p("/d/sub"))
+  );
   expect(ipc.sameFilesystem).not.toHaveBeenCalled();
 });
 
@@ -140,7 +147,7 @@ test("a_failed_filesystem_check_is_reported_and_nothing_is_started", async () =>
   });
   await drop();
   expect(await screen.findByText(/the disk went away/)).toBeInTheDocument();
-  expect(ipc.startOp).not.toHaveBeenCalled();
+  expect(ipc.dropStartOp).not.toHaveBeenCalled();
 });
 
 test("a_text_file_dropped_on_the_documents_opens_as_a_tab_of_this_window", async () => {
@@ -154,7 +161,7 @@ test("a_text_file_dropped_on_the_documents_opens_as_a_tab_of_this_window", async
       "default"
     )
   );
-  expect(ipc.startOp).not.toHaveBeenCalled();
+  expect(ipc.dropStartOp).not.toHaveBeenCalled();
   expect(ipc.sameFilesystem).not.toHaveBeenCalled();
 });
 
@@ -175,7 +182,7 @@ test("a_drop_anywhere_else_does_nothing", async () => {
   render(<Window />);
   pointerOver("bar");
   await drop();
-  expect(ipc.startOp).not.toHaveBeenCalled();
+  expect(ipc.dropStartOp).not.toHaveBeenCalled();
   expect(ipc.openPaths).not.toHaveBeenCalled();
   // The window says why (the status bar shows the notice).
   expect(useOps.getState().notice?.text).toMatch(/Files can be dropped on a folder of the tree/);

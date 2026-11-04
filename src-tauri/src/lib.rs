@@ -109,6 +109,7 @@ pub fn run() {
             store_cmds::prune,
             store_cmds::store_errors_take,
             identity::file_identity,
+            identity::link_target,
             windows::open_paths,
             windows::doc_opened,
             windows::doc_closed,
@@ -131,6 +132,7 @@ pub fn run() {
             clipboard::clip_text,
             dnd::drag_out,
             dnd::dnd_target,
+            dnd::drop_start_op,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Kern")

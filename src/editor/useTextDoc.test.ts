@@ -11,6 +11,7 @@ const ipc = vi.hoisted(() => ({
   textSave: vi.fn(),
   textCheck: vi.fn(),
   entryOf: vi.fn(),
+  linkTarget: vi.fn(),
   watchDir: vi.fn(),
   unwatchDir: vi.fn(),
   docOpened: vi.fn(),
@@ -1026,7 +1027,11 @@ test("a_recreate_that_finds_something_there_at_the_write_asks_about_it_and_write
 
 const LINK = { path: FILE, name: "notes.txt", kind: "symlink", len: 12, modified_ms: 3 };
 
-test("a_recreate_that_finds_a_link_to_nothing_asks_about_the_link_and_writes_nothing", async () => {
+/** Where the link of `LINK` points, which is not there. */
+const LINK_TARGET = p("/home/a/missing/where.txt");
+
+/** The question about a link to nothing, open: a recreate whose name was taken by a link. */
+async function askedAboutDanglingLink() {
   const hook = await askedToRecreate();
   // A link took the name, and what it points to is not there either: the check still says gone.
   ipc.textSave.mockRejectedValueOnce(wireError("Exists"));
@@ -1035,11 +1040,74 @@ test("a_recreate_that_finds_a_link_to_nothing_asks_about_the_link_and_writes_not
   expect(ipc.textSave).toHaveBeenCalledTimes(1);
   expect(hook.result.current.prompt).toBe("dangling");
   expect(hook.result.current.dirty).toBe(true);
-  // Confirmed, the text is written where the link points (the backend follows it).
+  ipc.linkTarget.mockResolvedValue(LINK_TARGET);
+  return hook;
+}
+
+test("a_recreate_that_finds_a_link_to_nothing_asks_about_the_link_and_writes_nothing", async () => {
+  await askedAboutDanglingLink();
+});
+
+test("creating_the_file_a_link_points_to_creates_it_at_the_target_and_replaces_nothing", async () => {
+  const hook = await askedAboutDanglingLink();
   ipc.textSave.mockResolvedValueOnce(S1);
   await act(() => hook.result.current.overwrite());
-  expect(ipc.textSave).toHaveBeenLastCalledWith(FILE, "mine", "lf", false, { kind: "anything" });
+  // The link is read, and the file is created where it points, only if nothing is there.
+  expect(ipc.linkTarget).toHaveBeenCalledWith(FILE);
+  expect(ipc.textSave).toHaveBeenLastCalledWith(LINK_TARGET, "mine", "lf", false, {
+    kind: "nothing",
+  });
+  expect(ipc.textSave).toHaveBeenCalledTimes(2);
   expect(hook.result.current.prompt).toBeNull();
+  expect(hook.result.current.dirty).toBe(false);
+});
+
+test("creating_the_file_a_link_points_to_when_one_appeared_there_meanwhile_asks_and_writes_nothing", async () => {
+  const hook = await askedAboutDanglingLink();
+  // Still a link to nothing when looked at again, then something took the target before the write.
+  ipc.textCheck.mockResolvedValueOnce("deleted").mockResolvedValue("changed");
+  ipc.textSave.mockRejectedValueOnce(wireError("Exists"));
+  await act(() => hook.result.current.overwrite());
+  expect(ipc.textSave).toHaveBeenLastCalledWith(LINK_TARGET, "mine", "lf", false, {
+    kind: "nothing",
+  });
+  expect(ipc.textSave).toHaveBeenCalledTimes(2);
+  expect(hook.result.current.prompt).toBe("external");
+  expect(hook.result.current.changedOnDisk).toBe(true);
+  expect(hook.result.current.dirty).toBe(true);
+});
+
+test("creating_the_file_a_link_points_to_when_the_target_has_one_by_the_second_look_writes_nothing", async () => {
+  const hook = await askedAboutDanglingLink();
+  // The file appeared while the question was open: the link is no longer a link to nothing.
+  ipc.textCheck.mockResolvedValue("changed");
+  await act(() => hook.result.current.overwrite());
+  expect(ipc.textSave).toHaveBeenCalledTimes(1);
+  expect(hook.result.current.prompt).toBe("external");
+  expect(hook.result.current.changedOnDisk).toBe(true);
+  expect(hook.result.current.dirty).toBe(true);
+});
+
+test("creating_the_file_a_link_points_to_when_the_link_became_a_file_writes_nothing", async () => {
+  const hook = await askedAboutDanglingLink();
+  // Replaced by a regular file meanwhile.
+  ipc.entryOf.mockResolvedValue({ ...LINK, kind: "file" });
+  ipc.textCheck.mockResolvedValue("changed");
+  await act(() => hook.result.current.overwrite());
+  expect(ipc.textSave).toHaveBeenCalledTimes(1);
+  expect(hook.result.current.prompt).toBe("external");
+  expect(hook.result.current.changedOnDisk).toBe(true);
+  expect(hook.result.current.dirty).toBe(true);
+});
+
+test("creating_the_file_a_link_points_to_that_cannot_read_the_link_says_so_and_writes_nothing", async () => {
+  const hook = await askedAboutDanglingLink();
+  ipc.linkTarget.mockRejectedValue(wireError("Io"));
+  await act(() => hook.result.current.overwrite());
+  expect(ipc.textSave).toHaveBeenCalledTimes(1);
+  expect(hook.result.current.prompt).toBeNull();
+  expect(hook.result.current.problem).toContain("was not saved");
+  expect(hook.result.current.dirty).toBe(true);
 });
 
 test("a_link_to_a_file_that_exists_is_a_changed_file_and_not_a_dangling_link", async () => {

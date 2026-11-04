@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { invoke, type WireError, type WireItemError } from "./invoke";
 import type { WirePath } from "./wire-path";
-import type { Density, Follow, KernAccent, ThemeMode } from "./kernkraft";
+import type { Density, Follow, KernAccent, OpId, ThemeMode } from "./kernkraft";
 
 // One typed function per command of Kern's own backend (src-tauri/src:
 // store_cmds.rs, windows.rs, filemanager1.rs, default_fm.rs, clipboard.rs,
@@ -114,6 +114,25 @@ export type FileIdentity =
 /** The identity of each path, in order; two paths with the same identity are one file or folder. */
 export const fileIdentity = (paths: WirePath[]) =>
   invoke<FileIdentity[]>("file_identity", { paths });
+
+// ---- starting a copy or a move for a dropped file (dnd.rs) ----
+
+/**
+ * Starts a copy or a move of `sources` into the folder `dest` and returns the operation's id, as
+ * `startOp` does for those two kinds. It is the one an editor window is granted: it takes no
+ * other kind, so the window cannot delete for good or empty the Trash.
+ */
+export const dropStartOp = (kind: "copy" | "move", sources: WirePath[], dest: WirePath) =>
+  invoke<OpId>("drop_start_op", { kind, sources, dest });
+
+// ---- where a symbolic link points (identity.rs) ----
+
+/**
+ * The path a symbolic link leads to: its contents read, through a chain of links when the target
+ * is itself one, a relative one taken from the folder of the link that holds it. The path is not
+ * looked at further, so it may be one that is not there (a link to nothing). Reads, never writes.
+ */
+export const linkTarget = (path: WirePath) => invoke<WirePath>("link_target", { path });
 
 // ---- windows and opening (windows.rs, open.rs) ----
 

@@ -15,6 +15,8 @@ export interface DropHooks {
   failed(error: unknown, about?: WirePath): void;
   /** Called once both halves have ended, with the destinations of what landed in the folder. */
   landed?(paths: WirePath[]): void;
+  /** Start the copies and moves through the command that takes only those two (an editor window). */
+  copyOrMoveOnly?: boolean;
 }
 
 export async function dropItems(
@@ -52,6 +54,12 @@ export async function dropItems(
     if (--open === 0 && landed.length > 0) hooks.landed?.(landed);
   };
   for (const [kind, list] of halves) {
-    void useOps.getState().start({ kind, sources: list, dest, onEnd: ended });
+    void useOps.getState().start({
+      kind,
+      sources: list,
+      dest,
+      copyOrMoveOnly: hooks.copyOrMoveOnly,
+      onEnd: ended,
+    });
   }
 }

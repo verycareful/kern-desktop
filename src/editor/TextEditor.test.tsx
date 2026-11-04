@@ -11,6 +11,7 @@ const ipc = vi.hoisted(() => ({
   textSave: vi.fn(),
   textCheck: vi.fn(),
   entryOf: vi.fn(),
+  linkTarget: vi.fn(),
   watchDir: vi.fn(),
   unwatchDir: vi.fn(),
   docOpened: vi.fn(),
@@ -393,12 +394,15 @@ test("a_name_that_became_a_link_to_nothing_says_so_and_creates_its_target_only_w
   expect(within(prompt).getByRole("button", { name: "Cancel" })).toHaveFocus();
   expect(ipc.textSave).toHaveBeenCalledTimes(1);
   ipc.textSave.mockResolvedValueOnce(S1);
+  const pointsTo = p("/home/a/elsewhere/made.txt");
+  ipc.linkTarget.mockResolvedValue(pointsTo);
   fireEvent.click(
     within(prompt).getByRole("button", { name: "Create the file the link points to" })
   );
   await waitFor(() => expect(ipc.textSave).toHaveBeenCalledTimes(2));
-  expect(ipc.textSave).toHaveBeenLastCalledWith(FILE, "mine hello\nworld", "lf", false, {
-    kind: "anything",
+  // Created where the link points, and only if nothing is there by then.
+  expect(ipc.textSave).toHaveBeenLastCalledWith(pointsTo, "mine hello\nworld", "lf", false, {
+    kind: "nothing",
   });
 });
 

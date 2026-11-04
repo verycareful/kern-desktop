@@ -7,7 +7,7 @@ import { NO_LAYOUT, SETTINGS } from "../settings/test-settings";
 
 // The main window draws no layout until its stored one has been read (layout.json), so the layout
 // it was left in is the first one it shows. A layout that cannot be read draws the default and
-// says so.
+// says so; so does one that does not answer within the bound.
 
 const ipc = vi.hoisted(() => ({
   layoutGet: vi.fn(),
@@ -36,6 +36,7 @@ import { useOps } from "../ops/useOps";
 import { useTabs } from "../store/tabs";
 import { useUserDirs } from "./user-dirs-store";
 import MainWindow from "./MainWindow";
+import { LAYOUT_READ_BOUND_MS } from "./use-layout-sync";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 
@@ -86,4 +87,26 @@ test("a_layout_that_cannot_be_read_draws_the_default_and_says_so", async () => {
     expect(useOps.getState().notice?.text).toMatch(/stored layout could not be read/)
   );
   expect(useOps.getState().notice?.text).toMatch(/layout.json is unreadable/);
+});
+
+test("a_layout_that_does_not_answer_draws_the_default_after_the_bound_and_says_so", async () => {
+  vi.useFakeTimers();
+  try {
+    ipc.layoutGet.mockReturnValue(new Promise<WindowLayout>(() => undefined));
+    render(<MainWindow />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LAYOUT_READ_BOUND_MS - 1);
+    });
+    // Still within the bound: nothing is drawn yet and nothing is said.
+    expect(screen.queryByTestId("main-grid")).toBeNull();
+    expect(useOps.getState().notice).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(screen.getByTestId("main-grid")).toHaveAttribute("data-layout", "folder");
+    expect(useOps.getState().notice?.text).toMatch(/stored layout could not be read/);
+    expect(useOps.getState().notice?.text).toMatch(/did not answer/);
+  } finally {
+    vi.useRealTimers();
+  }
 });

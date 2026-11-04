@@ -10,12 +10,12 @@
 //! so both parts travel as decimal strings.
 
 use std::os::unix::fs::MetadataExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use kernkraft_tauri::{WireError, WirePath};
 use serde::Serialize;
 
-use crate::windows::{blocking, io_error};
+use crate::windows::{blocking, io_error, wire_error};
 
 /// The answer for one path.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -54,6 +54,53 @@ pub async fn file_identity(paths: Vec<WirePath>) -> Result<Vec<Identity>, WireEr
                 },
             })
             .collect())
+    })
+    .await
+}
+
+/// How many links are followed before a chain is called a loop: `MAXSYMLINKS`, the limit Linux
+/// puts on the links one path resolution follows (path_resolution(7)).
+const MAX_LINK_HOPS: usize = 40;
+
+/// The path the link at `path` leads to: its contents (readlink(2)), a relative one taken from
+/// the folder of the link that holds it, and, while that is a link again, the contents of that one,
+/// up to [`MAX_LINK_HOPS`] links. The path found is not looked at further, so it may be one that
+/// is not there; it is not normalised, so the kernel reads its `..` and folder links as it would
+/// for the link itself. An error when `path` is not a link, cannot be read, or the chain loops.
+/// Reads only.
+pub fn link_target_of(path: &Path) -> Result<PathBuf, WireError> {
+    let mut at = path.to_path_buf();
+    for _ in 0..MAX_LINK_HOPS {
+        let held = std::fs::read_link(&at).map_err(|e| io_error(&at, &e))?;
+        let next = if held.is_absolute() {
+            held
+        } else {
+            at.parent().unwrap_or_else(|| Path::new("/")).join(held)
+        };
+        match std::fs::symlink_metadata(&next) {
+            Ok(m) if m.file_type().is_symlink() => at = next,
+            // Not there, or not a link: the end of the chain. A look that failed for another
+            // reason ends it as well; the write that follows reports that reason.
+            _ => return Ok(next),
+        }
+    }
+    Err(wire_error(
+        "TooManyLinks",
+        format!(
+            "{} leads through more than {MAX_LINK_HOPS} links, which is a loop",
+            path.display()
+        ),
+        Some(path),
+    ))
+}
+
+/// Where the link at `path` leads ([`link_target_of`]); the editor asks it before creating the
+/// file a link to nothing points to.
+#[tauri::command]
+pub async fn link_target(path: WirePath) -> Result<WirePath, WireError> {
+    blocking(move || {
+        let p = path.to_path_buf().map_err(WireError::from)?;
+        Ok(WirePath::from(&link_target_of(&p)?))
     })
     .await
 }

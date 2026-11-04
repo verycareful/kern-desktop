@@ -581,7 +581,9 @@ impl Survey {
 
     /// [`Survey::lookup`] in which a registered path at `own` that did not
     /// answer is left out of `unanswered`: it is the asking place's own
-    /// document, not another one the file might be open in.
+    /// document, not another one the file might be open in. A reserved
+    /// entry (the target of a Save As) at `own` is left out as well: it is
+    /// the same place's own hold.
     fn lookup_skipping(&self, id: &FileId, own: Option<&Location>) -> Lookup {
         if let Some(location) = &self.exact {
             return Lookup {
