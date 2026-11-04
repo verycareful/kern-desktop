@@ -14,6 +14,7 @@ only the types that database knows: each must be one the generator emits.
 import json
 import os
 import re
+import struct
 import subprocess
 import unittest
 import xml.etree.ElementTree as ET
@@ -28,7 +29,27 @@ CONF = os.path.join(TAURI, "tauri.conf.json")
 SYSTEM_TYPES = "/usr/share/mime/types"
 METAINFO_DEST = f"/usr/share/metainfo/{APP_ID}.metainfo.xml"
 SCALABLE_DEST = "/usr/share/icons/hicolor/scalable/apps/kern.svg"
+# Debian Policy 12.5: the licence goes to /usr/share/doc/<package>/copyright;
+# the package name is the bundler's, productName with dots as hyphens.
+COPYRIGHT_DEST = "/usr/share/doc/io-github-verycareful-kern/copyright"
 BINARY = "kern"
+INSTANCE = os.path.join(TAURI, "src", "instance.rs")
+# Types Kern must claim on every system: the plan's list by canonical name.
+# The database's aliases file maps application/x-shellscript,
+# application/x-yaml and text/x-c to the names used here, and names Rust
+# source text/rust.
+ANCHORS = (
+    "text/plain",
+    "text/markdown",
+    "application/json",
+    "text/x-shellscript",
+    "application/toml",
+    "application/yaml",
+    "text/x-csrc",
+    "text/x-c++src",
+    "text/x-python",
+    "text/rust",
+)
 # desktop-file-validate warns on every type under message/: it expects mail
 # programs to claim them. Kern opens them as text, so these warnings are the
 # accepted ones; any other warning or error fails.
@@ -78,19 +99,29 @@ class DesktopEntry(unittest.TestCase):
         self.assertEqual(e["Exec"], f"{BINARY} %F")
         self.assertEqual(e["Icon"], BINARY)
         self.assertEqual(e["StartupWMClass"], APP_ID)
+        # The class comes from the GLib program name, which Kern sets to its
+        # bus name at start-up.
+        with open(INSTANCE, encoding="utf-8") as f:
+            bus = re.search(r'pub const BUS_NAME: &str = "([^"]+)";', f.read())
+        self.assertIsNotNone(bus)
+        self.assertEqual(bus.group(1), APP_ID)
         self.assertEqual(e["Name"], "Kern")
 
     def test_mime_types_are_the_generators(self) -> None:
         listed = mime_list(entry()["MimeType"])
         self.assertEqual(listed[0], "inode/directory")
         self.assertEqual(len(listed), len(set(listed)), "a type is listed twice")
+        missing = [t for t in ANCHORS if t not in listed]
+        self.assertEqual(missing, [], "types every database knows are not claimed")
         made = generated()
         if os.environ.get("CI"):
             with open(SYSTEM_TYPES, encoding="utf-8") as f:
                 known = {line.strip() for line in f if line.strip()}
-            stray = [t for t in listed[1:] if t in known and t not in made]
+            checked = [t for t in listed[1:] if t in known]
+            self.assertGreaterEqual(len(checked), len(ANCHORS), "the runner's database knows almost none of the list")
+            stray = [t for t in checked if t not in made]
             self.assertEqual(stray, [], "listed types this database does not call text")
-            print(f"note: CI is set; checked {sum(t in known for t in listed)} of {len(listed)} types")
+            print(f"note: CI is set; checked {len(checked)} of {len(listed) - 1} types")
         else:
             self.assertEqual(listed, made)
 
@@ -127,6 +158,17 @@ class Bundle(unittest.TestCase):
         self.assertEqual(self.conf["identifier"], APP_ID)
         self.assertEqual(self.conf["mainBinaryName"], BINARY)
 
+    def test_window_icon_is_the_largest(self) -> None:
+        # Tauri takes the first PNG of bundle.icon as every window's icon.
+        def width(rel: str) -> int:
+            with open(os.path.join(TAURI, rel), "rb") as f:
+                head = f.read(24)
+            self.assertEqual(head[:8], b"\x89PNG\r\n\x1a\n", rel)
+            return struct.unpack(">I", head[16:20])[0]
+
+        pngs = [i for i in self.conf["bundle"]["icon"] if i.endswith(".png")]
+        self.assertEqual(width(pngs[0]), max(width(i) for i in pngs))
+
     def test_deb_and_appimage_carry_the_entry_and_metainfo(self) -> None:
         linux = self.conf["bundle"]["linux"]
         self.assertEqual(linux["deb"]["desktopTemplate"], f"linux/{APP_ID}.desktop")
@@ -134,6 +176,7 @@ class Bundle(unittest.TestCase):
             files = linux[target]["files"]
             self.assertEqual(files.get(METAINFO_DEST), f"linux/{APP_ID}.metainfo.xml", target)
             self.assertEqual(files.get(SCALABLE_DEST), "icons/kern.svg", target)
+            self.assertEqual(files.get(COPYRIGHT_DEST), "../LICENSE", target)
 
 
 if __name__ == "__main__":
