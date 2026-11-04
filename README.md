@@ -18,8 +18,9 @@
 <!-- Tests -->
 [![Vitest](https://img.shields.io/badge/Vitest-3-6E9F18?style=flat-square&logo=vitest&logoColor=white)](https://vitest.dev/)
 [![Playwright](https://img.shields.io/badge/Playwright-1.49-2EAD33?style=flat-square&logo=playwright&logoColor=white)](https://playwright.dev/)
+[![WebdriverIO](https://img.shields.io/badge/WebdriverIO-10.1-EA5906?style=flat-square&logo=webdriverio&logoColor=white)](https://webdriver.io/)
 <!-- Release -->
-[![Version](https://img.shields.io/badge/Version-0.1.0.0.70-informational?style=flat-square)](VERSION)
+[![Version](https://img.shields.io/badge/Version-0.1.0.0.71-informational?style=flat-square)](VERSION)
 <!-- Licence and status -->
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Early%20Development-orange?style=flat-square)](#)
@@ -67,7 +68,14 @@ libayatana-appindicator3-dev librsvg2-dev`).
 cargo test --manifest-path src-tauri/Cargo.toml
 npx vitest run
 npx playwright test
+e2e-app/run.sh
 ```
+
+`e2e-app/run.sh` builds the debug binary and drives it through `tauri-driver`
+and WebKitWebDriver (`cargo install tauri-driver --locked`; WebKitWebDriver is
+in `webkit2gtk-driver` on Debian and Ubuntu and in `webkitgtk-6.0` on Arch),
+with `xvfb-run` and `dbus-run-session`. Each spec file runs on a session bus
+and in a home directory of its own, so it never touches the running session.
 
 ## License
 
