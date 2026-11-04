@@ -158,6 +158,14 @@ test("an_unreadable_settings_file_is_reported", async () => {
   expect(screen.queryByText(/pins\.json/)).toBeNull();
 });
 
+test("the_settings_name_the_library_not_all_documents", async () => {
+  await shown();
+  const library = fieldset("Library");
+  expect(within(library).getByRole("checkbox", { name: "Walk Documents" })).toBeInTheDocument();
+  expect(fieldset("Folders the Library also walks")).toBeInTheDocument();
+  expect(screen.queryByText(/All documents/)).toBeNull();
+});
+
 test("scan_roots_are_added_once_and_removed", async () => {
   await shown();
   const field = screen.getByLabelText("Add a folder");

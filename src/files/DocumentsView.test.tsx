@@ -85,6 +85,13 @@ test("documents_respects_toggles", async () => {
   await waitFor(() => expect(ipc.documents).toHaveBeenLastCalledWith(expect.any(String), [DOWN]));
 });
 
+test("the_view_is_called_the_library", async () => {
+  settings({ scan_documents: true, scan_downloads: false });
+  render(<DocumentsView />);
+  expect(await screen.findByRole("heading", { name: "Library" })).toBeInTheDocument();
+  expect(getAction("place.documents").label).toBe("Open Library");
+});
+
 test("the_settings_folders_are_walked_too_once_each", async () => {
   settings({ scan_downloads: false, scan_roots: [p("/srv/papers"), DOCS] });
   render(<DocumentsView />);

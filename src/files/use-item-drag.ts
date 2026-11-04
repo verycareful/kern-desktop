@@ -11,7 +11,7 @@ import {
 } from "../ops/dnd";
 import { itemsText } from "../ops/labels";
 
-// Dragging items of a folder view (design 5.1, 5.8), made of pointer events.
+// Dragging items of a folder view, made of pointer events.
 // A press on an item that then travels `ITEM_DRAG_THRESHOLD` pixels starts a
 // drag of the selection (of the pressed item alone when it is not selected).
 // The elements that carry `data-drop-target` light up under the pointer, and

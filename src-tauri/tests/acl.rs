@@ -237,8 +237,8 @@ fn granted_to_editors() -> (Vec<String>, Vec<String>) {
 
 /// Every command of Kern's own that only the main window (or a document window) needs, each
 /// refused to an editor window by its capability: moving a document Home, answering for a
-/// document window, the clipboard and drags of the file manager, the default file manager.
-const NOT_FOR_EDITORS: [&str; 15] = [
+/// document window, the clipboard and drags out of the file manager, the default file manager.
+const NOT_FOR_EDITORS: [&str; 14] = [
     "detached",
     "refuse_detach",
     "move_doc_to_main",
@@ -249,17 +249,17 @@ const NOT_FOR_EDITORS: [&str; 15] = [
     "clip_text",
     "clip_clear_if",
     "drag_out",
-    "dnd_target",
     "fm1_status",
     "default_fm_status",
     "make_default_fm",
     "layout_set",
 ];
 
-/// The kernkraft commands that change files, the Trash, volumes and applications: the editor window
-/// has no file manager, and a page that held one of these could copy, delete or launch.
-const KERNKRAFT_NOT_FOR_EDITORS: [&str; 22] = [
-    "start_op",
+/// The kernkraft commands that change files, the Trash, volumes and applications and that the
+/// editor window's page does not send: it has no file manager. (It runs the copy or move of a file
+/// dropped on its tree, so `start_op`, `cancel_op`, `answer_conflict`, `undo_state` and
+/// `same_filesystem` are granted; see `EDITOR_DROP_GRANTS`.)
+const KERNKRAFT_NOT_FOR_EDITORS: [&str; 18] = [
     "trash_purge",
     "trash_restore",
     "trash_list",
@@ -268,9 +268,6 @@ const KERNKRAFT_NOT_FOR_EDITORS: [&str; 22] = [
     "create_file",
     "undo",
     "redo",
-    "undo_state",
-    "answer_conflict",
-    "cancel_op",
     "volume_mount",
     "volume_unmount",
     "volume_eject",
@@ -341,7 +338,6 @@ fn an_editor_window_has_no_file_operation_of_kernkraft() {
     // The main window has them: the same calls are not refused there.
     let main = env("main");
     for cmd in [
-        "start_op",
         "trash_purge",
         "rename",
         "create_dir",
@@ -356,6 +352,80 @@ fn an_editor_window_has_no_file_operation_of_kernkraft() {
             );
         }
     }
+}
+
+/// What an editor window is granted so that a file dropped on its tree is copied or moved with
+/// the progress, the conflict question and the report of any other operation, and so that the
+/// pointer can be told where the drop would land.
+const EDITOR_DROP_GRANTS: [(&str, bool); 6] = [
+    ("same_filesystem", true),
+    ("start_op", true),
+    ("cancel_op", true),
+    ("answer_conflict", true),
+    ("undo_state", true),
+    ("dnd_target", false),
+];
+
+#[test]
+fn an_editor_window_is_granted_what_a_drop_on_its_tree_needs() {
+    let (kernkraft_cmds, kern_cmds) = granted_to_editors();
+    for (cmd, in_kernkraft) in EDITOR_DROP_GRANTS {
+        let list = if in_kernkraft {
+            &kernkraft_cmds
+        } else {
+            &kern_cmds
+        };
+        assert!(list.iter().any(|c| c == cmd), "{cmd}");
+    }
+    // Reached, not refused by the access control: the command's own answer to an empty call.
+    let e = env("editor-1");
+    for (cmd, in_kernkraft) in EDITOR_DROP_GRANTS {
+        let name = if in_kernkraft {
+            kernkraft(cmd)
+        } else {
+            cmd.to_owned()
+        };
+        if let Err(err) = invoke(&e, &name, json!({})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "{cmd}: {err}"
+            );
+        }
+    }
+    // A window the capability does not name still has none of them.
+    let stranger = env("stranger");
+    for (cmd, in_kernkraft) in EDITOR_DROP_GRANTS {
+        let name = if in_kernkraft {
+            kernkraft(cmd)
+        } else {
+            cmd.to_owned()
+        };
+        let err = invoke(&stranger, &name, json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{cmd}: {err}"
+        );
+    }
+}
+
+#[test]
+fn an_editor_window_may_say_where_a_drag_is() {
+    // Reached: the command's own refusal of a path with a dot segment, not the access control's.
+    let e = env("editor-1");
+    let err = invoke(
+        &e,
+        "dnd_target",
+        json!({"drag": 1, "target": {"state": "folder", "path": {"k": "Utf8", "v": "/a/../b"}}}),
+    )
+    .unwrap_err();
+    assert_eq!(err["kind"], "BadPath", "{err}");
+    // The document area is a target of its own, with no path.
+    invoke(
+        &e,
+        "dnd_target",
+        json!({"drag": 1, "target": {"state": "open"}}),
+    )
+    .unwrap();
 }
 
 #[test]

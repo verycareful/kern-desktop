@@ -20,7 +20,7 @@ import { empty, type Sel } from "./selection";
 import { sortEntries, type SortBy, type SortDir } from "./sort";
 import { SORT_IN_WORKER_ABOVE, createSorter, type Sorter } from "./sort-async";
 
-// One folder shown in one tab (design 4.1, 5.1): lists it, watches it under
+// One folder shown in one tab: lists it, watches it under
 // the tab's id, and keeps the listing current. The list shown is always the
 // listing of the path asked for: a failed or missing folder shows no entries,
 // never the previous contents.

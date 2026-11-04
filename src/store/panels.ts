@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { useLayout } from "./layout";
 import { activeTab, useTabs, type Tab } from "./tabs";
 
-// Design 4.1 and 4.3: a folder tab shows both side panels. A document tab
+// A folder tab shows both side panels. A document tab
 // folds both to stubs; a stub slides its panel over the document, and the
 // choice is forgotten when the active tab changes. In the editor layout the left
 // column is docked whatever tab is shown (shown or hidden by the user, not slid),

@@ -212,6 +212,7 @@ pub fn env_state(
     WebviewWindowBuilder::new(&app, "probe", Default::default())
         .build()
         .unwrap();
+    kern_lib::windows::announce_releases(app.handle()).unwrap();
     let handle = app.handle().clone();
     Env {
         _tmp: tmp,

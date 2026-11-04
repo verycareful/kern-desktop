@@ -8,11 +8,12 @@ import { ReportDialog } from "./ReportDialog";
 import { UndoBanner } from "./UndoBanner";
 import { useOps } from "./useOps";
 
-// The window's part of the file operations (design 5.1): the progress panel,
+// The window's part of the file operations: the progress panel,
 // the name conflict being asked, and the reports waiting to be read. Reads the
 // undo history once at the start so the Edit menu has its labels, and says so
-// (UndoBanner) when it cannot.
-export function OpsHost() {
+// (UndoBanner) when it cannot. An editor window hosts it for what is dropped on its tree
+// (`editor`).
+export function OpsHost(props: { editor?: boolean }) {
   const ops = useOps((s) => s.ops);
   const answer = useOps((s) => s.answer);
   const cancel = useOps((s) => s.cancel);
@@ -25,7 +26,7 @@ export function OpsHost() {
   return (
     <>
       <UndoBanner />
-      <DropHover />
+      <DropHover editor={props.editor} />
       <ProgressPanel />
       {first?.conflict && (
         <ConflictDialog

@@ -25,7 +25,7 @@ import { useViewSettings } from "./view-settings";
 import { dir, entry } from "./test-entries";
 import { stubLayout } from "./test-layout";
 
-// The file operations of a folder view (design 5.1, 5.7, 5.8): they act on the
+// The file operations of a folder view: they act on the
 // selection and nothing else, ask before deleting for good, edit names in
 // place, create, paste and take drops.
 

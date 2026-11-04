@@ -5,7 +5,7 @@ import { toWireError } from "../ipc";
 import { Modal } from "./Modal";
 import { nameProblem } from "./names";
 
-// A name typed for something new: a folder or an empty file (design 5.1). A
+// A name typed for something new: a folder or an empty file. A
 // name that cannot be one is refused here; whatever the backend refuses (the
 // name exists, the folder is read-only) is shown in the dialog, which stays
 // open for another try. The name is text, sent as a string.

@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import type { LayoutKind, WindowLayout, WirePath } from "../ipc";
 
-// How this window is laid out. Two layouts: the file manager (design D4.1 to D4.3) and
+// How this window is laid out. Two layouts: the file manager and
 // the editor, whose left column (a places strip over a folder tree) stays docked whatever tab is
 // shown. The main window keeps its layout, column width, column visibility and tree root across
 // restarts (shell/use-layout-sync.ts writes them to layout.json); an editor window (`editor-<n>`)

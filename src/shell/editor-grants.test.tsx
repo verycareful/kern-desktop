@@ -21,6 +21,8 @@ import { NO_LAYOUT, SETTINGS } from "../settings/test-settings";
 const wire = vi.hoisted(() => ({
   sent: new Set<string>(),
   handlers: {} as Record<string, (payload: unknown) => void>,
+  /** Every handler subscribed to an event, in order (`handlers` keeps the last). */
+  all: {} as Record<string, ((payload: unknown) => void)[]>,
   answer: (_cmd: string, _args: Record<string, unknown>): unknown => null,
 }));
 vi.mock("@tauri-apps/api/core", () => ({
@@ -36,7 +38,9 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: (name: string, h: (e: { payload: unknown }) => void) => {
-    wire.handlers[name] = (payload) => h({ payload });
+    const handler = (payload: unknown) => h({ payload });
+    wire.handlers[name] = handler;
+    (wire.all[name] ??= []).push(handler);
     return Promise.resolve(() => undefined);
   },
 }));
@@ -185,6 +189,12 @@ function answer(cmd: string, args: Record<string, unknown>): unknown {
         location: null,
         error: null,
       }));
+    case "same_filesystem":
+      return (args.sources as WirePath[]).map(() => ({ state: "checked", same: true }));
+    case "start_op":
+      return 7;
+    case "undo_state":
+      return { undo: null, redo: null };
     case "store_errors_take":
     case "volumes_problems_take":
       return [];
@@ -202,6 +212,7 @@ beforeEach(() => {
   pinned.splice(0, pinned.length, p("/d/pinned.md"), p("/d/pinned-too.md"), p("/d/folder"));
   wire.sent.clear();
   wire.handlers = {};
+  wire.all = {};
   wire.answer = answer;
   queued.length = 0;
   queued.push(
@@ -283,6 +294,38 @@ test("every_command_an_editor_windows_page_sends_is_granted_to_editor_windows", 
   await act(async () => usePinnedRecent.getState().shift(p("/d/pinned-too.md"), -1));
   fireEvent.click(await within(panel).findByText("folder"));
 
+  // Files dropped from another program: the pointer is told where it is, a drop on a folder of the
+  // tree is moved there (judged by the filesystems), and a drop on the documents opens a text file.
+  const elementAt = (el: Element) =>
+    Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => el });
+  const view = { width: window.innerWidth, height: window.innerHeight };
+  const said = (event: string, payload: unknown) =>
+    act(async () => wire.all[event]?.forEach((h) => h(payload)));
+  elementAt(row("sub"));
+  await said("kern://drag-over", { drag: 1, position: { x: 5, y: 5 }, view });
+  await said("kern://drop", {
+    paths: [p("/x/f")],
+    position: { x: 5, y: 5 },
+    view,
+    offered: ["copy", "move"],
+    modifier: null,
+    drag: 1,
+  });
+  await waitFor(() => expect(wire.sent.has(`${KERNKRAFT}start_op`)).toBe(true));
+  const docs = document.querySelector("[data-drop-docs]")!;
+  expect(docs).not.toBeNull();
+  elementAt(docs);
+  await said("kern://drag-over", { drag: 2, position: { x: 5, y: 5 }, view });
+  await said("kern://drop", {
+    paths: [p("/x/g.txt")],
+    position: { x: 5, y: 5 },
+    view,
+    offered: ["copy"],
+    modifier: null,
+    drag: 2,
+  });
+  delete (document as { elementFromPoint?: unknown }).elementFromPoint;
+
   // Opening a folder of the tree as an editor, and moving the tab to a window of its own.
   useTreeMenu.getState().setCurrent(listing(PROJECT)[0]!);
   await run("tree.openAsEditor");
@@ -306,6 +349,9 @@ test("every_command_an_editor_windows_page_sends_is_granted_to_editor_windows", 
     "user_dirs",
     "theme_get",
     "volumes_list",
+    "same_filesystem",
+    "start_op",
+    "undo_state",
   ].map((c) => `${KERNKRAFT}${c}`)) {
     expect(wire.sent, must).toContain(must);
   }
@@ -327,6 +373,7 @@ test("every_command_an_editor_windows_page_sends_is_granted_to_editor_windows", 
     "prune",
     "recent_touch",
     "confirm_close",
+    "dnd_target",
   ]) {
     expect(wire.sent, must).toContain(must);
   }

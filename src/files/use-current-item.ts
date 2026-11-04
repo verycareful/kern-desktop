@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useState } from "react";
 
-// Where the keyboard is in a list or grid (design 4.5): the current item is
+// Where the keyboard is in a list or grid: the current item is
 // outlined while the view itself has the keyboard, and only then. With no
 // current item the first one stands in for it; the selection is not touched.
 // Focus on something inside the view (a column header button) or anywhere

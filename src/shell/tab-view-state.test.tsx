@@ -157,7 +157,7 @@ test("switching_away_and_back_restores_scroll_selection_and_cursor_but_not_the_l
   act(() => screen.getByTestId("folder-list").focus());
   expect(row("f04")).toHaveClass("kern-cursor");
   expect(scroller().scrollTop).toBe(250);
-  // The bar's text is not kept (design 5.1).
+  // The bar's text is not kept.
   expect(screen.queryByRole("textbox", { name: "Location" })).toBeNull();
   expect(useTabs.getState().views[a]).not.toHaveProperty("location");
 });

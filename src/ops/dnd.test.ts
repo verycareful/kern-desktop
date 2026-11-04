@@ -7,7 +7,9 @@ import {
   DROP_AREA_ATTR,
   decideDrop,
   dropTargetAt,
+  DROP_DOCS_ATTR,
   dropTargetValue,
+  editorLandingAt,
   landingAt,
   leftWindow,
   modsOf,
@@ -277,4 +279,40 @@ test("a_reason_from_the_backend_is_made_a_sentence", () => {
   expect(sentence("Already a sentence.")).toBe("Already a sentence.");
   expect(sentence("ends with a question?")).toBe("Ends with a question?");
   expect(sentence("")).toBe("");
+});
+
+// ---- where a drop lands in an editor window ----
+
+test("in_an_editor_window_a_folder_row_of_the_tree_is_where_the_drop_lands", () => {
+  dom(
+    `<aside><div id="row" ${target(p("/d/sub"))}><span id="n">sub</span></div></aside><section ${DROP_DOCS_ATTR}></section>`
+  );
+  const l = editorLandingAt({ x: 5, y: 5 }, view, page, null, find("n"));
+  expect(l).toMatchObject({ ok: true, path: p("/d/sub"), kind: "item" });
+});
+
+test("in_an_editor_window_the_document_area_opens_what_is_dropped", () => {
+  dom(`<section ${DROP_DOCS_ATTR}><div id="text">text</div><div id="tabs">tabs</div></section>`);
+  for (const id of ["text", "tabs"]) {
+    const l = editorLandingAt({ x: 5, y: 5 }, view, page, null, find(id));
+    expect(l, id).toMatchObject({ ok: true, kind: "open" });
+    expect(l.ok && l.el.hasAttribute(DROP_DOCS_ATTR)).toBe(true);
+  }
+});
+
+test("in_an_editor_window_anywhere_else_is_refused_with_a_reason_naming_the_tree_and_the_documents", () => {
+  dom(`<div id="bar">status</div><section ${DROP_DOCS_ATTR}></section>`);
+  const l = editorLandingAt({ x: 5, y: 5 }, view, page, null, find("bar"));
+  expect(l.ok).toBe(false);
+  expect(!l.ok && l.reason).toMatch(/tree/);
+  expect(!l.ok && l.reason).toMatch(/text file/);
+  expect(editorLandingAt({ x: 5, y: 5 }, view, page, null, () => null).ok).toBe(false);
+});
+
+test("in_an_editor_window_a_folder_cannot_be_dropped_into_itself_and_an_unmeasurable_view_refuses", () => {
+  dom(`<div id="row" ${target(p("/d/sub"))}></div>`);
+  const l = editorLandingAt({ x: 5, y: 5 }, view, page, [p("/d/sub")], find("row"));
+  expect(!l.ok && l.reason).toMatch(/itself/);
+  const bad = editorLandingAt({ x: 5, y: 5 }, { width: 0, height: 0 }, page, null, find("row"));
+  expect(!bad.ok && bad.reason).toMatch(/could not tell where/);
 });

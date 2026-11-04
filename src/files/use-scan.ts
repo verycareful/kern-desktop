@@ -12,7 +12,7 @@ import {
 } from "../ipc";
 import { runOp, type RunningOp } from "../ops/run-op";
 
-// A walk that streams what it finds: name search and the Documents view
+// A walk that streams what it finds: name search and the Library
 // (kernkraft-tauri search_cmds.rs). Each run has a key of its own; its hits
 // arrive as kernkraft://search-hit batches carrying that key, and its end as
 // op-done, after the last batch. The hits are kept in a list that only grows

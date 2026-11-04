@@ -13,23 +13,33 @@ import {
   pathKey,
   toWireError,
   type EventName,
+  type DragTarget,
   type EventPayloads,
   type WirePath,
 } from "../ipc";
 import { activeTab, useTabs } from "../store/tabs";
-import { REASON_NOT_A_FOLDER_TAB, landingAt, sentence, type Landing } from "./dnd";
+import {
+  REASON_NOT_A_FOLDER_TAB,
+  editorLandingAt,
+  landingAt,
+  sentence,
+  type EditorLanding,
+} from "./dnd";
 import { useOps } from "./useOps";
 
-// A drag from another application passing over the window (design 5.8). The backend forwards
+// A drag from another application passing over the window. The backend forwards
 // the pointer's position (kern://drag-over) and the page says what is under it: the folder row,
 // Places entry or folder view body under the pointer lights up and the backend is told which
 // folder it is, so the pointer can show what Kern will do there; any other place lights nothing
 // and the reason is shown. The drop itself is carried out by the folder view (FolderView.tsx);
-// what is said here is why a drop did not happen.
+// what is said here is why a drop did not happen. An editor window has no folder view: its tree
+// rows and Places entries are the folders, and its document area opens what is dropped
+// (`editor`; the drop is carried out by use-editor-drop.ts).
 
 const LIT = "kern-drop-over";
 
-export function DropHover() {
+export function DropHover(props: { editor?: boolean }) {
+  const editor = props.editor === true;
   const [hint, setHint] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
@@ -69,16 +79,13 @@ export function DropHover() {
       position: { x: number; y: number },
       view: { width: number; height: number },
       sources: WirePath[] | null
-    ): Landing => {
+    ): EditorLanding => {
+      const page = { width: window.innerWidth, height: window.innerHeight };
+      if (editor) return editorLandingAt(position, view, page, sources);
       if (activeTab(useTabs.getState())?.kind !== "folder") {
         return { ok: false, reason: REASON_NOT_A_FOLDER_TAB };
       }
-      return landingAt(
-        position,
-        view,
-        { width: window.innerWidth, height: window.innerHeight },
-        sources
-      );
+      return landingAt(position, view, page, sources);
     };
     const fail = (e: unknown) => {
       if (live) useOps.getState().report({ title: "Drop", report: null, error: toWireError(e) });
@@ -100,15 +107,20 @@ export function DropHover() {
       light(landing.ok ? landing.el : null);
       st.place = landing.ok ? null : sentence(landing.reason);
       show();
-      const key = landing.ok ? `folder:${pathKey(landing.path)}` : `refused:${landing.reason}`;
+      const target: DragTarget = !landing.ok
+        ? { state: "refused", reason: sentence(landing.reason) }
+        : landing.kind === "open"
+          ? { state: "open" }
+          : { state: "folder", path: landing.path };
+      const key =
+        target.state === "folder"
+          ? `folder:${pathKey(target.path)}`
+          : target.state === "open"
+            ? "open"
+            : `refused:${landing.ok ? "" : landing.reason}`;
       if (key === st.answered) return;
       st.answered = key;
-      dndTarget(
-        e.drag,
-        landing.ok
-          ? { state: "folder", path: landing.path }
-          : { state: "refused", reason: sentence(landing.reason) }
-      ).catch(fail);
+      dndTarget(e.drag, target).catch(fail);
     });
     subscribe(EVENT_DRAG_REFUSAL, (e) => {
       if (e.drag !== st.drag) return;
@@ -134,7 +146,7 @@ export function DropHover() {
       light(null);
       for (const off of offs) off();
     };
-  }, []);
+  }, [editor]);
   return hint === null ? null : (
     <p role="status" className="kern-drop-hint">
       {hint}

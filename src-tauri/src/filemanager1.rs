@@ -323,7 +323,7 @@ pub async fn run<R: Runtime>(app: &AppHandle<R>, req: Request) -> Vec<WireError>
     errors
 }
 
-/// The opened folders are routed as for any outside request (design D4.3);
+/// The opened folders are routed as for any outside request;
 /// a path that is not a folder is reported, not opened as a document.
 async fn show_folders<R: Runtime>(
     app: &AppHandle<R>,

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-//! Where an opened path goes: the rules of design D4.3 to D4.5 and 6.1
-//! (kern-desktop 0.1.0.0 design). [`route`] is a pure function of what it is
+//! Where an opened path goes: the rules for a click, a launch and a
+//! document that is already open. [`route`] is a pure function of what it is
 //! told. The registry holds places and takes no file-system step while its
 //! lock is held: which file each registered path leads to is looked up by a
 //! [`Survey`], on threads of its own, with a bound on the wait, and the
@@ -33,7 +33,7 @@ pub enum Origin {
 pub enum Gesture {
     #[default]
     Default,
-    /// Ctrl+double-click, or "Open in new window" (D4.3).
+    /// Ctrl+double-click, or "Open in new window".
     NewWindow,
 }
 
@@ -161,7 +161,7 @@ pub enum Target {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Folder,
-    /// A file the editor opens (D6.1).
+    /// A file the editor opens (kernkraft's MIME database says it is text).
     Text,
     /// Any other file.
     Other,
@@ -203,7 +203,12 @@ type Looking = Arc<Mutex<HashMap<PathBuf, Arc<Look>>>>;
 pub struct OpenRegistry {
     book: Mutex<Book>,
     looking: Looking,
+    /// Told whenever a path is let go (see [`OpenRegistry::on_release`]).
+    released: Mutex<Option<Release>>,
 }
+
+/// What is called when the registry lets a path go.
+pub type Release = Arc<dyn Fn() + Send + Sync>;
 
 impl OpenRegistry {
     pub fn new() -> OpenRegistry {
@@ -232,22 +237,51 @@ impl OpenRegistry {
             .insert(path.to_path_buf(), Entry { location, reserved });
     }
 
+    /// Calls `f` after every change that lets a path go (a tab closing, a
+    /// window going, a hold dropped), never for one that changes nothing and
+    /// never with the registry's lock held, so `f` may ask the registry
+    /// something. A place that was refused a file because another place had
+    /// it open learns here that it may try again.
+    pub fn on_release(&self, f: Release) {
+        *self.released.lock().unwrap_or_else(PoisonError::into_inner) = Some(f);
+    }
+
+    fn announce(&self, changed: bool) {
+        if !changed {
+            return;
+        }
+        let f = self
+            .released
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(f) = f {
+            f();
+        }
+    }
+
     /// Forgets `path`, whatever place it has.
     pub fn remove(&self, path: &Path) {
         let mut book = self.lock();
-        if book.map.remove(path).is_some() {
+        let changed = book.map.remove(path).is_some();
+        if changed {
             book.generation += 1;
         }
+        drop(book);
+        self.announce(changed);
     }
 
     /// Forgets `path` only if it is registered at `location`: a tab closing
     /// after its document moved to a window must not erase the window.
     pub fn remove_if(&self, path: &Path, location: &Location) {
         let mut book = self.lock();
-        if book.map.get(path).is_some_and(|e| &e.location == location) {
+        let changed = book.map.get(path).is_some_and(|e| &e.location == location);
+        if changed {
             book.map.remove(path);
             book.generation += 1;
         }
+        drop(book);
+        self.announce(changed);
     }
 
     /// Forgets every path held at the tab `tab_id` of `window`: its
@@ -258,9 +292,12 @@ impl OpenRegistry {
         book.map.retain(|_, e| {
             !matches!(&e.location, Location::Tab { window: w, tab_id: t } if w == window && t == tab_id)
         });
-        if book.map.len() != before {
+        let changed = book.map.len() != before;
+        if changed {
             book.generation += 1;
         }
+        drop(book);
+        self.announce(changed);
     }
 
     /// The path open in window `label`, not counting a Save As target held
@@ -281,9 +318,12 @@ impl OpenRegistry {
         let mut book = self.lock();
         let before = book.map.len();
         book.map.retain(|_, e| e.location.window() != label);
-        if book.map.len() != before {
+        let changed = book.map.len() != before;
+        if changed {
             book.generation += 1;
         }
+        drop(book);
+        self.announce(changed);
     }
 
     /// The number the registry's generation is now; see [`Survey::generation`].
@@ -474,6 +514,13 @@ impl Survey {
     /// not answer is compared by its text only: with the asked path and with
     /// the asked path's own resolution.
     pub fn lookup(&self, id: &FileId) -> Lookup {
+        self.lookup_skipping(id, None)
+    }
+
+    /// [`Survey::lookup`] in which a registered path at `own` that did not
+    /// answer is left out of `unanswered`: it is the asking place's own
+    /// document, not another one the file might be open in.
+    fn lookup_skipping(&self, id: &FileId, own: Option<&Location>) -> Lookup {
         if let Some(location) = &self.exact {
             return Lookup {
                 location: Some(location.clone()),
@@ -496,6 +543,7 @@ impl Survey {
                         unanswered: Vec::new(),
                     };
                 }
+                None if Some(&e.location) == own => {}
                 None => unanswered.push(e.path.clone()),
             }
         }
@@ -508,8 +556,13 @@ impl Survey {
     /// How the asked path stands for the place `own` that holds a document:
     /// the file is its own, free, or open somewhere else. `Err` names the
     /// registered paths that did not answer when the answer depends on them.
+    /// The place's own document is not among them: a file that is the
+    /// place's own cannot also be open elsewhere, and a Save As that is the
+    /// way out of a mount that stopped answering must not wait for that
+    /// mount. A path that matches the unanswered file's text is still found
+    /// to be the place's own.
     pub fn held_by(&self, id: &FileId, own: &Location) -> Result<Held, Vec<PathBuf>> {
-        let found = self.lookup(id);
+        let found = self.lookup_skipping(id, Some(own));
         match found.location {
             Some(loc) if &loc == own => Ok(Held::Own),
             Some(location) => Ok(Held::Elsewhere { location }),
@@ -521,7 +574,7 @@ impl Survey {
 
 /// The rules, with no file access. `found` is where the survey found the
 /// path open ([`Survey::lookup`]) and `kind` what it is, resolved through
-/// links: a link to a folder is a folder (Review Focus 4). The target keeps
+/// links: a link to a folder is a folder. The target keeps
 /// `path` as given.
 pub fn route(
     path: &Path,

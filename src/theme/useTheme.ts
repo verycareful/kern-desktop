@@ -15,7 +15,7 @@ import {
 } from "../ipc";
 import { useThemeState } from "./theme-state";
 
-// Applies the system theme (parent spec 6.5, design 7.1): kernkraft-theme
+// Applies the system theme: kernkraft-theme
 // resolves it, the backend sends it as CSS custom properties, and this hook
 // keeps them in one <style id="kern-tokens"> element, replaced in place on
 // every update and on every kernkraft://theme-changed event.

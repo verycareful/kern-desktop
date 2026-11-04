@@ -286,6 +286,23 @@ test("a_link_back_to_a_folder_above_is_shown_as_a_loop_and_is_not_listed", async
   ]);
 });
 
+test("folder_rows_are_drop_targets_and_files_and_loops_are_not", async () => {
+  disk["/r/docs"] = [link("/r/docs", "up")];
+  ipc.fileIdentity.mockImplementation((paths: WirePath[]) =>
+    Promise.resolve(
+      paths.map((q) => ({ state: "known", dev: "1", ino: q.v === "/r/docs/up" ? "/r" : q.v }))
+    )
+  );
+  await mount();
+  expect(JSON.parse(row("docs").getAttribute("data-drop-target")!)).toEqual(p("/r/docs"));
+  expect(row("readme.md")).not.toHaveAttribute("data-drop-target");
+  fireEvent.click(row("docs"));
+  const up = await screen.findByRole("treeitem", { name: /^up/ });
+  fireEvent.click(up);
+  await waitFor(() => expect(up).toHaveTextContent(/leads back to a folder above it/));
+  expect(up).not.toHaveAttribute("data-drop-target");
+});
+
 test("a_link_to_a_folder_that_is_not_above_it_opens_like_a_folder", async () => {
   disk["/r/docs"] = [link("/r/docs", "to-src")];
   disk["/r/docs/to-src"] = [file("/r/docs/to-src", "x.rs")];

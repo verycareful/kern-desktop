@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
 // Above a document whose file is no longer the one that was opened or saved:
-// changed by another program, or deleted (design 4.3; review focus 3). A
+// changed by another program, or deleted. A
 // deleted file says that saving creates it again; a changed one offers Reload,
 // which names what it throws away while there are unsaved edits.
 export function ChangedOnDiskBanner(props: {

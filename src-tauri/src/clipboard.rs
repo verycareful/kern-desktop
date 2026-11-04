@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-//! The system clipboard, shared with Dolphin, Nautilus, Thunar and terminals
-//! (design 5.8).
+//! The system clipboard, shared with Dolphin, Nautilus, Thunar and terminals.
 //!
 //! Copy and cut offer three targets on the `CLIPBOARD` selection:
 //!

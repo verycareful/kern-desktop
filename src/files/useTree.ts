@@ -34,13 +34,12 @@ import {
   type TreeModel,
 } from "./tree";
 
-// The folder tree's state (design D4.3): the folders the user expanded, each listed
+// The folder tree's state: the folders the user expanded, each listed
 // lazily when it is opened and watched under a key of its own for as long as it stays open, so a
 // change shows and a folder that is closed costs nothing. A watch that cannot be set is said in
 // the tree beside the folder, a folder that cannot be listed shows its error in place, and a
 // folder that vanished (deleted, unmounted) is closed with a note, never shown stale. A link to
-// a folder that leads back to a folder above it is shown as a loop and not opened (Review Focus
-// 4); one whose identity cannot be told is not opened either, and says why.
+// a folder that leads back to a folder above it is shown as a loop and not opened; one whose identity cannot be told is not opened either, and says why.
 
 export interface TreeNote {
   id: number;

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { create } from "zustand";
 
-// What the status bar shows for a folder tab (design 4.1): the item count and,
+// What the status bar shows for a folder tab: the item count and,
 // with a selection, its count and total size. The folder view publishes it.
 export interface FolderStatus {
   items: number;

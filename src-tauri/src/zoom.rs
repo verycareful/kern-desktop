@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-//! The interface size as webview zoom (design 7.2).
+//! The interface size as webview zoom.
 //!
 //! `interface_size` (percent, see `store.rs`) zooms every Kern window alike:
 //! the stored value is applied when the settings are read at startup and

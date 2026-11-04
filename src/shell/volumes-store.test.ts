@@ -17,7 +17,7 @@ vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()),
 
 import { deviceKey, mountedKey, useVolumes } from "./volumes-store";
 
-// Design 5.3 and kernkraft-tauri's volumes_cmds.rs: the list follows
+// Kernkraft-tauri's volumes_cmds.rs gives the list; here it follows
 // kernkraft://volumes-changed, the listener is in place before the first
 // listing, problems that are reported once stay until dismissed, and a volume
 // is told apart by its identity.

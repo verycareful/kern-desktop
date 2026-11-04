@@ -8,8 +8,8 @@
 //! never owns the name, so it can never swallow a launch forwarded to it,
 //! and no window or webview is started for it. Anything that needs a window
 //! (no arguments, a folder, a text file) goes on to claim the name or
-//! forward to the running instance. Kinds are decided as in design D4.3 and
-//! D6.1 by kernkraft's MIME database.
+//! forward to the running instance. A folder is a window, and so is a
+//! file kernkraft's MIME database says the editor opens as text.
 
 use std::path::{Path, PathBuf};
 

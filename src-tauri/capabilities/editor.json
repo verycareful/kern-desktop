@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "editor",
-  "description": "Capability for the editor windows: tabs of documents, a folder tree and the places strip. Of kernkraft's commands only what that page calls (listing, watching, text open, save and check, the theme, volumes to look at, what a pinned or recent entry is); no file operation, trash, mount, launcher or default-application command",
+  "description": "Capability for the editor windows: tabs of documents, a folder tree and the places strip. Of kernkraft's commands only what that page calls (listing, watching, text open, save and check, the theme, volumes to look at, what a pinned or recent entry is, and the copy or move of files dropped on the tree: same_filesystem, start_op, cancel_op, answer_conflict, undo_state); no trash, rename, create, mount, launcher or default-application command",
   "windows": ["editor-*"],
   "permissions": [
     "core:default",
@@ -18,6 +18,11 @@
     "kernkraft-tauri:allow-volumes-problems-take",
     "kernkraft-tauri:allow-open-default",
     "kernkraft-tauri:allow-mime-of",
+    "kernkraft-tauri:allow-same-filesystem",
+    "kernkraft-tauri:allow-start-op",
+    "kernkraft-tauri:allow-cancel-op",
+    "kernkraft-tauri:allow-answer-conflict",
+    "kernkraft-tauri:allow-undo-state",
     "allow-settings-get",
     "allow-settings-set",
     "allow-layout-get",
@@ -37,6 +42,7 @@
     "allow-doc-open-elsewhere",
     "allow-detach-doc",
     "allow-open-editor",
-    "allow-confirm-close"
+    "allow-confirm-close",
+    "allow-dnd-target"
   ]
 }

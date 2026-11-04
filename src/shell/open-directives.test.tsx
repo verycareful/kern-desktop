@@ -877,11 +877,11 @@ test("an_editor_window_is_told_its_folder_and_opens_documents_in_tabs_of_its_own
     "on kern://open-error",
     "on kern://close-requested",
   ]);
-  // The left column: the places over the tree of the folder it was told. The Trash and All
-  // documents are tabs of the main window, so its strip has neither.
+  // The left column: the places over the tree of the folder it was told. The Trash and the
+  // Library are tabs of the main window, so its strip has neither.
   const strip = await screen.findByTestId("places-strip");
   expect(within(strip).queryByRole("button", { name: "Trash" })).toBeNull();
-  expect(within(strip).queryByRole("button", { name: "All documents" })).toBeNull();
+  expect(within(strip).queryByRole("button", { name: "Library" })).toBeNull();
   expect(await screen.findByRole("tree", { name: "Folders of project" })).toBeInTheDocument();
   expect(ipc.listDir).toHaveBeenCalledWith(p("/d/project"), false);
   // No Home folder tab: it has documents only.

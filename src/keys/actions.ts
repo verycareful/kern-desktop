@@ -42,8 +42,7 @@ import { isFolder } from "../files/file-type";
 // main menu and the tab context menu (ActionMenu) all read it, so keyboard and
 // right-click cannot drift apart: the main menu lists every action that
 // applies to the active tab, and the tab buttons and stubs run actions from
-// here. Design 4.5 lists the shortcuts; an action is added here by the task
-// that implements it.
+// here. An action is added here together with the feature it runs.
 //
 // Key strings: [Ctrl+][Alt+][Shift+][Meta+]Key, modifiers in that order, Key
 // being KeyboardEvent.key with a single character upper-cased ("Ctrl+W",
@@ -123,7 +122,7 @@ export function currentContext(targetId?: string, extend = false): ActionContext
 }
 
 export const actions: Action[] = [
-  // Ctrl+W and Ctrl+Tab: design 4.5. Both also work inside an editor, where
+  // Ctrl+W and Ctrl+Tab are the tab keys of browsers and editors. Both also work inside an editor, where
   // focus sits in an editable field. Shift+Tab reversal is the usual partner of Ctrl+Tab.
   // Every way to close a tab (shortcut, x button, middle click, menus) runs this one action.
   // A document that would lose something (unsaved changes, a file deleted on disk) asks first
@@ -160,7 +159,7 @@ export const actions: Action[] = [
     enabled: (c) => c.tabs.tabs.length > 1,
     run: (c) => c.tabs.prev(),
   },
-  // Design 4.5: a document tab can have a window of its own; its unsaved text goes with it.
+  // A document tab can have a window of its own; its unsaved text goes with it.
   {
     id: "tab.detach",
     label: "Move to new window",
@@ -176,7 +175,7 @@ export const actions: Action[] = [
     },
   },
   // Alt+Left, Alt+Right, Alt+Up are the back, forward and up keys of the
-  // desktop file managers (Dolphin, Nautilus). Design 4.5 does not list them.
+  // desktop file managers (Dolphin, Nautilus).
   {
     id: "nav.back",
     label: "Back",
@@ -204,7 +203,7 @@ export const actions: Action[] = [
     enabled: (c) => c.active?.kind === "folder" && parent(c.active.path) !== null,
     run: (c) => c.tabs.up(),
   },
-  // Design 4.3: a document tab folds both panels to stubs. No shortcut in 4.5,
+  // A document tab folds both panels to stubs. No shortcut is bound,
   // so these are reachable from the menus and the stubs.
   {
     id: "panel.left.toggle",
@@ -227,7 +226,7 @@ export const actions: Action[] = [
   },
 ];
 
-// ---- the folder view (design 4.1, 4.3, 5.1) ----
+// ---- the folder view ----
 
 function controllerOf(c: ActionContext) {
   return c.target?.kind === "folder" ? folderController(c.target.id) : undefined;
@@ -257,7 +256,7 @@ function sortBy(by: SortBy, label: string): Action {
 }
 
 const folderActions: Action[] = [
-  // Enter and Ctrl+double-click: design 4.3. Ctrl+Enter is the keyboard form of
+  // Enter and Ctrl+double-click open. Ctrl+Enter is the keyboard form of
   // the new-window gesture.
   {
     id: "folder.open",
@@ -268,7 +267,7 @@ const folderActions: Action[] = [
     enabled: (c) => controllerOf(c)?.canOpen() ?? false,
     run: (c) => controllerOf(c)?.open(false),
   },
-  // F4: design 4.5 (Dolphin's key). Ctrl+Shift+C: design 4.5.
+  // F4 is Dolphin's key for the terminal.
   {
     id: "folder.terminal",
     scope: "view",
@@ -333,7 +332,7 @@ const folderActions: Action[] = [
     enabled: (c) => controllerOf(c)?.canOpen() ?? false,
     run: (c) => controllerOf(c)?.open(true),
   },
-  // ---- file operations (design 5.1, 5.7, 5.8) ----
+  // ---- file operations ----
   // They act on the selection, never on an item that is only outlined. Ctrl+C, X and V
   // are left to a text field that has the focus (no `inEditable`), as are Ctrl+Z and Y.
   // Undo and redo are the file operations' own in a folder tab; the editor's come with the editor.
@@ -473,7 +472,7 @@ const folderActions: Action[] = [
     enabled: (c) => controllerOf(c) !== undefined,
     run: (c) => controllerOf(c)?.editLocation(),
   },
-  // Ctrl+F: design 4.5.
+  // Ctrl+F searches, as in a file manager or an editor.
   {
     id: "folder.search",
     label: "Search",
@@ -527,8 +526,8 @@ const folderActions: Action[] = [
 
 actions.push(...folderActions);
 
-// ---- the interface size (design 7.2) ----
-// No keys: Ctrl+= and Ctrl+- are the editor's text zoom (design 4.5). Every
+// ---- the interface size ----
+// No keys: Ctrl+= and Ctrl+- are the editor's text zoom. Every
 // window is zoomed alike, so these apply whatever tab is shown. They wait for the
 // stored settings: until they are read the size held is the default, not the user's.
 
@@ -618,7 +617,7 @@ const layoutActions: Action[] = [
 ];
 actions.push(...layoutActions);
 
-// ---- the Trash (design 5.2) ----
+// ---- the Trash ----
 
 function trashOf(c: ActionContext) {
   return c.target?.kind === "trash" ? trashController(c.target.id) : undefined;
@@ -699,7 +698,7 @@ const trashActions: Action[] = [
   },
 ];
 
-// ---- the places strip: Trash and volumes (design 4.1, 5.2, 5.3) ----
+// ---- the places strip: Trash and volumes ----
 
 // The volume actions are aimed at the volume whose menu is open (useVolumes.current), and are
 // in that volume's own menu only; with none they are greyed, and so are all of them for a
@@ -727,8 +726,8 @@ const placeActions: Action[] = [
     when: "any",
     run: (c) => c.tabs.openTrash(),
   },
-  // Ctrl+, opens the settings in most desktop editors (GNOME Text Editor, VS Code); design 4.5
-  // names no key for it.
+  // Ctrl+, opens the settings in most desktop editors (GNOME Text Editor, VS Code); no other
+  // key is bound to it.
   {
     id: "place.settings",
     label: "Open Settings",
@@ -740,7 +739,7 @@ const placeActions: Action[] = [
   },
   {
     id: "place.documents",
-    label: "Open All documents",
+    label: "Open Library",
     area: "Navigation",
     keys: [],
     when: "any",
@@ -799,7 +798,7 @@ const placeActions: Action[] = [
   },
 ];
 
-// ---- Pinned and Recent (design 4.2) ----
+// ---- Pinned and Recent ----
 
 function currentEntry() {
   return usePinnedRecent.getState().current;
@@ -813,7 +812,7 @@ function pinIndex(): number {
 }
 
 const pinnedActions: Action[] = [
-  // Ctrl+D: design 4.5.
+  // Ctrl+D bookmarks, as in a browser.
   {
     id: "folder.pin",
     scope: "view",
@@ -894,7 +893,7 @@ const pinnedActions: Action[] = [
   },
 ];
 
-// ---- the document (design 4.3, 4.5) ----
+// ---- the document ----
 
 function docOf(c: ActionContext) {
   return c.target?.kind === "doc" ? docController(c.target.id) : undefined;
@@ -958,7 +957,7 @@ const docActions: Action[] = [
     enabled: (c) => docOf(c)?.canSaveAs() ?? false,
     run: (c) => docOf(c)?.askSaveAs(),
   },
-  // Ctrl+D pins the document (design 4.5) and, on a pinned one, unpins it. CodeMirror's own
+  // Ctrl+D pins the document and, on a pinned one, unpins it. CodeMirror's own
   // Ctrl+D (select the next occurrence) is not installed, so the key has one meaning.
   {
     id: "doc.pin",

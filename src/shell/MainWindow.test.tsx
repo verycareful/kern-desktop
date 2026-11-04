@@ -41,6 +41,7 @@ vi.mock("../ipc", async (orig) => ({
 }));
 import { actions, appliesTo } from "../keys/actions";
 import { usePanelsStore } from "../store/panels";
+import { useLayout } from "../store/layout";
 import { useTabs } from "../store/tabs";
 import MainWindow from "./MainWindow";
 import { VOLUME_MENU } from "./volume-menu";
@@ -59,6 +60,8 @@ beforeEach(() => {
   useOps.setState({ notice: null });
   useTabs.setState({ tabs: [], activeId: null });
   usePanelsStore.setState({ leftSlid: false, rightSlid: false });
+  // The window draws a layout once its stored one is read (main-layout-wait.test.tsx).
+  useLayout.setState({ loaded: true });
 });
 
 test("folder_tab_shows_three_regions", () => {
@@ -92,6 +95,16 @@ test("tab_row_sits_over_the_folder_area_only", () => {
   const slot = screen.getByTestId("places-strip").firstElementChild;
   expect(slot).toHaveClass("kern-places-slot");
   expect(slot).toBeEmptyDOMElement();
+});
+
+test("the_main_window_strip_offers_the_library_and_its_tab_is_titled_so", () => {
+  useTabs.getState().openFolder(p("/home/a"), false);
+  render(<MainWindow />);
+  const strip = screen.getByTestId("places-strip");
+  expect(within(strip).queryByRole("button", { name: "All documents" })).toBeNull();
+  fireEvent.click(within(strip).getByRole("button", { name: "Library" }));
+  expect(screen.getByRole("tab", { name: "Library" })).toBeInTheDocument();
+  expect(screen.queryByRole("tab", { name: "All documents" })).toBeNull();
 });
 
 test("doc_tab_shows_two_stubs", () => {
@@ -282,7 +295,7 @@ test("every_action_appears_in_a_menu", () => {
   useTabs.getState().openDocuments();
   useTabs.getState().openSettings();
   render(<MainWindow />);
-  for (const tabName of ["a", "n.md", "Trash", "All documents", "Settings"]) {
+  for (const tabName of ["a", "n.md", "Trash", "Library", "Settings"]) {
     fireEvent.click(screen.getByRole("tab", { name: tabName }));
     fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
     const menu = screen.getByTestId("action-menu");

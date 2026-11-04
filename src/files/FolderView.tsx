@@ -62,7 +62,7 @@ import "../ops/ops.css";
 import "./files.css";
 
 // The right-click menu is the folder actions of the table, grouped as the
-// main menu groups them (keyboard and right-click parity, design 4.5).
+// main menu groups them (keyboard and right-click parity).
 const CONTEXT_MENU: MenuSection[] = (
   ["Open", "Pinned", "Edit", "Create", "Selection", "View"] as const
 ).map((area) => ({
@@ -78,7 +78,7 @@ function ErrorText(props: { error: WireError }) {
   );
 }
 
-// Design 4.1: the folder list beside the places, with the location above it.
+// The folder list beside the places, with the location above it.
 // Shows the tab's folder as a list or a grid, in the order the tab is sorted.
 export function FolderView(props: { tab: FolderTab }) {
   useViewSettingsSync();
@@ -111,7 +111,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   const sort = useFolderUi((s) => s.sort[tab.id] ?? DEFAULT_SORT);
   const key = pathKey(tab.path);
   const isActive = useTabs((s) => s.activeId === tab.id);
-  // What this tab's view kept when it was last unmounted (design 4.1). It is read once
+  // What this tab's view kept when it was last unmounted. It is read once
   // at mount, applies to the folder it was kept in, and is dropped for good on
   // the first move to another folder: coming back by Back starts fresh too.
   const [kept, setKept] = useState<FolderViewState | null>(() => {
@@ -438,7 +438,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     tools,
   ]);
 
-  // The status bar's counts (design 4.1).
+  // The status bar's counts.
   useEffect(() => {
     if (folder.phase !== "ready") {
       useFolderStatus.getState().clear(tab.id);

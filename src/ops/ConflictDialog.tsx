@@ -6,7 +6,7 @@ import { fileType, isFolder } from "../files/file-type";
 import { formatDate, formatSize } from "../files/format";
 import { Modal } from "./Modal";
 
-// A name is taken at the destination (design 5.1): skip the item, replace
+// A name is taken at the destination: skip the item, replace
 // what is there, or keep both. What Replace does depends on what the two are:
 // a file or link replaces a file or link, which is lost; two folders are merged,
 // each clash inside asked about in turn; a folder against a file (either way)

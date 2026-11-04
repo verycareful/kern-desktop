@@ -5,8 +5,8 @@ import { ChevronRight } from "lucide-react";
 import { displayPath, parent, pathKey, type WirePath } from "../ipc";
 import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 
-// The folders from the root down to `path`, each a button that goes there
-// (design 5.1). The chain is built with parent(), which splits Bytes paths
+// The folders from the root down to `path`, each a button that goes there.
+// The chain is built with parent(), which splits Bytes paths
 // exactly, so a folder whose name is not UTF-8 has working segments too.
 function chain(path: WirePath): WirePath[] {
   const out: WirePath[] = [];

@@ -10,7 +10,7 @@ import { activeTab, useTabs, isPlaceTab, tabTitle } from "../store/tabs";
 const plural = (n: number, one: string, many: string) =>
   `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 
-// Design 4.1: along the bottom, the whole window wide. Item count and
+// Along the bottom, the whole window wide. Item count and
 // selection size come from the folder view of the tab (folder-status.ts);
 // a document shows its cursor position, encoding and line ending (editor/
 // doc-status.ts) and a dot while it has unsaved changes. The last file operation that ended

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-// Design 4.1: the file manager. Docked, its two parts are cells of the
+// The file manager. Docked, its two parts are cells of the
 // main grid: the places strip from the window top to the status bar, and the
-// folder area beside it under the tab row. Slid in over a document (4.3) they
-// are one panel. The strip holds Places, All documents, Volumes and Trash; its top slot,
+// folder area beside it under the tab row. Slid in over a document they
+// are one panel. The strip holds Places, the Library, Volumes and Trash; its top slot,
 // level with the tab row, is free and left empty.
 import { FileSearch, Trash2, type LucideIcon } from "lucide-react";
 import { isMainWindow } from "../ipc";
@@ -17,7 +17,7 @@ import { PlacesList } from "./PlacesList";
 import { documentsShown, trashShown } from "./place-nav";
 import { VolumesList } from "./VolumesList";
 
-/** A place of Kern's own in the strip (the Trash, All documents): one entry that opens its tab. */
+/** A place of Kern's own in the strip (the Trash, the Library): one entry that opens its tab. */
 function OwnPlace(props: {
   label: string;
   action: string;
@@ -48,7 +48,7 @@ function OwnPlace(props: {
 
 /**
  * The strip. `column` is the strip as the top of the editor layout's left column, which has its
- * width from the column rather than its own. The Trash and All documents are tabs of the main
+ * width from the column rather than its own. The Trash and the Library are tabs of the main
  * window, so an editor window's strip has neither.
  */
 export function PlacesStrip(props: { column?: boolean }) {
@@ -63,7 +63,7 @@ export function PlacesStrip(props: { column?: boolean }) {
       <PlacesList />
       {main && (
         <OwnPlace
-          label="All documents"
+          label="Library"
           action="place.documents"
           Icon={FileSearch}
           shown={documentsShown}
@@ -77,7 +77,7 @@ export function PlacesStrip(props: { column?: boolean }) {
 
 export function FolderArea(props: { docked?: boolean }) {
   const active = useTabs((s) => activeTab(s));
-  // Slid in over a document, the panel shows the folder tab used last (design 4.3).
+  // Slid in over a document, the panel shows the folder tab used last.
   const recent = useTabs((s) => recentFolderTab(s));
   const tab = active?.kind === "folder" ? active : recent;
   const region = props.docked ? { role: "region", "aria-label": "File manager" } : {};

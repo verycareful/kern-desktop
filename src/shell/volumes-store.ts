@@ -18,7 +18,7 @@ import {
   type WireMount,
 } from "../ipc";
 
-// Design 5.3: the volumes of the places strip. The listing comes from
+// The volumes of the places strip. The listing comes from
 // kernkraft (mounted from /proc/self/mountinfo, unmounted from UDisks2) and
 // follows kernkraft://volumes-changed: the listener is put in place before the
 // first listing (kernkraft starts its watcher with that listing and the

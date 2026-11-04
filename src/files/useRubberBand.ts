@@ -5,7 +5,7 @@ import { bandIndices, type Layout, type Rect } from "./band";
 import type { Sel } from "./selection";
 
 // Dragging on the empty part of the list or grid draws a band that selects
-// what it touches (design 5.1). Ctrl held at the start adds to the selection.
+// what it touches. Ctrl held at the start adds to the selection.
 // A press that does not move is a click on the background: it clears the
 // selection unless Ctrl is held.
 

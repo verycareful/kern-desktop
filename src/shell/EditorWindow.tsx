@@ -5,22 +5,26 @@ import { useViewSettingsSync } from "../files/view-settings";
 import { useShortcuts } from "../keys/useShortcuts";
 import type { Action } from "../keys/actions";
 import { activeTab, useTabs, type DocTab } from "../store/tabs";
+import { OpsHost } from "../ops/OpsHost";
 import { usePinnedRecent } from "./pinned-recent-store";
 import { ClosePrompt } from "./ClosePrompt";
 import { EditorCentre, EditorLayout } from "./EditorLayout";
 import { StatusBar } from "./StatusBar";
+import { useEditorDrop } from "./use-editor-drop";
 import { useLayoutSync } from "./use-layout-sync";
 import "./shell.css";
 
 // An editor window (`editor-<n>`): the editor layout (EditorLayout.tsx) rooted at the folder it was
 // opened for, with tabs of documents. Its documents are tabs of this window's own store,
 // registered with the backend under this window's label (open_paths from here opens a text file
-// as a tab here). It holds documents only: the folder views, the Trash and All documents live in
-// the main window, and its layout is always the editor's.
+// as a tab here). It holds documents only: the folder views, the Trash and the Library live in
+// the main window, and its layout is always the editor's. Files dropped on it from another program
+// are copied or moved into a folder of its tree, or opened (use-editor-drop.ts); it hosts the
+// progress, questions and reports of those operations (OpsHost).
 
 /**
  * What an editor window answers to: the document's keys, closing and switching tabs, and the
- * interface size. Not the places (Trash, All documents, Settings), which are the main window's.
+ * interface size. Not the places (Trash, Library, Settings), which are the main window's.
  */
 export const EDITOR_WINDOW_KEYS = (a: Action): boolean =>
   a.when === "doc" ||
@@ -34,6 +38,7 @@ export function EditorWindow(props: { starting: boolean }) {
   useViewSettingsSync();
   // Starts with the column width the main window ended with.
   useLayoutSync(false);
+  useEditorDrop();
   // Ctrl+D pins the document, which needs to know the pins even while the panel is folded away.
   useEffect(() => {
     let live = true;
@@ -55,6 +60,7 @@ export function EditorWindow(props: { starting: boolean }) {
       <EditorLayout allow={EDITOR_WINDOW_KEYS}>
         <EditorCentre tab={tab} docs={docs} starting={props.starting} />
       </EditorLayout>
+      <OpsHost editor />
       <StatusBar />
       <ClosePrompt />
     </div>

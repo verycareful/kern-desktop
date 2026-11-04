@@ -8,7 +8,7 @@ import { useOps } from "../ops/useOps";
 import { tabTitle, useTabs } from "../store/tabs";
 import { flushLayout } from "./use-layout-sync";
 
-// Closing a document (design 4.5, parent spec 6.2): a document with unsaved
+// Closing a document: a document with unsaved
 // changes, or whose file was deleted on disk (its text is then the only copy),
 // is not closed without asking Save, Close without saving or Cancel. Closing
 // the main window asks once for all such documents together. Save writes each

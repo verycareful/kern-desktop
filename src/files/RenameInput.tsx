@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { focusGoesToADialog } from "../ops/modal-stack";
 import { selectedRange, type RenameState } from "./use-file-ops";
 
-// The name of an item edited where it is listed (F2, design 5.1). The text is
+// The name of an item edited where it is listed (F2). The text is
 // the hook's, so scrolling the row out of view and back does not lose it.
 // Enter and leaving the field apply it, Escape drops it. Focus leaving Kern's
 // window leaves the edit open, as the location bar does (the document has no

@@ -451,7 +451,7 @@
   border: 1px solid var(--kern-accent);
 }
 
-/* The Trash view (design 5.2): the folder list's rows with an original-location and a deleted column. */
+/* The Trash view: the folder list's rows with an original-location and a deleted column. */
 .kern-trash-title {
   flex: none;
   margin: 0;
@@ -539,7 +539,7 @@
   font-size: 12px;
 }
 
-/* Name search and the Documents view: a bar, a status line, then the hits (SearchView, ScanResults). */
+/* Name search and the Library: a bar, a status line, then the hits (SearchView, ScanResults). */
 .kern-search {
   display: flex;
   min-height: 0;

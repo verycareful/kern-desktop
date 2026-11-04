@@ -7,7 +7,7 @@ import { errorText } from "../ops/error-text";
 import { useOps } from "../ops/useOps";
 import { tabTitle, useTabs } from "../store/tabs";
 
-// A document moving between windows (design 4.4, 4.5): "Move to new window"
+// A document moving between windows: "Move to new window"
 // gives a tab of the main window a window of its own, and Home in a document
 // window gives its document to a tab of the main window. The editor's state
 // goes along (handed-doc.ts), unsaved text included. While it moves the editor

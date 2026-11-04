@@ -21,7 +21,7 @@ import { ScanResults } from "./ScanResults";
 import { useScan } from "./use-scan";
 import { setScanFolder, useViewSettings } from "./view-settings";
 
-// All documents: every document under the Documents and
+// The Library: every document under the Documents and
 // Downloads folders, each when its switch is on, and under the folders the
 // settings add (scan_roots), found by a walk and shown as found. A switch
 // is the stored setting, so it holds in every window and after a restart;
@@ -109,7 +109,7 @@ export function DocumentsView() {
     <div className="kern-files" data-testid="documents-view">
       <div className="kern-search" {...{ [NO_FILE_KEYS_ATTR]: "" }}>
         <div className="kern-search-bar kern-documents-bar" role="group" aria-label="Where to look">
-          <h2 className="kern-label">All documents</h2>
+          <h2 className="kern-label">Library</h2>
           <label className="kern-modal-check">
             <input
               type="checkbox"
@@ -198,7 +198,7 @@ export function DocumentsView() {
             hits={scan.hits}
             count={scan.count}
             home={home}
-            label="All documents"
+            label="Library"
             onOpen={onOpen}
           />
         </div>

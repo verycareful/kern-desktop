@@ -294,7 +294,11 @@ export interface DragLeave {
 }
 
 /** What the page tells the backend about where a drag's pointer is: over a folder that takes the files, or why there is none. */
-export type DragTarget = { state: "folder"; path: WirePath } | { state: "refused"; reason: string };
+export type DragTarget =
+  | { state: "folder"; path: WirePath }
+  /** The document area of an editor window: the files are opened, not put in a folder. */
+  | { state: "open" }
+  | { state: "refused"; reason: string };
 
 export const clipSet = (op: ClipOp, paths: WirePath[]) => invoke<void>("clip_set", { op, paths });
 export const clipText = (text: string) => invoke<void>("clip_text", { text });

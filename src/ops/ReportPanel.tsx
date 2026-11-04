@@ -13,8 +13,7 @@ import {
 import { REPORT_PAGE, type Outcome } from "./outcome";
 import { plural } from "./labels";
 
-// What a finished operation or command has to tell (Review Focus 5, design
-// 5.1 and 5.7): every item that was skipped, failed, warned about or not
+// What a finished operation or command has to tell: every item that was skipped, failed, warned about or not
 // reached, each with its reason, and what was done. Nothing is summarised
 // away: a long list is shown a page at a time, and one click shows the rest.
 // Operations, undo and the Trash commands hand their outcome to the report

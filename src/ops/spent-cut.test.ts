@@ -9,7 +9,7 @@ vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()),
 import { clearSpentCut, forgetSpentCuts } from "./spent-cut";
 import { useOps } from "./useOps";
 
-// A cut that was pasted and fully moved is taken off the clipboard (design 5.8). Clearing needs
+// A cut that was pasted and fully moved is taken off the clipboard. Clearing needs
 // the window to have the focus, so a move that ended while Kern was in the background is cleared
 // when the window gets the focus back; it is not an error.
 

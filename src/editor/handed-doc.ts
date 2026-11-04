@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import type { LineEnding, WireReadOnly, WireStamp } from "../ipc";
 
-// A document handed from one window to another (design 4.4): Home in a
+// A document handed from one window to another: Home in a
 // document window gives it to a tab of the main window, and "Move to new
 // window" gives a tab to a window of its own. The backend passes it through
 // untouched (windows.rs move_doc_to_main, detach_doc), so the receiving editor

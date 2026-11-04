@@ -15,7 +15,7 @@ import {
 } from "../ipc";
 import { isFolder } from "./file-type";
 
-// Thumbnails for the grid (design 5.4). The backend keeps one queue per key;
+// Thumbnails for the grid. The backend keeps one queue per key;
 // this asks it only for the images on screen, and when the screen moves on it
 // cancels what is still queued and asks again for what is visible, so the
 // queue never holds more than a screenful.

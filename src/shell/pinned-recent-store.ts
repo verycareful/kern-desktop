@@ -25,7 +25,7 @@ import { baseName, namesText } from "../ops/labels";
 import { corruptText, useStoreErrors } from "../store/store-errors";
 import { showFolder } from "./place-nav";
 
-// Design 4.2: the pins and recents of the right-hand panel, kept by the
+// The pins and recents of the right-hand panel, kept by the
 // backend (store_cmds.rs) and followed through its events, so every window
 // and every change (a pin from the folder view, a document opened) shows at
 // once. Entries whose target is gone are pruned when the panel appears, when
@@ -90,7 +90,7 @@ interface PinnedRecentState {
   reorder(paths: readonly WirePath[]): Promise<void>;
   /** Moves a pin one place up (-1) or down (1). */
   shift(path: WirePath, by: -1 | 1): Promise<void>;
-  /** A folder shows in the current folder tab; a file goes to the open command (design 4.2). */
+  /** A folder shows in the current folder tab; a file goes to the open command. */
   open(path: WirePath): Promise<void>;
   setCurrent(current: { list: EntryList; path: WirePath } | null): void;
   /** Leaves a notice, unless one with the same text is already shown. */
@@ -337,7 +337,7 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
       for (const e of errors) {
         get().notify(`${baseName(path)} could not be opened: ${errorText(e)}`);
       }
-      // Design 4.2: an entry whose open failed is pruned, if its target is gone. A prune that
+      // An entry whose open failed is pruned, if its target is gone. A prune that
       // began before the failure may have found it still there, so this one starts after it.
       await get().prune(true);
     },

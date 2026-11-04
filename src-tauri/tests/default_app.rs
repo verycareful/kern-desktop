@@ -26,7 +26,8 @@ use common::env;
 use kern_lib::instance::Invocation;
 use serde_json::json;
 
-const GLOBS2: &str = "50:text/plain:*.txt\n50:image/png:*.png\n";
+const GLOBS2: &str =
+    "50:text/plain:*.txt\n50:image/png:*.png\n50:image/jpeg:*.jpg\n50:image/gif:*.gif\n";
 
 struct Xdg {
     log: PathBuf,
@@ -51,9 +52,20 @@ fn xdg() -> &'static Xdg {
             "[Desktop Entry]\nType=Application\nName=Viewer\nExec=rec-open %F\nMimeType=image/png;\n",
         )
         .unwrap();
+        // A second application that starts, and one whose program does not exist.
+        fs::write(
+            data.join("applications/gifs.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Gifs\nExec=rec-open %F\nMimeType=image/gif;\n",
+        )
+        .unwrap();
+        fs::write(
+            data.join("applications/broken.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Broken\nExec=no-such-program-for-kern-tests %F\nMimeType=image/jpeg;\n",
+        )
+        .unwrap();
         fs::write(
             config.join("mimeapps.list"),
-            "[Default Applications]\nimage/png=viewer.desktop\n",
+            "[Default Applications]\nimage/png=viewer.desktop\nimage/jpeg=broken.desktop\nimage/gif=gifs.desktop\n",
         )
         .unwrap();
         // Builtins only, as PATH holds nothing else. END marks the record
@@ -182,4 +194,33 @@ fn without_a_running_kern_the_same_launches_happen() {
     assert!(no_launches(&dir));
     assert_eq!(run(vec![a.clone().into(), b.clone().into()]), Some(0));
     assert_eq!(launches(&dir, 1), vec![vec![s(&a), s(&b)]]);
+}
+
+#[test]
+fn a_running_kern_marks_only_the_files_of_the_application_that_did_not_start() {
+    xdg();
+    let e = env(Duration::from_secs(5));
+    let dir = e.files.join("partial");
+    fs::create_dir_all(&dir).unwrap();
+    let (png, jpg, gif) = (
+        file(&dir, "a.png", b"png"),
+        file(&dir, "b.jpg", b"jpg"),
+        file(&dir, "c.gif", b"gif"),
+    );
+    // The application in the middle cannot be started; the ones around it are.
+    let out = e.open(&[&png, &jpg, &gif], "outside", "default");
+    let actions: Vec<_> = out.iter().map(|o| o["action"].clone()).collect();
+    assert_eq!(
+        actions,
+        [json!("default_app"), json!("failed"), json!("default_app")],
+        "{out:?}"
+    );
+    assert!(
+        out[0]["error"].is_null() && out[2]["error"].is_null(),
+        "{out:?}"
+    );
+    // Its own error, naming the application, is on its file alone.
+    let err = out[1]["error"]["message"].as_str().unwrap_or_default();
+    assert!(err.contains("broken.desktop"), "{out:?}");
+    assert_eq!(launches(&dir, 2), vec![vec![s(&png)], vec![s(&gif)]]);
 }

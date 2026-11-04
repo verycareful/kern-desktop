@@ -17,10 +17,10 @@ import {
 } from "../ipc";
 import { DEFAULT_INTERFACE_SIZE, stepInterfaceSize } from "../theme/interface-size";
 
-// The settings the folder view follows (design 7.2): whether hidden files show,
+// The settings the folder view follows: whether hidden files show,
 // list or grid, the density that sets the row height, the interface size
 // (the zoom itself is applied by the backend; the actions step it), and the
-// folders All documents walks. The stored settings
+// folders the Library walks. The stored settings
 // are the source; this holds their last known value for the view and for the
 // actions (Ctrl+H, the view buttons), which write through settings_set.
 interface ViewSettingsState {
@@ -30,7 +30,7 @@ interface ViewSettingsState {
   density: Density;
   /** The interface size in percent. */
   interfaceSize: number;
-  /** What All documents walks: the Documents and Downloads folders when on, and these. */
+  /** What the Library walks: the Documents and Downloads folders when on, and these. */
   scanDocuments: boolean;
   scanDownloads: boolean;
   scanRoots: WirePath[];

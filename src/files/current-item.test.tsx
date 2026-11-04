@@ -15,7 +15,7 @@ vi.mock("../ipc", async (orig) => ({
   on: vi.fn().mockResolvedValue(() => {}),
 }));
 
-// Design 4.5 (keyboard): the list and the grid show where the keyboard is by
+// Keyboard: the list and the grid show where the keyboard is by
 // outlining the current item, while they have the keyboard, and not by a frame
 // around the whole view.
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useOps } from "./useOps";
 
-// Shown while the undo history cannot be read (design 5.7): Undo and Redo may then be
+// Shown while the undo history cannot be read: Undo and Redo may then be
 // wrong or missing. It does not hold the keyboard or take the focus, and stays until a read
 // works, which Retry tries again.
 export function UndoBanner() {

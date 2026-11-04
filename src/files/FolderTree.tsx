@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Repeat, X } from "lucide-react";
 import { displayPath, toWireError, type WireEntry, type WirePath } from "../ipc";
+import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { openFiles } from "./open-entries";
@@ -18,9 +19,9 @@ import {
 } from "./tree";
 import { useTree } from "./useTree";
 
-// The folder tree of the editor layout (design D4.1 to D4.3): the window's folder at the
+// The folder tree of the editor layout: the window's folder at the
 // top, its entries below, a folder opening in place when it is clicked or opened with the keyboard
-// and a file opening as D4.3 says (text as a tab, any other file in its default application). Only
+// and a file opening as in a folder view (text as a tab, any other file in its default application). Only
 // the rows in view exist in the page, so a folder of 100 000 entries scrolls like a small one.
 // It is a WAI-ARIA tree (tree.ts lists the keys); keyboard focus shows on the current row only,
 // as in the folder view.
@@ -256,6 +257,9 @@ export function FolderTree(props: {
                 aria-expanded={row.folder && !row.loop ? row.expanded : undefined}
                 aria-selected={isActive}
                 data-testid="tree-row"
+                {...(row.folder && !row.loop
+                  ? { [DROP_TARGET_ATTR]: dropTargetValue(row.entry.path) }
+                  : {})}
                 data-name={row.entry.name}
                 data-row-index={v.index}
                 data-active={isActive ? "true" : undefined}

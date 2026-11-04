@@ -13,7 +13,7 @@ import { isFolder } from "./file-type";
 export const OPEN_CONFIRM_ABOVE = 10;
 
 /**
- * Opens entries from the folder view (design 4.3). A single folder navigates
+ * Opens entries from the folder view. A single folder navigates
  * the current tab; with several entries, or with the new-window gesture
  * (Ctrl), each folder opens in a tab of its own, since folders live only in
  * the main window. Files go to the open command with origin "inside": it
@@ -45,7 +45,7 @@ export async function openEntries(
 }
 
 /**
- * Sends files to the open command with origin "inside" (design 4.3): text
+ * Sends files to the open command with origin "inside": text
  * becomes a document tab or, with the new-window gesture, a window; anything
  * else goes to its default application. Resolves to the errors to show, one
  * per failure.

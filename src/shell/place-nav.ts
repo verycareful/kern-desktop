@@ -11,10 +11,10 @@ import {
   type TabsState,
 } from "../store/tabs";
 
-// Design 4.1: a place of the strip (Home, a user folder, a volume) is shown in
+// A place of the strip (Home, a user folder, a volume) is shown in
 // the current folder tab. In a document tab, where the strip is slid in over
-// the document, that is the folder tab used last (4.3); from the Trash or All
-// documents that tab is brought forward, since they have no folder to navigate. With no
+// the document, that is the folder tab used last; from the Trash or the
+// Library that tab is brought forward, since they have no folder to navigate. With no
 // folder tab at all one is opened.
 //
 // In the editor layout the strip is the top of the left column and a place is where the tree is
@@ -49,7 +49,7 @@ export function shownFolder(
   return recentFolderTab(s)?.path ?? null;
 }
 
-/** True when All documents is the tab on show. */
+/** True when the Library is the tab on show. */
 export function documentsShown(s: Pick<TabsState, "tabs" | "activeId">): boolean {
   return activeTab(s)?.kind === "documents";
 }

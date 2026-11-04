@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { displayPath, toWireError, userDirs, type WirePath } from "../ipc";
 import { parseLocation } from "./path-input";
 
-// The typed location (Ctrl+L, design 5.1). Enter checks the text and navigates;
+// The typed location (Ctrl+L). Enter checks the text and navigates;
 // whatever is wrong with the text is shown here and the bar stays open. Whether
 // the folder exists is for the folder view to say: it lists the folder anyway,
 // and shows the error or the missing-folder banner. The bar closes without going

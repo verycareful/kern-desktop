@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-//! Drag and drop with other applications (design 5.8).
+//! Drag and drop with other applications.
 //!
 //! Out: [`drag_out`] starts a native GTK drag from the calling window that
 //! offers `text/uri-list` (RFC 2483, the same bytes the clipboard offers)
@@ -31,7 +31,8 @@
 //! page) is left entirely to WebKit. The rules, as functions, are in
 //! [`crate::drop_rule`]; what the handlers do with them:
 //!
-//! - Only the main window's webview takes files. A document window answers
+//! - The main window's and the editor windows' webviews take files
+//!   ([`crate::drop_rule::takes_files`]). A document window answers
 //!   every drag of files with no action, so the pointer shows no drop. So
 //!   does a drag that starts from one of Kern's own widgets (the native drag
 //!   started when an item leaves the window): dragging inside Kern is made of
@@ -49,7 +50,10 @@
 //!   [`dnd_target`]: the folder under the pointer, or why there is none.
 //!   Kern then looks at the filesystems for that folder
 //!   (`kernkraft_fs::same_filesystem`, on a thread of its own, once per folder
-//!   and drag) and answers GTK with the action it will perform. A refusal is
+//!   and drag) and answers GTK with the action it will perform. Over the
+//!   place where an editor window opens dropped text files the page says so
+//!   instead of naming a folder; nothing moves there, no filesystem is looked
+//!   at, and a copy is shown ([`crate::drop_rule::open_verdict`]). A refusal is
 //!   told to the page as [`EVENT_DRAG_REFUSAL`] so it can say why.
 //! - [`EVENT_DRAG_LEAVE`] follows `drag-leave`; GTK emits that before
 //!   `drag-drop` as well, so the drag's state is kept until the next drag.
@@ -84,10 +88,11 @@ use crate::clipboard::{
     encode_uri_list, on_main, refuse_dot_segments, try_decode_uri_list, TARGET_URI_LIST,
 };
 use crate::drop_rule::{
-    finish_success, needs_filesystems, stance, standing, unsupported_choice, user_modifier,
-    verdict, Gate, Listing, Stance, Throttle, Verdict, Whereto, HOVER_INTERVAL,
+    finish_success, needs_filesystems, open_verdict, stance, standing, takes_files,
+    unsupported_choice, user_modifier, verdict, Gate, Listing, Stance, Throttle, Verdict, Whereto,
+    HOVER_INTERVAL,
 };
-use crate::windows::{wire_error, MAIN};
+use crate::windows::wire_error;
 
 /// A drop from another application, sent to the window that received it.
 pub const EVENT_DROP: &str = "kern://drop";
@@ -272,6 +277,8 @@ struct Drag {
     whereto: Whereto,
     /// By destination folder.
     verdicts: HashMap<PathBuf, Verdict>,
+    /// What is shown over the place where dropped files are opened.
+    opening: Verdict,
     judging: HashSet<PathBuf>,
     /// The refusal last told to the page.
     told: Option<String>,
@@ -292,6 +299,7 @@ impl Drag {
             listing: Listing::Waiting,
             whereto: Whereto::Unknown,
             verdicts: HashMap::new(),
+            opening: open_verdict(context.actions()),
             judging: HashSet::new(),
             told: None,
             left: false,
@@ -302,6 +310,7 @@ impl Drag {
     fn verdict(&self) -> Option<&Verdict> {
         match &self.whereto {
             Whereto::Folder(p) => self.verdicts.get(p),
+            Whereto::Open => Some(&self.opening),
             _ => None,
         }
     }
@@ -313,7 +322,8 @@ type Emit = Box<dyn Fn(&str, Value) -> Result<(), WireError>>;
 /// A webview that takes drags. Lives on the GTK main thread.
 struct Target {
     label: String,
-    main: bool,
+    /// Whether this webview takes files at all ([`takes_files`]).
+    takes_files: bool,
     emit: Emit,
     report: Box<dyn Fn(WireError)>,
     drag: RefCell<Option<Drag>>,
@@ -589,7 +599,7 @@ fn judged(label: &str, drag: u64, dest: PathBuf, answers: Vec<Result<bool, Strin
 
 fn takes(target: &Target, context: &gdk::DragContext) -> Stance {
     stance(
-        target.main,
+        target.takes_files,
         offers_files(target_names(context)),
         context.drag_get_source_widget().is_some(),
     )
@@ -609,7 +619,7 @@ fn connect<R: Runtime, W: IsA<gtk::Widget>>(view: &W, webview: Webview<R>) -> Ve
     let label = webview.label().to_owned();
     let target = Rc::new(Target {
         label: label.clone(),
-        main: label == MAIN,
+        takes_files: takes_files(&label),
         emit: {
             let webview = webview.clone();
             Box::new(move |event, payload| {
@@ -715,6 +725,9 @@ fn connect<R: Runtime, W: IsA<gtk::Widget>>(view: &W, webview: Webview<R>) -> Ve
 pub enum WireTarget {
     /// Over this folder, which takes the files.
     Folder { path: WirePath },
+    /// Over the place where the files are opened (the document area of an
+    /// editor window); nothing is put anywhere.
+    Open,
     /// Over a place that takes none, or one that could not be worked out; the
     /// reason in the user's words.
     Refused { reason: String },
@@ -730,6 +743,7 @@ pub async fn dnd_target<R: Runtime>(
 ) -> Result<(), WireError> {
     let whereto = match target {
         WireTarget::Refused { reason } => Whereto::Refused(reason),
+        WireTarget::Open => Whereto::Open,
         WireTarget::Folder { path } => {
             let p = path
                 .to_path_buf()

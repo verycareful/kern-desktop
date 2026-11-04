@@ -11,7 +11,7 @@ import { useCurrentPlace } from "./use-current-place";
 import { identityNote, volumeErrorText } from "./volume-text";
 import { useVolumes, type Volume } from "./volumes-store";
 
-// Design 4.1 and 5.3: the Volumes group of the strip. Mounted volumes first,
+// The Volumes group of the strip. Mounted volumes first,
 // then the filesystems UDisks knows that are not mounted, each with a Mount
 // button. Unmount and Eject are in the right-click menu (and the Menu key);
 // they run through the action table, aimed at the volume the menu was opened

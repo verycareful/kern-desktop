@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-//! The interface size applied as webview zoom (design 7.2): at startup, on a
+//! The interface size applied as webview zoom: at startup, on a
 //! change of the stored setting, and to every window created afterwards.
 
 use std::collections::BTreeMap;

@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import type { LineEnding } from "../ipc";
 
-// What the status bar shows for a document tab (design D6.2): the cursor
+// What the status bar shows for a document tab: the cursor
 // position, the encoding and the line ending. The editor publishes them here,
 // keyed by tab id, the way the folder view publishes its counts
 // (files/folder-status.ts), so a cursor move re-renders the status bar and not

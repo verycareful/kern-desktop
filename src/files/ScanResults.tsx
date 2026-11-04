@@ -9,7 +9,7 @@ import { formatDate } from "./format";
 import { ROW_HEIGHT } from "./grid-layout";
 import { useViewSettings } from "./view-settings";
 
-// The hits of a search or of the Documents view, as they stream in: name and
+// The hits of a search or of the Library, as they stream in: name and
 // folder per row, virtualized, since a walk may find many thousands. One row
 // is active: the arrow keys, Home and End move it, Enter opens it (Ctrl+Enter
 // in a window of its own), and a double-click opens the row under the pointer.

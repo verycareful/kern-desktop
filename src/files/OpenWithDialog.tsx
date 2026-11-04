@@ -17,7 +17,7 @@ import { Modal } from "../ops/Modal";
 import { errorText } from "../ops/error-text";
 import { useOps } from "../ops/useOps";
 
-// Open with (design 5.6): the applications that say they take the file's type,
+// Open with: the applications that say they take the file's type,
 // and under "Other application..." every application, filtered by name. The
 // chosen one opens the file; with "Always use it for this type" ticked it is
 // made the default for the type first. Application entries that could not be

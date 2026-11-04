@@ -35,7 +35,7 @@ import { useTabs } from "../store/tabs";
 import { closeWindow, isClosing } from "./useCloseGuard";
 import { useProperties } from "../files/properties-store";
 
-// Design 4.4 and 4.5: what the backend tells the main window to do. The
+// What the backend tells the main window to do. The
 // backend queues events for a window until it has asked for them once with
 // open_pending_take, so the window subscribes first, takes the queue, applies
 // it in order and then the live events, which wait behind the queue while it

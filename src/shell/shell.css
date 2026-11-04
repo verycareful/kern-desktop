@@ -2,7 +2,7 @@
 /* Copyright (c) 2026 Sricharan Suresh (github.com/verycareful) */
 
 /*
- * Main window frame. Layout: design 4.1 and 4.3. Look: design_handoff_kern_ui
+ * Main window frame. Look: design_handoff_kern_ui
  * README (tokens, 6px soft radius, mono section labels, 2px line icons).
  */
 .kern-window {
@@ -26,7 +26,7 @@
 }
 
 /*
- * Design 4.1. A folder tab: the places strip and the side panel run
+ * A folder tab: the places strip and the side panel run
  * from the window top down to the status bar; the tab row sits over the folder
  * area only, starting at the strip's right edge and ending at the right third.
  * The left two thirds are the strip and the folder area; the third column is
@@ -200,7 +200,7 @@
   cursor: default;
 }
 
-/* A stub column on each edge around the document (design 4.3). */
+/* A stub column on each edge around the document. */
 .kern-body-doc {
   position: relative;
   display: grid;
@@ -240,7 +240,7 @@
   border-right: 1px solid var(--kern-border);
 }
 
-/* Level with the tab row, kept free (design 4.1). */
+/* Level with the tab row, kept free. */
 .kern-places-slot {
   flex: none;
   height: calc(var(--shell-button) + 6px);
@@ -447,7 +447,7 @@
   top: 0;
   bottom: 0;
   z-index: 10;
-  /* Design 4.1's proportions measured from the window edges: the file manager spans the left two thirds, Pinned and Recent the right third, so slid in together they meet. */
+  /* Proportions measured from the window edges: the file manager spans the left two thirds, Pinned and Recent the right third, so slid in together they meet. */
   width: calc(200% / 3 - var(--shell-stub-width));
   box-shadow: 0 10px 30px color-mix(in srgb, var(--kern-text) 12%, transparent);
 }
@@ -515,7 +515,7 @@
   white-space: nowrap;
 }
 
-/* Design 4.4: a document window, Home at the top left, the document below, the status bar last. */
+/* A document window, Home at the top left, the document below, the status bar last. */
 .kern-doc-window > .kern-doc-area {
   display: flex;
   flex: 1;

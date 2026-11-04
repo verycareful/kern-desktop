@@ -142,8 +142,8 @@ test("sort_100k_under_budget", async () => {
   // structured clone that postMessage makes of it, applying the index
   // permutation that comes back) and the selection carried over to the new
   // order. The collator sort runs in a Web Worker (sort-async.ts), so the stub
-  // answers with a permutation computed outside the timed part. Budget 200 ms
-  // (Review Focus 2): the plan's budget for a refresh of a 100 000-entry
+  // answers with a permutation computed outside the timed part. Budget 200 ms:
+  // the budget for a refresh of a 100 000-entry
   // folder, within the 0.1 s "instantaneous" and 1 s "flow" limits of Nielsen
   // (Usability Engineering, 1993, ch. 5). The sort itself, about 400 ms for
   // such names, is allowed to take longer only because it does not block the

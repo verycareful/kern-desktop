@@ -12,7 +12,7 @@ import { DROP_AREA_ATTR, dropTargetValue } from "./dnd";
 import { DropHover } from "./DropHover";
 import { useOps } from "./useOps";
 
-// What the page does while a drag from another application passes over it (design 5.8): the place
+// What the page does while a drag from another application passes over it: the place
 // under the pointer lights up, the backend is told what it is, and a place that takes nothing says
 // why. The events are those src-tauri/src/dnd.rs sends.
 

@@ -9,6 +9,7 @@ import { useTreeMenu } from "../files/tree-menu-store";
 import { useViewSettings } from "../files/view-settings";
 import { ActionMenu } from "../keys/ActionMenu";
 import type { Action } from "../keys/actions";
+import { DROP_DOCS_ATTR } from "../ops/dnd";
 import { useOps } from "../ops/useOps";
 import { LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, clampWidth, useLayout } from "../store/layout";
 import { usePanels } from "../store/panels";
@@ -20,7 +21,7 @@ import { TabBar } from "./TabBar";
 import { WelcomePane } from "./WelcomePane";
 import { ensureTreeRoot } from "./layout-switch";
 
-// The editor layout (after design D4.1 to D4.3): a resizable left column, a places strip
+// The editor layout a resizable left column, a places strip
 // over a folder tree rooted at the window's folder, that stays docked whatever tab is shown; the tab
 // row and the tab take the centre; Pinned and Recent are folded to the right stub, as beside a
 // document in the file manager layout. Ctrl+B shows or hides the column. The main window shows it
@@ -197,7 +198,11 @@ export function EditorLayout(props: {
           <Splitter />
         </>
       )}
-      <div className="kern-editor-centre">
+      <div
+        className="kern-editor-centre"
+        // Files dropped from another program on an editor window's documents are opened there.
+        {...(isEditorWindow() ? { [DROP_DOCS_ATTR]: "" } : {})}
+      >
         <TabBar allow={props.allow} />
         {props.children}
       </div>

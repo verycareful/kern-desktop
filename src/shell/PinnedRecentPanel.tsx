@@ -13,7 +13,7 @@ import { homeRelative } from "./home-relative";
 import { RELATIVE_TIME_TICK_MS, relativeTime } from "./relative-time";
 import { useUserDirs } from "./user-dirs-store";
 
-// Design 4.1 and 4.2: Pinned on top, Recent below, in the right third. A pin
+// Pinned on top, Recent below, in the right third. A pin
 // shows its parent folder and a recent entry when it was opened, so entries of
 // the same name are told apart. A click opens the entry (a folder in the
 // current folder tab, a file through the open command); right-click, the Menu

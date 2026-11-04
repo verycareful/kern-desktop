@@ -7,7 +7,7 @@ import { useThemeState } from "../theme/theme-state";
 import { ACCENTS, fallbackNote } from "./appearance";
 import { useSettings } from "./settings-store";
 
-// Appearance (design 6.5): the theme mode, Kern's 12 accents, the density,
+// Appearance: the theme mode, Kern's 12 accents, the density,
 // and the four Follow system switches. With a switch on, Kern takes that
 // part from the system (Hyprland, the portal, GTK, fontconfig). Only the
 // accent has a pick the system then replaces, so the accents are shown

@@ -5,8 +5,7 @@ import { plural } from "./labels";
 import { useOps, type OpView } from "./useOps";
 
 // Every file operation in flight, with its progress and a Cancel button that
-// works at any time, a name conflict waiting for an answer included (design
-// 5.1). It sits above the status bar, whichever tab is on show, so an
+// works at any time, a name conflict waiting for an answer included. It sits above the status bar, whichever tab is on show, so an
 // operation started in one tab stays visible from another.
 
 function counts(progress: NonNullable<OpView["progress"]>): string {

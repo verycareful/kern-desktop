@@ -18,7 +18,7 @@ import { showFolder } from "./place-nav";
 import { placeKey, useCurrentPlace } from "./use-current-place";
 import { useUserDirs } from "./user-dirs-store";
 
-// Design 4.1: the Places group of the strip. Home first, then the user's
+// The Places group of the strip. Home first, then the user's
 // folders that exist (user_dirs lists only those): Documents, Downloads and
 // Desktop as the design names them, then the rest in the order the backend
 // gives. A place shows its folder in the current folder tab (place-nav.ts)

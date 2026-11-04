@@ -8,21 +8,21 @@ import {
   createFile,
   pathKey,
   rename as renameItem,
-  sameFilesystem,
   toWireError,
   type WireEntry,
   type WireError,
   type WirePath,
   type WireReport,
 } from "../ipc";
-import { planDrop, type DropChoice, type DropPlan } from "../ops/dnd";
+import type { DropChoice } from "../ops/dnd";
+import { dropItems } from "../ops/drop-items";
 import { baseName, itemsText, namesText } from "../ops/labels";
 import { nameIsText, nameProblem } from "../ops/names";
 import { clearSpentCut } from "../ops/spent-cut";
-import { useOps, type OpEnd } from "../ops/useOps";
+import { useOps } from "../ops/useOps";
 import type { FolderController } from "./folder-controller";
 
-// The file operations of one folder view (design 5.1, 5.7, 5.8): create,
+// The file operations of one folder view: create,
 // rename, copy, cut, paste, trash, delete for good, and what is dropped on the
 // folder. Every one of them acts on what the view hands over as selected, and
 // on nothing else: an item that is only outlined is never touched. The question
@@ -323,47 +323,15 @@ export function useFileOps(args: FileOpsArgs) {
     ask({ kind: "delete", items: list.map((e) => ({ path: e.path, name: e.name })) });
   }, [ask]);
 
-  // What dropped items do (design 5.8): Ctrl copies, Shift moves, and with neither the
-  // filesystems decide per item, in one question to the backend. A move is for the items on the
-  // same filesystem as the destination folder, a copy for the others; an item the backend could
-  // not judge is shown with its error and left alone. The two halves run as two operations, each
-  // reported on its own.
+  // What dropped items do is in ops/drop-items.ts; what landed in the folder on show is selected
+  // once both halves have ended.
   const drop = useCallback(
     async (choice: DropChoice, sources: WirePath[], dest: WirePath) => {
       const here = pathKey(dest) === pathKey(latest.current.folder);
-      let plan: DropPlan;
-      if (choice === "by_filesystem") {
-        try {
-          plan = planDrop(sources, await sameFilesystem(sources, dest));
-        } catch (e) {
-          failAfter(e);
-          return;
-        }
-      } else {
-        plan = {
-          move: choice === "move" ? sources : [],
-          copy: choice === "copy" ? sources : [],
-          failed: [],
-        };
-      }
-      for (const f of plan.failed) failAfter(f.error, f.path);
-      const halves = (
-        [
-          ["move", plan.move],
-          ["copy", plan.copy],
-        ] as const
-      ).filter(([, list]) => list.length > 0);
-      // What landed in the folder on show is selected once both halves have ended.
-      const landed: WirePath[] = [];
-      let open = halves.length;
-      const ended = (end: OpEnd) => {
-        if (here && end.report)
-          landed.push(...end.report.done.flatMap((d) => (d.dest ? [d.dest] : [])));
-        if (--open === 0 && landed.length > 0) showResult(landed);
-      };
-      for (const [kind, list] of halves) {
-        void useOps.getState().start({ kind, sources: list, dest, onEnd: ended });
-      }
+      await dropItems(choice, sources, dest, {
+        failed: failAfter,
+        landed: here ? showResult : undefined,
+      });
     },
     [failAfter, showResult]
   );

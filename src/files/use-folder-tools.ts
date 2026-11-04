@@ -16,8 +16,8 @@ import { useOps } from "../ops/useOps";
 import { openAsEditor as openAsEditorWindow } from "../shell/layout-switch";
 import { isFolder } from "./file-type";
 
-// Copy path, Open terminal here and Open with for a folder view (design 4.5,
-// 5.5, 5.6). Each acts on the selection, or on the folder itself where the
+// Copy path, Open terminal here and Open with for a folder view (each
+// with its own key). Each acts on the selection, or on the folder itself where the
 // selection says nothing: Copy path with nothing selected copies the folder's
 // path, and the terminal opens in the one selected folder or else in the folder
 // on show. What goes wrong is kept as a note for the view to show until it is

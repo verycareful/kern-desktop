@@ -6,7 +6,7 @@ import { ReportBody } from "./ReportPanel";
 import { useOps } from "./useOps";
 
 // The report of an operation that skipped, failed, warned, was cancelled or
-// did not run (design 5.1): shown over the window, whichever tab is on show,
+// did not run: shown over the window, whichever tab is on show,
 // until it is read. Reports queue; closing one shows the next.
 export function ReportDialog() {
   const reports = useOps((s) => s.reports);

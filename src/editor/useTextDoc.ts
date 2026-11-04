@@ -5,6 +5,7 @@ import { Text } from "@codemirror/state";
 import {
   EVENT_DIR_CHANGED,
   EVENT_DIR_GONE,
+  EVENT_DOC_RELEASED,
   docClosed,
   docOpenElsewhere,
   docOpened,
@@ -39,7 +40,7 @@ import { registerDoc } from "./doc-controller";
 import { useDocStatus } from "./doc-status";
 import type { HandedDoc } from "./handed-doc";
 
-// One open text document (design 4.3, 5.4). The hook owns what
+// One open text document. The hook owns what
 // the editor must not lose: the file as it was opened or last saved (stamp,
 // line ending, byte order mark, read-only reason), whether the text differs
 // from it, what the disk says about the file since, and every save.
@@ -415,25 +416,67 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
     const skip = preRegistered.current === key;
     preRegistered.current = null;
     registrationRan.current = true;
-    const registered = registration.current
-      .then(() => (skip ? undefined : docOpened(target, where)))
-      .then(
-        () => true,
-        (e: unknown) => {
-          const err = toWireError(e);
-          if (err.kind === "AlreadyOpen") {
-            // Another place has the file open: this copy is shown, never saved over it.
-            heldElsewhere.current = { kind: "OpenElsewhere", detail: err.message };
-            patch({ readOnly: heldElsewhere.current });
-          } else {
-            say(`${baseName(target)} could not be registered as open: ${errorText(err)}`);
+    // True once the backend holds this document for this place (the first try or a later one).
+    let taken = false;
+    // Whether the last refusal was "another place has it open", which a later try may undo.
+    let refusedAsHeld = false;
+    const tryRegister = (first: boolean) =>
+      registration.current
+        .then(() => (skip && first ? undefined : docOpened(target, where)))
+        .then(
+          () => true,
+          (e: unknown) => {
+            const err = toWireError(e);
+            if (err.kind === "AlreadyOpen") {
+              // Another place has the file open: this copy is shown, never saved over it.
+              refusedAsHeld = true;
+              heldElsewhere.current = { kind: "OpenElsewhere", detail: err.message };
+              patch({ readOnly: heldElsewhere.current });
+            } else {
+              refusedAsHeld = false;
+              say(`${baseName(target)} could not be registered as open: ${errorText(err)}`);
+            }
+            return false;
           }
-          return false;
-        }
-      );
+        );
+    const registered = tryRegister(true);
     registration.current = registered;
+    // A refused tab stays read-only only while the other place has the file: when any place lets
+    // go of a document the registration is tried again, and the tab becomes editable with its
+    // text as it is. One try at a time; the tries and the releases go to the backend in order.
+    let retrying = false;
+    const retry = () => {
+      if (taken || retrying || !alive || !refusedAsHeld) return;
+      retrying = true;
+      const attempt = tryRegister(false);
+      registration.current = attempt;
+      void attempt.then((ok) => {
+        retrying = false;
+        if (!ok) return;
+        taken = true;
+        if (!alive) return;
+        heldElsewhere.current = null;
+        patch({ readOnly: file.current?.readOnly ?? null });
+        latestOpts.current.onRegistered?.(true);
+      });
+    };
     void registered.then((ok) => {
+      taken = ok;
       latestOpts.current.onRegistered?.(ok);
+      if (ok || !refusedAsHeld || !alive) return;
+      on(EVENT_DOC_RELEASED, retry).then(
+        (off) => {
+          if (alive) {
+            unlisten.push(off);
+            // The other place may have let go before this listened.
+            retry();
+          } else off();
+        },
+        (e: unknown) =>
+          say(
+            `${baseName(target)} will not become editable when the other window lets go of it: ${errorText(toWireError(e))}`
+          )
+      );
     });
 
     const stopWatch = () => {
@@ -511,8 +554,8 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
       // a Save As target included, whether or not this path's registration was taken. A path
       // released because the document moved to another file releases only that path.
       const gone = unmounted.current;
-      registration.current = registered.then((ok) => {
-        if (!ok && !gone) return;
+      registration.current = registration.current.then(() => {
+        if (!taken && !gone) return;
         return (gone ? docClosed(target, where, true) : docClosed(target, where)).catch(
           (e: unknown) =>
             say(`${baseName(target)} could not be released: ${errorText(toWireError(e))}`)

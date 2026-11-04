@@ -14,7 +14,7 @@ import { moveDocHome } from "./move-doc";
 import { StatusBar } from "./StatusBar";
 import "./shell.css";
 
-// A standalone document window (design 4.4): only the document, with Home at
+// A standalone document window: only the document, with Home at
 // the top left and the status bar along the bottom; no tabs and no side panels.
 // Its document is a document tab of this window's own store, under the
 // window's label, registered with the backend as open in this window. Home

@@ -3,7 +3,7 @@
 import { clipClearIf, toWireError, type WirePath } from "../ipc";
 import { useOps } from "./useOps";
 
-// A cut that was pasted and fully moved is taken off the clipboard (design 5.8), if the
+// A cut that was pasted and fully moved is taken off the clipboard, if the
 // clipboard still holds exactly that cut. The backend can only reach the clipboard while the
 // window has the focus (Wayland gives it to a focused window alone) and says so with
 // `NoFocus`. A move can end while the user is in another application, so that is not an

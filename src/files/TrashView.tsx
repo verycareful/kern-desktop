@@ -48,13 +48,13 @@ import { useCurrentItem } from "./use-current-item";
 import { useKeepKeyboard } from "./use-keep-keyboard";
 import "./files.css";
 
-// Design 5.2: the Trash lists the home trash and the trashes of the mounted
+// The Trash lists the home trash and the trashes of the mounted
 // volumes with each item's original path and deletion time. Restore and
 // Delete permanently act on the selected items; Empty Trash runs as the
 // empty_trash operation, with progress. Deleting for good and emptying are
-// confirmed, and say that they cannot be undone (5.7). Every item travels as
+// confirmed, and say that they cannot be undone. Every item travels as
 // the WireTrashedItem the listing gave, so a name that is not UTF-8 is acted
-// on with its real bytes (Review Focus 1). Whatever fails is shown by a
+// on with its real bytes. Whatever fails is shown by a
 // report panel (src/ops/ReportPanel.tsx).
 
 const HEADER_HEIGHT = 32;
@@ -326,7 +326,7 @@ export function TrashView(props: { tab: TrashTab }) {
     });
   }, [tabId, dispatch, act, refresh, askEmpty]);
 
-  // The status bar's counts (design 4.1).
+  // The status bar's counts.
   useEffect(() => {
     useFolderStatus.getState().set(tabId, {
       items: items.length,

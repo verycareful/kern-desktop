@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-//! Persistent settings, pins and recents (parent spec section 6.3).
+//! Persistent settings, pins and recents.
 //!
 //! Four JSON files: `settings.json` under `$XDG_CONFIG_HOME/kern/`, and
 //! `pins.json`, `recents.json` and `layout.json` (how the main window is laid
@@ -82,7 +82,7 @@ pub const LEFT_WIDTH_MAX: u32 = 640;
 /// The left column's width before the user drags it.
 pub const LEFT_WIDTH_DEFAULT: u32 = 280;
 
-/// The two layouts of a window (design D4.1 to D4.3 and the editor layout).
+/// The two layouts of a window (the file manager and the editor layout).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LayoutKind {

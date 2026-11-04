@@ -419,7 +419,7 @@ test("the_window_follow_reads_the_pins_and_does_not_prune", async () => {
   expect(ipc.prune).not.toHaveBeenCalled();
   expect(usePinnedRecent.getState().pins).toEqual([p("/home/t/Work")]);
 
-  // The panel shown later prunes, as design 4.2 says.
+  // The panel shown later prunes.
   ipc.prune.mockResolvedValue(report(["/home/t/Work"]));
   await usePinnedRecent.getState().follow();
   expect(ipc.prune).toHaveBeenCalledTimes(1);

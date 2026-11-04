@@ -10,8 +10,9 @@ use std::time::{Duration, Instant};
 
 use gtk::gdk::DragAction;
 use kern_lib::drop_rule::{
-    finish_success, navigation_allowed, needs_filesystems, stance, standing, unsupported_choice,
-    user_modifier, Gate, Listing, Stance, Throttle, Verdict, Whereto, HOVER_INTERVAL,
+    finish_success, navigation_allowed, needs_filesystems, open_verdict, stance, standing,
+    takes_files, unsupported_choice, user_modifier, Gate, Listing, Stance, Throttle, Verdict,
+    Whereto, HOVER_INTERVAL,
 };
 
 const BOTH: DragAction =
@@ -48,6 +49,16 @@ fn a_drag_whose_source_is_kerns_own_widget_is_refused() {
 fn a_document_window_refuses_files() {
     assert_eq!(stance(false, true, false), Stance::Refuse);
     assert_eq!(stance(false, true, true), Stance::Refuse);
+}
+
+#[test]
+fn the_main_window_and_editor_windows_take_files_and_document_windows_do_not() {
+    for label in ["main", "editor-1", "editor-12"] {
+        assert!(takes_files(label), "{label}");
+    }
+    for label in ["doc-1", "editor-", "editor-x", "other", ""] {
+        assert!(!takes_files(label), "{label}");
+    }
 }
 
 // ---- what the pointer shows ----
@@ -191,6 +202,43 @@ fn a_folder_with_a_verdict_shows_the_verdicts_action() {
     assert_eq!(s.refusal, None);
     let none = verdict_of(BOTH, &[None]);
     let s = standing(&ready(), &Whereto::Folder(PathBuf::from("/d")), Some(&none));
+    assert_eq!(s.action, DragAction::empty());
+    assert!(s.refusal.is_some());
+}
+
+// ---- opening what is dropped on the document area ----
+
+#[test]
+fn files_dropped_to_be_opened_show_a_copy_when_it_is_offered_and_otherwise_what_is_offered() {
+    // Nothing is moved or copied, so no disk is looked at; a copy takes nothing from the source.
+    for offered in [BOTH, DragAction::COPY, BOTH | DragAction::LINK] {
+        let v = open_verdict(offered);
+        assert_eq!(v.action, DragAction::COPY, "{offered:?}");
+        assert_eq!((v.moves, v.copies, v.refusal), (0, 0, None));
+    }
+    assert_eq!(open_verdict(DragAction::MOVE).action, DragAction::MOVE);
+}
+
+#[test]
+fn files_dropped_to_be_opened_are_refused_when_the_source_allows_neither_copy_nor_move() {
+    for offered in [DragAction::LINK, DragAction::empty(), DragAction::ASK] {
+        let v = open_verdict(offered);
+        assert_eq!(v.action, DragAction::empty());
+        assert!(v.refusal.is_some());
+    }
+}
+
+#[test]
+fn a_pointer_over_the_document_area_shows_the_opening_verdict() {
+    let open = open_verdict(BOTH);
+    let s = standing(&ready(), &Whereto::Open, Some(&open));
+    assert_eq!(s.action, DragAction::COPY);
+    assert_eq!(s.refusal, None);
+    // As for a folder: nothing before the list is read, and a refusal carries its reason.
+    let s = standing(&Listing::Waiting, &Whereto::Open, Some(&open));
+    assert_eq!(s.action, DragAction::empty());
+    let refused = open_verdict(DragAction::LINK);
+    let s = standing(&ready(), &Whereto::Open, Some(&refused));
     assert_eq!(s.action, DragAction::empty());
     assert!(s.refusal.is_some());
 }

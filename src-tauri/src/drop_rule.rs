@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
 //! What Kern answers a drag from another application with, as plain
-//! functions (design 5.8; the GTK signals that use them are in [`crate::dnd`]).
+//! functions (the GTK signals that use them are in [`crate::dnd`]).
 //!
 //! The pointer must show what Kern will do. A drop with no modifier moves what
 //! is on the destination's filesystem and copies the rest, item by item (a move
@@ -30,6 +30,8 @@ use std::time::{Duration, Instant};
 use gtk::gdk::DragAction;
 use tauri::Url;
 
+use crate::windows::{window_kind, WindowKind};
+
 /// Shortest time between two forwarded pointer positions. The page only
 /// highlights a place and answers; 50 ms (20 positions a second) keeps a
 /// highlight within the 100 ms in which a response to a pointer feels
@@ -48,18 +50,30 @@ pub enum Stance {
     Take,
 }
 
-/// `is_main` is whether the webview is the main window's, `offers_files`
-/// whether the drag offers a list of files, `own_source` whether the widget the
-/// drag started from is one of this process's own (the native drag Kern starts
-/// when an item leaves the window; dragging inside Kern is pointer events).
-pub fn stance(is_main: bool, offers_files: bool, own_source: bool) -> Stance {
+/// `takes_files` is whether the webview is one that takes files (see
+/// [`takes_files`]), `offers_files` whether the drag offers a list of files,
+/// `own_source` whether the widget the drag started from is one of this
+/// process's own (the native drag Kern starts when an item leaves the window;
+/// dragging inside Kern is pointer events).
+pub fn stance(takes_files: bool, offers_files: bool, own_source: bool) -> Stance {
     if !offers_files {
         Stance::NotOurs
-    } else if !is_main || own_source {
+    } else if !takes_files || own_source {
         Stance::Refuse
     } else {
         Stance::Take
     }
+}
+
+/// Whether the window labelled `label` takes files dropped from other
+/// applications: the main window, which has folder views, and the editor
+/// windows, which have a folder tree and open text files. A document window
+/// shows one document and has nowhere to put files.
+pub fn takes_files(label: &str) -> bool {
+    matches!(
+        window_kind(label),
+        Some(WindowKind::Main | WindowKind::Editor)
+    )
 }
 
 /// True when the filesystems decide: the other application allows both copy
@@ -133,6 +147,30 @@ pub fn verdict<E: Display>(offered: DragAction, same: &[Result<bool, E>]) -> Ver
     }
 }
 
+/// The verdict for files dropped where they are opened: nothing is moved or
+/// copied, so no filesystem is looked at and the source loses nothing. A copy
+/// is shown when the source offers one; a source that offers only a move is
+/// shown a move (the drop is then finished as a failure, see
+/// [`finish_success`], and the source deletes nothing).
+pub fn open_verdict(offered: DragAction) -> Verdict {
+    let usable = offered & (DragAction::COPY | DragAction::MOVE);
+    if usable.is_empty() {
+        return Verdict::refused(
+            "the other application allows neither copy nor move, which is all Kern does with dropped files",
+        );
+    }
+    Verdict {
+        action: if usable.contains(DragAction::COPY) {
+            DragAction::COPY
+        } else {
+            usable
+        },
+        moves: 0,
+        copies: 0,
+        refusal: None,
+    }
+}
+
 /// The list of files a drag offers, as far as it has been read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Listing {
@@ -153,6 +191,9 @@ pub enum Whereto {
     Refused(String),
     /// Over this folder.
     Folder(PathBuf),
+    /// Over the place where the dropped files are opened, not put anywhere
+    /// ([`open_verdict`]).
+    Open,
 }
 
 /// What Kern answers now, and why when it declines.
@@ -173,7 +214,7 @@ pub fn standing(listing: &Listing, whereto: &Whereto, verdict: Option<&Verdict>)
         (Listing::Waiting, _) => none(None),
         (Listing::Ready(_), Whereto::Unknown) => none(None),
         (Listing::Ready(_), Whereto::Refused(why)) => none(Some(why.clone())),
-        (Listing::Ready(_), Whereto::Folder(_)) => match verdict {
+        (Listing::Ready(_), Whereto::Folder(_) | Whereto::Open) => match verdict {
             None => none(None),
             Some(v) => Standing {
                 action: v.action,

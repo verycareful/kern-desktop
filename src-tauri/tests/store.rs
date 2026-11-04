@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-//! The settings, pins and recents store (parent spec section 6.3).
+//! The settings, pins and recents store.
 
 use std::ffi::OsString;
 use std::fs;

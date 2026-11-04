@@ -21,10 +21,10 @@ import { StatusBar } from "./StatusBar";
 import { TabBar } from "./TabBar";
 import "./shell.css";
 
-// Design 4.1: the places strip and Pinned and Recent run the full
+// The places strip and Pinned and Recent run the full
 // height of the window (the strip on the left, Pinned and Recent on the right
 // third); the tab row sits over the folder area between them. In a document tab
-// (4.3) the tab row spans the window and both panels are folded to stubs that
+// the tab row spans the window and both panels are folded to stubs that
 // slide them over the document. The status bar spans the bottom.
 export default function MainWindow(props: { openingHome?: boolean; starting?: boolean }) {
   useShortcuts();
@@ -34,6 +34,10 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
   // How the window is laid out is remembered across restarts (layout.json).
   useLayoutSync(true);
   const editorLayout = useLayout((s) => s.layout === "editor");
+  // No layout is drawn until the stored one has been read, so the layout the window was left in
+  // is the first one it shows. A layout that cannot be read still ends the wait (the defaults
+  // stand and the failure is said, use-layout-sync.ts).
+  const layoutReady = useLayout((s) => s.loaded);
   // Pinned and Recent is followed while the window is open, not only while its panel shows:
   // a document tab folds the panel away, and Ctrl+D there reads whether the document is pinned.
   useEffect(() => {
@@ -64,7 +68,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
       </main>
     );
   } else if (tab.kind === "folder" || isPlaceTab(tab)) {
-    // The Trash and All documents take the folder area; the strip and Pinned and Recent are as for a folder.
+    // The Trash and the Library take the folder area; the strip and Pinned and Recent are as for a folder.
     layout = "folder";
     body = (
       <>
@@ -79,7 +83,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
 
   // Every document tab keeps its editor mounted, the ones not shown hidden: the
   // unsaved text, the undo history and the watch on the file belong to the tab,
-  // not to which tab is on show. The panels folded to stubs (4.3) belong to the
+  // not to which tab is on show. The panels folded to stubs belong to the
   // document layout only.
   const docBody = docs.length > 0 && (
     <div className="kern-body-doc" hidden={layout !== "doc"} data-testid="doc-body">
@@ -104,7 +108,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
 
   return (
     <div className="kern-window" data-testid="main-window">
-      {editorLayout ? (
+      {!layoutReady ? null : editorLayout ? (
         <EditorLayout>
           <EditorCentre tab={tab} docs={docs} starting={props.starting} />
         </EditorLayout>

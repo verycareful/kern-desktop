@@ -8,7 +8,7 @@ import {
   zoomFactor,
 } from "./interface-size";
 
-// Design 7.2 and the maintainer's ruling: 80, 90, 100, 110 and 125 percent, 90 by default.
+// The sizes are 80, 90, 100, 110 and 125 percent, 90 by default.
 test("the_sizes_and_the_default_are_the_ruled_ones", () => {
   expect([...INTERFACE_SIZES]).toEqual([80, 90, 100, 110, 125]);
   expect(DEFAULT_INTERFACE_SIZE).toBe(90);

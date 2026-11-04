@@ -4,7 +4,7 @@
 //! Windows, the open rules applied, and what the frontend is told.
 //!
 //! Windows are `main` (browsing, created on demand), `doc-<n>` (standalone
-//! documents, design D4.4) and `editor-<n>` (an editor window rooted at one
+//! documents) and `editor-<n>` (an editor window rooted at one
 //! folder, with tabs of its own). Directives for a window go out as
 //! events on [`EVENT_OPEN`] (and [`EVENT_ADOPT_DOC`]). A window that has not
 //! yet asked for its backlog with `open_pending_take` has them queued, so a
@@ -13,8 +13,8 @@
 //!
 //! Closing: `CloseRequested` is always prevented and
 //! [`EVENT_CLOSE_REQUESTED`] emitted; the window closes only when its
-//! frontend calls `confirm_close` after its save / discard / cancel prompt
-//! (parent spec 6.2). A frontend that never answers leaves the window open:
+//! frontend calls `confirm_close` after its save / discard / cancel prompt.
+//! A frontend that never answers leaves the window open:
 //! Kern does not force it, since that could discard unsaved text; the user
 //! can still end the process.
 
@@ -24,7 +24,7 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use kernkraft_tauri::{KernkraftExt, WireError, WirePath};
+use kernkraft_tauri::{KernkraftExt, WireError, WireOpened, WirePath};
 use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{
@@ -41,6 +41,10 @@ use crate::open::{
 use crate::store_cmds::StoreState;
 
 pub const EVENT_OPEN: &str = "kern://open";
+/// A document was let go of by the place that held it (a tab closed, a window went): every
+/// window is told, so a tab that was refused because that place had the file open can register
+/// again. No payload; the tab asks the backend, which still knows who holds what.
+pub const EVENT_DOC_RELEASED: &str = "kern://doc-released";
 pub const EVENT_ADOPT_DOC: &str = "kern://adopt-doc";
 pub const EVENT_ADOPT_CANCELLED: &str = "kern://adopt-cancelled";
 pub const EVENT_OPEN_ERROR: &str = "kern://open-error";
@@ -103,7 +107,7 @@ pub const SWEEP_BOUND: Duration = Duration::from_secs(2);
 /// enough in practice and the bound only stops a storm of them.
 const MAX_SWEEPS: usize = 5;
 
-/// Size of a standalone document window (my call, D4.4 gives none).
+/// Size of a standalone document window (no size is specified; this fits a page of text).
 const DOC_SIZE: (f64, f64) = (900.0, 700.0);
 const DOC_MIN_SIZE: (f64, f64) = (480.0, 320.0);
 
@@ -172,7 +176,7 @@ pub struct WindowState {
     pub open: OpenRegistry,
     inner: Mutex<Inner>,
     /// Held while a path is checked against the registry and reserved, so
-    /// two launches of one file cannot both make a window (D4.5).
+    /// two launches of one file cannot both make a window.
     ///
     /// Rule: nothing under the gate creates a window, waits for the main
     /// thread or touches the file system. Window creation blocks its caller
@@ -274,6 +278,17 @@ async fn under_gate<T>(
     }
     let _gate = st.lock_gate();
     Ok(act(&st.open.snapshot().unlooked(path)))
+}
+
+/// Makes the registry tell every window (`EVENT_DOC_RELEASED`) when a path is let go.
+pub fn announce_releases<R: Runtime>(app: &AppHandle<R>) -> Result<(), WireError> {
+    let st = state(app)?;
+    let handle = app.clone();
+    st.open.on_release(Arc::new(move || {
+        // A window that cannot be told learns on its next try; there is nobody to report to.
+        let _ = handle.emit(EVENT_DOC_RELEASED, ());
+    }));
+    Ok(())
 }
 
 /// What is said when the registered documents could not all be looked at.
@@ -510,13 +525,15 @@ async fn is_text<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Result<bool, Wi
 
 /// Opens `files` with their default applications in one kernkraft
 /// `open_default` call: one launch per application with all of its files,
-/// and nothing opened when any file has no default application. `prelaunch`
-/// follows the same rules for a launch that needs no window, so the same
-/// arguments start the same launches with or without a running Kern.
+/// nothing started when any file has no default application, and otherwise
+/// one answer per application, so an application that fails to start does
+/// not hide the ones that started. `prelaunch` follows the same rules for a
+/// launch that needs no window, so the same arguments start the same
+/// launches with or without a running Kern.
 async fn open_default_apps<R: Runtime>(
     app: &AppHandle<R>,
     files: Vec<PathBuf>,
-) -> Result<(), WireError> {
+) -> Result<Vec<WireOpened>, WireError> {
     let terminal = match app.try_state::<StoreState>() {
         Some(s) => {
             let store = s.store()?;
@@ -527,6 +544,53 @@ async fn open_default_apps<R: Runtime>(
     let kk = app.kernkraft();
     let wps = files.iter().map(|f| WirePath::from(f.as_path())).collect();
     blocking(move || kk.open_default(wps, terminal)).await
+}
+
+/// Marks as failed the outcomes of the files whose application did not
+/// start, each with its application's error. `defaults` pairs an index in
+/// `out` with the file it was asked for; `result` is what
+/// [`open_default_apps`] answered: an `Err` is the failure of every file.
+fn apply_default_results(
+    out: &mut [OpenOutcome],
+    defaults: &[(usize, PathBuf)],
+    result: Result<Vec<WireOpened>, WireError>,
+) {
+    let fail = |o: &mut OpenOutcome, e: &WireError| {
+        o.action = "failed";
+        o.error = Some(e.clone());
+    };
+    match result {
+        Err(e) => {
+            for (i, _) in defaults {
+                fail(&mut out[*i], &e);
+            }
+        }
+        Ok(opened) => {
+            let at: HashMap<&Path, usize> =
+                defaults.iter().map(|(i, p)| (p.as_path(), *i)).collect();
+            for group in opened {
+                let Some(e) = group.error else { continue };
+                for wp in &group.paths {
+                    // A path that cannot be read back is not one this call sent.
+                    let index = wp
+                        .to_path_buf()
+                        .ok()
+                        .and_then(|p| at.get(p.as_path()).copied());
+                    match index {
+                        Some(i) => fail(&mut out[i], &e),
+                        None => {
+                            // Not matched: every file of the group is marked rather than none.
+                            for (i, _) in defaults {
+                                if out[*i].error.is_none() && out[*i].action == "default_app" {
+                                    fail(&mut out[*i], &e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// What a path is and which file it resolves to, or why that is unknown.
@@ -553,8 +617,8 @@ async fn resolve<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Resolved {
 /// Applies the rules to `paths` and does what they say, one outcome per
 /// path in order. `token` is the activation token of the launch, empty for
 /// a click inside Kern. The files for default applications are opened
-/// together at the end (see [`open_default_apps`]); if that fails, each of
-/// them carries the error.
+/// together at the end (see [`open_default_apps`]); each file of an
+/// application that did not start carries that application's error.
 pub async fn open_paths_impl<R: Runtime>(
     app: &AppHandle<R>,
     paths: Vec<PathBuf>,
@@ -598,12 +662,8 @@ pub async fn open_paths_in<R: Runtime>(
         return out;
     }
     let files = defaults.iter().map(|(_, p)| p.clone()).collect();
-    if let Err(e) = open_default_apps(app, files).await {
-        for (i, _) in &defaults {
-            out[*i].action = "failed";
-            out[*i].error = Some(e.clone());
-        }
-    }
+    let result = open_default_apps(app, files).await;
+    apply_default_results(&mut out, &defaults, result);
     out
 }
 
@@ -1130,7 +1190,9 @@ fn registry_busy() -> WireError {
 /// when it does. When a registered document's file does not answer a look in
 /// time the question cannot be answered, and the call fails (`OpenCheck`)
 /// naming the path that did not answer: nothing is held and nothing is
-/// written over a file that may be open elsewhere.
+/// written over a file that may be open elsewhere. The document's own file
+/// is left out of that check: a Save As that rescues the text from a mount
+/// that stopped answering goes on (nothing else can have that file open).
 #[tauri::command]
 pub async fn doc_open_elsewhere<R: Runtime>(
     app: AppHandle<R>,
@@ -1179,8 +1241,8 @@ pub fn open_pending_take<R: Runtime>(
     Ok(inner.pending.remove(window.label()).unwrap_or_default())
 }
 
-/// Detaches a document tab of the calling window into a window of its own
-/// (D4.5). `text_state` is the tab's editor state, handed to the window
+/// Detaches a document tab of the calling window into a window of its own.
+/// `text_state` is the tab's editor state, handed to the window
 /// untouched, so unsaved text moves with the document.
 ///
 /// The tab is not given up until the new window says it holds the document
@@ -1409,7 +1471,7 @@ pub async fn open_editor<R: Runtime>(
     Ok(label)
 }
 
-/// Home button of a standalone window (D4.4): the document moves into a tab
+/// Home button of a standalone window: the document moves into a tab
 /// of `main`, creating `main` with a Home folder tab if absent. `text_state`
 /// is the window's editor state, passed through untouched. The window closes
 /// only after `main` answers with `adopted(label)`; if that does not come

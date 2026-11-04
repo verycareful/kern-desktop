@@ -67,6 +67,8 @@ async function slideIn() {
   const folderId = useTabs.getState().activeId!;
   useTabs.getState().openDoc(p("/d/old.md"));
   render(<MainWindow />);
+  // The window draws once its stored layout is read.
+  await screen.findByTestId("main-grid");
   fireEvent.click(screen.getByRole("button", { name: "File manager panel" }));
   await waitFor(() => expect(screen.getAllByTestId("file-row")).toHaveLength(1));
   await stripSettled();
@@ -101,7 +103,7 @@ test("opening_a_file_in_the_slid_in_panel_asks_the_backend_for_a_document_tab", 
   ]);
   fireEvent.doubleClick(screen.getByTestId("file-row"));
   await waitFor(() => expect(ipc.openPaths).toHaveBeenCalled());
-  // Origin "inside": the backend decides and sends the directive that opens the tab (design 4.3).
+  // Origin "inside": the backend decides and sends the directive that opens the tab.
   expect(ipc.openPaths).toHaveBeenCalledWith([p("/d/sub/n.txt")], "inside", "default");
 });
 

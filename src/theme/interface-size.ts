@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-// The interface size (design 7.2): the percentage the whole interface is
+// The interface size: the percentage the whole interface is
 // zoomed to, the same in every window. The backend applies it as the webview's
 // zoom (store.rs INTERFACE_SIZES holds the same list); this file steps through
 // the sizes. It is independent of the density and of the editor's text zoom.

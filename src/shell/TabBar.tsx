@@ -59,7 +59,7 @@ function NavButton(props: { id: string; icon: typeof ArrowLeft }) {
 type OpenMenu =
   { kind: "tab"; x: number; y: number; targetId: string } | { kind: "app"; x: number; y: number };
 
-// Design 4.1: the tab row and the navigation buttons sit over the
+// The tab row and the navigation buttons sit over the
 // folder area. The breadcrumb and editable location bar are in the folder
 // view, under this row.
 export function TabBar(props: { allow?: (a: Action) => boolean }) {

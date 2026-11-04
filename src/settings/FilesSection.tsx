@@ -20,7 +20,7 @@ import { errorText } from "../ops/error-text";
 import { useUserDirs } from "../shell/user-dirs-store";
 import { useSettings } from "./settings-store";
 
-// Files: the folders All documents walks (Documents and
+// Files: the folders the Library walks (Documents and
 // Downloads, and folders of the user's own), whether hidden items show and
 // list or grid in a new folder view, the layout of a window that has none yet, the Terminal command, and whether Kern
 // is the default file manager (default_fm.rs: the inode/directory default, and the
@@ -73,7 +73,7 @@ function ScanRoots(props: { settings: Settings }) {
 
   return (
     <fieldset>
-      <legend>Folders All documents also walks</legend>
+      <legend>Folders the Library also walks</legend>
       {roots.length === 0 ? (
         <p className="kern-settings-note">None besides Documents and Downloads.</p>
       ) : (
@@ -262,7 +262,7 @@ export function FilesSection(props: { settings: Settings }) {
     <section className="kern-settings-section" aria-labelledby={`${id}-h`}>
       <h2 id={`${id}-h`}>Files</h2>
       <fieldset>
-        <legend>All documents</legend>
+        <legend>Library</legend>
         <label className="kern-settings-choice">
           <input
             type="checkbox"

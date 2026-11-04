@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import type { WirePath } from "../ipc";
 
-// The items whose Properties are on show (design 5.1): asked for from a
+// The items whose Properties are on show: asked for from a
 // folder view (Alt+Enter, the menus) or by another program through
 // FileManager1.ShowItemProperties (kern://properties). One dialog at a time;
 // a new request replaces the one on show.

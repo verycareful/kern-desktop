@@ -420,6 +420,77 @@ test("a_file_another_place_has_open_is_refused_to_the_tab_which_shows_it_read_on
   expect(hook.result.current.readOnly?.kind).toBe("OpenElsewhere");
 });
 
+test("a_tab_refused_because_another_place_had_the_file_registers_again_when_that_place_lets_go", async () => {
+  const held = wireError("AlreadyOpen", "this file is already open in a tab of the main window");
+  ipc.docOpened.mockRejectedValue(held);
+  const registered = vi.fn();
+  const hook = renderHook(() => useTextDoc("t1", FILE, { onRegistered: registered }));
+  await waitFor(() => expect(hook.result.current.readOnly?.kind).toBe("OpenElsewhere"));
+  await waitFor(() => expect(handlers["kern://doc-released"]).toBeDefined());
+  type(hook, "my edits");
+  // Something else was let go while the file is still held: it asks again and is refused again.
+  const asked = ipc.docOpened.mock.calls.length;
+  await emit("kern://doc-released", null);
+  await waitFor(() => expect(ipc.docOpened.mock.calls.length).toBeGreaterThan(asked));
+  expect(hook.result.current.readOnly?.kind).toBe("OpenElsewhere");
+  await act(() => hook.result.current.save());
+  expect(ipc.textSave).not.toHaveBeenCalled();
+  useOps.setState({ notice: null });
+  // The other place lets go: the tab is registered and editable, and its text is untouched.
+  ipc.docOpened.mockResolvedValue(undefined);
+  await emit("kern://doc-released", null);
+  await waitFor(() => expect(hook.result.current.readOnly).toBeNull());
+  expect(hook.result.current.dirty).toBe(true);
+  expect(useOps.getState().notice).toBeNull();
+  await act(() => hook.result.current.save());
+  expect(ipc.textSave).toHaveBeenCalledWith(FILE, "my edits", "lf", false, {
+    kind: "unchanged",
+    stamp: S0,
+  });
+  // It is a registered tab now: closing it lets the file go, and nothing asks again.
+  const calls = ipc.docOpened.mock.calls.length;
+  await emit("kern://doc-released", null);
+  expect(ipc.docOpened.mock.calls.length).toBe(calls);
+  hook.unmount();
+  await Promise.resolve();
+  expect(ipc.docClosed).toHaveBeenCalledWith(
+    FILE,
+    { kind: "tab", window: "main", tab_id: "t1" },
+    true
+  );
+});
+
+test("a_tab_that_was_never_refused_does_not_ask_again_when_a_place_lets_go", async () => {
+  const hook = await mount();
+  expect(handlers["kern://doc-released"]).toBeUndefined();
+  expect(hook.result.current.readOnly).toBeNull();
+  expect(ipc.docOpened).toHaveBeenCalledTimes(1);
+});
+
+test("a_refused_tab_whose_own_file_is_read_only_stays_read_only_for_that_reason", async () => {
+  ipc.textOpen.mockResolvedValue(
+    opened({ read_only: { kind: "MixedLineEndings", detail: "mixed" } as WireText["read_only"] })
+  );
+  ipc.docOpened.mockRejectedValue(wireError("AlreadyOpen", "open elsewhere"));
+  const hook = renderHook(() => useTextDoc("t1", FILE));
+  await waitFor(() => expect(hook.result.current.readOnly?.kind).toBe("OpenElsewhere"));
+  await waitFor(() => expect(handlers["kern://doc-released"]).toBeDefined());
+  ipc.docOpened.mockResolvedValue(undefined);
+  await emit("kern://doc-released", null);
+  await waitFor(() => expect(hook.result.current.readOnly?.kind).toBe("MixedLineEndings"));
+});
+
+test("a_retry_that_fails_for_another_reason_is_said_and_the_tab_stays_read_only", async () => {
+  ipc.docOpened.mockRejectedValue(wireError("AlreadyOpen", "open elsewhere"));
+  const hook = renderHook(() => useTextDoc("t1", FILE));
+  await waitFor(() => expect(hook.result.current.readOnly?.kind).toBe("OpenElsewhere"));
+  await waitFor(() => expect(handlers["kern://doc-released"]).toBeDefined());
+  ipc.docOpened.mockRejectedValue(wireError("Internal", "no registry"));
+  await emit("kern://doc-released", null);
+  await waitFor(() => expect(useOps.getState().notice?.text).toMatch(/no registry/));
+  expect(hook.result.current.readOnly?.kind).toBe("OpenElsewhere");
+});
+
 test("a_watch_that_cannot_be_set_is_said", async () => {
   ipc.watchDir.mockRejectedValue(wireError("Io", "no inotify watches left"));
   const hook = renderHook(() => useTextDoc("t1", FILE));

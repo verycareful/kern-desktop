@@ -57,6 +57,9 @@ pub fn run() {
         .setup(move |app| {
             app.manage(store_cmds::StoreState::from_env());
             app.manage(windows::WindowState::default());
+            if let Err(e) = windows::announce_releases(app.handle()) {
+                eprintln!("kern: {e:?}");
+            }
             app.manage(launches);
             store_cmds::apply_at_startup(app.handle());
             match role {

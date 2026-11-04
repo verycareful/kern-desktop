@@ -13,7 +13,7 @@ import { stubLayout } from "./test-layout";
 import { useViewSettings } from "./view-settings";
 
 // The interface zoom scales the picture area on screen, so the thumbnail size
-// is chosen from the size in device pixels (design 5.4).
+// is chosen from the size in device pixels.
 
 let restore: () => void;
 beforeEach(() => {

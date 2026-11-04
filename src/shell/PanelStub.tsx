@@ -3,7 +3,7 @@
 import { Folder, Menu } from "lucide-react";
 import { currentContext, getAction, runAction } from "../keys/actions";
 
-// Design 4.3: in a document tab each side panel folds to one button on its
+// In a document tab each side panel folds to one button on its
 // edge. The left one is a folder icon, the right one the three-line icon.
 // The button runs the panel toggle action from the table.
 export function PanelStub(props: { side: "left" | "right"; expanded: boolean }) {

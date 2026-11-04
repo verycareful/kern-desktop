@@ -15,7 +15,8 @@ use std::time::Duration;
 use common::{env, env_with, invoke, tab, wait_for, wp, Answer, QUIET};
 use kern_lib::open::{FileId, Location, Stat};
 use kern_lib::windows::{
-    WindowState, EVENT_ADOPT_CANCELLED, EVENT_ADOPT_DOC, EVENT_CLOSE_REQUESTED, EVENT_OPEN,
+    WindowState, EVENT_ADOPT_CANCELLED, EVENT_ADOPT_DOC, EVENT_CLOSE_REQUESTED, EVENT_DOC_RELEASED,
+    EVENT_OPEN,
 };
 use serde_json::{json, Value};
 use tauri::test::MockRuntime;
@@ -616,7 +617,7 @@ fn a_text_file_opened_inside_an_editor_window_opens_a_tab_there() {
     assert_eq!(out[0]["action"], json!("doc_tab"));
     let q = e.take("editor-1");
     assert_eq!(q[1]["payload"], json!({"kind": "doc_tab", "path": wp(&a)}));
-    // From the main window the same click is a tab of main, as D4.3 says.
+    // From the main window the same click is a tab of main, as for any click inside a window that holds tabs.
     e.call_from(
         "main",
         "open_paths",
@@ -1605,6 +1606,46 @@ fn a_path_that_did_not_answer_refuses_save_as_by_name_and_is_said_by_an_open_tha
 }
 
 #[test]
+fn save_as_of_a_document_on_a_stuck_mount_is_not_held_up_by_its_own_file() {
+    let t = tempfile::tempdir().unwrap();
+    let hung = t.path().join("never-mind");
+    let stuck = Stuck::new(&[&hung]);
+    let e = env_looking(&stuck, Duration::from_millis(300));
+    let (a, b, target) = (e.text("a.txt"), e.text("b.txt"), e.files.join("rescue.txt"));
+    e.with_main();
+    editor(&e);
+    register(&e, "editor-1", "t1", &a);
+    register(&e, "main", "t2", &b);
+    let own = tab("editor-1", "t1");
+    // The document's own file has stopped answering: the rescue copy to another place goes on.
+    stuck.hung.lock().unwrap().insert(a.clone());
+    assert_eq!(
+        save_as_to(&e, "editor-1", &target, &own, true).unwrap(),
+        json!({"state": "free"})
+    );
+    // The target is held for the document, as for any Save As that is allowed.
+    assert_eq!(
+        save_as_to(&e, "main", &target, &tab("main", "t2"), false).unwrap(),
+        json!({"state": "elsewhere", "location": own})
+    );
+    e.call_from(
+        "editor-1",
+        "doc_closed",
+        json!({"path": wp(&target), "location": own}),
+    )
+    .unwrap();
+    // Any other registered file that does not answer still refuses, and the message names it and
+    // not the document's own file.
+    stuck.hung.lock().unwrap().insert(b.clone());
+    let err = save_as_to(&e, "editor-1", &target, &own, true).unwrap_err();
+    assert_eq!(err["kind"], json!("OpenCheck"));
+    let words = err["message"].as_str().unwrap();
+    assert!(words.contains(b.to_str().unwrap()), "{words}");
+    assert!(!words.contains(a.to_str().unwrap()), "{words}");
+    stuck.release();
+}
+
+#[test]
 fn a_look_made_stale_by_a_change_is_made_again_not_used() {
     let stuck = Stuck::new(&[]);
     let e = env_looking(&stuck, Duration::from_secs(5));
@@ -1720,4 +1761,37 @@ fn a_closing_tab_leaves_the_places_of_other_tabs_and_windows_alone() {
     // Another tab of the window, and the editor window's tab with the same id.
     assert_eq!(inside(&e, "main", &b)["action"], json!("focus"));
     assert_eq!(inside(&e, "main", &c)["action"], json!("focus"));
+}
+
+// ---- a document let go is announced to every window ----
+
+#[test]
+fn a_document_that_is_let_go_is_announced_so_a_refused_tab_can_try_again() {
+    let e = env(Duration::from_secs(5));
+    let released = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&released);
+    e.handle.listen_any(EVENT_DOC_RELEASED, move |_| {
+        seen.fetch_add(1, Ordering::SeqCst);
+    });
+    let a = e.text("a.txt");
+    e.with_main();
+    register(&e, "main", "t1", &a);
+    assert_eq!(released.load(Ordering::SeqCst), 0);
+    // The tab closes: its document is let go and the windows are told.
+    e.call_from(
+        "main",
+        "doc_closed",
+        json!({"path": wp(&a), "location": tab("main", "t1")}),
+    )
+    .unwrap();
+    wait_for("the announcement", || released.load(Ordering::SeqCst) == 1);
+    // Letting go of what is not held says nothing.
+    e.call_from(
+        "main",
+        "doc_closed",
+        json!({"path": wp(&a), "location": tab("main", "t1")}),
+    )
+    .unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(released.load(Ordering::SeqCst), 1);
 }

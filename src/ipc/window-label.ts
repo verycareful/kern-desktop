@@ -19,7 +19,7 @@ export function isMainWindow(): boolean {
   return label === null || label === "main";
 }
 
-/** Whether this page is a standalone document window (`doc-<n>`, design 4.4). */
+/** Whether this page is a standalone document window (`doc-<n>`). */
 export function isDocumentWindow(): boolean {
   return /^doc-\d+$/.test(currentWindowLabel() ?? "");
 }

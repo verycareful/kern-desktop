@@ -19,7 +19,7 @@ export interface FolderController {
   move(to: MoveTo, extend: boolean): void;
   /** True when `open` has something to open: a selection, or else the outlined item. */
   canOpen(): boolean;
-  /** Opens the selected items, or the outlined item when nothing is selected; `newWindow` is the Ctrl gesture of design 4.3. */
+  /** Opens the selected items, or the outlined item when nothing is selected; `newWindow` is the Ctrl gesture (open in a window of its own). */
   open(newWindow: boolean): void;
   refresh(): void;
   editLocation(): void;
@@ -27,7 +27,7 @@ export interface FolderController {
   canSearch(): boolean;
   /** Shows the name search in place of the folder's items; the selection is cleared first. */
   search(): void;
-  // The file operations (design 5.1) act on the selection and on nothing else:
+  // The file operations act on the selection and on nothing else:
   // an item that is only outlined is never copied, cut, trashed, deleted,
   // renamed or dragged.
   /** True when the folder is listed, so there is somewhere to create in and paste into. */

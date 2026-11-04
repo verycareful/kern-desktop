@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-// What the actions of the table can ask of the All documents view while it is
+// What the actions of the table can ask of the Library view while it is
 // mounted (there is at most one). With none mounted the actions are disabled.
 export interface DocumentsController {
   /** Walks the folders again. */

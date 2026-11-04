@@ -3,7 +3,7 @@
 import { tabWindow, type Location } from "../ipc";
 
 // Where a document is open, in words: the answer of Save As when the target is a file another
-// place has open (design 4.5: a file is never open twice), which is never written over.
+// place has open (a file is never open twice), which is never written over.
 
 /**
  * "in another tab of this window", "in a tab of the main window", "in a tab of an editor window"

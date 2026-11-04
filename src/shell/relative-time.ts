@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-// Design 4.1: a recent entry shows when it was opened as a relative time
+// A recent entry shows when it was opened as a relative time
 // ("2 minutes ago", "yesterday"), so entries with the same name are told
 // apart. The unit is the largest one the age reaches; the number is rounded
 // down, so an entry is never shown as more recent than it is.

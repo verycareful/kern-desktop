@@ -9,9 +9,9 @@ vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()),
 
 import { LocationBar } from "./LocationBar";
 
-// Design 5.1: the typed location. It closes when focus leaves it (R63), dropping
+// The typed location. It closes when focus leaves it, dropping
 // what was typed, except while a submit is in flight and except when focus left
-// Kern's window (R63a: Alt+Tab, another application), which leaves the bar as it
+// Kern's window (Alt+Tab, another application), which leaves the bar as it
 // was until the next blur inside Kern or Escape.
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });

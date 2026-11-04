@@ -4,8 +4,8 @@ import { create } from "zustand";
 import { displayPath, parent, pathKey, type WirePath } from "../ipc";
 import type { HandedDoc } from "../editor/handed-doc";
 
-// Design 4.1 (tabs above the panels), 4.3 (a file opens as a document tab),
-// 4.5 (a file already open is focused, never opened twice).
+// Tabs sit above the panels, a file opens as a document tab, and a file already open is
+// focused, never opened twice.
 export type FolderTab = {
   id: string;
   kind: "folder";
@@ -30,9 +30,9 @@ export type DocTab = {
   awaitingAck?: boolean;
 };
 /**
- * The Trash (design 5.2). A place of its own rather than a folder: it lists the
+ * The Trash. A place of its own rather than a folder: it lists the
  * home trash and the trashes of the mounted volumes, so it has no path and no
- * history to step through. There is at most one (4.5: nothing opens twice).
+ * history to step through. There is at most one (nothing opens twice).
  */
 export type TrashTab = { id: string; kind: "trash" };
 /**
@@ -43,7 +43,7 @@ export type DocumentsTab = { id: string; kind: "documents" };
 /** Kern's settings: a place of its own, at most one. */
 export type SettingsTab = { id: string; kind: "settings" };
 export type Tab = FolderTab | DocTab | TrashTab | DocumentsTab | SettingsTab;
-/** A tab that shows a place of Kern's own (the Trash, All documents, Settings), not a folder or a document. */
+/** A tab that shows a place of Kern's own (the Trash, the Library, Settings), not a folder or a document. */
 export type PlaceTab = TrashTab | DocumentsTab | SettingsTab;
 
 export function isPlaceTab(tab: Tab | null | undefined): tab is PlaceTab {
@@ -75,7 +75,7 @@ export interface TabsState {
   selectRequests: Record<string, WirePath[]>;
   requestSelect(id: string, paths: WirePath[]): void;
   clearSelectRequest(id: string): void;
-  /** Focus the folder tab that shows `path`, or open one (a folder opened from outside, design 4.5). */
+  /** Focus the folder tab that shows `path`, or open one (a folder opened from outside). */
   focusOrOpenFolder(path: WirePath): void;
   /** Keep a folder tab's view; ignored for a tab that is gone (a view torn down by its tab's close). */
   saveView(id: string, view: FolderViewState): void;
@@ -85,7 +85,7 @@ export interface TabsState {
   navigateTab(id: string, path: WirePath): void;
   /** Focus the Trash tab, or open it. */
   openTrash(): void;
-  /** Focus the All documents tab, or open it. */
+  /** Focus the Library tab, or open it. */
   openDocuments(): void;
   /** Focus the Settings tab, or open it. */
   openSettings(): void;
@@ -94,7 +94,7 @@ export interface TabsState {
   /**
    * Opens document tab `id` on `path`, starting from `handed` when given (a document moved from
    * another window), and shows it. False, and nothing opened, when a tab already shows `path`
-   * (4.5: never opened twice) or the id is taken. `registered`: the caller registered it already.
+   * (never opened twice) or the id is taken. `registered`: the caller registered it already.
    * `awaitingAck`: the window owes the backend an answer once the tab holds the document.
    */
   openDocAs(
@@ -122,7 +122,7 @@ export interface TabsState {
 /** The tab's label: the last path component, or "/" for the root. */
 export function tabTitle(tab: Tab): string {
   if (tab.kind === "trash") return "Trash";
-  if (tab.kind === "documents") return "All documents";
+  if (tab.kind === "documents") return "Library";
   if (tab.kind === "settings") return "Settings";
   // A Bytes path shows with U+FFFD for the bytes that are not UTF-8.
   const trimmed = displayPath(tab.path).replace(/\/+$/, "");
@@ -340,7 +340,7 @@ export const useTabs = create<TabsState>()((set, get) => ({
 
 // The folder tab that was active most recently (TabsState.lastFolderId). A
 // document tab folds the file manager panel away; slid back in over the
-// document, the panel shows this tab's folder (design 4.3).
+// document, the panel shows this tab's folder.
 useTabs.subscribe((s) => {
   const a = activeTab(s);
   if (a?.kind === "folder" && a.id !== s.lastFolderId) useTabs.setState({ lastFolderId: a.id });

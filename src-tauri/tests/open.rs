@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-//! The open rules (design D4.3 to D4.5, D6.1) and command-line parsing.
+//! The open rules and command-line parsing.
 
 use std::ffi::OsString;
 use std::fs;
@@ -761,6 +761,40 @@ fn a_survey_waits_at_most_its_bound_for_a_path_that_does_not_answer_and_says_whi
 }
 
 #[test]
+fn a_places_own_unanswered_file_does_not_make_the_answer_unknown() {
+    let t = tempfile::tempdir().unwrap();
+    let (a, b, c) = (
+        file(t.path(), "a.txt"),
+        file(t.path(), "b.txt"),
+        file(t.path(), "c.txt"),
+    );
+    let reg = OpenRegistry::new();
+    register(&reg, &a, tab("main", "t1"));
+    register(&reg, &b, tab("main", "t2"));
+    let (stat, release, _) = blocking_stat(&[&a, &b]);
+    let survey = reg.survey(&c, &stat, Duration::from_millis(150));
+    let own = tab("main", "t1");
+    // Seen from t1, a.txt is its own and need not answer; b.txt is another document's and must.
+    assert_eq!(survey.held_by(&FileId::of(&c), &own), Err(vec![b.clone()]));
+    // The lookup that is not asked from a place still lists both.
+    let mut seen = survey.lookup(&FileId::of(&c)).unanswered;
+    seen.sort();
+    assert_eq!(seen, vec![a.clone(), b.clone()]);
+    drop(release);
+    // With only its own file silent, the target is free. (A registry of its own: looks in
+    // progress are shared by path within one.)
+    let reg = OpenRegistry::new();
+    register(&reg, &a, tab("main", "t1"));
+    register(&reg, &b, tab("main", "t2"));
+    let (stat, release, _) = blocking_stat(&[&a]);
+    let alone = reg.survey(&c, &stat, Duration::from_millis(150));
+    assert_eq!(alone.held_by(&FileId::of(&c), &own), Ok(Held::Free));
+    // A name that is the unanswered file's text is still the place's own file.
+    assert_eq!(alone.held_by(&FileId::of(&a), &own), Ok(Held::Own));
+    drop(release);
+}
+
+#[test]
 fn a_look_that_never_returned_is_not_started_again_and_is_not_waited_for_again() {
     let t = tempfile::tempdir().unwrap();
     let (a, c) = (file(t.path(), "a.txt"), file(t.path(), "c.txt"));
@@ -959,4 +993,39 @@ fn a_path_under_a_folder_that_cannot_be_searched_is_resolved_through_the_nearest
         assert_eq!(get(&reg, &locked.join("x.txt"), &id), None);
     }
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+// ---- letting go is announced ----
+
+#[test]
+fn every_way_of_letting_go_is_announced_once_and_a_no_op_is_not() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let reg = Arc::new(OpenRegistry::new());
+    let n = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (count, probe) = (Arc::clone(&n), Arc::clone(&reg));
+    reg.on_release(Arc::new(move || {
+        // Announced with no lock of the registry held: asking it does not wait for ever.
+        let _ = probe.generation();
+        count.fetch_add(1, SeqCst);
+    }));
+    let (a, b, c) = (Path::new("/a"), Path::new("/b"), Path::new("/c"));
+    reg.insert(a, tab("main", "t1"));
+    reg.reserve(b, tab("main", "t1"));
+    reg.insert(c, tab("editor-1", "t2"));
+    assert_eq!(n.load(SeqCst), 0, "holding is not letting go");
+    // Not the place that holds it: nothing was let go.
+    reg.remove_if(a, &tab("main", "other"));
+    reg.remove(Path::new("/nothing"));
+    reg.remove_tab("main", "nobody");
+    reg.remove_window("window-9");
+    assert_eq!(n.load(SeqCst), 0, "a no-op is not announced");
+    reg.remove_if(a, &tab("main", "t1"));
+    assert_eq!(n.load(SeqCst), 1);
+    reg.remove_tab("main", "t1");
+    assert_eq!(n.load(SeqCst), 2);
+    reg.remove(c);
+    assert_eq!(n.load(SeqCst), 3);
+    reg.insert(a, tab("editor-2", "t3"));
+    reg.remove_window("editor-2");
+    assert_eq!(n.load(SeqCst), 4);
 }

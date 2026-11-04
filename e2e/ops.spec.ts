@@ -10,7 +10,7 @@ import {
 } from "./support/mockInvoke";
 
 // File operations through the production build with an in-page stand-in for the
-// backend (design 5.1, 5.7). The stand-in keeps folders as lists of entries,
+// backend. The stand-in keeps folders as lists of entries,
 // answers the commands the operations use, and delivers kernkraft://dir-changed
 // and the op-* events the way the plugin does. The mocks are serialised into the
 // page, so each is self-contained and reaches the stand-in through window.__fake.

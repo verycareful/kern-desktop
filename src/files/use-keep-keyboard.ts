@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useRef, type FocusEvent, type RefObject } from "react";
 
-// The keyboard is never lost to the page body (design 4.5). While focus is on
+// The keyboard is never lost to the page body. While focus is on
 // something inside a view, that is remembered; if that element is then removed
 // (the last file deleted, the confirmation answered), the browser leaves the
 // focus on the body without a blur event, and the view gives it to `target`

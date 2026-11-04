@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { pathKey, type DragAction, type WireError, type WirePath, type WireSame } from "../ipc";
 
-// Drag and drop (design 5.1, 5.8). Inside Kern a drag is made of pointer
+// Drag and drop. Inside Kern a drag is made of pointer
 // events: the item under the pointer is a drop target when it carries
 // `data-drop-target`, and the modifier keys are those of the pointer event.
 // When the pointer leaves the window the drag becomes a native one (`dragOut`)
@@ -32,6 +32,12 @@ export const DROP_TARGET_ATTR = "data-drop-target";
 
 /** The attribute of the body of a folder view; its value is the folder as `dropTargetValue` writes it. */
 export const DROP_AREA_ATTR = "data-drop-area";
+
+/**
+ * The attribute of the document area of an editor window: files dropped there are opened (text
+ * files become tabs of the window), nothing is put in a folder.
+ */
+export const DROP_DOCS_ATTR = "data-drop-docs";
 
 /** `by_filesystem`: the backend says per item whether the move would be a rename. */
 export type DropChoice = "copy" | "move" | "by_filesystem";
@@ -228,4 +234,39 @@ export function landingAt(
   if (!path) return { ok: false, reason: REASON_NO_FOLDER };
   if (sources && !canDropOn(sources, path)) return { ok: false, reason: REASON_ITSELF };
   return { ok: true, path, el: hit, kind };
+}
+
+export const REASON_NOWHERE_EDITOR =
+  "Files can be dropped on a folder of the tree or under Places, or on the documents to open a text file, and not here.";
+
+/** Where a drop lands in an editor window: a folder, or the document area (opened, not placed). */
+export type EditorLanding = Landing | { ok: true; kind: "open"; el: Element };
+
+/**
+ * [`landingAt`] for an editor window, which has no folder view: a folder row of its tree or a
+ * Places entry (`data-drop-target`) is a folder, the document area (`data-drop-docs`) opens
+ * what is dropped, and nothing else takes a drop. A point that cannot be resolved and a folder
+ * dropped into itself are refused with their reasons, as in [`landingAt`].
+ */
+export function editorLandingAt(
+  point: { x: number; y: number },
+  view: Size,
+  page: Size,
+  sources: readonly WirePath[] | null,
+  elementAt: (x: number, y: number) => Element | null = (px, py) =>
+    document.elementFromPoint(px, py)
+): EditorLanding {
+  let at: { x: number; y: number };
+  try {
+    at = toCssPoint(point, view, page);
+  } catch {
+    return { ok: false, reason: REASON_UNMEASURED };
+  }
+  const hit = elementAt(at.x, at.y)?.closest(`[${DROP_TARGET_ATTR}], [${DROP_DOCS_ATTR}]`);
+  if (!hit) return { ok: false, reason: REASON_NOWHERE_EDITOR };
+  if (!hit.hasAttribute(DROP_TARGET_ATTR)) return { ok: true, kind: "open", el: hit };
+  const path = parseDropTarget(hit.getAttribute(DROP_TARGET_ATTR));
+  if (!path) return { ok: false, reason: REASON_NO_FOLDER };
+  if (sources && !canDropOn(sources, path)) return { ok: false, reason: REASON_ITSELF };
+  return { ok: true, path, el: hit, kind: "item" };
 }

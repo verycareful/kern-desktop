@@ -25,7 +25,7 @@ export default function App() {
   // centre shows the welcome pane instead. Which layout it has is known once the stored one is read.
   const layoutReady = useLayout((s) => s.loaded);
   const wantsHome = useLayout((s) => s.layout === "file_manager");
-  // The main window browses; a document window (design 4.4) shows one document.
+  // The main window browses; a document window shows one document.
   const [isMain] = useState(isMainWindow);
   // An editor window has tabs of its own and a folder tree; a document window shows one document.
   const [isEditor] = useState(isEditorWindow);
@@ -40,11 +40,11 @@ export default function App() {
     };
   }, []);
 
-  // Design 4.4 names a Home folder tab for the main window, and the window
+  // The main window has a Home folder tab, and the window
   // never sits without a tab: a new window, and closing the last tab, both
   // open Home. Retry only clears the error; this effect then looks Home up
   // again. A tab opened while the lookup ran wins. A start that was asked to
-  // open something (`kern ~/Documents`, 4.5) shows that and no Home: Home is
+  // open something (`kern ~/Documents`) shows that and no Home: Home is
   // only opened once what was queued for the window has been applied and left
   // it without a tab.
   useEffect(() => {

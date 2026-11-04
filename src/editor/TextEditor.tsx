@@ -21,7 +21,7 @@ import { ReadOnlyBanner } from "./ReadOnlyBanner";
 import { useTextDoc } from "./useTextDoc";
 import "./editor.css";
 
-// The text editor of a document tab (design 4.3, 5.4). CodeMirror
+// The text editor of a document tab. CodeMirror
 // 6 with line numbers, undo and redo, and find and replace; no language
 // packages, the text is plain. The text is CodeMirror's: the React side holds
 // only what the user must be told (useTextDoc), and the cursor position goes

@@ -21,7 +21,7 @@ import { needsAttention, type Outcome } from "./outcome";
 import { runOp, type RunningOp } from "./run-op";
 
 // The file operations in flight, their name conflicts, the reports waiting to
-// be read, the status bar's message, and undo (design 5.1, 5.7; Review Focus 5).
+// be read, the status bar's message, and undo.
 // Several operations may run at once: each holds at most one open question,
 // because its worker waits for the answer. An operation that ends cleanly
 // leaves a message in the status bar; one with anything skipped, failed,
