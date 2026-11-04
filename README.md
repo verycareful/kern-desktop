@@ -20,35 +20,58 @@
 [![Playwright](https://img.shields.io/badge/Playwright-1.49-2EAD33?style=flat-square&logo=playwright&logoColor=white)](https://playwright.dev/)
 [![WebdriverIO](https://img.shields.io/badge/WebdriverIO-10.1-EA5906?style=flat-square&logo=webdriverio&logoColor=white)](https://webdriver.io/)
 <!-- Release -->
-[![Version](https://img.shields.io/badge/Version-0.1.0.0.72-informational?style=flat-square)](VERSION)
+[![Version](https://img.shields.io/badge/Version-0.1.0.0.73-informational?style=flat-square)](VERSION)
 <!-- Licence and status -->
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Early%20Development-orange?style=flat-square)](#)
 
 Kern Desktop is Kern for Linux: a file manager and document app built on
-Tauri 2, with a React and TypeScript interface and a Rust backend. It will
-read and write files in place, it never touches the network, and it follows
-the system theme.
+Tauri 2, with a React and TypeScript interface and a Rust backend. It reads
+and writes files in place, never touches the network, and follows the system
+theme.
 
-Kern Desktop is in alpha. At this stage the window opens on your Home folder
-with its tab row, the two side panels and a status bar. The folder list works
-(list and grid, sorting, selection, breadcrumb and location bar, live refresh).
-Files can be created, renamed in place, copied, cut and pasted (through the
-system clipboard, so other file managers can take part), moved to the Trash,
-deleted for good after a question, and dragged onto folders: a drag moves files
-that are on the same disk as the folder and copies the others, Ctrl copies and
-Shift moves, and a drop from another application is shown by the pointer before
-it lands: moved on one disk, copied across, and Ctrl or Shift held during the
-drag decides. Copies and moves
-run in the background with progress, a name-conflict prompt and a report of
-anything skipped or failed, and the last operations can be undone and redone.
-The strip beside it lists Places (Home and your user folders), Volumes (mount,
-unmount and eject) and the Trash (restore, delete permanently, empty).
-A text file opens in an editor tab with line numbers, find and replace and
-undo. Saving keeps its line endings and byte order mark, asks before it
-writes over a file another program changed or deleted, and a file that mixes
-line endings, is not UTF-8 or is too large opens read-only. The other document
-formats come in later versions.
+Kern Desktop is in alpha: version 0.1.0.0 is a file manager and a text
+editor. What it does today:
+
+- **Folders.** List and grid views, sorting, selection, a breadcrumb and an
+  editable location bar, hidden files on demand, and live refresh when
+  something changes on disk. Back, forward and up, tabs, and "Move to new
+  window".
+- **File operations.** Create, rename in place, cut, copy and paste through
+  the system clipboard (other file managers can take part), move to the Trash,
+  and delete for good after a question. Copies and moves run in the background
+  with progress, cancel, a name-conflict prompt and a report of anything
+  skipped or failed; the last operations can be undone and redone. A drag moves
+  files that are on the same disk as the folder and copies the others (Ctrl
+  copies, Shift moves), and a drop from another application shows what it will
+  do before it lands.
+- **Places.** Home and your user folders, Volumes (mount, unmount, eject), the
+  Trash (restore, delete permanently, empty), and the Library, which gathers
+  your documents from the folders you choose in Settings. Pinned folders and
+  recent files sit in their own panel.
+- **Finding and inspecting.** Name search under a folder, Properties (size and
+  item counts, permissions), Copy path, Open with any installed application,
+  and Open terminal here.
+- **Text editor.** A text file opens in a tab with line numbers, find and
+  replace and undo. Saving keeps its line endings and byte order mark, asks
+  before it writes over a file another program changed or deleted, and a file
+  that mixes line endings, is not UTF-8 or is too large opens read-only. A file
+  opened from outside Kern gets a window of its own; Home moves it into the main
+  window.
+- **Editor layout.** A window can switch to an editor layout with a folder tree
+  beside the document, and "Open as editor" opens a folder in a window of that
+  kind. A file open in one window is focused, never opened twice.
+- **Desktop integration.** Kern follows the system theme (colours, accent,
+  fonts and corner radius from Hyprland, the desktop portal, GTK and
+  fontconfig), each part with its own switch in Settings. It installs a desktop
+  entry for folders and every text type the system knows, can be set as the
+  default file manager (other programs' "Show in folder" opens in Kern), and a
+  second launch hands its files to the running window.
+- **No network.** Kern opens no network connection, in its code, its
+  dependencies or its packaging.
+
+The other document formats of Kern for Android (spreadsheets, Word and
+PowerPoint files, PDF, EPUB) come in later versions.
 
 ## Building
 
