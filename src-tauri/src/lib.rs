@@ -18,6 +18,7 @@ pub mod windows;
 pub mod zoom;
 
 use tauri::Manager;
+use tauri_plugin_window_state::StateFlags;
 
 /// Builds and runs the Tauri application.
 ///
@@ -48,10 +49,15 @@ pub fn run() {
         // Document windows are not remembered: a new doc-1 is unrelated to
         // an earlier one. The main window and the editor windows keep their
         // place and size (an editor window is not reopened at launch, but
-        // the next editor-1 opens where the last one was).
+        // the next editor-1 opens where the last one was). Whether a window
+        // was maximized is not kept: under a tiling compositor (Hyprland) GTK
+        // reports a tiled window as maximized, and asking for that state at
+        // the next launch makes the compositor maximize it over its
+        // neighbours instead of tiling it.
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_filter(|label| !label.starts_with("doc-"))
+                .with_state_flags(StateFlags::all() - StateFlags::MAXIMIZED)
                 .build(),
         )
         .plugin(kernkraft_tauri::init())
