@@ -1,7 +1,7 @@
-<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
-<!-- Copyright (c) 2026 Sricharan Suresh (github.com/verycareful) -->
-<!-- Kern's application icon: the Kern mark (two navy rects rotated 45 and 135 degrees, drawn as a K) on a white field, full-bleed, as Kern for Android's launcher icon draws it. Every PNG in this folder is rendered from this file. -->
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+  <!-- Copyright (c) 2026 Sricharan Suresh (github.com/verycareful) -->
+  <!-- Kern's application icon: the Kern mark (two navy rects rotated 45 and 135 degrees, drawn as a K) on a white field, full-bleed, as Kern for Android's launcher icon draws it. Every PNG in this folder is rendered from this file. The file opens with the svg tag, header inside it, because icon loaders detect SVG by its first bytes. -->
   <rect width="1024" height="1024" fill="#ffffff"/>
   <rect transform="rotate(45 144 256)" height="1024" width="800" y="-256" x="-256" fill="#020c3b"/>
   <rect transform="rotate(135 144 768)" height="1024" width="800" y="256" x="-256" fill="#020c3b"/>

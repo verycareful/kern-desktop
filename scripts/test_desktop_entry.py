@@ -169,6 +169,15 @@ class Bundle(unittest.TestCase):
         pngs = [i for i in self.conf["bundle"]["icon"] if i.endswith(".png")]
         self.assertEqual(width(pngs[0]), max(width(i) for i in pngs))
 
+    def test_scalable_icon_is_recognised_by_its_content(self) -> None:
+        # Launchers such as rofi decode icons through gdk-pixbuf, which picks
+        # the format from the file's bytes, not its name. shared-mime-info
+        # (freedesktop.org.xml, image/svg+xml) matches "<svg" at offset 0 at
+        # priority 80, and within bytes 1 to 256 only at priority 45; a file
+        # matching neither does not load, and the launcher shows no icon.
+        with open(os.path.join(TAURI, "icons", "kern.svg"), "rb") as f:
+            self.assertTrue(f.read().startswith(b"<svg"))
+
     def test_deb_and_appimage_carry_the_entry_and_metainfo(self) -> None:
         linux = self.conf["bundle"]["linux"]
         self.assertEqual(linux["deb"]["desktopTemplate"], f"linux/{APP_ID}.desktop")
