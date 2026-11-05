@@ -3,6 +3,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { WirePath } from "./wire-path";
 import type { WireError } from "./invoke";
+import { currentWindowLabel } from "./window-label";
 import type {
   DirEvent,
   OpConflictEvent,
@@ -98,9 +99,21 @@ export type EventName = keyof EventPayloads;
 
 // Subscribes to an event; the handler gets the payload itself. Call the
 // returned function to unsubscribe.
+//
+// The listener is scoped to this page's window label. Tauri hands an event
+// emitted to one window (`emit_to(label)`) to every listener registered with
+// the default target `Any`, so an unscoped listener in one window would run
+// another window's close request and directives. A scoped listener still gets
+// the events emitted to every window (`emit`). The browser preview has no
+// label and listens unscoped.
 export function on<K extends EventName>(
   name: K,
   handler: (payload: EventPayloads[K]) => void
 ): Promise<UnlistenFn> {
-  return listen<EventPayloads[K]>(name, (event) => handler(event.payload));
+  const label = currentWindowLabel();
+  return listen<EventPayloads[K]>(
+    name,
+    (event) => handler(event.payload),
+    label === null ? undefined : { target: label }
+  );
 }
