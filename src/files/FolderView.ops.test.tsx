@@ -231,6 +231,17 @@ test("the_file_actions_are_greyed_in_the_menu_when_only_an_item_is_outlined", as
   expect(within(menu).getByRole("menuitem", { name: /^Open terminal here/ })).toBeEnabled();
 });
 
+test("a_right_click_in_an_empty_folder_opens_the_folder_menu", async () => {
+  await mount([]);
+  const shown = fireEvent.contextMenu(screen.getByTestId("folder-empty"));
+  // false: the web view's own menu is kept out.
+  expect(shown).toBe(false);
+  const menu = await screen.findByTestId("action-menu");
+  for (const name of [/^New folder/, /^New file/, /^Paste/, /^Copy path/, /^Open terminal here/]) {
+    expect(within(menu).getByRole("menuitem", { name })).toBeEnabled();
+  }
+});
+
 test("delete_moves_the_selected_items_to_the_trash_without_asking", async () => {
   await mount([entry("a"), entry("b"), entry("c")]);
   select("a", "c");

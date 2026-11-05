@@ -573,7 +573,13 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     default:
       body =
         entries.length === 0 ? (
-          <div ref={note} tabIndex={-1} className="kern-note" data-testid="folder-empty">
+          <div
+            ref={note}
+            tabIndex={-1}
+            className="kern-note"
+            data-testid="folder-empty"
+            onContextMenu={(e) => onContextMenu(null, e)}
+          >
             <FolderOpen size={30} strokeWidth={1.8} aria-hidden />
             <p className="kern-note-title">This folder is empty</p>
             {!showHidden && (
