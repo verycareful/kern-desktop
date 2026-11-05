@@ -42,6 +42,7 @@ vi.mock("../ipc", async (orig) => ({
 import { actions, appliesTo } from "../keys/actions";
 import { usePanelsStore } from "../store/panels";
 import { useLayout } from "../store/layout";
+import { useSettingsNav } from "../settings/settings-nav";
 import { useTabs } from "../store/tabs";
 import MainWindow from "./MainWindow";
 import { VOLUME_MENU } from "./volume-menu";
@@ -91,10 +92,20 @@ test("tab_row_sits_over_the_folder_area_only", () => {
   expect(screen.getByTestId("folder-area").parentElement).toBe(main);
   expect(screen.getByTestId("side-panel").parentElement).toBe(main);
   expect(main).not.toContainElement(screen.getByTestId("status-bar"));
-  // The strip's top slot, level with the tab row, is free: the first thing in the strip, empty.
-  const slot = screen.getByTestId("places-strip").firstElementChild;
+  // The strip's top slot, level with the tab row, holds Kern's logo: the first thing in the strip.
+  const slot = screen.getByTestId("places-strip").firstElementChild as HTMLElement;
   expect(slot).toHaveClass("kern-places-slot");
-  expect(slot).toBeEmptyDOMElement();
+  expect(within(slot).getByRole("button", { name: "About Kern" })).toBeInTheDocument();
+});
+
+test("the_logo_opens_settings_at_about", async () => {
+  useTabs.getState().openFolder(p("/home/a"), false);
+  render(<MainWindow />);
+  fireEvent.click(screen.getByRole("button", { name: "About Kern" }));
+  expect(screen.getByRole("tab", { name: "Settings" })).toBeInTheDocument();
+  const about = await screen.findByRole("heading", { name: "About" });
+  await waitFor(() => expect(about).toHaveFocus());
+  expect(useSettingsNav.getState().section).toBeNull();
 });
 
 test("the_main_window_strip_offers_the_library_and_its_tab_is_titled_so", () => {

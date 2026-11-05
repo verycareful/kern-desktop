@@ -225,19 +225,14 @@ test("pinned_and_recent_fold_to_the_right_stub_for_every_tab", async () => {
   );
 });
 
-test("a_place_roots_the_tree_and_opens_no_folder_tab", async () => {
+// A place or a volume would move the tree's root away from the folder being edited.
+test("the_editor_column_shows_the_logo_but_no_places_or_volumes", async () => {
   await editorWindow();
   const strip = screen.getByTestId("places-strip");
-  fireEvent.click(await within(strip).findByRole("button", { name: "Documents" }));
-  await waitFor(() => expect(useLayout.getState().treeRoot).toEqual(p("/home/a/Documents")));
-  expect(useTabs.getState().tabs).toHaveLength(0);
-  await waitFor(() =>
-    expect(screen.getByRole("tree")).toHaveAccessibleName("Folders of Documents")
-  );
-  expect(within(strip).getByRole("button", { name: "Documents" })).toHaveAttribute(
-    "aria-current",
-    "page"
-  );
+  expect(within(strip).getByRole("button", { name: "About Kern" })).toBeInTheDocument();
+  expect(within(strip).queryByRole("heading", { name: "Places" })).toBeNull();
+  expect(within(strip).queryByRole("button", { name: "Documents" })).toBeNull();
+  expect(within(strip).queryByText("Volumes")).toBeNull();
 });
 
 test("the_tree_follows_the_hidden_choice_of_the_window", async () => {

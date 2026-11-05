@@ -3,8 +3,8 @@
 // The file manager. Docked, its two parts are cells of the
 // main grid: the places strip from the window top to the status bar, and the
 // folder area beside it under the tab row. Slid in over a document they
-// are one panel. The strip holds Places, the Library, Volumes and Trash; its top slot,
-// level with the tab row, is free and left empty.
+// are one panel. The strip holds Kern's logo in its top slot, level with the tab
+// row, then Places, the Library, Volumes and Trash.
 import { FileSearch, Trash2, type LucideIcon } from "lucide-react";
 import { isMainWindow } from "../ipc";
 import { FolderView } from "../files/FolderView";
@@ -13,6 +13,7 @@ import { SettingsView } from "../settings/SettingsView";
 import { TrashView } from "../files/TrashView";
 import { currentContext, getAction, runAction } from "../keys/actions";
 import { activeTab, recentFolderTab, useTabs, type TabsState } from "../store/tabs";
+import { KernLogo } from "./KernLogo";
 import { PlacesList } from "./PlacesList";
 import { documentsShown, trashShown } from "./place-nav";
 import { openOnDoubleClick } from "./double-click";
@@ -49,8 +50,9 @@ function OwnPlace(props: {
 
 /**
  * The strip. `column` is the strip as the top of the editor layout's left column, which has its
- * width from the column rather than its own. The Trash and the Library are tabs of the main
- * window, so an editor window's strip has neither.
+ * width from the column rather than its own. Places and Volumes are left out there: opening one
+ * moves the folder tree's root away from the folder being edited. The Trash and the Library are
+ * tabs of the main window, so an editor window's strip has neither.
  */
 export function PlacesStrip(props: { column?: boolean }) {
   const main = isMainWindow();
@@ -60,8 +62,10 @@ export function PlacesStrip(props: { column?: boolean }) {
       aria-label="Places and volumes"
       data-testid="places-strip"
     >
-      <div className="kern-places-slot" />
-      <PlacesList />
+      <div className="kern-places-slot">
+        <KernLogo />
+      </div>
+      {!props.column && <PlacesList />}
       {main && (
         <OwnPlace
           label="Library"
@@ -70,7 +74,7 @@ export function PlacesStrip(props: { column?: boolean }) {
           shown={documentsShown}
         />
       )}
-      <VolumesList />
+      {!props.column && <VolumesList />}
       {main && <OwnPlace label="Trash" action="place.trash" Icon={Trash2} shown={trashShown} />}
     </nav>
   );

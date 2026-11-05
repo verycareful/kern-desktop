@@ -107,7 +107,12 @@ beforeEach(() => {
   delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   ipc.watchDir.mockResolvedValue(undefined);
   ipc.unwatchDir.mockResolvedValue(undefined);
-  ipc.themeGet.mockResolvedValue({ css: ":root{}", fallbacks: [], problems: [] });
+  ipc.themeGet.mockResolvedValue({
+    css: ":root{}",
+    tokens: { scheme: "light" },
+    fallbacks: [],
+    problems: [],
+  });
   ipc.undoState.mockResolvedValue({ undo: null, redo: null });
   ipc.userDirs.mockResolvedValue({ home: p("/home/t"), dirs: [] });
   ipc.volumesProblemsTake.mockResolvedValue([]);

@@ -160,7 +160,7 @@ function answer(cmd: string, args: Record<string, unknown>): unknown {
     case "volumes_list":
       return { mounted: [], unmounted: [], problems: [] };
     case "theme_get":
-      return { css: ":root{}", fallbacks: [], problems: [] };
+      return { css: ":root{}", tokens: { scheme: "light" }, fallbacks: [], problems: [] };
     case "prune":
       return {
         ...EMPTY_PRUNE,
@@ -349,7 +349,6 @@ test("every_command_an_editor_windows_page_sends_is_granted_to_editor_windows", 
     "mime_of",
     "user_dirs",
     "theme_get",
-    "volumes_list",
     "same_filesystem",
     "undo_state",
   ].map((c) => `${KERNKRAFT}${c}`)) {

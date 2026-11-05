@@ -26,3 +26,7 @@ if (typeof Range !== "undefined") {
 if (typeof document.elementFromPoint !== "function") {
   document.elementFromPoint = () => null;
 }
+
+// jsdom does no layout, so it has no scrollIntoView; Settings scrolls a section into view when
+// asked for it. Scrolling there has nothing to move, so a stand-in that does nothing is exact.
+Element.prototype.scrollIntoView ??= () => undefined;

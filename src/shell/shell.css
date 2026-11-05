@@ -257,8 +257,38 @@
 
 /* Level with the tab row, kept free. */
 .kern-places-slot {
+  display: flex;
   flex: none;
+  align-items: flex-end;
   height: calc(var(--shell-button) + 6px);
+}
+
+/* The handoff's header row: mark 26 px, wordmark Quicksand 21/700 (README, Header row). */
+.kern-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  background: none;
+  border: 0;
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-logo:focus-visible {
+  outline: 2px solid var(--kern-accent);
+}
+
+.kern-logo-mark {
+  width: calc(26px * 950 / 1182);
+  height: 26px;
+}
+
+.kern-logo-word {
+  font-family: var(--kern-font-wordmark);
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .kern-places-heading {

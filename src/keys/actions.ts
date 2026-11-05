@@ -32,6 +32,7 @@ import { trashController, type TrashMove } from "../files/trash-controller";
 import { useVolumes } from "../shell/volumes-store";
 import { usePinnedRecent } from "../shell/pinned-recent-store";
 import { useProperties } from "../files/properties-store";
+import { useSettingsNav } from "../settings/settings-nav";
 import { documentsController } from "../files/documents-controller";
 import { useOps } from "../ops/useOps";
 import { docController } from "../editor/doc-controller";
@@ -747,6 +748,18 @@ const placeActions: Action[] = [
     when: "any",
     inEditable: true,
     run: (c) => c.tabs.openSettings(),
+  },
+  // The logo in the places strip: Settings, at About.
+  {
+    id: "place.about",
+    label: "About Kern",
+    area: "Navigation",
+    keys: [],
+    when: "any",
+    run: (c) => {
+      useSettingsNav.getState().show("about");
+      c.tabs.openSettings();
+    },
   },
   {
     id: "place.documents",

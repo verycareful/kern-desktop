@@ -8,7 +8,12 @@ import { useTabs } from "./store/tabs";
 
 const themeGet = vi.hoisted(() =>
   vi.fn(() =>
-    Promise.resolve({ css: ":root{}", fallbacks: [], problems: [] } as unknown as WireTheme)
+    Promise.resolve({
+      css: ":root{}",
+      tokens: { scheme: "light" },
+      fallbacks: [],
+      problems: [],
+    } as unknown as WireTheme)
   )
 );
 const userDirs = vi.hoisted(() =>
