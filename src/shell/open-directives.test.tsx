@@ -657,7 +657,7 @@ test("a_registration_refused_because_the_move_was_taken_back_drops_the_tab_and_r
   expect(screen.queryByRole("tab", { name: /n\.md/ })).toBeNull();
   expect(ipc.adopted).not.toHaveBeenCalled();
   expect(ipc.refuseAdoption).not.toHaveBeenCalled();
-  expect(await screen.findByText(/stays in its own window/)).toBeInTheDocument();
+  expect(await screen.findByText(/stays where it was/)).toBeInTheDocument();
   // The tab never registered, so releasing the path would take it from the window.
   await act(async () => {});
   expect(ipc.docClosed).not.toHaveBeenCalled();
@@ -906,14 +906,25 @@ test("an_editor_window_is_told_its_folder_and_opens_documents_in_tabs_of_its_own
     })
   );
   expect((await import("../store/layout")).useLayout.getState().treeRoot).toEqual(p("/d/project"));
-  // The directives an editor window answers to; nothing of the main window's.
-  const directives = ["open", "open-error", "close-requested", "adopt-doc", "select", "properties"];
+  // The directives an editor window answers to: a document window's, and the documents handed
+  // to it; nothing else of the main window's.
+  const directives = [
+    "open",
+    "open-error",
+    "close-requested",
+    "adopt-doc",
+    "adopt-cancelled",
+    "select",
+    "properties",
+  ];
   expect(calls.filter((c) => directives.some((d) => c === `on kern://${d}`))).toEqual([
     "on kern://open",
     "on kern://open-error",
+    "on kern://adopt-doc",
+    "on kern://adopt-cancelled",
     "on kern://close-requested",
   ]);
-  // The left column: the places over the tree of the folder it was told. The Trash and the
+  // The left column: the logo over the tree of the folder it was told. The Trash and the
   // Library are tabs of the main window, so its strip has neither.
   const strip = await screen.findByTestId("places-strip");
   expect(within(strip).queryByRole("button", { name: "Trash" })).toBeNull();

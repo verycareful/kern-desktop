@@ -29,6 +29,7 @@ import {
   type WirePath,
 } from "../ipc";
 import { parseHanded } from "../editor/handed-doc";
+import { handTo } from "./move-doc";
 import { errorText } from "../ops/error-text";
 import { useLayout } from "../store/layout";
 import { useTabs } from "../store/tabs";
@@ -65,8 +66,17 @@ const EVENTS = [
   EVENT_CLOSE_REQUESTED,
 ] as const;
 
-/** What a document window and an editor window listen to. */
+/** What a document window listens to. */
 const DOC_EVENTS = [EVENT_OPEN, EVENT_OPEN_ERROR, EVENT_CLOSE_REQUESTED] as const;
+
+/** What an editor window listens to: as a document window, and the documents handed to it. */
+const EDITOR_EVENTS = [
+  EVENT_OPEN,
+  EVENT_OPEN_ERROR,
+  EVENT_ADOPT_DOC,
+  EVENT_ADOPT_CANCELLED,
+  EVENT_CLOSE_REQUESTED,
+] as const;
 
 export interface Notice {
   id: number;
@@ -157,7 +167,7 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
       }
     };
 
-    /** The main window will not take the document: the window that sent it keeps it and is told why. */
+    /** This window will not take the document: the place that sent it keeps it and is told why. */
     const refuse = async (from: string, reason: string) => {
       try {
         await refuseAdoption(from, reason);
@@ -167,12 +177,15 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
       }
     };
 
-    /** The main window: take the document a document window sends with Home. */
+    /**
+     * Take a document handed to this window: in the main window one a document window sends with
+     * Home, in an editor window one opened from it while open elsewhere.
+     */
     const adopt = async (payload: { path: WirePath; text_state: unknown; from: string }) => {
       const { path, text_state, from } = payload;
       // Taken now, the document would close with this window unasked.
       if (isClosing()) {
-        await refuse(from, "the main window is closing, so the document stays here");
+        await refuse(from, "the window it was moving to is closing, so the document stays");
         return;
       }
       let handed = undefined;
@@ -181,7 +194,7 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
         if (!parsed) {
           await refuse(
             from,
-            "the main window could not read the document's text, so it stays here"
+            "the window it was moving to could not read the document's text, so it stays"
           );
           return;
         }
@@ -190,7 +203,10 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
       const id = crypto.randomUUID();
       // Registered here, before it is acknowledged; the tab's editor does not register it again.
       if (!tabs().openDocAs(id, path, handed, true)) {
-        await refuse(from, `${displayPath(path)} is already open in a tab of the main window`);
+        await refuse(
+          from,
+          `${displayPath(path)} is already open in a tab of the window it was moving to`
+        );
         return;
       }
       try {
@@ -202,11 +218,14 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
         if (err.kind === "AdoptionOver") {
           // The backend took the move back before this tab registered; the window's registration
           // stands and the tab goes without releasing anything. Nobody waits for a refusal.
-          notice("A document could not move to this window, so it stays in its own window.");
+          notice("A document could not move to this window, so it stays where it was.");
           return;
         }
         addError(err);
-        await refuse(from, `the main window could not register the document: ${errorText(err)}`);
+        await refuse(
+          from,
+          `the window it was moving to could not register the document: ${errorText(err)}`
+        );
         return;
       }
       try {
@@ -237,6 +256,11 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
       switch (item.event) {
         case EVENT_OPEN: {
           const d = item.payload as Directive;
+          // Not awaited: the document may first be waited for, and the events after it still apply.
+          if (d.kind === "hand_to") {
+            void handTo(d.path, d.to);
+            return;
+          }
           if (mode === "doc") {
             if (d.kind === "load_doc") await loadDoc(d.path, d.text_state, d.ack === true);
             else notice(unhandled(EVENT_OPEN, ` (${d.kind})`));
@@ -307,8 +331,8 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
             closeTab(tab.id);
             notice(
               tab.dirty
-                ? "A document could not move to this window, so it stays in its own window. This copy has unsaved changes, so you are asked before it closes; Save writes this copy over the file the other window holds."
-                : "A document could not move to this window, so it stays in its own window."
+                ? "A document could not move to this window, so it stays where it was. This copy has unsaved changes, so you are asked before it closes; Save writes this copy over the file the other window holds."
+                : "A document could not move to this window, so it stays where it was."
             );
           }
           return;
@@ -331,7 +355,8 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
 
     (async () => {
       try {
-        const names: readonly (typeof EVENTS)[number][] = mode === "main" ? EVENTS : DOC_EVENTS;
+        const names: readonly (typeof EVENTS)[number][] =
+          mode === "main" ? EVENTS : mode === "editor" ? EDITOR_EVENTS : DOC_EVENTS;
         for (const name of names) {
           const un = await on(name, (payload) => {
             const item: Queued = { event: name, payload };

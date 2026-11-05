@@ -127,6 +127,8 @@ pub fn run() {
             windows::refuse_detach,
             windows::open_editor,
             windows::move_doc_to_main,
+            windows::hand_doc,
+            windows::hand_refused,
             windows::adopted,
             windows::refuse_adoption,
             windows::confirm_close,

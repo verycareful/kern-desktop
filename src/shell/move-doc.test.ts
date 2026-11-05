@@ -8,6 +8,9 @@ const ipc = vi.hoisted(() => ({
   moveDocToMain: vi.fn(),
   currentWindowLabel: vi.fn(),
   isMainWindow: vi.fn(),
+  isDocumentWindow: vi.fn(),
+  handDoc: vi.fn(),
+  handRefused: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
@@ -16,7 +19,7 @@ import type { HandedDoc } from "../editor/handed-doc";
 import { currentContext, getAction, isEnabled } from "../keys/actions";
 import { useOps } from "../ops/useOps";
 import { useTabs } from "../store/tabs";
-import { moveDocHome, moveTabToWindow } from "./move-doc";
+import { HAND_WAIT_MS, handTo, moveDocHome, moveTabToWindow } from "./move-doc";
 import { useCloseGuard } from "./useCloseGuard";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
@@ -54,6 +57,8 @@ beforeEach(() => {
   useCloseGuard.getState().reset();
   ipc.isMainWindow.mockReturnValue(true);
   ipc.currentWindowLabel.mockReturnValue("doc-1");
+  ipc.isDocumentWindow.mockReturnValue(false);
+  ipc.handRefused.mockResolvedValue(undefined);
   useTabs.setState({
     tabs: [
       { id: "f", kind: "folder", path: p("/home/a"), history: [p("/home/a")], cursor: 0 },
@@ -62,7 +67,10 @@ beforeEach(() => {
     activeId: "d",
   });
 });
-afterEach(() => off?.());
+afterEach(() => {
+  off?.();
+  vi.useRealTimers();
+});
 
 test("move_to_new_window_hands_over_the_text_and_closes_the_tab_without_asking", async () => {
   off = registerDoc("d", controller());
@@ -186,4 +194,83 @@ test("move_to_new_window_is_offered_for_a_document_tab_of_the_main_window_only",
   expect(isEnabled(detach, currentContext("f"))).toBe(false);
   ipc.isMainWindow.mockReturnValue(false);
   expect(isEnabled(detach, currentContext("d"))).toBe(false);
+});
+
+// ---- a document asked for by an editor window ----
+
+test("a_tab_asked_for_by_an_editor_hands_over_its_text_and_closes_once_taken", async () => {
+  off = registerDoc("d", controller());
+  ipc.handDoc.mockResolvedValue(undefined);
+  await handTo(DOC, "editor-2");
+  expect(ipc.handDoc).toHaveBeenCalledExactlyOnceWith("d", DOC, STATE, "editor-2");
+  expect(moving).toEqual([true]);
+  expect(useCloseGuard.getState().question).toBeNull();
+  expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["f"]);
+  expect(ipc.handRefused).not.toHaveBeenCalled();
+});
+
+test("a_document_window_hands_its_own_document_and_is_closed_by_the_backend", async () => {
+  ipc.isDocumentWindow.mockReturnValue(true);
+  off = registerDoc("doc-1", controller());
+  ipc.handDoc.mockResolvedValue(undefined);
+  await handTo(DOC, "editor-2");
+  expect(ipc.handDoc).toHaveBeenCalledExactlyOnceWith(null, DOC, STATE, "editor-2");
+});
+
+test("a_document_being_saved_is_waited_for_then_handed", async () => {
+  vi.useFakeTimers();
+  let saving = true;
+  off = registerDoc("d", controller({ busy: () => saving }));
+  ipc.handDoc.mockResolvedValue(undefined);
+  const done = handTo(DOC, "editor-2");
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(ipc.handDoc).not.toHaveBeenCalled();
+  saving = false;
+  await vi.advanceTimersByTimeAsync(200);
+  await done;
+  expect(ipc.handDoc).toHaveBeenCalledExactlyOnceWith("d", DOC, STATE, "editor-2");
+});
+
+test("a_document_still_busy_after_the_wait_stays_and_the_editor_is_told", async () => {
+  vi.useFakeTimers();
+  off = registerDoc("d", controller({ busy: () => true }));
+  const done = handTo(DOC, "editor-2");
+  await vi.advanceTimersByTimeAsync(HAND_WAIT_MS + 200);
+  await done;
+  expect(ipc.handDoc).not.toHaveBeenCalled();
+  expect(ipc.handRefused).toHaveBeenCalledExactlyOnceWith(
+    DOC,
+    "editor-2",
+    "it was still being saved or moved"
+  );
+  expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["f", "d"]);
+});
+
+test("a_hand_over_that_fails_keeps_the_tab_editable_and_tells_the_editor", async () => {
+  off = registerDoc("d", controller());
+  ipc.handDoc.mockRejectedValue({
+    kind: "AdoptTimeout",
+    message: "window editor-2 did not take the document",
+    path: null,
+    details: null,
+  });
+  await handTo(DOC, "editor-2");
+  expect(moving).toEqual([true, false]);
+  expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["f", "d"]);
+  expect(ipc.handRefused).toHaveBeenCalledExactlyOnceWith(
+    DOC,
+    "editor-2",
+    expect.stringContaining("did not take the document")
+  );
+});
+
+test("a_document_no_longer_open_here_is_said_to_the_editor", async () => {
+  useTabs.setState({ tabs: [], activeId: null });
+  await handTo(DOC, "editor-2");
+  expect(ipc.handDoc).not.toHaveBeenCalled();
+  expect(ipc.handRefused).toHaveBeenCalledExactlyOnceWith(
+    DOC,
+    "editor-2",
+    "it is no longer open there"
+  );
 });

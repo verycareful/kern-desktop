@@ -240,12 +240,10 @@ fn granted_to_editors() -> (Vec<String>, Vec<String>) {
 /// Every command of Kern's own that only the main window (or a document window) needs, each
 /// refused to an editor window by its capability: moving a document Home, answering for a
 /// document window, the clipboard and drags out of the file manager, the default file manager.
-const NOT_FOR_EDITORS: [&str; 14] = [
+const NOT_FOR_EDITORS: [&str; 12] = [
     "detached",
     "refuse_detach",
     "move_doc_to_main",
-    "adopted",
-    "refuse_adoption",
     "clip_get",
     "clip_set",
     "clip_text",

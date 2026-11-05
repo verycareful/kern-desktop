@@ -157,8 +157,9 @@ export type Location =
 export type Held =
   { state: "free" } | { state: "own" } | { state: "elsewhere"; location: Location };
 
+/** `moving`: open elsewhere and asked for from an editor window, so it is being handed there. */
 export type OpenAction =
-  "folder_tab" | "doc_tab" | "doc_window" | "focus" | "default_app" | "failed";
+  "folder_tab" | "doc_tab" | "doc_window" | "focus" | "moving" | "default_app" | "failed";
 
 export interface OpenOutcome {
   path: WirePath;
@@ -174,7 +175,9 @@ export type Directive =
   | { kind: "load_doc"; path: WirePath; text_state?: unknown; ack?: boolean }
   | { kind: "editor_root"; path: WirePath }
   | { kind: "home_tab" }
-  | { kind: "focus_tab"; tab_id: string };
+  | { kind: "focus_tab"; tab_id: string }
+  /** Give the document open here at `path` to editor window `to` (handTo in shell/move-doc.ts). */
+  | { kind: "hand_to"; path: WirePath; to: string };
 
 /** An event queued for a window that was not listening yet. */
 export interface Queued {
@@ -221,6 +224,17 @@ export const detachDoc = (tabId: string, path: WirePath, textState?: unknown) =>
 
 export const moveDocToMain = (label: string, textState?: unknown) =>
   invoke<void>("move_doc_to_main", { label, textState: textState ?? null });
+
+/**
+ * Gives the document this window holds at `path` (tab `tabId`, or a document window's own with
+ * null) to editor window `to`; resolves once `to` holds it. A document window is then closed.
+ */
+export const handDoc = (tabId: string | null, path: WirePath, textState: unknown, to: string) =>
+  invoke<void>("hand_doc", { tabId, path, textState: textState ?? null, to });
+
+/** This window could not give `path` to editor window `to`: `to` is told why and this window comes forward. */
+export const handRefused = (path: WirePath, to: string, reason: string) =>
+  invoke<void>("hand_refused", { path, to, reason });
 
 /** A document window holds the document a tab was moved to it with, and has registered it. */
 export const detached = (label: string) => invoke<void>("detached", { label });

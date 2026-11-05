@@ -31,6 +31,8 @@ const COMMANDS: &[&str] = &[
     "refuse_detach",
     "open_editor",
     "move_doc_to_main",
+    "hand_doc",
+    "hand_refused",
     "adopted",
     "refuse_adoption",
     "confirm_close",

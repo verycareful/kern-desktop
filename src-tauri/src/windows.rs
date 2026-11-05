@@ -147,6 +147,14 @@ pub enum Directive {
     FocusTab {
         tab_id: String,
     },
+    /// For the window that holds `path` (a tab, or a document window's own
+    /// document): give it to the editor window `to`, which asked for it
+    /// (an open from inside that editor). The window answers by calling
+    /// `hand_doc` once the document is ready to move.
+    HandTo {
+        path: WirePath,
+        to: String,
+    },
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -160,15 +168,34 @@ struct Inner {
     next_editor: u64,
     ready: HashSet<String>,
     pending: HashMap<String, Vec<Queued>>,
-    /// Moves waiting for main's answer: `Ok` it took the document, `Err`
-    /// it refused, with its reason.
-    adopting: HashMap<String, Sender<Result<(), String>>>,
+    /// Documents being handed to another window, by the key of the place
+    /// they leave ([`move_key`]), waiting for that window's answer.
+    adopting: HashMap<String, Adoption>,
     /// Tabs moving to a new window, by that window's label, waiting for its
     /// answer: `Ok` it holds the document, `Err` it refused or went away.
     detaching: HashMap<String, Sender<Result<(), String>>>,
     /// Labels reserved whose window is still being built, with the latest
     /// activation token of a launch that landed on them.
     creating: HashMap<String, String>,
+    /// The folder each editor window was opened on, resolved through links,
+    /// so a folder has one editor window at most.
+    editor_roots: HashMap<String, PathBuf>,
+}
+
+/// A document on its way to window `target`, which answers on `tx`: `Ok` it
+/// took the document, `Err` it refused, with its reason.
+struct Adoption {
+    tx: Sender<Result<(), String>>,
+    target: String,
+}
+
+/// The key a hand-off is known by: the document window's label, or the
+/// window and tab a tab leaves.
+fn move_key(location: &Location) -> String {
+    match location {
+        Location::Tab { window, tab_id } => format!("{window}#{tab_id}"),
+        other => other.window().to_owned(),
+    }
 }
 
 /// Managed state of the window layer.
@@ -218,6 +245,7 @@ impl WindowState {
                 adopting: HashMap::new(),
                 detaching: HashMap::new(),
                 creating: HashMap::new(),
+                editor_roots: HashMap::new(),
             }),
             adopt_timeout,
             stat: Arc::new(FileId::of),
@@ -441,13 +469,35 @@ fn reserve_doc_label<R: Runtime>(app: &AppHandle<R>, st: &WindowState, token: &s
 
 /// Reserves the next `editor-<n>` label, marked as being built like a
 /// document window's.
-fn reserve_editor_label<R: Runtime>(app: &AppHandle<R>, st: &WindowState) -> String {
+/// The editor window for the folder `root` (resolved through links): the
+/// one open on it, or a label reserved for a new one.
+enum EditorFor {
+    Existing(String),
+    Reserved(String),
+}
+
+/// Looks for an editor window on `root` and, finding none, reserves a label
+/// for one and records its folder, in one step, so two quick opens of one
+/// folder make one window.
+fn reserve_editor_for<R: Runtime>(
+    app: &AppHandle<R>,
+    st: &WindowState,
+    root: PathBuf,
+) -> EditorFor {
     let mut inner = st.lock();
+    let open = inner.editor_roots.iter().find(|(label, r)| {
+        **r == root
+            && (app.get_webview_window(label).is_some() || inner.creating.contains_key(*label))
+    });
+    if let Some((label, _)) = open {
+        return EditorFor::Existing(label.clone());
+    }
     let label = next_editor_label(&mut inner.next_editor, |l| {
         app.get_webview_window(l).is_some()
     });
     inner.creating.insert(label.clone(), String::new());
-    label
+    inner.editor_roots.insert(label.clone(), root);
+    EditorFor::Reserved(label)
 }
 
 /// The reserved window `label` is built or has failed to be. Returns the
@@ -687,6 +737,12 @@ enum Placement {
         label: String,
     },
     Focus(Location),
+    /// Open elsewhere and asked for from inside editor window `to`: the
+    /// place that holds it is asked to hand it over.
+    Fetch {
+        from: Location,
+        to: String,
+    },
     DefaultApp(PathBuf),
 }
 
@@ -875,6 +931,19 @@ async fn place<R: Runtime>(
             }
             Ok(done("focus", Some(loc)))
         }
+        Placement::Fetch { from, to } => {
+            // The holder hands the document over with `hand_doc` when it is ready; this editor
+            // comes forward when the document arrives (`hand_over`).
+            send_directive(
+                app,
+                from.window(),
+                &Directive::HandTo {
+                    path: wp.clone(),
+                    to,
+                },
+            )?;
+            Ok(done("moving", Some(from)))
+        }
         Placement::DefaultApp(p) => Ok(Step::DefaultApp(p)),
     }
 }
@@ -955,7 +1024,19 @@ fn decide<R: Runtime>(
                 st.open.remove_window(loc.window());
                 return Ok(None);
             }
-            Placement::Focus(loc)
+            // Opened from inside an editor window, a document open in another window comes to
+            // that editor rather than the other window coming forward.
+            if origin == Origin::Inside
+                && window_kind(home) == Some(WindowKind::Editor)
+                && loc.window() != home
+            {
+                Placement::Fetch {
+                    from: loc,
+                    to: home.to_owned(),
+                }
+            } else {
+                Placement::Focus(loc)
+            }
         }
     };
     Ok(Some(Decision {
@@ -1144,22 +1225,25 @@ pub async fn doc_opened<R: Runtime>(
             done.ok_or_else(registry_busy)??;
         }
         Some(from) => {
-            if window.label() != MAIN {
-                return Err(wire_error(
-                    "Denied",
-                    "only the main window registers the tab of a move Home",
-                    None,
-                ));
-            }
             // Checked and registered under the lock `cancel_adoption` takes to
             // end the move, so the two cannot interleave.
             let inner = st.lock();
-            if !inner.adopting.contains_key(&from) {
-                return Err(wire_error(
-                    "AdoptionOver",
-                    format!("the move from window {from} is over; it keeps the document"),
-                    Some(&p),
-                ));
+            match inner.adopting.get(&from) {
+                None => {
+                    return Err(wire_error(
+                        "AdoptionOver",
+                        format!("the move from {from} is over; it keeps the document"),
+                        Some(&p),
+                    ));
+                }
+                Some(a) if a.target != window.label() => {
+                    return Err(wire_error(
+                        "Denied",
+                        format!("the move from {from} goes to window {}", a.target),
+                        None,
+                    ));
+                }
+                Some(_) => {}
             }
             st.open.insert(&p, location);
             drop(inner);
@@ -1489,17 +1573,28 @@ pub async fn open_editor<R: Runtime>(
     }
     let p = root.to_path_buf()?;
     let q = p.clone();
-    // Follows links: a link to a folder is a folder.
-    blocking(move || match std::fs::metadata(&q) {
-        Ok(m) if m.is_dir() => Ok(()),
+    // Follows links: a link to a folder is a folder, and is the folder it leads to when the
+    // editor windows are compared.
+    let resolved = blocking(move || match std::fs::metadata(&q) {
+        Ok(m) if m.is_dir() => std::fs::canonicalize(&q).map_err(|e| io_error(&q, &e)),
         Ok(_) => Err(wire_error("NotAFolder", "that is not a folder", Some(&q))),
         Err(e) => Err(io_error(&q, &e)),
     })
     .await?;
     let st = state(&app)?;
-    let label = reserve_editor_label(&app, &st);
+    // A folder has one editor window: opened again, the one it has comes forward.
+    let label = match reserve_editor_for(&app, &st, resolved) {
+        EditorFor::Existing(label) => {
+            focus(&app, &label, "")?;
+            return Ok(label);
+        }
+        EditorFor::Reserved(label) => label,
+    };
     let result = build_editor_window(&app, &label);
     let token = built(&st, &label);
+    if result.is_err() {
+        st.lock().editor_roots.remove(&label);
+    }
     result?;
     send_directive(&app, &label, &Directive::EditorRoot { path: root })?;
     focus(&app, &label, &token)?;
@@ -1532,98 +1627,201 @@ pub async fn move_doc_to_main<R: Runtime>(
     if ensure_main(&app)? {
         send_directive(&app, MAIN, &Directive::HomeTab)?;
     }
-    let (tx, rx) = mpsc::channel();
-    st.lock().adopting.insert(label.clone(), tx);
-    let sent = send(
-        &app,
-        MAIN,
-        EVENT_ADOPT_DOC,
-        json!({ "path": WirePath::from(path.as_path()), "text_state": text_state, "from": label }),
-    );
-    if let Err(e) = sent {
-        // Nothing reached main, so there is nothing to cancel there.
-        st.lock().adopting.remove(&label);
-        return Err(e);
-    }
-    // Main has the document from here on: every way out below that does not
-    // end in the window closing takes the adoption back.
-    if let Err(e) = focus(&app, MAIN, "") {
-        // Raising main is a courtesy; the adoption goes on.
-        eprintln!("kern: could not raise the main window: {e:?}");
-    }
-    let timeout = st.adopt_timeout;
-    let answer = match blocking(move || Ok(rx.recv_timeout(timeout).ok())).await {
-        Ok(a) => a,
-        Err(e) => {
-            cancel_adoption(&app, &st, &label, &path);
-            return Err(e);
-        }
+    let source = Location::Window {
+        label: label.clone(),
     };
-    if let Some(Err(reason)) = answer {
-        cancel_adoption(&app, &st, &label, &path);
-        return Err(wire_error("AdoptRefused", reason, Some(&path)));
-    }
-    if answer.is_none() {
-        cancel_adoption(&app, &st, &label, &path);
-        return Err(wire_error(
-            "AdoptTimeout",
-            "the main window did not take the document; it stays open here",
-            Some(&path),
-        ));
-    }
-    st.lock().adopting.remove(&label);
+    hand_over(&app, &st, &source, &path, text_state, MAIN).await?;
+    close_handed_window(&app, &st, &doc, &source, &path, MAIN)
+}
+
+/// A document window whose document `target` has taken goes. If it cannot,
+/// the move is taken back: two windows holding the document would be two
+/// copies, so `target` drops its tab and the window keeps it.
+fn close_handed_window<R: Runtime>(
+    app: &AppHandle<R>,
+    st: &WindowState,
+    doc: &WebviewWindow<R>,
+    source: &Location,
+    path: &Path,
+    target: &str,
+) -> Result<(), WireError> {
     if let Err(e) = doc.destroy() {
-        // Main has the document; leaving the window too would make two
-        // copies, so main is told to drop its tab and the window keeps it.
-        cancel_adoption(&app, &st, &label, &path);
+        cancel_adoption(app, st, source, path, target);
         return Err(window_error(e));
     }
     Ok(())
 }
 
-/// Takes a move back: the document window keeps the path, and `main` is told
-/// to drop the tab it may have made.
-fn cancel_adoption<R: Runtime>(app: &AppHandle<R>, st: &WindowState, label: &str, path: &Path) {
-    st.lock().adopting.remove(label);
-    st.open.insert(
-        path,
-        Location::Window {
-            label: label.to_owned(),
+/// Hands the document at `source` (registered there for `path`) to window
+/// `target`: it is sent with its editor state on [`EVENT_ADOPT_DOC`], and
+/// `target` registers its tab (`doc_opened` with the move's key) and answers
+/// with `adopted` or `refuse_adoption`. Without an answer within the
+/// timeout, or with a refusal, the move is taken back ([`cancel_adoption`])
+/// and the source keeps the document. On `Ok` the target holds it and the
+/// source is to let it go.
+async fn hand_over<R: Runtime>(
+    app: &AppHandle<R>,
+    st: &WindowState,
+    source: &Location,
+    path: &Path,
+    text_state: Option<Value>,
+    target: &str,
+) -> Result<(), WireError> {
+    let key = move_key(source);
+    let (tx, rx) = mpsc::channel();
+    st.lock().adopting.insert(
+        key.clone(),
+        Adoption {
+            tx,
+            target: target.to_owned(),
         },
     );
-    if let Err(e) = send(app, MAIN, EVENT_ADOPT_CANCELLED, json!({ "label": label })) {
-        eprintln!("kern: could not tell main to drop the moved tab: {e:?}");
+    let sent = send(
+        app,
+        target,
+        EVENT_ADOPT_DOC,
+        json!({ "path": WirePath::from(path), "text_state": text_state, "from": key }),
+    );
+    if let Err(e) = sent {
+        // Nothing reached the target, so there is nothing to cancel there.
+        st.lock().adopting.remove(&key);
+        return Err(e);
+    }
+    // The target has the document from here on: every way out below that
+    // does not end with it holding the document takes the move back.
+    if let Err(e) = focus(app, target, "") {
+        // Raising the target is a courtesy; the move goes on.
+        eprintln!("kern: could not raise window {target}: {e:?}");
+    }
+    let timeout = st.adopt_timeout;
+    let answer = match blocking(move || Ok(rx.recv_timeout(timeout).ok())).await {
+        Ok(a) => a,
+        Err(e) => {
+            cancel_adoption(app, st, source, path, target);
+            return Err(e);
+        }
+    };
+    match answer {
+        Some(Ok(())) => {
+            st.lock().adopting.remove(&key);
+            Ok(())
+        }
+        Some(Err(reason)) => {
+            cancel_adoption(app, st, source, path, target);
+            Err(wire_error("AdoptRefused", reason, Some(path)))
+        }
+        None => {
+            cancel_adoption(app, st, source, path, target);
+            Err(wire_error(
+                "AdoptTimeout",
+                format!("window {target} did not take the document; it stays where it was"),
+                Some(path),
+            ))
+        }
     }
 }
 
-/// `main` took the document of window `label` (see `move_doc_to_main`). It
-/// registers the new tab with `doc_opened` first.
+/// Takes a move back: the source keeps the path, and `target` is told to
+/// drop the tab it may have made.
+fn cancel_adoption<R: Runtime>(
+    app: &AppHandle<R>,
+    st: &WindowState,
+    source: &Location,
+    path: &Path,
+    target: &str,
+) {
+    let key = move_key(source);
+    st.lock().adopting.remove(&key);
+    st.open.insert(path, source.clone());
+    if let Err(e) = send(app, target, EVENT_ADOPT_CANCELLED, json!({ "label": key })) {
+        eprintln!("kern: could not tell window {target} to drop the moved tab: {e:?}");
+    }
+}
+
+/// The calling window gives the document it holds at `path` (tab `tab_id`,
+/// or its own document when `tab_id` is `None`, a document window) to the
+/// editor window `to`, as a `HandTo` directive asked. Resolves once `to`
+/// holds it; the caller then lets its tab go. A document window is closed
+/// here. On an error the caller keeps the document.
+#[tauri::command]
+pub async fn hand_doc<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+    tab_id: Option<String>,
+    path: WirePath,
+    text_state: Option<Value>,
+    to: String,
+) -> Result<(), WireError> {
+    let p = path.to_path_buf()?;
+    let caller = window.label().to_owned();
+    if window_kind(&to) != Some(WindowKind::Editor) || to == caller {
+        return Err(wire_error(
+            "Denied",
+            format!("a document is handed to another editor window, not to {to}"),
+            None,
+        ));
+    }
+    if app.get_webview_window(&to).is_none() {
+        return Err(wire_error(
+            "NoWindow",
+            format!("window {to} is gone, so the document stays here"),
+            Some(&p),
+        ));
+    }
+    let source = match tab_id {
+        Some(tab_id) => Location::Tab {
+            window: caller.clone(),
+            tab_id,
+        },
+        None => Location::Window {
+            label: caller.clone(),
+        },
+    };
+    // Only a document registered at the caller's own place moves: the registry is how the
+    // caller is known to hold it.
+    let st = state(&app)?;
+    let checked = under_gate(&st, &p, |survey| {
+        let found = survey.lookup_asked();
+        Some(match found.location {
+            Some(held) if held == source => Ok(()),
+            Some(held) => Err(wire_error(
+                "TabMismatch",
+                format!(
+                    "the document is open in {}, not here",
+                    describe_place(&held)
+                ),
+                Some(&p),
+            )),
+            None => Err(wire_error(
+                "NotRegistered",
+                "the document has not finished opening here, so it cannot be moved yet",
+                Some(&p),
+            )),
+        })
+    })
+    .await?;
+    checked.ok_or_else(registry_busy)??;
+    hand_over(&app, &st, &source, &p, text_state, &to).await?;
+    if matches!(source, Location::Window { .. }) {
+        close_handed_window(&app, &st, &window, &source, &p, &to)?;
+    }
+    Ok(())
+}
+
+/// The calling window took the document of the move `label` (the key
+/// [`hand_over`] sent with it). It registers the new tab with `doc_opened`
+/// first.
 #[tauri::command]
 pub fn adopted<R: Runtime>(
     app: AppHandle<R>,
     window: WebviewWindow<R>,
     label: String,
 ) -> Result<(), WireError> {
-    if window.label() != MAIN {
-        return Err(wire_error("Denied", "only the main window adopts", None));
-    }
-    let tx = state(&app)?.lock().adopting.remove(&label);
-    match tx {
-        Some(tx) => {
-            let _ = tx.send(Ok(()));
-            Ok(())
-        }
-        None => Err(wire_error(
-            "NoAdoption",
-            format!("no move from window {label} is waiting; drop the tab"),
-            None,
-        )),
-    }
+    answer_adoption(&app, window.label(), &label, Ok(()))
 }
 
-/// `main` will not take the document of window `label` (see
-/// `move_doc_to_main`): the move ends at once with `reason`, and the window
-/// keeps the document.
+/// The calling window will not take the document of the move `label`: the
+/// move ends at once with `reason`, and the source keeps the document.
 #[tauri::command]
 pub fn refuse_adoption<R: Runtime>(
     app: AppHandle<R>,
@@ -1631,21 +1829,73 @@ pub fn refuse_adoption<R: Runtime>(
     label: String,
     reason: String,
 ) -> Result<(), WireError> {
-    if window.label() != MAIN {
-        return Err(wire_error("Denied", "only the main window adopts", None));
-    }
-    let tx = state(&app)?.lock().adopting.remove(&label);
-    match tx {
-        Some(tx) => {
-            let _ = tx.send(Err(reason));
-            Ok(())
-        }
+    answer_adoption(&app, window.label(), &label, Err(reason))
+}
+
+/// Passes window `answering`'s answer to the move `key`; only the move's
+/// target answers it.
+fn answer_adoption<R: Runtime>(
+    app: &AppHandle<R>,
+    answering: &str,
+    key: &str,
+    answer: Result<(), String>,
+) -> Result<(), WireError> {
+    let st = state(app)?;
+    let mut inner = st.lock();
+    match inner.adopting.get(key) {
         None => Err(wire_error(
             "NoAdoption",
-            format!("no move from window {label} is waiting"),
+            format!("no move from {key} is waiting; drop the tab"),
             None,
         )),
+        Some(a) if a.target != answering => Err(wire_error(
+            "Denied",
+            format!("the move from {key} goes to window {}", a.target),
+            None,
+        )),
+        Some(_) => {
+            if let Some(a) = inner.adopting.remove(key) {
+                let _ = a.tx.send(answer);
+            }
+            Ok(())
+        }
     }
+}
+
+/// The calling window holds `path` and could not hand it to editor window
+/// `to` (a `HandTo` it was sent): `to` is told why, as an open error, and the
+/// calling window comes forward with the document where it is.
+#[tauri::command]
+pub fn hand_refused<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+    path: WirePath,
+    to: String,
+    reason: String,
+) -> Result<(), WireError> {
+    if window_kind(&to) != Some(WindowKind::Editor) {
+        return Err(wire_error(
+            "Denied",
+            format!("a document is handed to an editor window, not to {to}"),
+            None,
+        ));
+    }
+    let p = path.to_path_buf()?;
+    let said = send(
+        &app,
+        &to,
+        EVENT_OPEN_ERROR,
+        json!(wire_error(
+            "NotMoved",
+            format!(
+                "{} was not moved here: {reason}; it stays in its own window",
+                p.display()
+            ),
+            Some(&p),
+        )),
+    );
+    focus(&app, window.label(), "")?;
+    said
 }
 
 /// The calling window's frontend finished its save / discard / cancel
@@ -1700,6 +1950,20 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
                         "the new window was closed before it took the document".to_owned()
                     ));
                 }
+                // A move into this window ends: nothing will answer it.
+                let gone: Vec<String> = inner
+                    .adopting
+                    .iter()
+                    .filter(|(_, a)| a.target == window.label())
+                    .map(|(k, _)| k.clone())
+                    .collect();
+                for key in gone {
+                    if let Some(a) = inner.adopting.remove(&key) {
+                        let _ =
+                            a.tx.send(Err("the window it was moving to was closed".to_owned()));
+                    }
+                }
+                inner.editor_roots.remove(window.label());
             }
         }
         _ => {}
