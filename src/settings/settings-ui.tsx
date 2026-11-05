@@ -102,7 +102,8 @@ export function Toggle(props: {
 export function Choices<T extends string | number>(props: {
   label: string;
   value: T;
-  options: readonly { value: T; label: string }[];
+  /** An option with `disabled` is shown greyed and cannot be chosen. */
+  options: readonly { value: T; label: string; disabled?: boolean }[];
   onChange(value: T): void;
 }) {
   return (
@@ -112,6 +113,7 @@ export function Choices<T extends string | number>(props: {
           key={o.value}
           type="button"
           aria-pressed={o.value === props.value}
+          disabled={o.disabled}
           onClick={() => props.onChange(o.value)}
         >
           {o.label}

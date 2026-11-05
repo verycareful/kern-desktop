@@ -12,7 +12,7 @@ use std::sync::Arc;
 use kern_lib::store::{
     move_aside, volume_online, LayoutKind, NewTabDefault, SessionTab, SessionWindow, Store,
     ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES, LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX,
-    LEFT_WIDTH_MIN, RECENTS_CAP, RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN,
+    LEFT_WIDTH_MIN, MAIN_LAYOUTS, RECENTS_CAP, RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN,
 };
 use kernkraft_tauri::WirePath;
 use serde_json::{json, Map, Value};
@@ -881,33 +881,51 @@ fn a_layout_file_that_is_not_an_object_is_moved_aside() {
 }
 
 #[test]
-fn default_layout_follows_the_rules_of_the_other_settings() {
+fn the_main_window_layout_is_the_file_manager_and_the_editor_is_refused() {
     let e = env();
     let s = store(&e);
+    assert_eq!(MAIN_LAYOUTS, [LayoutKind::FileManager]);
     assert_eq!(
         s.settings_get().unwrap().value.default_layout,
         LayoutKind::FileManager
     );
-    let out = s
+    // The editor layout is not offered for the main window: refused, and nothing is written.
+    let err = s
         .settings_set(patch(json!({"default_layout": "editor"})))
+        .unwrap_err();
+    assert_eq!(err.kind, "InvalidArgument");
+    assert!(err.message.contains("not offered"), "{}", err.message);
+    assert!(!e.config.join("settings.json").exists());
+    // The file manager is taken; it is the value already, so nothing changes.
+    let same = s
+        .settings_set(patch(json!({"default_layout": "file_manager"})))
         .unwrap();
-    assert_eq!(out.value.default_layout, LayoutKind::Editor);
-    assert_eq!(
-        read_json(&e.config.join("settings.json"))["default_layout"],
-        json!("editor")
-    );
-    assert_eq!(
-        store(&e).settings_get().unwrap().value.default_layout,
-        LayoutKind::Editor
-    );
-    // A value that is not a layout refuses the patch and changes nothing.
+    assert!(!same.changed);
+    // A value that is not a layout refuses the patch too.
     let err = s
         .settings_set(patch(json!({"default_layout": "sideways"})))
         .unwrap_err();
     assert_eq!(err.kind, "InvalidArgument");
+    assert!(!e.config.join("settings.json").exists());
+}
+
+#[test]
+fn a_stored_editor_layout_reads_as_the_file_manager_and_the_next_write_stores_it() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    fs::write(
+        e.config.join("settings.json"),
+        r#"{"default_layout": "editor"}"#,
+    )
+    .unwrap();
+    let s = store(&e);
+    let got = s.settings_get().unwrap();
+    assert_eq!(got.value.default_layout, LayoutKind::FileManager);
+    assert!(got.corrupt.is_empty());
+    s.settings_set(patch(json!({"word_wrap": true}))).unwrap();
     assert_eq!(
         read_json(&e.config.join("settings.json"))["default_layout"],
-        json!("editor")
+        json!("file_manager")
     );
 }
 
@@ -926,11 +944,11 @@ fn a_bad_stored_default_layout_is_reported_kept_and_replaced_by_the_next_choice(
         read_json(&e.config.join("settings.json"))["default_layout"],
         json!(3)
     );
-    s.settings_set(patch(json!({"default_layout": "editor"})))
+    s.settings_set(patch(json!({"default_layout": "file_manager"})))
         .unwrap();
     assert_eq!(
         read_json(&e.config.join("settings.json"))["default_layout"],
-        json!("editor")
+        json!("file_manager")
     );
 }
 

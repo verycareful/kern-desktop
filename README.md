@@ -20,7 +20,7 @@
 [![Playwright](https://img.shields.io/badge/Playwright-1.49-2EAD33?style=flat-square&logo=playwright&logoColor=white)](https://playwright.dev/)
 [![WebdriverIO](https://img.shields.io/badge/WebdriverIO-10.1-EA5906?style=flat-square&logo=webdriverio&logoColor=white)](https://webdriver.io/)
 <!-- Release -->
-[![Version](https://img.shields.io/badge/Version-0.1.0.0.95-informational?style=flat-square)](VERSION)
+[![Version](https://img.shields.io/badge/Version-0.1.0.0.96-informational?style=flat-square)](VERSION)
 <!-- Licence and status -->
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Early%20Development-orange?style=flat-square)](#)
@@ -58,9 +58,10 @@ editor. What it does today:
   that mixes line endings, is not UTF-8 or is too large opens read-only. A file
   opened from outside Kern gets a window of its own; Home moves it into the main
   window.
-- **Editor layout.** A window can switch to an editor layout with a folder tree
-  beside the document, and "Open as editor" opens a folder in a window of that
-  kind. A file open in one window is focused, never opened twice.
+- **Editor windows.** "Open as editor" opens a folder in a window of its own,
+  with a folder tree beside the documents and the file operations in the
+  tree's menu. The main window is always a file manager. A file open in one
+  window is focused, never opened twice.
 - **Desktop integration.** Kern follows the system theme (colours, accent,
   fonts and corner radius from Hyprland, the desktop portal, GTK and
   fontconfig), each part with its own switch in Settings. It installs a desktop

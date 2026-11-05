@@ -239,18 +239,17 @@ fn a_restart_opens_every_kept_window_again_with_its_tabs() {
 }
 
 #[test]
-fn a_restart_in_the_editor_layout_gives_the_main_window_no_folder_tabs() {
+fn a_restart_with_a_stored_editor_layout_keeps_the_main_window_s_folder_tabs() {
+    // The main window takes the file manager layout whatever is stored, so its folder tabs stay.
     let e = quiet_env();
     let notes = e.text("notes.txt");
     write_settings(&e, json!({"default_layout": "editor"}));
-    write_session(
-        &e,
-        json!([{"label": "main", "tabs": [folder(&e.files), doc(&notes), folder(&e.files)], "active": 1}]),
-    );
+    let tabs = json!([folder(&e.files), doc(&notes), folder(&e.files)]);
+    write_session(&e, json!([{"label": "main", "tabs": tabs, "active": 1}]));
     tauri::async_runtime::block_on(launch(&e.handle, true));
     assert_eq!(
         directives(&e, "main"),
-        [json!({"kind": "restore", "tabs": [doc(&notes)], "active": 0})]
+        [json!({"kind": "restore", "tabs": tabs, "active": 1})]
     );
 }
 

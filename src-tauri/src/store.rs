@@ -118,6 +118,11 @@ pub enum LayoutKind {
     Editor,
 }
 
+/// The layouts the main window may take. The editor layout is an editor window's (Open as
+/// editor) and is not offered to the main window: a stored `default_layout` of `editor` reads as
+/// the file manager, which the next write stores, and setting it is refused.
+pub const MAIN_LAYOUTS: [LayoutKind; 1] = [LayoutKind::FileManager];
+
 /// What Ctrl+T and the New tab button's shortcut open: the new tab folder
 /// ([`Settings::new_tab_folder`]) or the folder of the tab in front. The
 /// other of the two is on Ctrl+Shift+T.
@@ -729,6 +734,9 @@ impl Stored for Settings {
             &mut problems,
             any_value,
         );
+        if !MAIN_LAYOUTS.contains(&s.default_layout) {
+            s.default_layout = LayoutKind::FileManager;
+        }
         take(
             &mut obj,
             "new_tab_folder",
@@ -1114,6 +1122,19 @@ impl Store {
         let known = known_settings_keys();
         if let Some(bad) = patch.keys().find(|k| !known.contains(k.as_str())) {
             return Err(invalid("setting", format!("unknown field {bad:?}")));
+        }
+        if let Some(asked) = patch.get("default_layout") {
+            let offered = MAIN_LAYOUTS
+                .iter()
+                .any(|l| serde_json::to_value(l).is_ok_and(|v| &v == asked));
+            if !offered {
+                return Err(invalid(
+                    "setting",
+                    format!(
+                        "default_layout: {asked} is not offered for the main window; open a folder as an editor for the editor layout"
+                    ),
+                ));
+            }
         }
         self.settings.update(|current| {
             let Value::Object(mut merged) = current.render().map_err(|e| invalid("setting", e))?

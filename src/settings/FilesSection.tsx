@@ -32,9 +32,11 @@ const VIEWS: readonly { value: ViewMode; label: string }[] = [
   { value: "grid", label: "Grid" },
 ];
 
-const LAYOUTS: readonly { value: LayoutKind; label: string }[] = [
+// The main window takes the file manager layout only (the backend's MAIN_LAYOUTS); the editor
+// layout is shown, greyed, as the one an editor window has.
+const LAYOUTS: readonly { value: LayoutKind; label: string; disabled?: boolean }[] = [
   { value: "file_manager", label: "File manager" },
-  { value: "editor", label: "Editor" },
+  { value: "editor", label: "Editor", disabled: true },
 ];
 
 const NEW_TAB_DEFAULTS: readonly { value: NewTabDefault; label: string }[] = [
@@ -255,7 +257,7 @@ export function FilesSection(props: { settings: Settings }) {
       <Group rows={["default_layout"]}>
         <Row
           id="default_layout"
-          note="Applies as soon as it is saved. The editor layout shows folders in its tree and has no folder tabs: they close when it starts."
+          note="The main window is a file manager. The editor layout, a folder tree beside your documents, is not available for the main window yet: open a folder as an editor for it."
         >
           <Choices
             label="Main window layout"

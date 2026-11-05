@@ -221,6 +221,17 @@ test("a_change_shows_at_once_and_is_stored_only_by_save_with_just_what_changed",
   expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 });
 
+test("the_main_window_layout_offers_the_file_manager_and_greys_the_editor", async () => {
+  await mount();
+  nav("Files");
+  expect(pressed("Main window layout", "File manager")).toHaveAttribute("aria-pressed", "true");
+  const editor = pressed("Main window layout", "Editor");
+  expect(editor).toBeDisabled();
+  fireEvent.click(editor);
+  expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  expect(screen.getByText(/not available for the main window yet/)).toBeInTheDocument();
+});
+
 test("a_save_without_a_theme_field_leaves_the_theme_alone", async () => {
   await mount();
   nav("Files");

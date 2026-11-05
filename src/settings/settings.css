@@ -250,7 +250,8 @@ h2.kern-settings-heading {
 }
 
 .kern-settings-switch:disabled,
-.kern-settings-swatch:disabled {
+.kern-settings-swatch:disabled,
+.kern-settings-choices button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
