@@ -3,10 +3,8 @@
 import { useEffect, useId, useState } from "react";
 import {
   defaultFmStatus,
-  displayPath,
   fm1Status,
   makeDefaultFm,
-  pathKey,
   toWireError,
   type DefaultFm,
   type Fm1Status,
@@ -15,23 +13,22 @@ import {
   type ViewMode,
   type WireError,
 } from "../ipc";
-import { parseLocation } from "../files/path-input";
 import { errorText } from "../ops/error-text";
-import { useUserDirs } from "../shell/user-dirs-store";
-import { useSettings } from "./settings-store";
+import { useSettingsDraft } from "./settings-draft";
+import { Choices, Group, Row, Toggle } from "./settings-ui";
 
-// Files: the folders the Library walks (Documents and
-// Downloads, and folders of the user's own), whether hidden items show and
-// list or grid in a new folder view, the layout of a window that has none yet, the Terminal command, and whether Kern
-// is the default file manager (default_fm.rs: the inode/directory default, and the
-// org.freedesktop.FileManager1 name other programs ask to show folders).
+// Files: the layout of a main window that has none yet, list or grid and hidden items in a new
+// folder view, the Terminal program, and whether Kern is the default file manager (default_fm.rs:
+// the inode/directory default, and the org.freedesktop.FileManager1 name other programs ask to
+// show folders). Making Kern the default is an action on the system, not a setting: it happens
+// when its button is pressed, not at Save.
 
-const VIEWS: { value: ViewMode; label: string }[] = [
+const VIEWS: readonly { value: ViewMode; label: string }[] = [
   { value: "list", label: "List" },
   { value: "grid", label: "Grid" },
 ];
 
-const LAYOUTS: { value: LayoutKind; label: string }[] = [
+const LAYOUTS: readonly { value: LayoutKind; label: string }[] = [
   { value: "file_manager", label: "File manager" },
   { value: "editor", label: "Editor" },
 ];
@@ -39,137 +36,29 @@ const LAYOUTS: { value: LayoutKind; label: string }[] = [
 type Load<T> =
   { state: "loading" } | { state: "ready"; value: T } | { state: "failed"; error: WireError };
 
-function ScanRoots(props: { settings: Settings }) {
-  const { settings } = props;
-  const id = useId();
-  const change = useSettings((s) => s.change);
-  const [text, setText] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const roots = settings.scan_roots;
-
-  const add = async () => {
-    const typed = text;
-    let home = null;
-    try {
-      home = (await useUserDirs.getState().load()).home;
-    } catch {
-      // ~ is then refused by parseLocation with its own words.
-    }
-    const parsed = parseLocation(typed, home);
-    if (!parsed.ok) {
-      setError(parsed.message);
-      return;
-    }
-    // The list as it is now: it may have changed while the home folder was looked up.
-    const now = useSettings.getState().settings?.scan_roots ?? roots;
-    const key = pathKey(parsed.path);
-    if (now.some((r) => pathKey(r) === key)) {
-      setError(`${displayPath(parsed.path)} is already in the list.`);
-      return;
-    }
-    setError(null);
-    if (await change({ scan_roots: [...now, parsed.path] }, "The folder")) setText("");
-  };
-
-  return (
-    <fieldset>
-      <legend>Folders the Library also walks</legend>
-      {roots.length === 0 ? (
-        <p className="kern-settings-note">None besides Documents and Downloads.</p>
-      ) : (
-        <ul className="kern-settings-list" data-testid="scan-roots">
-          {roots.map((r) => (
-            <li key={pathKey(r)}>
-              <span>{displayPath(r)}</span>
-              <button
-                type="button"
-                className="kern-button"
-                aria-label={`Remove ${displayPath(r)}`}
-                onClick={() =>
-                  void change(
-                    { scan_roots: roots.filter((x) => pathKey(x) !== pathKey(r)) },
-                    "Removing the folder"
-                  )
-                }
-              >
-                Remove
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <label htmlFor={`${id}-root`}>Add a folder</label>
-      <input
-        id={`${id}-root`}
-        type="text"
-        className="kern-modal-input"
-        spellCheck={false}
-        placeholder="~/Projects"
-        value={text}
-        aria-invalid={error !== null}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            void add();
-          }
-        }}
-      />
-      <button type="button" className="kern-button" onClick={() => void add()}>
-        Add
-      </button>
-      {error && (
-        <p role="alert" className="kern-modal-error">
-          {error}
-        </p>
-      )}
-    </fieldset>
-  );
-}
-
 function Terminal(props: { settings: Settings }) {
   const id = useId();
-  const change = useSettings((s) => s.change);
-  const stored = props.settings.terminal ?? "";
-  const [text, setText] = useState(stored);
-  useEffect(() => setText(stored), [stored]);
-  const save = () => {
-    const value = text.trim();
-    void change({ terminal: value === "" ? null : value }, "The terminal command");
-  };
+  const edit = useSettingsDraft((s) => s.edit);
+  const value = props.settings.terminal ?? "";
+  const set = (text: string) => edit({ terminal: text === "" ? null : text });
   return (
-    <fieldset>
-      <legend>Terminal</legend>
-      <label htmlFor={`${id}-term`}>Terminal program</label>
+    <Row
+      id="terminal"
+      htmlFor={`${id}-term`}
+      wide
+      note="Kern opens a terminal with xdg-terminal-exec when it is installed, else with $TERMINAL, else with this program. It is one program, not a command line: Kern adds -e and the command when there is one to run."
+    >
       <input
         id={`${id}-term`}
         type="text"
         className="kern-modal-input"
         spellCheck={false}
         placeholder="kitty"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            save();
-          }
-        }}
+        value={value}
+        onChange={(e) => set(e.target.value)}
+        onBlur={(e) => set(e.target.value.trim())}
       />
-      <button
-        type="button"
-        className="kern-button"
-        disabled={text.trim() === stored}
-        onClick={save}
-      >
-        Save
-      </button>
-      <p className="kern-settings-note">
-        Kern opens a terminal with xdg-terminal-exec when it is installed, else with $TERMINAL, else
-        with this program. It is one program, not a command line: Kern adds -e and the command when
-        there is one to run.
-      </p>
-    </fieldset>
+    </Row>
   );
 }
 
@@ -227,21 +116,28 @@ function DefaultFileManager() {
   }
 
   return (
-    <fieldset>
-      <legend>Default file manager</legend>
-      <p role="status" className="kern-settings-note" data-testid="default-fm-status">
-        {status}
-      </p>
-      <button
-        type="button"
-        className="kern-button"
-        disabled={making || fm.state !== "ready" || fm.value.is_default}
-        onClick={() => void make()}
-      >
-        Make Kern the default file manager
-      </button>
+    <Row
+      id="default_fm"
+      wide
+      note={
+        <span role="status" data-testid="default-fm-status">
+          {status}
+        </span>
+      }
+    >
+      <div className="kern-settings-inline">
+        <button
+          type="button"
+          className="kern-button"
+          disabled={making || fm.state !== "ready" || fm.value.is_default}
+          onClick={() => void make()}
+        >
+          Make Kern the default file manager
+        </button>
+        <span className="kern-settings-hint">Happens at once, not at Save.</span>
+      </div>
       {busText && (
-        <p className="kern-settings-note" data-testid="fm1-status">
+        <p className="kern-settings-hint" data-testid="fm1-status">
           {busText}
         </p>
       )}
@@ -250,82 +146,49 @@ function DefaultFileManager() {
           {error}
         </p>
       )}
-    </fieldset>
+    </Row>
   );
 }
 
 export function FilesSection(props: { settings: Settings }) {
   const { settings } = props;
-  const id = useId();
-  const change = useSettings((s) => s.change);
+  const edit = useSettingsDraft((s) => s.edit);
   return (
-    <section className="kern-settings-section" aria-labelledby={`${id}-h`}>
-      <h2 id={`${id}-h`}>Files</h2>
-      <fieldset>
-        <legend>Library</legend>
-        <label className="kern-settings-choice">
-          <input
-            type="checkbox"
-            checked={settings.scan_documents}
-            onChange={(e) => void change({ scan_documents: e.target.checked }, "Documents")}
+    <>
+      <Group rows={["default_layout"]}>
+        <Row
+          id="default_layout"
+          note="For a main window with no layout remembered yet. A layout you switch to is remembered and wins."
+        >
+          <Choices
+            label="Main window opens as"
+            value={settings.default_layout}
+            options={LAYOUTS}
+            onChange={(default_layout) => edit({ default_layout })}
           />
-          Walk Documents
-        </label>
-        <label className="kern-settings-choice">
-          <input
-            type="checkbox"
-            checked={settings.scan_downloads}
-            onChange={(e) => void change({ scan_downloads: e.target.checked }, "Downloads")}
+        </Row>
+      </Group>
+      <Group rows={["view_mode", "show_hidden"]}>
+        <Row id="view_mode" note="List or grid">
+          <Choices
+            label="View of new folder views"
+            value={settings.view_mode}
+            options={VIEWS}
+            onChange={(view_mode) => edit({ view_mode })}
           />
-          Walk Downloads
-        </label>
-      </fieldset>
-      <ScanRoots settings={settings} />
-      <fieldset>
-        <legend>New folder views</legend>
-        <label className="kern-settings-choice">
-          <input
-            type="checkbox"
-            checked={settings.show_hidden}
-            onChange={(e) => void change({ show_hidden: e.target.checked }, "Show hidden items")}
+        </Row>
+        <Row id="show_hidden" note="Dotfiles in new folder views">
+          <Toggle
+            label="Show hidden items"
+            on={settings.show_hidden}
+            onChange={(show_hidden) => edit({ show_hidden })}
           />
-          Show hidden items
-        </label>
-        {VIEWS.map((v) => (
-          <label key={v.value} className="kern-settings-choice">
-            <input
-              type="radio"
-              name={`${id}-view`}
-              checked={settings.view_mode === v.value}
-              onChange={() => void change({ view_mode: v.value }, "The view")}
-            />
-            {v.label}
-          </label>
-        ))}
-      </fieldset>
-      <fieldset>
-        <legend>Default layout of the main window</legend>
-        {LAYOUTS.map((l) => (
-          <label key={l.value} className="kern-settings-choice">
-            <input
-              type="radio"
-              name={`${id}-layout`}
-              checked={settings.default_layout === l.value}
-              onChange={() => void change({ default_layout: l.value }, "The default layout")}
-            />
-            {l.label}
-          </label>
-        ))}
-        <p className="kern-settings-note">
-          The file manager has the places on the left and Pinned and Recent on the right. The editor
-          keeps a folder tree on the left whatever tab is shown. This is the layout of the main
-          window when it has none remembered yet: the first time Kern starts, and a main window made
-          anew. A layout you switch to is remembered and wins. Open as editor always makes an editor
-          window.
-        </p>
-      </fieldset>
-      <Terminal settings={settings} />
-      <DefaultFileManager />
-    </section>
+        </Row>
+      </Group>
+      <Group rows={["terminal", "default_fm"]}>
+        <Terminal settings={settings} />
+        <DefaultFileManager />
+      </Group>
+    </>
   );
 }

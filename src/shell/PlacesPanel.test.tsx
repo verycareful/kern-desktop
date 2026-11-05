@@ -37,7 +37,6 @@ beforeEach(() => {
   ipc.settingsGet.mockResolvedValue({
     show_hidden: false,
     view_mode: "list",
-    density: "cozy",
   } as Settings);
   ipc.userDirs.mockResolvedValue({ home: p("/home/t"), dirs: [] });
   ipc.volumesProblemsTake.mockResolvedValue([]);

@@ -1,38 +1,59 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useEffect, useId, useRef, useState } from "react";
-import { openUrl, toWireError } from "../ipc";
+import { ChevronRight, ExternalLink } from "lucide-react";
+import { useRef, useState } from "react";
+import { openUrl, toWireError, type Settings } from "../ipc";
 import { errorText } from "../ops/error-text";
+import { Modal } from "../ops/Modal";
 import { LICENCE_TEXT } from "./licence";
-import { useSettingsNav } from "./settings-nav";
-import { useSettings } from "./settings-store";
+import { Group, Row, RowButton } from "./settings-ui";
 import { VERSION_LABEL } from "./version";
 
-// About: the version label, the licence, and links to Kern's
-// source and to the Android app. A link is opened by the default application
-// for https links (kernkraft open_url); Kern itself connects to nothing.
-// The logo in the places strip asks for this section (settings-nav.ts): it
-// is scrolled into view and its heading takes the focus.
+// About: the version label, what Kern does with the network (nothing: Kern has no network code,
+// its dependencies are checked for none and its window allows no remote origin), the licence,
+// whose full text opens in a dialog, and links to kernkraft (the core Kern is built on: formats,
+// PDF, file operations), to Kern's own source and to the Android app. A link
+// is opened by the default application for https links (kernkraft open_url, with the terminal
+// the settings name for a browser that needs one); Kern itself connects to nothing.
 
-const LINKS = [
-  { label: "Source code", url: "https://github.com/verycareful/kern-desktop" },
-  { label: "Kern for Android", url: "https://github.com/verycareful/kern" },
-] as const;
+const KERNKRAFT_URL = "https://github.com/verycareful/kernkraft";
+const SOURCE_URL = "https://github.com/verycareful/kern-desktop";
+const ANDROID_URL = "https://github.com/verycareful/kern";
+/** The licence by its SPDX short name: the GNU AGPL, version 3. */
+const LICENCE_NAME = "AGPL-3.0";
 
-export function AboutSection() {
-  const id = useId();
+/** The address without its scheme, as the row shows it. */
+const shortUrl = (url: string) => url.replace(/^https:\/\//, "");
+
+function LicenceDialog(props: { close(): void }) {
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const title = "GNU Affero General Public License, version 3";
+  return (
+    <Modal
+      role="dialog"
+      label={title}
+      onEscape={props.close}
+      initialFocus={closeButton}
+      className="kern-settings-licence-dialog"
+      testId="licence-dialog"
+    >
+      <h2 className="kern-modal-title">{title}</h2>
+      <pre className="kern-settings-licence" data-testid="licence-text">
+        {LICENCE_TEXT}
+      </pre>
+      <div className="kern-modal-actions">
+        <button ref={closeButton} type="button" className="kern-button" onClick={props.close}>
+          Close
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+export function AboutSection(props: { settings: Settings }) {
   const [error, setError] = useState<string | null>(null);
-  // The settings view shows About only once the settings are read.
-  const terminal = useSettings((s) => s.settings?.terminal ?? null);
-  const asked = useSettingsNav((s) => s.section === "about");
-  const heading = useRef<HTMLHeadingElement>(null);
-
-  useEffect(() => {
-    if (!asked) return;
-    heading.current?.scrollIntoView({ block: "start" });
-    heading.current?.focus();
-    useSettingsNav.getState().taken();
-  }, [asked]);
+  const [licence, setLicence] = useState(false);
+  const terminal = props.settings.terminal;
 
   const open = async (url: string) => {
     setError(null);
@@ -43,37 +64,56 @@ export function AboutSection() {
     }
   };
 
+  const external = <ExternalLink size={16} aria-hidden />;
+
   return (
-    <section className="kern-settings-section" aria-labelledby={`${id}-h`}>
-      <h2 id={`${id}-h`} ref={heading} tabIndex={-1}>
-        About
-      </h2>
-      <p data-testid="about-version">Kern {VERSION_LABEL}</p>
-      <p>
-        Free software under the GNU Affero General Public License, version 3 or later. Copyright
-        2026 Sricharan Suresh.
-      </p>
-      <ul className="kern-settings-list">
-        {LINKS.map((l) => (
-          <li key={l.url}>
-            <button type="button" className="kern-button" onClick={() => void open(l.url)}>
-              {l.label}
-            </button>
-            <span className="kern-settings-url">{l.url}</span>
-          </li>
-        ))}
-      </ul>
+    <>
+      <Group rows={["version", "network", "licence", "kernkraft", "source", "android"]}>
+        <Row id="version" note="Alpha">
+          <span className="kern-settings-meta" data-testid="about-version">
+            {VERSION_LABEL}
+          </span>
+        </Row>
+        <Row
+          id="network"
+          note="Kern opens no network connection. It has no accounts, no sync, no updates and no analytics: what it reads and writes stays on this computer."
+        />
+        <RowButton
+          id="licence"
+          note="Free software under the GNU Affero General Public License, version 3 or later. Copyright 2026 Sricharan Suresh."
+          trail={
+            <>
+              <span className="kern-settings-meta">{LICENCE_NAME}</span>
+              <ChevronRight size={16} aria-hidden />
+            </>
+          }
+          onPress={() => setLicence(true)}
+        />
+        <RowButton
+          id="kernkraft"
+          note={`The core Kern is built on: formats, PDF and file operations. ${shortUrl(KERNKRAFT_URL)}`}
+          trail={external}
+          onPress={() => void open(KERNKRAFT_URL)}
+        />
+        <RowButton
+          id="source"
+          note={shortUrl(SOURCE_URL)}
+          trail={external}
+          onPress={() => void open(SOURCE_URL)}
+        />
+        <RowButton
+          id="android"
+          note={shortUrl(ANDROID_URL)}
+          trail={external}
+          onPress={() => void open(ANDROID_URL)}
+        />
+      </Group>
       {error && (
         <p role="alert" className="kern-modal-error">
           {error}
         </p>
       )}
-      <details>
-        <summary>Licence</summary>
-        <pre className="kern-settings-licence" data-testid="licence-text">
-          {LICENCE_TEXT}
-        </pre>
-      </details>
-    </section>
+      {licence && <LicenceDialog close={() => setLicence(false)} />}
+    </>
   );
 }

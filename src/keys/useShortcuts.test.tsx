@@ -8,6 +8,14 @@ import { useShortcuts } from "./useShortcuts";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 
+const shown = vi.hoisted(() => ({ settings: 0 }));
+vi.mock("../settings/show-settings", () => ({
+  showSettings: () => {
+    shown.settings += 1;
+    return Promise.resolve();
+  },
+}));
+
 function Host() {
   useShortcuts();
   return (
@@ -69,7 +77,7 @@ test("keys_fall_back_to_the_physical_key_on_non_latin_layouts", () => {
   expect(candidateKeys({ ...base, key: ",", code: "KeyW" })).toEqual(["Ctrl+,"]);
 });
 
-test("ctrl_comma_opens_settings_once_even_from_a_text_field", () => {
+test("ctrl_comma_opens_settings_even_from_a_text_field", () => {
   const { container } = render(
     <>
       <Host />
@@ -83,9 +91,10 @@ test("ctrl_comma_opens_settings_once_even_from_a_text_field", () => {
     ctrlKey: true,
   });
   fireEvent.keyDown(window, { key: ",", code: "Comma", ctrlKey: true });
-  const settings = useTabs.getState().tabs.filter((t) => t.kind === "settings");
-  expect(settings).toHaveLength(1);
-  expect(useTabs.getState().activeId).toBe(settings[0]!.id);
+  // From a text field and from the window alike; the window itself is opened once by the backend.
+  expect(shown.settings).toBe(2);
+  // Settings is a window of its own, not a tab.
+  expect(useTabs.getState().tabs).toHaveLength(1);
 });
 
 test("ctrl_w_works_on_a_cyrillic_layout", () => {

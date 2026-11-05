@@ -178,6 +178,37 @@ fn unknown_fields_survive() {
 }
 
 #[test]
+fn a_stored_density_is_dropped_by_the_next_write_and_refused_in_a_patch() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    fs::write(
+        e.config.join("settings.json"),
+        r#"{"density":"compact","word_wrap":true}"#,
+    )
+    .unwrap();
+    let s = store(&e);
+    let read = s.settings_get().unwrap();
+    assert!(read.corrupt.is_empty());
+    assert!(read.value.word_wrap);
+    // Reading alone leaves the file as it is.
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["density"],
+        json!("compact")
+    );
+
+    s.settings_set(patch(json!({"show_hidden": true}))).unwrap();
+    let v = read_json(&e.config.join("settings.json"));
+    assert!(v.get("density").is_none(), "{v}");
+    assert_eq!(v["word_wrap"], json!(true));
+    assert_eq!(v["show_hidden"], json!(true));
+
+    let err = s
+        .settings_set(patch(json!({"density": "cozy"})))
+        .unwrap_err();
+    assert_eq!(err.kind, "InvalidArgument");
+}
+
+#[test]
 fn recents_capped_and_deduped() {
     let e = env();
     let s = store(&e);

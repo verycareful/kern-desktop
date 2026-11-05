@@ -10,5 +10,5 @@ export function columnsFor(width: number): number {
   return Math.max(1, Math.floor((width - 2 * CARD.padding + CARD.gap) / (CARD.width + CARD.gap)));
 }
 
-/** Pixel heights of a list row. 40 holds the 28 px badge with 6 px above and below; compact trims that to 32. */
-export const ROW_HEIGHT = { cozy: 40, compact: 32 } as const;
+/** Pixel height of a list row: the 28 px badge with 6 px above and below. */
+export const ROW_HEIGHT = 40;

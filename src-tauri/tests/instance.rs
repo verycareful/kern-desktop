@@ -9,7 +9,7 @@ use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use kern_lib::instance::{claim, forward, Claim, Invocation, Launches};
+use kern_lib::instance::{claim, claim_when_free, forward, Claim, Invocation, Launches};
 
 #[test]
 fn second_open_reaches_the_owner() {
@@ -89,4 +89,62 @@ fn an_answered_open_is_counted_before_the_caller_returns() {
     assert!(counted.exit_requested());
     assert!(forward(&second_conn, &name, &inv).is_err());
     assert!(launches.try_recv().is_err());
+}
+
+#[test]
+fn a_restarted_kern_takes_the_name_once_the_old_instance_lets_it_go() {
+    let (old_conn, new_conn) = match (kernkraft_bus::session(), kernkraft_bus::session()) {
+        (Ok(a), Ok(b)) => (a, b),
+        (Err(e), _) | (_, Err(e)) => {
+            eprintln!("skipped: no session bus: {e}");
+            return;
+        }
+    };
+    let name = format!("io.github.verycareful.kern.Restart{}", std::process::id());
+    let Claim::Owner(_launches) = claim(&old_conn, &name, Launches::default()).unwrap() else {
+        panic!("a fresh name must be free");
+    };
+    // The old instance exits a moment after the new one starts: its connection closes.
+    let exiting = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        drop(old_conn);
+    });
+    let claimed = claim_when_free(
+        &new_conn,
+        &name,
+        Launches::default(),
+        Duration::from_secs(10),
+    )
+    .unwrap();
+    exiting.join().unwrap();
+    assert!(matches!(claimed, Claim::Owner(_)));
+}
+
+#[test]
+fn a_restarted_kern_stops_waiting_for_a_name_that_is_kept() {
+    let (old_conn, new_conn) = match (kernkraft_bus::session(), kernkraft_bus::session()) {
+        (Ok(a), Ok(b)) => (a, b),
+        (Err(e), _) | (_, Err(e)) => {
+            eprintln!("skipped: no session bus: {e}");
+            return;
+        }
+    };
+    let name = format!("io.github.verycareful.kern.Kept{}", std::process::id());
+    let Claim::Owner(_launches) = claim(&old_conn, &name, Launches::default()).unwrap() else {
+        panic!("a fresh name must be free");
+    };
+    let wait = Duration::from_millis(300);
+    let started = std::time::Instant::now();
+    let claimed = claim_when_free(&new_conn, &name, Launches::default(), wait).unwrap();
+    assert!(matches!(claimed, Claim::Taken));
+    assert!(started.elapsed() >= wait);
+}
+
+#[test]
+fn launches_are_accepted_again_after_an_exit_that_did_not_happen() {
+    let launches = Launches::default();
+    assert!(launches.exit_requested());
+    assert!(!launches.begin());
+    launches.reopen();
+    assert!(launches.begin());
 }

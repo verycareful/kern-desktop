@@ -18,6 +18,22 @@ export const ACCENTS: readonly KernAccent[] = [
   "graphite",
 ];
 
+/** Each accent's colour (kernkraft-theme kern_tokens.rs, `KernAccent::rgba`), for its swatch. */
+export const ACCENT_COLOURS: Readonly<Record<KernAccent, string>> = {
+  slate: "#3f5b8b",
+  indigo: "#4f46e5",
+  violet: "#7c6cf4",
+  plum: "#9b4dca",
+  ocean: "#0e7490",
+  teal: "#1e8c84",
+  forest: "#2f7a52",
+  amber: "#c9881f",
+  copper: "#b5651d",
+  crimson: "#be3455",
+  rose: "#c24a6b",
+  graphite: "#52525b",
+};
+
 /** What a token that fell back is, in words (kernkraft-theme resolve.rs names them). */
 const TOKEN_WORDS: Record<string, string> = {
   bg: "background colour",

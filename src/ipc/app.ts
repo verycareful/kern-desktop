@@ -19,7 +19,6 @@ export type LayoutKind = "file_manager" | "editor";
 export interface Settings {
   theme_mode: ThemeMode;
   accent: KernAccent;
-  density: Density;
   follow: Follow;
   scan_roots: WirePath[];
   scan_documents: boolean;
@@ -36,6 +35,9 @@ export interface Settings {
   /** The layout of a window that has none remembered yet. */
   default_layout: LayoutKind;
 }
+
+/** The row density handed to the theme: Kern has one row height (store.rs THEME_DENSITY). */
+export const THEME_DENSITY: Density = "cozy";
 
 /** The keys settings_set takes. A `follow` patch may be partial. */
 export type SettingsPatch = Partial<Omit<Settings, "follow">> & { follow?: Partial<Follow> };
@@ -183,7 +185,9 @@ export type Directive =
   | { kind: "home_tab" }
   | { kind: "focus_tab"; tab_id: string }
   /** Give the document open here at `path` to editor window `to` (handTo in shell/move-doc.ts). */
-  | { kind: "hand_to"; path: WirePath; to: string };
+  | { kind: "hand_to"; path: WirePath; to: string }
+  /** For the Settings window: bring this category into view. */
+  | { kind: "settings_section"; section: string };
 
 /** An event queued for a window that was not listening yet. */
 export interface Queued {
@@ -258,6 +262,19 @@ export const adopted = (label: string) => invoke<void>("adopted", { label });
 /** Main will not take the document of window `label`; the move there ends with `reason`. */
 export const refuseAdoption = (label: string, reason: string) =>
   invoke<void>("refuse_adoption", { label, reason });
+
+/**
+ * Opens the Settings window, or brings it forward, at `section` (a category: "about") when given.
+ * Any Kern window may ask.
+ */
+export const openSettings = (section?: string) =>
+  invoke<void>("open_settings", { section: section ?? null });
+
+/** The Settings window asks every window to close, then Kern starts again (restart.rs). */
+export const restartRequest = () => invoke<void>("restart_request");
+
+/** A window asked to close for a restart stays open: the restart is off. */
+export const restartAbandon = () => invoke<void>("restart_abandon");
 
 /** Closes the calling window, after the user's save, discard or cancel choice. */
 export const confirmClose = () => invoke<void>("confirm_close");

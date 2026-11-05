@@ -37,7 +37,8 @@ fn env(label: &str) -> Env {
         .plugin(kernkraft_tauri::init())
         .plugin(zoom::plugin())
         .manage(StoreState::new(Store::new(config, state)))
-        .manage(WindowState::default())
+        // Focus through Tauri only: the mock runtime has no GTK window.
+        .manage(WindowState::new(kern_lib::windows::ADOPT_TIMEOUT))
         .invoke_handler(tauri::generate_handler![
             kern_lib::store_cmds::settings_get,
             kern_lib::store_cmds::settings_set,
@@ -53,6 +54,9 @@ fn env(label: &str) -> Env {
             kern_lib::windows::detached,
             kern_lib::windows::refuse_detach,
             kern_lib::windows::open_editor,
+            kern_lib::windows::open_settings,
+            kern_lib::restart::restart_request,
+            kern_lib::restart::restart_abandon,
             kern_lib::windows::move_doc_to_main,
             kern_lib::windows::adopted,
             kern_lib::windows::refuse_adoption,
@@ -215,9 +219,15 @@ fn a_window_the_capability_does_not_name_may_not_say_where_a_drag_is() {
 /// nothing else is checked where the page is run, `src/shell/editor-grants.test.tsx`, against this
 /// same file; here every grant is checked against Tauri's access control as the application loads it.)
 fn granted_to_editors() -> (Vec<String>, Vec<String>) {
-    let file = concat!(env!("CARGO_MANIFEST_DIR"), "/capabilities/editor.json");
+    granted("editor.json", "editor-*")
+}
+
+/// What the capability file `name` grants to the windows `windows`: the commands of kernkraft's
+/// plugin and Kern's own, by name.
+fn granted(name: &str, windows: &str) -> (Vec<String>, Vec<String>) {
+    let file = format!("{}/capabilities/{name}", env!("CARGO_MANIFEST_DIR"));
     let json: Value = serde_json::from_str(&fs::read_to_string(file).unwrap()).unwrap();
-    assert_eq!(json["windows"], json!(["editor-*"]));
+    assert_eq!(json["windows"], json!([windows]));
     let (mut kernkraft_cmds, mut kern_cmds) = (Vec::new(), Vec::new());
     for permission in json["permissions"].as_array().unwrap() {
         let permission = permission.as_str().unwrap();
@@ -572,4 +582,96 @@ fn only_the_main_window_stores_its_layout_and_every_window_that_has_one_may_read
     let stranger = env("stranger");
     let err = invoke(&stranger, "layout_get", json!({})).unwrap_err();
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+}
+
+/// What the Settings window's page has no use for, refused to it by its capability: anything
+/// that lists, opens, changes or launches files, and every window and store command beside the
+/// settings' own.
+const NOT_FOR_SETTINGS: [&str; 10] = [
+    "open_paths",
+    "doc_opened",
+    "open_editor",
+    "layout_set",
+    "pin",
+    "recent_touch",
+    "clip_set",
+    "drag_out",
+    "drop_start_op",
+    "open_settings",
+];
+const KERNKRAFT_NOT_FOR_SETTINGS: [&str; 9] = [
+    "list_dir",
+    "text_open",
+    "text_save",
+    "start_op",
+    "rename",
+    "trash_purge",
+    "launch_app",
+    "open_terminal",
+    "volume_mount",
+];
+
+#[test]
+fn the_settings_window_is_granted_what_its_capability_names_and_nothing_of_the_files() {
+    let e = env("settings");
+    let (kernkraft_cmds, kern_cmds) = granted("settings.json", "settings");
+    for needed in [
+        "settings_get",
+        "settings_set",
+        "restart_request",
+        "confirm_close",
+    ] {
+        assert!(kern_cmds.iter().any(|c| c == needed), "{needed}");
+    }
+    for cmd in &kern_cmds {
+        if let Err(err) = invoke(&e, cmd, json!({})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "{cmd}: {err}"
+            );
+        }
+    }
+    for cmd in &kernkraft_cmds {
+        if let Err(err) = invoke(&e, &kernkraft(cmd), json!({})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "{cmd}: {err}"
+            );
+        }
+    }
+    invoke(&e, "settings_get", json!({})).unwrap();
+    for cmd in NOT_FOR_SETTINGS {
+        let err = invoke(&e, cmd, json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{cmd}: {err}"
+        );
+    }
+    for cmd in KERNKRAFT_NOT_FOR_SETTINGS {
+        let err = invoke(&e, &kernkraft(cmd), json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{cmd}: {err}"
+        );
+    }
+}
+
+#[test]
+fn every_kind_of_window_may_open_settings_and_only_the_settings_window_asks_a_restart() {
+    for label in ["main", "doc-1", "editor-1"] {
+        let e = env(label);
+        if let Err(err) = invoke(&e, "open_settings", json!({"section": null})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "{label}: {err}"
+            );
+        }
+        let err = invoke(&e, "restart_request", json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{label}: {err}"
+        );
+        // A window kept open when a restart asked it to close calls the restart off.
+        invoke(&e, "restart_abandon", json!({})).unwrap();
+    }
 }

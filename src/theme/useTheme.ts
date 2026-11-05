@@ -5,6 +5,7 @@ import {
   EVENT_THEME_CHANGED,
   on,
   settingsGet,
+  THEME_DENSITY,
   themeGet,
   toWireError,
   type Follow,
@@ -113,7 +114,7 @@ export function useTheme(prefs?: ThemePrefs): ThemeState {
           const s = await settingsGet();
           resolved = {
             follow: s.follow,
-            user: { mode: s.theme_mode, accent: s.accent, density: s.density },
+            user: { mode: s.theme_mode, accent: s.accent, density: THEME_DENSITY },
           };
         }
         const seen = events;

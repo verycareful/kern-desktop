@@ -12,7 +12,6 @@ import { toggleHidden, setViewMode, useViewSettings, useViewSettingsSync } from 
 const S = {
   show_hidden: false,
   view_mode: "list",
-  density: "compact",
   interface_size: 110,
 } as Settings;
 let changed: ((s: Settings) => void) | undefined;
@@ -41,7 +40,6 @@ test("loads_the_stored_settings_and_follows_changes", async () => {
   expect(useViewSettings.getState()).toMatchObject({
     showHidden: false,
     viewMode: "list",
-    density: "compact",
   });
   act(() => changed!({ ...S, show_hidden: true, view_mode: "grid" }));
   expect(useViewSettings.getState()).toMatchObject({ showHidden: true, viewMode: "grid" });

@@ -55,7 +55,6 @@ beforeEach(() => {
     return Promise.resolve({
       show_hidden: false,
       view_mode: "list",
-      density: "cozy",
       interface_size: 90,
       ...stored,
     } as Settings);

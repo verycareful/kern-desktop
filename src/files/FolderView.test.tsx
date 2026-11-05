@@ -34,7 +34,7 @@ vi.mock("../ipc", async (orig) => ({
 import { FolderView } from "./FolderView";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
-const SETTINGS = { show_hidden: false, view_mode: "list", density: "cozy" } as Settings;
+const SETTINGS = { show_hidden: false, view_mode: "list" } as Settings;
 
 let handlers: Handlers;
 let restoreLayout: () => void;

@@ -4,8 +4,8 @@
 //! Windows, the open rules applied, and what the frontend is told.
 //!
 //! Windows are `main` (browsing, created on demand), `doc-<n>` (standalone
-//! documents) and `editor-<n>` (an editor window rooted at one
-//! folder, with tabs of its own). Directives for a window go out as
+//! documents), `editor-<n>` (an editor window rooted at one
+//! folder, with tabs of its own) and `settings` (one at most). Directives for a window go out as
 //! events on [`EVENT_OPEN`] (and [`EVENT_ADOPT_DOC`]). A window that has not
 //! yet asked for its backlog with `open_pending_take` has them queued, so a
 //! directive sent while its page loads is not lost; once it has asked, they
@@ -20,6 +20,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -60,13 +61,16 @@ pub const EVENT_PROPERTIES: &str = "kern://properties";
 pub const MAIN: &str = "main";
 const DOC_PREFIX: &str = "doc-";
 const EDITOR_PREFIX: &str = "editor-";
+/// The Settings window's label: there is one at most.
+pub const SETTINGS: &str = "settings";
 
-/// The three kinds of window, told apart by label.
+/// The four kinds of window, told apart by label.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WindowKind {
     Main,
     Document,
     Editor,
+    Settings,
 }
 
 /// The kind of window labelled `label`, or `None` for a label Kern does not make.
@@ -77,6 +81,8 @@ pub fn window_kind(label: &str) -> Option<WindowKind> {
         Some(WindowKind::Document)
     } else if label.strip_prefix(EDITOR_PREFIX).is_some_and(is_number) {
         Some(WindowKind::Editor)
+    } else if label == SETTINGS {
+        Some(WindowKind::Settings)
     } else {
         None
     }
@@ -116,6 +122,11 @@ const DOC_MIN_SIZE: (f64, f64) = (480.0, 320.0);
 const EDITOR_SIZE: (f64, f64) = (1200.0, 800.0);
 const EDITOR_MIN_SIZE: (f64, f64) = (800.0, 560.0);
 
+/// Size of the Settings window: the category sidebar (280) beside a 640 column of rows, at the
+/// height of the longest category; the floor keeps a narrowed sidebar and a row readable.
+const SETTINGS_SIZE: (f64, f64) = (960.0, 680.0);
+const SETTINGS_MIN_SIZE: (f64, f64) = (560.0, 420.0);
+
 /// What a window is told to do, on [`EVENT_OPEN`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -154,6 +165,10 @@ pub enum Directive {
     HandTo {
         path: WirePath,
         to: String,
+    },
+    /// For the `settings` window: bring this category into view.
+    SettingsSection {
+        section: String,
     },
 }
 
@@ -222,6 +237,9 @@ pub struct WindowState {
     /// Whether focusing goes through GTK (startup id, present). Off only in
     /// tests, whose mock runtime has no GTK window.
     toolkit_focus: bool,
+    /// A restart asked for from the Settings window waits for the windows
+    /// to close (restart.rs).
+    pub(crate) restart: AtomicBool,
 }
 
 impl Default for WindowState {
@@ -250,6 +268,7 @@ impl WindowState {
             adopt_timeout,
             stat: Arc::new(FileId::of),
             sweep_bound: SWEEP_BOUND,
+            restart: AtomicBool::new(false),
         }
     }
 
@@ -367,11 +386,13 @@ pub fn wire_error(kind: &str, message: impl Into<String>, path: Option<&Path>) -
     }
 }
 
-fn window_error(e: tauri::Error) -> WireError {
+pub(crate) fn window_error(e: tauri::Error) -> WireError {
     wire_error("Window", format!("window operation failed: {e}"), None)
 }
 
-fn state<R: Runtime>(app: &AppHandle<R>) -> Result<tauri::State<'_, WindowState>, WireError> {
+pub(crate) fn state<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<tauri::State<'_, WindowState>, WireError> {
     app.try_state::<WindowState>()
         .ok_or_else(|| wire_error("Internal", "window state is not managed", None))
 }
@@ -528,6 +549,18 @@ fn build_editor_window<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<()
         .disable_drag_drop_handler()
         .inner_size(EDITOR_SIZE.0, EDITOR_SIZE.1)
         .min_inner_size(EDITOR_MIN_SIZE.0, EDITOR_MIN_SIZE.1)
+        .build()
+        .map(|_| ())
+        .map_err(window_error)
+}
+
+/// Builds the Settings window. Never call with the gate held.
+fn build_settings_window<R: Runtime>(app: &AppHandle<R>) -> Result<(), WireError> {
+    WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::default())
+        .title("Kern Settings")
+        .disable_drag_drop_handler()
+        .inner_size(SETTINGS_SIZE.0, SETTINGS_SIZE.1)
+        .min_inner_size(SETTINGS_MIN_SIZE.0, SETTINGS_MIN_SIZE.1)
         .build()
         .map(|_| ())
         .map_err(window_error)
@@ -1063,6 +1096,7 @@ pub(crate) fn arg_error(e: &ArgError) -> WireError {
 /// `main` (created if need be) as [`EVENT_OPEN_ERROR`]. (A launch that needs
 /// no window never gets here: see `prelaunch`.)
 pub async fn handle_launch<R: Runtime>(app: &AppHandle<R>, inv: crate::instance::Invocation) {
+    crate::restart::abandon_for_launch(app);
     let token = inv.activation_token.as_str();
     let errors = match cli::plan(&inv.argv, &inv.cwd) {
         Plan::Home => open_home(app, token).err().into_iter().collect::<Vec<_>>(),
@@ -1601,6 +1635,53 @@ pub async fn open_editor<R: Runtime>(
     Ok(label)
 }
 
+/// Opens the Settings window, or brings the one that is open forward, at
+/// `section` (a category of the window: `appearance`, `about`) when one is
+/// given. Any Kern window may ask. Two quick asks make one window: the label
+/// is reserved before the window is built, and an ask that finds it reserved
+/// only queues its section.
+#[tauri::command]
+pub async fn open_settings<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+    section: Option<String>,
+) -> Result<(), WireError> {
+    if window_kind(window.label()).is_none() {
+        return Err(wire_error(
+            "Denied",
+            "only Kern's windows open the Settings window",
+            None,
+        ));
+    }
+    let st = state(&app)?;
+    let build = {
+        let mut inner = st.lock();
+        let exists =
+            app.get_webview_window(SETTINGS).is_some() || inner.creating.contains_key(SETTINGS);
+        if !exists {
+            inner.creating.insert(SETTINGS.to_owned(), String::new());
+        }
+        !exists
+    };
+    if build {
+        let result = build_settings_window(&app);
+        let token = built(&st, SETTINGS);
+        result?;
+        if let Some(section) = section {
+            send_directive(&app, SETTINGS, &Directive::SettingsSection { section })?;
+        }
+        return focus(&app, SETTINGS, &token);
+    }
+    if let Some(section) = section {
+        send_directive(&app, SETTINGS, &Directive::SettingsSection { section })?;
+    }
+    // Still being built by another ask, which shows it when it is.
+    if app.get_webview_window(SETTINGS).is_some() {
+        focus(&app, SETTINGS, "")?;
+    }
+    Ok(())
+}
+
 /// Home button of a standalone window: the document moves into a tab
 /// of `main`, creating `main` with a Home folder tab if absent. `text_state`
 /// is the window's editor state, passed through untouched. The window closes
@@ -1973,14 +2054,23 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
 /// Application events. Closing the last window asks the application to
 /// exit; while a launch it accepted is still pending (answered on the bus,
 /// or this process's own) the exit is deferred, and [`launch_finished`]
-/// decides again once the launches are handled.
+/// decides again once the launches are handled. An exit that goes ahead with
+/// a restart pending starts Kern again first (restart.rs); when that fails
+/// the application stays, takes launches again and says why in `main`.
 pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: tauri::RunEvent) {
     match event {
         tauri::RunEvent::ExitRequested { api, .. } => {
-            if let Some(l) = app.try_state::<Launches>() {
-                if !l.exit_requested() {
-                    api.prevent_exit();
+            let launches = app.try_state::<Launches>();
+            if launches.as_ref().is_some_and(|l| !l.exit_requested()) {
+                api.prevent_exit();
+                return;
+            }
+            if let Err(e) = crate::restart::relaunch_if_pending(app) {
+                api.prevent_exit();
+                if let Some(l) = launches {
+                    l.reopen();
                 }
+                show_errors(app, &[e], "");
             }
         }
         tauri::RunEvent::Exit => crate::clipboard::store_on_exit(),

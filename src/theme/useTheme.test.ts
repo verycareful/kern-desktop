@@ -17,13 +17,14 @@ vi.mock("../ipc", () => ({
   on: ipc.on,
   toWireError: (e: unknown) => e,
   EVENT_THEME_CHANGED: "kernkraft://theme-changed",
+  THEME_DENSITY: "cozy",
 }));
 
 import { useTheme, type ThemePrefs } from "./useTheme";
 
 const PREFS: ThemePrefs = {
   follow: { colours: true, accent: false, fonts: true, radius: false },
-  user: { mode: "dark", accent: "teal", density: "compact" },
+  user: { mode: "dark", accent: "teal", density: "cozy" },
 };
 
 function theme(css: string, extra: Partial<WireTheme> = {}): WireTheme {
@@ -141,7 +142,6 @@ describe("useTheme", () => {
     ipc.settingsGet.mockResolvedValue({
       theme_mode: PREFS.user.mode,
       accent: PREFS.user.accent,
-      density: PREFS.user.density,
       follow: PREFS.follow,
     });
     ipc.themeGet.mockResolvedValue(theme(":root{}"));

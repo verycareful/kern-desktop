@@ -15,7 +15,6 @@ export const NO_LAYOUT: WindowLayout = {
 export const SETTINGS: Settings = {
   theme_mode: "system",
   accent: "slate",
-  density: "cozy",
   follow: { colours: true, accent: true, fonts: true, radius: true },
   scan_roots: [],
   scan_documents: true,

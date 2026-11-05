@@ -25,7 +25,7 @@
 //! parse (a value a newer Kern wrote, say) keeps its raw JSON, is written
 //! back unchanged, and is reported once per run; in memory it holds its
 //! default. Unknown keys, including unknown keys inside `follow`, survive a
-//! rewrite.
+//! rewrite; the few Kern drops on purpose are in `DROPPED_SETTINGS`.
 //!
 //! Paths are stored as [`WirePath`], so a name that is not UTF-8 survives.
 
@@ -59,6 +59,15 @@ pub const ZOOM_MAX: f32 = 5.0;
 pub const INTERFACE_SIZES: [u32; 5] = [80, 90, 100, 110, 125];
 /// A little smaller than the webview's normal size (maintainer, 2026-10-28).
 pub const DEFAULT_INTERFACE_SIZE: u32 = 90;
+
+/// The row density handed to the theme. Kern has one row height, the cozy
+/// one (`ROW_HEIGHT` in the frontend's grid-layout.ts).
+pub const THEME_DENSITY: Density = Density::Cozy;
+
+/// Keys of `settings.json` Kern does not keep: dropped when the file is
+/// read, so the next write leaves them out. `density` is fixed at
+/// [`THEME_DENSITY`].
+const DROPPED_SETTINGS: [&str; 1] = ["density"];
 
 /// Directory name under the XDG config and state homes.
 const APP_DIR: &str = "kern";
@@ -117,7 +126,6 @@ pub enum ViewMode {
 pub struct Settings {
     pub theme_mode: Mode,
     pub accent: KernAccent,
-    pub density: Density,
     pub follow: Follow,
     pub scan_roots: Vec<WirePath>,
     pub scan_documents: bool,
@@ -150,7 +158,6 @@ impl Default for Settings {
         Settings {
             theme_mode: Mode::default(),
             accent: KernAccent::default(),
-            density: Density::default(),
             follow: Follow::default(),
             scan_roots: Vec::new(),
             scan_documents: true,
@@ -524,14 +531,6 @@ impl Stored for Settings {
         );
         take(
             &mut obj,
-            "density",
-            &mut s.density,
-            &mut keep,
-            &mut problems,
-            any_value,
-        );
-        take(
-            &mut obj,
             "scan_roots",
             &mut s.scan_roots,
             &mut keep,
@@ -610,6 +609,9 @@ impl Stored for Settings {
             &mut problems,
             any_value,
         );
+        for key in DROPPED_SETTINGS {
+            obj.remove(key);
+        }
         if let Some(raw) = obj.remove("follow") {
             match parse_follow(&raw) {
                 Ok((follow, extra)) => {

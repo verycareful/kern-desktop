@@ -12,6 +12,7 @@ pub mod identity;
 pub mod instance;
 pub mod open;
 pub mod prelaunch;
+pub mod restart;
 pub mod store;
 pub mod store_cmds;
 pub mod windows;
@@ -38,7 +39,8 @@ pub fn run() {
     // answered on the bus; nothing can have closed the application yet.
     launches.begin();
     let fm1_launches = launches.clone();
-    let role = instance::start(&own, launches.clone());
+    let restarted = instance::take_restart_mark();
+    let role = instance::start(&own, launches.clone(), restarted);
     // GTK takes the Wayland app id and the X11 window class from GLib's
     // program name, and a compositor or dock finds a window's desktop entry
     // (its name and icon) by that id. The entry is installed under the
@@ -133,6 +135,9 @@ pub fn run() {
             windows::detached,
             windows::refuse_detach,
             windows::open_editor,
+            windows::open_settings,
+            restart::restart_request,
+            restart::restart_abandon,
             windows::move_doc_to_main,
             windows::hand_doc,
             windows::hand_refused,

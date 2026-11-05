@@ -4,7 +4,11 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { WirePath } from "../ipc";
 
-const ipc = vi.hoisted(() => ({ confirmClose: vi.fn(), isDocumentWindow: vi.fn() }));
+const ipc = vi.hoisted(() => ({
+  confirmClose: vi.fn(),
+  isDocumentWindow: vi.fn(),
+  restartAbandon: vi.fn(),
+}));
 const layout = vi.hoisted(() => ({ flushLayout: vi.fn() }));
 vi.mock("./use-layout-sync", () => layout);
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
@@ -14,7 +18,7 @@ import { useOps } from "../ops/useOps";
 import { useTabs } from "../store/tabs";
 import { ClosePrompt } from "./ClosePrompt";
 import * as guard from "./useCloseGuard";
-import { closeTab, closeWindow, useCloseGuard } from "./useCloseGuard";
+import { closeTab, closeWindow, setCloseCheck, useCloseGuard } from "./useCloseGuard";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 
@@ -44,6 +48,7 @@ beforeEach(() => {
   ipc.confirmClose.mockResolvedValue(undefined);
   layout.flushLayout.mockResolvedValue(undefined);
   ipc.isDocumentWindow.mockReturnValue(false);
+  ipc.restartAbandon.mockResolvedValue(undefined);
   useCloseGuard.getState().reset();
   useOps.setState({ notice: null });
   useTabs.setState({
@@ -281,11 +286,56 @@ test("a_window_closes_only_after_its_layout_has_been_written", async () => {
 test("closing_goes_through_the_two_entry_points_that_ask_again_after_a_read_only_document", () => {
   // A helper answering "may all close now" after saving the others would be true while a
   // read-only document, which is not saved, still has unsaved text. Only closeTab (one document)
-  // and closeWindow (which looks again after each answer) decide a close.
+  // and closeWindow (which looks again after each answer) decide a close; setCloseCheck only
+  // gives closeWindow the window's own question to ask first.
   expect(Object.keys(guard).sort()).toEqual([
     "closeTab",
     "closeWindow",
     "isClosing",
+    "setCloseCheck",
     "useCloseGuard",
   ]);
+});
+
+test("the_window_s_own_check_is_asked_first_and_a_no_keeps_the_window", async () => {
+  const check = vi.fn(() => Promise.resolve(false));
+  offs.push(setCloseCheck(check));
+  await closeWindow();
+  expect(check).toHaveBeenCalledTimes(1);
+  expect(ipc.confirmClose).not.toHaveBeenCalled();
+  // A plain close that stays calls off nothing.
+  expect(ipc.restartAbandon).not.toHaveBeenCalled();
+});
+
+test("the_window_s_own_check_saying_yes_lets_the_close_go_on", async () => {
+  offs.push(setCloseCheck(() => Promise.resolve(true)));
+  await closeWindow();
+  expect(ipc.confirmClose).toHaveBeenCalledTimes(1);
+});
+
+test("a_window_that_stays_when_a_restart_asked_it_to_close_calls_the_restart_off", async () => {
+  offs.push(setCloseCheck(() => Promise.resolve(false)));
+  await closeWindow(true);
+  expect(ipc.restartAbandon).toHaveBeenCalledTimes(1);
+  expect(useOps.getState().notice?.text).toBe("Kern did not restart: this window stayed open.");
+});
+
+test("a_window_that_closes_for_a_restart_leaves_the_restart_on", async () => {
+  await closeWindow(true);
+  expect(ipc.confirmClose).toHaveBeenCalledTimes(1);
+  expect(ipc.restartAbandon).not.toHaveBeenCalled();
+});
+
+test("a_window_that_cannot_close_for_a_restart_calls_it_off", async () => {
+  ipc.confirmClose.mockRejectedValue({ kind: "Window", message: "gone", path: null });
+  await closeWindow(true);
+  expect(ipc.restartAbandon).toHaveBeenCalledTimes(1);
+});
+
+test("a_check_taken_away_is_not_asked", async () => {
+  const check = vi.fn(() => Promise.resolve(false));
+  setCloseCheck(check)();
+  await closeWindow();
+  expect(check).not.toHaveBeenCalled();
+  expect(ipc.confirmClose).toHaveBeenCalledTimes(1);
 });

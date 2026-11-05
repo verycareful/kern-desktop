@@ -5,6 +5,8 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { EditorView } from "@codemirror/view";
 import type { WirePath } from "../ipc";
 
+const opened = vi.hoisted(() => ({ settings: [] as (string | undefined)[] }));
+
 // The places strip looks the user's folders and the volumes up.
 vi.mock("../ipc", async (orig) => ({
   ...(await orig<typeof import("../ipc")>()),
@@ -30,7 +32,11 @@ vi.mock("../ipc", async (orig) => ({
     }),
   textCheck: () => Promise.resolve("same"),
   textSave: () => Promise.resolve("s1:6:0:1:1:1"),
-  // The Settings tab reads the settings and the default file manager.
+  // Settings opens in a window of its own.
+  openSettings: (section?: string) => {
+    opened.settings.push(section);
+    return Promise.resolve();
+  },
   settingsGet: async () => (await import("../settings/test-settings")).SETTINGS,
   layoutGet: async () => (await import("../settings/test-settings")).NO_LAYOUT,
   defaultFmStatus: () => Promise.resolve({ is_default: true, current: null }),
@@ -42,7 +48,6 @@ vi.mock("../ipc", async (orig) => ({
 import { actions, appliesTo } from "../keys/actions";
 import { usePanelsStore } from "../store/panels";
 import { useLayout } from "../store/layout";
-import { useSettingsNav } from "../settings/settings-nav";
 import { useTabs } from "../store/tabs";
 import MainWindow from "./MainWindow";
 import { VOLUME_MENU } from "./volume-menu";
@@ -98,14 +103,14 @@ test("tab_row_sits_over_the_folder_area_only", () => {
   expect(within(slot).getByRole("button", { name: "About Kern" })).toBeInTheDocument();
 });
 
-test("the_logo_opens_settings_at_about", async () => {
+test("the_logo_opens_the_settings_window_at_about", () => {
+  opened.settings.length = 0;
   useTabs.getState().openFolder(p("/home/a"), false);
   render(<MainWindow />);
   fireEvent.click(screen.getByRole("button", { name: "About Kern" }));
-  expect(screen.getByRole("tab", { name: "Settings" })).toBeInTheDocument();
-  const about = await screen.findByRole("heading", { name: "About" });
-  await waitFor(() => expect(about).toHaveFocus());
-  expect(useSettingsNav.getState().section).toBeNull();
+  expect(opened.settings).toEqual(["about"]);
+  // No tab is made for it.
+  expect(screen.queryByRole("tab", { name: "Settings" })).not.toBeInTheDocument();
 });
 
 test("the_main_window_strip_offers_the_library_and_its_tab_is_titled_so", () => {
@@ -316,9 +321,8 @@ test("every_action_appears_in_a_menu", () => {
   useTabs.getState().openDoc(p("/home/a/n.md"));
   useTabs.getState().openTrash();
   useTabs.getState().openDocuments();
-  useTabs.getState().openSettings();
   render(<MainWindow />);
-  for (const tabName of ["a", "n.md", "Trash", "Library", "Settings"]) {
+  for (const tabName of ["a", "n.md", "Trash", "Library"]) {
     fireEvent.click(screen.getByRole("tab", { name: tabName }));
     fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
     const menu = screen.getByTestId("action-menu");

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { create } from "zustand";
-import { confirmClose, isDocumentWindow, toWireError } from "../ipc";
+import { confirmClose, isDocumentWindow, restartAbandon, toWireError } from "../ipc";
 import { docController } from "../editor/doc-controller";
 import { errorText } from "../ops/error-text";
 import { useOps } from "../ops/useOps";
@@ -16,6 +16,9 @@ import { flushLayout } from "./use-layout-sync";
 // in turn; one that cannot be saved (changed by another program, read-only, a
 // failure) stops the close and is shown with its reason, and nothing closes.
 // One question is open at a time; a close asked for meanwhile does nothing.
+// A window with something of its own to lose (the Settings window's changes not saved) sets a
+// close check, asked before the documents. A close asked for a restart that does not happen
+// (the user keeps the window, or it cannot close) calls the restart off and says so.
 
 export type CloseChoice = "save" | "discard" | "cancel";
 
@@ -48,6 +51,17 @@ let pending: ((choice: CloseChoice) => void) | null = null;
 /** The window asked the backend to close it; a document arriving now would go with it. */
 let closing = false;
 
+/** The window's own question before it closes; true lets the close go on. */
+let windowCheck: (() => Promise<boolean>) | null = null;
+
+/** Sets this window's close check; the returned function takes it away again. */
+export function setCloseCheck(check: () => Promise<boolean>): () => void {
+  windowCheck = check;
+  return () => {
+    if (windowCheck === check) windowCheck = null;
+  };
+}
+
 /** True once this window has asked to be closed and until that fails. */
 export const isClosing = (): boolean => closing;
 
@@ -63,6 +77,7 @@ export const useCloseGuard = create<CloseGuardState>()((set) => ({
   reset() {
     pending = null;
     closing = false;
+    windowCheck = null;
     set({ question: null });
   },
 }));
@@ -136,8 +151,27 @@ export function closeTab(id: string): void {
  * while the question is open (moved here from another window) was not in it: the window looks
  * again after each answer and asks about what is new, and closes only when nothing it has not
  * asked about is at risk. The last look and the close follow each other with nothing between.
+ * With `restart`, the close was asked for a restart, which is called off when the window stays.
  */
-export async function closeWindow(): Promise<void> {
+export async function closeWindow(restart = false): Promise<void> {
+  if (!(await closeIfNothingLost()) && restart) await keepRestartOff();
+}
+
+/** A restart waited for this window, which stays: it is called off, and the user told. */
+async function keepRestartOff(): Promise<void> {
+  try {
+    await restartAbandon();
+    say("Kern did not restart: this window stayed open.");
+  } catch (e) {
+    say(
+      `Kern did not restart, and it could not be told so: ${errorText(toWireError(e))}. Closing every window would still restart it.`
+    );
+  }
+}
+
+/** True when the window was closed. */
+async function closeIfNothingLost(): Promise<boolean> {
+  if (windowCheck && !(await windowCheck())) return false;
   /** The documents the user chose to close without saving. */
   const givenUp = new Set<string>();
   for (;;) {
@@ -148,7 +182,7 @@ export async function closeWindow(): Promise<void> {
     const items = atRisk(ids);
     if (items.length === 0) break;
     const outcome = await ask(items, "window");
-    if (outcome === "stop") return;
+    if (outcome === "stop") return false;
     if (outcome === "discard") items.forEach((i) => givenUp.add(i.id));
   }
   closing = true;
@@ -158,8 +192,10 @@ export async function closeWindow(): Promise<void> {
   await recordEditorFolder();
   try {
     await confirmClose();
+    return true;
   } catch (e) {
     closing = false;
     say(`The window could not be closed: ${errorText(toWireError(e))}`);
+    return false;
   }
 }

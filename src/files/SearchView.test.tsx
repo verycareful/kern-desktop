@@ -42,7 +42,7 @@ beforeEach(() => {
   });
   ipc.search.mockImplementation(() => Promise.resolve(nextOp++));
   ipc.cancelOp.mockResolvedValue(undefined);
-  useViewSettings.setState({ showHidden: false, density: "cozy" });
+  useViewSettings.setState({ showHidden: false });
 });
 afterEach(() => {
   cleanup();

@@ -7,7 +7,6 @@ import { homeRelative } from "../shell/home-relative";
 import { FileBadge } from "./FileList";
 import { formatDate } from "./format";
 import { ROW_HEIGHT } from "./grid-layout";
-import { useViewSettings } from "./view-settings";
 
 // The hits of a search or of the Library, as they stream in: name and
 // folder per row, virtualized, since a walk may find many thousands. One row
@@ -26,14 +25,12 @@ export function ScanResults(props: {
   onOpen(entry: WireEntry, newWindow: boolean): void;
 }) {
   const { hits, count } = props;
-  const density = useViewSettings((s) => s.density);
-  const rowHeight = ROW_HEIGHT[density];
   const scroller = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
   const virtual = useVirtualizer({
     count,
     getScrollElement: () => scroller.current,
-    estimateSize: () => rowHeight,
+    estimateSize: () => ROW_HEIGHT,
     overscan: OVERSCAN,
     initialRect: { width: 600, height: 400 },
   });
@@ -44,7 +41,7 @@ export function ScanResults(props: {
     setActive(next);
     virtual.scrollToIndex(next);
   };
-  const page = Math.max(1, Math.floor((scroller.current?.clientHeight ?? 400) / rowHeight));
+  const page = Math.max(1, Math.floor((scroller.current?.clientHeight ?? 400) / ROW_HEIGHT));
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (count === 0) return;
@@ -92,11 +89,11 @@ export function ScanResults(props: {
               data-testid="scan-hit"
               className={"kern-row kern-hit" + (v.index === at ? " kern-selected" : "")}
               title={displayPath(e.path)}
-              style={{ height: rowHeight, transform: `translateY(${v.start}px)` }}
+              style={{ height: ROW_HEIGHT, transform: `translateY(${v.start}px)` }}
               onClick={() => setActive(v.index)}
               onDoubleClick={(ev) => props.onOpen(e, ev.ctrlKey || ev.metaKey)}
             >
-              <FileBadge entry={e} size={rowHeight - 12} />
+              <FileBadge entry={e} size={ROW_HEIGHT - 12} />
               <span className="kern-name">{e.name}</span>
               <span className="kern-hit-where">{where ? homeRelative(where, props.home) : ""}</span>
               <span className="kern-hit-when">{formatDate(e.modified_ms)}</span>

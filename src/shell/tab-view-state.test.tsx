@@ -87,7 +87,6 @@ beforeEach(() => {
   ipc.settingsGet.mockResolvedValue({
     show_hidden: false,
     view_mode: "list",
-    density: "cozy",
   } as Settings);
   ipc.listDir.mockImplementation((path: WirePath) =>
     Promise.resolve(files((path as { v: string }).v, 30))
@@ -282,7 +281,6 @@ test("the_offset_survives_two_round_trips_in_the_grid", async () => {
   ipc.settingsGet.mockResolvedValue({
     show_hidden: false,
     view_mode: "grid",
-    density: "cozy",
   } as Settings);
   useTabs.getState().openFolder(p("/d/a"), false);
   useTabs.getState().openFolder(p("/d/b"), true);

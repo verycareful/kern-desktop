@@ -5,11 +5,13 @@ import {
   currentWindowLabel,
   isEditorWindow,
   isMainWindow,
+  isSettingsWindow,
   toWireError,
   type WireError,
 } from "./ipc";
 import { DocumentWindow } from "./shell/DocumentWindow";
 import { EditorWindow } from "./shell/EditorWindow";
+import { SettingsWindow } from "./settings/SettingsWindow";
 import MainWindow from "./shell/MainWindow";
 import { useOpenDirectives } from "./shell/useOpenDirectives";
 import { useUserDirs } from "./shell/user-dirs-store";
@@ -29,8 +31,12 @@ export default function App() {
   const [isMain] = useState(isMainWindow);
   // An editor window has tabs of its own and a folder tree; a document window shows one document.
   const [isEditor] = useState(isEditorWindow);
+  // The Settings window shows the settings and nothing else.
+  const [isSettings] = useState(isSettingsWindow);
   const [label] = useState(currentWindowLabel);
-  const directives = useOpenDirectives(isMain ? "main" : isEditor ? "editor" : "doc");
+  const directives = useOpenDirectives(
+    isMain ? "main" : isEditor ? "editor" : isSettings ? "settings" : "doc"
+  );
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -109,7 +115,12 @@ export default function App() {
           <EditorWindow starting={!directives.ready} />
         </div>
       )}
-      {!isMain && !isEditor && label && (
+      {isSettings && (
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <SettingsWindow />
+        </div>
+      )}
+      {!isMain && !isEditor && !isSettings && label && (
         <div style={{ flex: 1, minHeight: 0 }}>
           <DocumentWindow label={label} starting={!directives.ready} />
         </div>

@@ -158,7 +158,7 @@ pub fn apply_at_startup<R: Runtime>(app: &AppHandle<R>) {
         let user = UserChoice {
             mode: s.theme_mode,
             accent: s.accent,
-            density: s.density,
+            density: crate::store::THEME_DENSITY,
         };
         if let Err(e) = app.kernkraft().theme_set_prefs(s.follow, user) {
             eprintln!("kern: applying the stored theme settings failed: {e}");

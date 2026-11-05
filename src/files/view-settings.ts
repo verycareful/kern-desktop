@@ -8,7 +8,6 @@ import {
   settingsGet,
   settingsSet,
   toWireError,
-  type Density,
   type Settings,
   type SettingsPatch,
   type ViewMode,
@@ -18,7 +17,7 @@ import {
 import { DEFAULT_INTERFACE_SIZE, stepInterfaceSize } from "../theme/interface-size";
 
 // The settings the folder view follows: whether hidden files show,
-// list or grid, the density that sets the row height, the interface size
+// list or grid, the interface size
 // (the zoom itself is applied by the backend; the actions step it), and the
 // folders the Library walks. The stored settings
 // are the source; this holds their last known value for the view and for the
@@ -27,7 +26,6 @@ interface ViewSettingsState {
   loaded: boolean;
   showHidden: boolean;
   viewMode: ViewMode;
-  density: Density;
   /** The interface size in percent. */
   interfaceSize: number;
   /** What the Library walks: the Documents and Downloads folders when on, and these. */
@@ -45,7 +43,6 @@ export const useViewSettings = create<ViewSettingsState>()(() => ({
   loaded: false,
   showHidden: false,
   viewMode: "list",
-  density: "cozy",
   interfaceSize: DEFAULT_INTERFACE_SIZE,
   scanDocuments: true,
   scanDownloads: true,
@@ -60,7 +57,6 @@ function apply(s: Settings): void {
     loaded: true,
     showHidden: s.show_hidden,
     viewMode: s.view_mode,
-    density: s.density,
     interfaceSize: s.interface_size,
     scanDocuments: s.scan_documents,
     scanDownloads: s.scan_downloads,

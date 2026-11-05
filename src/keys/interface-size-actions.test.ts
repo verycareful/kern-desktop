@@ -16,7 +16,7 @@ beforeEach(() => {
   useTabs.setState({ tabs: [], activeId: null });
   useViewSettings.setState({ loaded: true, interfaceSize: 90, error: null });
   ipc.settingsSet.mockImplementation((patch: Partial<Settings>) =>
-    Promise.resolve({ show_hidden: false, view_mode: "list", density: "cozy", ...patch })
+    Promise.resolve({ show_hidden: false, view_mode: "list", ...patch })
   );
 });
 afterEach(() => vi.clearAllMocks());

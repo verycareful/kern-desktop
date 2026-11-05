@@ -32,6 +32,8 @@
     "allow-detached",
     "allow-refuse-detach",
     "allow-open-editor",
+    "allow-open-settings",
+    "allow-restart-abandon",
     "allow-move-doc-to-main",
     "allow-hand-doc",
     "allow-hand-refused",

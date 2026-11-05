@@ -43,7 +43,6 @@ import {
   shiftClick,
   type Sel,
 } from "./selection";
-import { useViewSettings } from "./view-settings";
 import { useCurrentItem } from "./use-current-item";
 import { useKeepKeyboard } from "./use-keep-keyboard";
 import "./files.css";
@@ -107,8 +106,6 @@ type Question = { kind: "purge"; items: WireTrashedItem[] } | { kind: "empty"; c
 
 export function TrashView(props: { tab: TrashTab }) {
   const tabId = props.tab.id;
-  const density = useViewSettings((s) => s.density);
-  const rowHeight = ROW_HEIGHT[density];
   const uid = useId();
   const [phase, setPhase] = useState<Phase>("loading");
   const [loadError, setLoadError] = useState<WireError | null>(null);
@@ -340,7 +337,7 @@ export function TrashView(props: { tab: TrashTab }) {
   const virtual = useVirtualizer({
     count: items.length,
     getScrollElement: () => scroller.current,
-    estimateSize: () => rowHeight,
+    estimateSize: () => ROW_HEIGHT,
     overscan: OVERSCAN,
     scrollMargin: HEADER_HEIGHT,
     initialRect: { width: 600, height: 400 },
@@ -461,7 +458,7 @@ export function TrashView(props: { tab: TrashTab }) {
                     (focus.outlined === v.index ? " kern-cursor" : "")
                   }
                   style={{
-                    height: rowHeight,
+                    height: ROW_HEIGHT,
                     transform: `translateY(${v.start - HEADER_HEIGHT}px)`,
                   }}
                   onClick={(e) => {

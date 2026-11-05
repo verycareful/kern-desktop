@@ -1,0 +1,23 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings",
+  "description": "Capability for the Settings window: the settings and the reports of a settings file that could not be read, the theme it shows and applies, the Home folder (a typed ~/folder for the Library), the default file manager, the links of About, its close question and the restart it asks for; nothing that lists, opens, changes or launches files",
+  "windows": ["settings"],
+  "permissions": [
+    "core:default",
+    "kernkraft-tauri:allow-theme-get",
+    "kernkraft-tauri:allow-theme-set-prefs",
+    "kernkraft-tauri:allow-user-dirs",
+    "kernkraft-tauri:allow-open-url",
+    "allow-settings-get",
+    "allow-settings-set",
+    "allow-store-errors-take",
+    "allow-open-pending-take",
+    "allow-confirm-close",
+    "allow-restart-request",
+    "allow-restart-abandon",
+    "allow-fm1-status",
+    "allow-default-fm-status",
+    "allow-make-default-fm"
+  ]
+}

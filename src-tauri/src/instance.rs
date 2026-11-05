@@ -18,6 +18,7 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use kernkraft_bus::BusError;
 use zbus::blocking::Connection;
@@ -28,6 +29,18 @@ pub const BUS_NAME: &str = "io.github.verycareful.kern";
 pub const OBJECT_PATH: &str = "/io/github/verycareful/kern";
 pub const INTERFACE: &str = "io.github.verycareful.Kern1";
 pub const METHOD_OPEN: &str = "Open";
+
+/// Set in the environment of a Kern started by a restart (restart.rs). The
+/// instance that started it is exiting and still owns [`BUS_NAME`] for a
+/// moment, so the new one waits for the name instead of forwarding to it.
+pub const RESTART_ENV: &str = "KERN_RESTARTED";
+/// How long a restarted Kern waits for the name. The old instance exits as
+/// soon as it has started the new one (the clipboard handed over, the bus
+/// connection closed), well under a second; ten seconds is far beyond that
+/// and short enough that a stuck instance is reported while the user waits.
+pub const RESTART_WAIT: Duration = Duration::from_secs(10);
+/// How often the name is asked for meanwhile.
+const RESTART_POLL: Duration = Duration::from_millis(50);
 
 /// One forwarded launch.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,6 +101,12 @@ impl Launches {
         }
         c.pending += 1;
         true
+    }
+
+    /// The exit the application agreed to did not happen (a restart that
+    /// could not start Kern again): launches are accepted again.
+    pub fn reopen(&self) {
+        self.lock().closing = false;
     }
 
     /// Counts a handled launch out and returns how many remain.
@@ -184,6 +203,31 @@ pub fn claim(conn: &Connection, name: &str, launches: Launches) -> Result<Claim,
     }
 }
 
+/// [`claim`], asked again every [`RESTART_POLL`] while the name is taken,
+/// until `wait` has passed: for a Kern whose predecessor is still exiting.
+pub fn claim_when_free(
+    conn: &Connection,
+    name: &str,
+    launches: Launches,
+    wait: Duration,
+) -> Result<Claim, InstanceError> {
+    let deadline = Instant::now() + wait;
+    loop {
+        match claim(conn, name, launches.clone())? {
+            Claim::Taken if Instant::now() < deadline => std::thread::sleep(RESTART_POLL),
+            claimed => return Ok(claimed),
+        }
+    }
+}
+
+/// Whether this process was started by a restart. The mark is taken out of
+/// the environment, so a program Kern starts does not inherit it.
+pub fn take_restart_mark() -> bool {
+    let set = std::env::var_os(RESTART_ENV).is_some();
+    std::env::remove_var(RESTART_ENV);
+    set
+}
+
 /// Calls `Open` on the owner of `name`.
 pub fn forward(conn: &Connection, name: &str, inv: &Invocation) -> Result<(), InstanceError> {
     conn.call_method(
@@ -231,11 +275,12 @@ pub enum Role {
 
 /// Connects, claims the name, and either becomes the instance, forwards this
 /// launch to the existing one and exits, or runs standalone. Call before
-/// anything creates a window.
+/// anything creates a window. A `restarted` process waits up to
+/// [`RESTART_WAIT`] for the name before it forwards.
 ///
 /// A failed forward exits non-zero with the reason on stderr; no bus prints
 /// the reason and returns [`Role::Standalone`].
-pub fn start(own: &Invocation, launches: Launches) -> Role {
+pub fn start(own: &Invocation, launches: Launches, restarted: bool) -> Role {
     let conn = match kernkraft_bus::session() {
         Ok(c) => c,
         Err(e) => {
@@ -243,7 +288,12 @@ pub fn start(own: &Invocation, launches: Launches) -> Role {
             return Role::Standalone;
         }
     };
-    match claim(&conn, BUS_NAME, launches) {
+    let claimed = if restarted {
+        claim_when_free(&conn, BUS_NAME, launches, RESTART_WAIT)
+    } else {
+        claim(&conn, BUS_NAME, launches)
+    };
+    match claimed {
         Ok(Claim::Owner(launches)) => Role::Owner {
             connection: conn,
             launches,

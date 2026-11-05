@@ -107,7 +107,7 @@ export function FolderView(props: { tab: FolderTab }) {
 }
 
 function LoadedFolder({ tab }: { tab: FolderTab }) {
-  const { showHidden, viewMode, density, error: settingsError } = useViewSettings();
+  const { showHidden, viewMode, error: settingsError } = useViewSettings();
   const sort = useFolderUi((s) => s.sort[tab.id] ?? DEFAULT_SORT);
   const key = pathKey(tab.path);
   const isActive = useTabs((s) => s.activeId === tab.id);
@@ -190,7 +190,6 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     };
   }, []);
 
-  const rowHeight = ROW_HEIGHT[density];
   // After a click on the header, the breadcrumb or a view button the keyboard
   // belongs to the list again, once there is a list to take it.
   const focusSoon = useRef(false);
@@ -581,7 +580,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
           <FileList
             key={key}
             {...items}
-            rowHeight={rowHeight}
+            rowHeight={ROW_HEIGHT}
             sortBy={sort.by}
             sortDir={sort.dir}
             sortFailed={folder.sortError !== null}

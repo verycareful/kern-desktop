@@ -120,7 +120,6 @@ beforeEach(() => {
   ipc.settingsGet.mockResolvedValue({
     show_hidden: false,
     view_mode: "list",
-    density: "cozy",
     theme_mode: "system",
     accent: "slate",
     follow: { colours: true, accent: true, fonts: true, radius: true },
@@ -1028,7 +1027,6 @@ test("the_default_layout_setting_decides_a_window_with_no_stored_layout", async 
   ipc.settingsGet.mockResolvedValue({
     show_hidden: false,
     view_mode: "list",
-    density: "cozy",
     theme_mode: "system",
     accent: "slate",
     follow: { colours: true, accent: true, fonts: true, radius: true },

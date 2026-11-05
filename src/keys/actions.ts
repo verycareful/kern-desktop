@@ -32,7 +32,7 @@ import { trashController, type TrashMove } from "../files/trash-controller";
 import { useVolumes } from "../shell/volumes-store";
 import { isEditorPin, usePinnedRecent } from "../shell/pinned-recent-store";
 import { useProperties } from "../files/properties-store";
-import { useSettingsNav } from "../settings/settings-nav";
+import { showSettings } from "../settings/show-settings";
 import { documentsController } from "../files/documents-controller";
 import { useOps } from "../ops/useOps";
 import { docController } from "../editor/doc-controller";
@@ -775,7 +775,7 @@ const placeActions: Action[] = [
     keys: ["Ctrl+,"],
     when: "any",
     inEditable: true,
-    run: (c) => c.tabs.openSettings(),
+    run: () => void showSettings(),
   },
   // The logo in the places strip: Settings, at About.
   {
@@ -784,10 +784,7 @@ const placeActions: Action[] = [
     area: "Navigation",
     keys: [],
     when: "any",
-    run: (c) => {
-      useSettingsNav.getState().show("about");
-      c.tabs.openSettings();
-    },
+    run: () => void showSettings("about"),
   },
   {
     id: "place.documents",

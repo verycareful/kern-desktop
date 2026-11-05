@@ -41,13 +41,12 @@ export type TrashTab = { id: string; kind: "trash" };
  */
 export type DocumentsTab = { id: string; kind: "documents" };
 /** Kern's settings: a place of its own, at most one. */
-export type SettingsTab = { id: string; kind: "settings" };
-export type Tab = FolderTab | DocTab | TrashTab | DocumentsTab | SettingsTab;
+export type Tab = FolderTab | DocTab | TrashTab | DocumentsTab;
 /** A tab that shows a place of Kern's own (the Trash, the Library, Settings), not a folder or a document. */
-export type PlaceTab = TrashTab | DocumentsTab | SettingsTab;
+export type PlaceTab = TrashTab | DocumentsTab;
 
 export function isPlaceTab(tab: Tab | null | undefined): tab is PlaceTab {
-  return tab?.kind === "trash" || tab?.kind === "documents" || tab?.kind === "settings";
+  return tab?.kind === "trash" || tab?.kind === "documents";
 }
 
 /**
@@ -88,7 +87,6 @@ export interface TabsState {
   /** Focus the Library tab, or open it. */
   openDocuments(): void;
   /** Focus the Settings tab, or open it. */
-  openSettings(): void;
   /** Open a document tab, or focus the one already open on this path. False when one was. */
   openDoc(path: WirePath): boolean;
   /**
@@ -129,7 +127,6 @@ export interface TabsState {
 export function tabTitle(tab: Tab): string {
   if (tab.kind === "trash") return "Trash";
   if (tab.kind === "documents") return "Library";
-  if (tab.kind === "settings") return "Settings";
   // A Bytes path shows with U+FFFD for the bytes that are not UTF-8.
   const trimmed = displayPath(tab.path).replace(/\/+$/, "");
   return trimmed.slice(trimmed.lastIndexOf("/") + 1) || "/";
@@ -257,14 +254,6 @@ export const useTabs = create<TabsState>()((set, get) => ({
       const open = s.tabs.find((t) => t.kind === "trash");
       if (open) return { activeId: open.id };
       const tab: TrashTab = { id: crypto.randomUUID(), kind: "trash" };
-      return { tabs: [...s.tabs, tab], activeId: tab.id };
-    });
-  },
-  openSettings() {
-    set((s) => {
-      const open = s.tabs.find((t) => t.kind === "settings");
-      if (open) return { activeId: open.id };
-      const tab: SettingsTab = { id: crypto.randomUUID(), kind: "settings" };
       return { tabs: [...s.tabs, tab], activeId: tab.id };
     });
   },

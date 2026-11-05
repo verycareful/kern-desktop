@@ -1,60 +1,442 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 /* Copyright (c) 2026 Sricharan Suresh (github.com/verycareful) */
 
-/* The Settings tab: one column of sections, scrolled as a whole. */
-.kern-settings {
-  overflow-y: auto;
+/*
+ * The Settings window, design B of the settings canvas: a category sidebar with the search box
+ * and the logo at its foot, the category's groups of rows in cards beside it, and the save bar
+ * under them. Colours, fonts and corners are the theme's tokens.
+ */
+.kern-settings-window {
+  display: flex;
   height: 100%;
-  padding: 16px 24px;
+  color: var(--kern-text);
+  background: var(--kern-bg);
+  font-family: var(--kern-font-ui);
 }
 
-.kern-settings-title {
-  margin: 0 0 12px;
-  font-size: 1.4em;
+.kern-settings-nav {
+  display: flex;
+  flex: 0 0 240px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 20px 14px;
+  overflow-y: auto;
+  background: var(--kern-sunken);
+  border-right: 1px solid var(--kern-border);
 }
 
-.kern-settings-section {
-  max-width: 44em;
-  margin-bottom: 24px;
-}
-
-.kern-settings-section fieldset {
-  margin: 8px 0;
+.kern-settings-search {
+  margin-bottom: 14px;
+  padding: 10px;
+  font: inherit;
+  color: var(--kern-text);
+  background: var(--kern-surface);
   border: 1px solid var(--kern-border);
   border-radius: var(--kern-radius-small);
 }
 
-.kern-settings-choice {
-  display: inline-flex;
+.kern-settings-nav-item {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  margin: 2px 12px 2px 0;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 0 12px;
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  color: var(--kern-text);
+  background: none;
+  border: 0;
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
 }
 
-.kern-settings-note {
+.kern-settings-nav-item:hover {
+  background: var(--kern-surface);
+}
+
+.kern-settings-nav-item[aria-current="page"] {
+  color: var(--kern-accent);
+  background: var(--kern-accent-soft);
+}
+
+.kern-settings-nav-count {
+  font-family: var(--kern-font-mono);
+  font-size: 0.8em;
   color: var(--kern-text-dim);
 }
 
+.kern-settings-nav-foot {
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+.kern-logo-version {
+  margin-left: auto;
+  padding-left: 8px;
+  font-family: var(--kern-font-mono);
+  font-size: 11px;
+  color: var(--kern-text-dim);
+}
+
+.kern-settings-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.kern-settings-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 24px 48px;
+}
+
+.kern-settings-category {
+  max-width: 720px;
+  margin: 0 auto 32px;
+}
+
+.kern-settings-heading {
+  margin: 0;
+  /* It takes the focus so a screen reader starts at the category; it is not a control. */
+  outline: none;
+  font-size: 1.6em;
+  font-weight: 600;
+}
+
+h2.kern-settings-heading {
+  font-size: 1.25em;
+}
+
+.kern-settings-blurb {
+  margin: 8px 0 0;
+  color: var(--kern-text-dim);
+}
+
+.kern-settings-group-title {
+  margin: 28px 0 10px;
+  font-family: var(--kern-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--kern-text-dim);
+}
+
+.kern-settings-card {
+  overflow: hidden;
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-large);
+}
+
+.kern-settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  min-height: 44px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--kern-border);
+}
+
+.kern-settings-row:first-child {
+  border-top: 0;
+}
+
+.kern-settings-row-wide {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+/* In a column the label's basis would be a height: it takes only what its text needs. */
+.kern-settings-row-wide > .kern-settings-label {
+  flex: none;
+}
+
+/* Choices and swatches keep their own width under the label, never the row's. */
+.kern-settings-row-wide > .kern-settings-choices,
+.kern-settings-row-wide > .kern-settings-swatches {
+  align-self: flex-start;
+}
+
+.kern-settings-label {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kern-settings-label b,
+.kern-settings-label label {
+  font-weight: 500;
+}
+
+.kern-settings-label > span,
+.kern-settings-hint {
+  font-size: 0.85em;
+  line-height: 1.4;
+  color: var(--kern-text-dim);
+}
+
+.kern-settings-hint {
+  margin: 0;
+}
+
+.kern-settings-choices {
+  display: inline-flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  background: var(--kern-sunken);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-settings-choices button {
+  min-height: 32px;
+  padding: 0 12px;
+  font: inherit;
+  color: var(--kern-text-dim);
+  background: none;
+  /* A border on every choice, coloured on the pressed one: a drawn edge, not a shadow that a
+     fractional zoom or a neighbour can clip. */
+  border: 1px solid transparent;
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-settings-choices button[aria-pressed="true"] {
+  color: var(--kern-text);
+  background: var(--kern-surface);
+  border-color: var(--kern-border);
+}
+
+.kern-settings-switch {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 26px;
+  padding: 0;
+  background: var(--kern-border);
+  border: 0;
+  border-radius: 13px;
+  cursor: pointer;
+}
+
+.kern-settings-switch::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  content: "";
+  background: var(--kern-surface);
+  border-radius: 50%;
+}
+
+.kern-settings-switch[aria-checked="true"] {
+  background: var(--kern-accent);
+}
+
+.kern-settings-switch[aria-checked="true"]::after {
+  left: 21px;
+}
+
+.kern-settings-switch:disabled,
+.kern-settings-swatch:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.kern-settings-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.kern-settings-swatch {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.kern-settings-swatch[aria-pressed="true"] {
+  outline: 2px solid var(--kern-text);
+  outline-offset: 3px;
+}
+
+.kern-settings-stepper {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.kern-settings-stepper output {
+  width: 4em;
+  font-family: var(--kern-font-mono);
+  text-align: center;
+}
+
+.kern-settings-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.kern-settings-inline .kern-modal-input {
+  flex: 1 1 200px;
+}
+
+.kern-settings-hidden-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .kern-settings-list {
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .kern-settings-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin: 4px 0;
 }
 
-.kern-settings-url {
-  color: var(--kern-text-dim);
+.kern-settings-path,
+.kern-settings-meta {
   font-family: var(--kern-font-mono);
+  font-size: 0.85em;
+  color: var(--kern-text-dim);
+  overflow-wrap: anywhere;
+}
+
+.kern-settings-row-button {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  cursor: pointer;
+}
+
+.kern-settings-row-button:first-child {
+  border-top: 0;
+}
+
+.kern-settings-row-button:hover {
+  background: var(--kern-sunken);
+}
+
+.kern-settings-row-button:focus-visible {
+  outline: 2px solid var(--kern-accent);
+  outline-offset: -2px;
+}
+
+.kern-settings-trail {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  color: var(--kern-text-dim);
+}
+
+.kern-settings-licence-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-width: none;
 }
 
 .kern-settings-licence {
-  max-height: 24em;
+  max-height: 60vh;
+  margin: 0;
   overflow: auto;
   white-space: pre-wrap;
   font-family: var(--kern-font-mono);
+  font-size: 0.85em;
+}
+
+.kern-settings-notes {
+  margin: 16px 0 0;
+  font-size: 0.85em;
+  color: var(--kern-text-dim);
+}
+
+.kern-settings-bar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 12px 24px;
+  background: var(--kern-surface);
+  border-top: 1px solid var(--kern-border);
+}
+
+.kern-settings-bar-status {
+  flex: 1 1 200px;
+  margin: 0;
+  color: var(--kern-text-dim);
+}
+
+.kern-settings-bar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.kern-settings-window .kern-button-primary {
+  color: var(--kern-on-accent);
+  background: var(--kern-accent);
+  border-color: var(--kern-accent);
+}
+
+.kern-settings-window .kern-button-primary:hover {
+  color: var(--kern-on-accent);
+}
+
+.kern-settings-window .kern-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.kern-settings-notices {
+  position: fixed;
+  right: 16px;
+  bottom: 72px;
+  max-width: 480px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kern-settings-notices li {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+}
+
+@media (max-width: 640px) {
+  .kern-settings-nav {
+    flex-basis: 180px;
+  }
 }

@@ -9,7 +9,6 @@ import { FileSearch, Trash2, type LucideIcon } from "lucide-react";
 import { isMainWindow } from "../ipc";
 import { FolderView } from "../files/FolderView";
 import { DocumentsView } from "../files/DocumentsView";
-import { SettingsView } from "../settings/SettingsView";
 import { TrashView } from "../files/TrashView";
 import { currentContext, getAction, runAction } from "../keys/actions";
 import { activeTab, recentFolderTab, useTabs, type TabsState } from "../store/tabs";
@@ -63,7 +62,7 @@ export function PlacesStrip(props: { column?: boolean }) {
       data-testid="places-strip"
     >
       <div className="kern-places-slot">
-        <KernLogo />
+        <KernLogo onOpen={() => runAction(getAction("place.about"), currentContext())} />
       </div>
       {!props.column && <PlacesList />}
       {main && (
@@ -92,8 +91,6 @@ export function FolderArea(props: { docked?: boolean }) {
         <TrashView key={active.id} tab={active} />
       ) : active?.kind === "documents" ? (
         <DocumentsView key={active.id} />
-      ) : active?.kind === "settings" ? (
-        <SettingsView key={active.id} />
       ) : (
         tab && <FolderView key={tab.id} tab={tab} />
       )}

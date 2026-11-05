@@ -35,6 +35,7 @@ import { useLayout } from "../store/layout";
 import { useTabs } from "../store/tabs";
 import { closeTab, closeWindow, isClosing } from "./useCloseGuard";
 import { useProperties } from "../files/properties-store";
+import { useSettingsNav } from "../settings/settings-nav";
 
 // What the backend tells the main window to do. The
 // backend queues events for a window until it has asked for them once with
@@ -69,6 +70,9 @@ const EVENTS = [
 /** What a document window listens to. */
 const DOC_EVENTS = [EVENT_OPEN, EVENT_OPEN_ERROR, EVENT_CLOSE_REQUESTED] as const;
 
+/** What the Settings window listens to: the category to show, and its close request. */
+const SETTINGS_EVENTS = [EVENT_OPEN, EVENT_CLOSE_REQUESTED] as const;
+
 /** What an editor window listens to: as a document window, and the documents handed to it. */
 const EDITOR_EVENTS = [
   EVENT_OPEN,
@@ -93,15 +97,22 @@ export interface OpenDirectives {
   dismissNotice(id: number): void;
 }
 
+/** A close request sent for a restart (restart.rs) carries `{"restart": true}`. */
+const isRestart = (payload: unknown): boolean =>
+  typeof payload === "object" &&
+  payload !== null &&
+  (payload as { restart?: unknown }).restart === true;
+
 const unhandled = (name: string, detail = ""): string =>
   `Kern received "${name}"${detail} but this version cannot act on it yet.`;
 
 /**
  * In the main window the full set. A document window (`doc-<n>`) is told which document to
  * show, of errors, and of its close request; an editor window (`editor-<n>`) its folder, the
- * documents to open in its tabs, the same errors and its close request.
+ * documents to open in its tabs, the same errors and its close request; the Settings window
+ * (`settings`) the category to show and its close request.
  */
-export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectives {
+export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"): OpenDirectives {
   const [ready, setReady] = useState(false);
   const [errors, setErrors] = useState<WireError[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -261,6 +272,11 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
             void handTo(d.path, d.to);
             return;
           }
+          if (mode === "settings") {
+            if (d.kind === "settings_section") useSettingsNav.getState().show(d.section);
+            else notice(unhandled(EVENT_OPEN, ` (${d.kind})`));
+            return;
+          }
           if (mode === "doc") {
             if (d.kind === "load_doc") await loadDoc(d.path, d.text_state, d.ack === true);
             else notice(unhandled(EVENT_OPEN, ` (${d.kind})`));
@@ -339,7 +355,7 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
         }
         case EVENT_CLOSE_REQUESTED:
           // Not awaited: the question may stay open a while, and the events after it still apply.
-          void closeWindow();
+          void closeWindow(isRestart(item.payload));
           return;
         default:
           notice(unhandled(item.event));
@@ -356,7 +372,13 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor"): OpenDirectiv
     (async () => {
       try {
         const names: readonly (typeof EVENTS)[number][] =
-          mode === "main" ? EVENTS : mode === "editor" ? EDITOR_EVENTS : DOC_EVENTS;
+          mode === "main"
+            ? EVENTS
+            : mode === "editor"
+              ? EDITOR_EVENTS
+              : mode === "settings"
+                ? SETTINGS_EVENTS
+                : DOC_EVENTS;
         for (const name of names) {
           const un = await on(name, (payload) => {
             const item: Queued = { event: name, payload };

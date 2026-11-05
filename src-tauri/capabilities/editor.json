@@ -49,6 +49,8 @@
     "allow-doc-open-elsewhere",
     "allow-detach-doc",
     "allow-open-editor",
+    "allow-open-settings",
+    "allow-restart-abandon",
     "allow-confirm-close",
     "allow-dnd-target",
     "allow-drop-start-op"

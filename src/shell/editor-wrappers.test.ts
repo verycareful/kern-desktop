@@ -127,13 +127,6 @@ const NOT_FOR_EDITORS: Record<string, string[]> = {
   "kernkraft's start_op takes any kind of operation, delete and empty Trash among them, and the editor window starts only a copy or a move, through dropStartOp":
     ["startOp"],
   "Undo and Redo run from the Edit menu, which only the main window has": ["redo", "undo"],
-  "Settings (theme, default file manager, links) is a tab of the main window": [
-    "defaultFmStatus",
-    "fm1Status",
-    "makeDefaultFm",
-    "openUrl",
-    "themeSetPrefs",
-  ],
   "only the main window stores its layout": ["layoutSet"],
   "Home belongs to a document window": ["moveDocToMain"],
 };
