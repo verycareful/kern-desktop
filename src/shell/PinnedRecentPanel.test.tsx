@@ -16,6 +16,7 @@ const ipc = vi.hoisted(() => ({
   unpin: vi.fn(),
   pinsReorder: vi.fn(),
   userDirs: vi.fn(),
+  openEditor: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
@@ -179,6 +180,25 @@ test("file_click_opens_from_inside", async () => {
       "default"
     )
   );
+});
+
+test("a_folder_open_as_an_editor_is_marked_and_reopens_as_an_editor", async () => {
+  ipc.openEditor.mockResolvedValue("editor-2");
+  ipc.prune.mockResolvedValue({
+    ...report([]),
+    recents: { entries: [{ path: p("/home/t/Work"), opened_ms: NOW, as_editor: true }] },
+  });
+  render(<PinnedRecentPanel />);
+  const recent = screen.getByTestId("recent");
+  const row = (await within(recent).findByText("Work")).closest("button")!;
+  expect(within(row).getByText(/^Editor · /)).toBeInTheDocument();
+  fireEvent.click(row, { detail: 1 });
+  expect(ipc.openEditor).not.toHaveBeenCalled();
+  fireEvent.doubleClick(row);
+  await waitFor(() => expect(ipc.openEditor).toHaveBeenCalledExactlyOnceWith(p("/home/t/Work")));
+  // Opened as an editor, it is never shown in a folder tab.
+  expect(ipc.openPaths).not.toHaveBeenCalled();
+  expect(useTabs.getState().tabs).toHaveLength(0);
 });
 
 test("vanished_pin_pruned_on_focus", async () => {

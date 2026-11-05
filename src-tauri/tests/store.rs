@@ -104,7 +104,7 @@ fn atomic_write_round_trip() {
     assert_eq!(names(&e.config), vec!["settings.json".to_owned()]);
 
     s.pin(&wp(&e.files)).unwrap();
-    s.recent_touch(&wp(&e.files)).unwrap();
+    s.recent_touch(&wp(&e.files), false).unwrap();
     assert_eq!(
         names(&e.state),
         vec!["pins.json".to_owned(), "recents.json".to_owned()]
@@ -170,7 +170,7 @@ fn unknown_fields_survive() {
     assert_eq!(v["entries"].as_array().unwrap().len(), 1);
 
     // Touching the entry again keeps both the file's and the entry's extras.
-    s.recent_touch_at(&wp(&e.files), 9).unwrap();
+    s.recent_touch_at(&wp(&e.files), 9, false).unwrap();
     let v = read_json(&e.state.join("recents.json"));
     assert_eq!(v["future_recents"], json!(true));
     assert_eq!(v["entries"][0]["future_entry"], json!(7));
@@ -185,7 +185,7 @@ fn recents_capped_and_deduped() {
         .map(|i| e.files.join(format!("f{i}")))
         .collect();
     for (i, p) in paths.iter().enumerate() {
-        s.recent_touch_at(&wp(p), i as u64).unwrap();
+        s.recent_touch_at(&wp(p), i as u64, false).unwrap();
     }
     let r = s.recents_get().unwrap().value.entries;
     assert_eq!(r.len(), RECENTS_CAP);
@@ -194,7 +194,7 @@ fn recents_capped_and_deduped() {
     assert_eq!(r[RECENTS_CAP - 1].path, wp(&paths[5]));
 
     // Touching an existing entry moves it to the top without a duplicate.
-    s.recent_touch_at(&wp(&paths[10]), 1000).unwrap();
+    s.recent_touch_at(&wp(&paths[10]), 1000, false).unwrap();
     let r = s.recents_get().unwrap().value.entries;
     assert_eq!(r.len(), RECENTS_CAP);
     assert_eq!(r[0].path, wp(&paths[10]));
@@ -203,13 +203,35 @@ fn recents_capped_and_deduped() {
 }
 
 #[test]
+fn an_editor_folder_is_marked_and_a_file_is_written_as_before() {
+    let e = env();
+    let s = store(&e);
+    let folder = e.files.join("project");
+    let file = e.files.join("notes.txt");
+    s.recent_touch_at(&wp(&file), 1, false).unwrap();
+    s.recent_touch_at(&wp(&folder), 2, true).unwrap();
+    let r = s.recents_get().unwrap().value.entries;
+    assert_eq!((r[0].path.clone(), r[0].as_editor), (wp(&folder), true));
+    assert_eq!((r[1].path.clone(), r[1].as_editor), (wp(&file), false));
+
+    // A file's entry carries no as_editor key; the folder's carries true.
+    let on_disk = read_json(&e.state.join("recents.json"));
+    assert_eq!(on_disk["entries"][0]["as_editor"], json!(true));
+    assert!(on_disk["entries"][1].get("as_editor").is_none());
+
+    // Opened again another way, the entry takes that way.
+    s.recent_touch_at(&wp(&folder), 3, false).unwrap();
+    assert!(!s.recents_get().unwrap().value.entries[0].as_editor);
+}
+
+#[test]
 fn recent_remove_takes_one_entry_off() {
     let e = env();
     let s = store(&e);
     let a = e.files.join("a");
     let b = e.files.join("b");
-    s.recent_touch_at(&wp(&a), 1).unwrap();
-    s.recent_touch_at(&wp(&b), 2).unwrap();
+    s.recent_touch_at(&wp(&a), 1, false).unwrap();
+    s.recent_touch_at(&wp(&b), 2, false).unwrap();
 
     let removed = s.recent_remove(&wp(&a)).unwrap();
     assert!(removed.changed);
@@ -287,7 +309,7 @@ fn prune_drops_vanished() {
     std::os::unix::fs::symlink(e.files.join("nowhere"), &dangling).unwrap();
     for p in [&keep, &gone, &dangling] {
         s.pin(&wp(p)).unwrap();
-        s.recent_touch(&wp(p)).unwrap();
+        s.recent_touch(&wp(p), false).unwrap();
     }
     fs::remove_file(&gone).unwrap();
 
@@ -318,7 +340,7 @@ fn prune_keeps_offline_volume_entry() {
     let elsewhere = e.files.join("home-gone.txt");
     for p in [&missing_volume, &on_leftover, &elsewhere] {
         s.pin(&wp(p)).unwrap();
-        s.recent_touch(&wp(p)).unwrap();
+        s.recent_touch(&wp(p), false).unwrap();
     }
     let layouts = [(media.clone(), 2usize)];
     let report = s.prune_with(&layouts).unwrap();

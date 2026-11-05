@@ -220,6 +220,10 @@ pub struct RecentEntry {
     pub path: WirePath,
     /// Milliseconds since the Unix epoch when it was last opened.
     pub opened_ms: u64,
+    /// The folder was open as an editor window, and opens as one again.
+    /// Written only when true, so a file's entry is unchanged.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub as_editor: bool,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -973,18 +977,25 @@ impl Store {
         self.recents.get()
     }
 
-    /// Records `path` as opened now.
-    pub fn recent_touch(&self, path: &WirePath) -> Result<Loaded<Recents>, WireError> {
-        self.recent_touch_at(path, unix_ms()?)
+    /// Records `path` as opened now; `as_editor` when it was a folder open as
+    /// an editor window.
+    pub fn recent_touch(
+        &self,
+        path: &WirePath,
+        as_editor: bool,
+    ) -> Result<Loaded<Recents>, WireError> {
+        self.recent_touch_at(path, unix_ms()?, as_editor)
     }
 
     /// Records `path` as opened at `opened_ms`: an existing entry moves to
-    /// the top (keeping its unknown fields), a new one is inserted there,
-    /// and entries beyond [`RECENTS_CAP`] drop.
+    /// the top (keeping its unknown fields and taking `as_editor` from this
+    /// opening), a new one is inserted there, and entries beyond
+    /// [`RECENTS_CAP`] drop.
     pub fn recent_touch_at(
         &self,
         path: &WirePath,
         opened_ms: u64,
+        as_editor: bool,
     ) -> Result<Loaded<Recents>, WireError> {
         let key = path.to_path_buf()?;
         self.recents.update(|recents| {
@@ -997,10 +1008,12 @@ impl Store {
                 None => RecentEntry {
                     path: WirePath::from(key.as_path()),
                     opened_ms,
+                    as_editor,
                     extra: Map::new(),
                 },
             };
             entry.opened_ms = opened_ms;
+            entry.as_editor = as_editor;
             recents.entries.insert(0, entry);
             recents.entries.truncate(RECENTS_CAP);
             Ok(true)

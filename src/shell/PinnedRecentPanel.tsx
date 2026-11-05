@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useRef, useState } from "react";
-import { File, Folder, X } from "lucide-react";
+import { File, Folder, SquarePen, X } from "lucide-react";
 import { displayPath, parent, pathKey, type WirePath } from "../ipc";
 import { ActionMenu } from "../keys/ActionMenu";
 import { ITEM_DRAG_THRESHOLD } from "../ops/dnd";
@@ -18,7 +18,8 @@ import { useUserDirs } from "./user-dirs-store";
 
 // Pinned on top, Recent below, in the right third. A pin
 // shows its parent folder and a recent entry when it was opened, so entries of
-// the same name are told apart. A double-click opens the entry (a folder in the
+// the same name are told apart. A folder that was open as an editor window is
+// marked Editor in Recent and opens as an editor window again. A double-click opens the entry (a folder in the
 // current folder tab, a file through the open command); right-click, the Menu
 // key or Shift+F10 gives the entry's menu. Pins are reordered by dragging one
 // along the list, or with Move up and Move down in its menu. The divider on
@@ -250,7 +251,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
                   type="button"
                   className="kern-place"
                   title={title(p)}
-                  {...openOnDoubleClick(() => void s.open(p))}
+                  {...openOnDoubleClick(() => void s.openEntry("pinned", p))}
                   onPointerDown={onPinPointerDown(key)}
                   {...menuHandlers("pinned", p)}
                 >
@@ -275,12 +276,16 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
                 type="button"
                 className="kern-place"
                 title={title(r.path)}
-                {...openOnDoubleClick(() => void s.open(r.path))}
+                {...openOnDoubleClick(() => void s.openEntry("recent", r.path))}
                 {...menuHandlers("recent", r.path)}
               >
-                {icon(r.path)}
+                {r.as_editor ? <SquarePen size={16} strokeWidth={2} aria-hidden /> : icon(r.path)}
                 <span className="kern-place-label">{baseName(r.path)}</span>
-                <span className="kern-entry-note">{relativeTime(r.opened_ms, now)}</span>
+                <span className="kern-entry-note">
+                  {r.as_editor
+                    ? `Editor · ${relativeTime(r.opened_ms, now)}`
+                    : relativeTime(r.opened_ms, now)}
+                </span>
               </button>
             </li>
           ))}

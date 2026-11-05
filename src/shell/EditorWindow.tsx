@@ -7,6 +7,8 @@ import type { Action } from "../keys/actions";
 import { activeTab, useTabs, type DocTab } from "../store/tabs";
 import { OpsHost } from "../ops/OpsHost";
 import { usePinnedRecent } from "./pinned-recent-store";
+import { recordEditorFolder } from "./editor-recent";
+import { useLayout } from "../store/layout";
 import { ClosePrompt } from "./ClosePrompt";
 import { EditorCentre, EditorLayout } from "./EditorLayout";
 import { StatusBar } from "./StatusBar";
@@ -52,6 +54,11 @@ export function EditorWindow(props: { starting: boolean }) {
       stop?.();
     };
   }, []);
+  // The folder goes into Recent as soon as the window has it, and again if it changes.
+  const root = useLayout((s) => s.treeRoot);
+  useEffect(() => {
+    if (root) void recordEditorFolder();
+  }, [root]);
   const tabs = useTabs((s) => s.tabs);
   const tab = useTabs((s) => activeTab(s));
   const docs = tabs.filter((t): t is DocTab => t.kind === "doc");

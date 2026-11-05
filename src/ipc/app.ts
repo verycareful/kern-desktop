@@ -48,6 +48,8 @@ export interface RecentEntry {
   path: WirePath;
   /** Milliseconds since the Unix epoch. */
   opened_ms: number;
+  /** A folder that was open as an editor window; absent for anything else. */
+  as_editor?: boolean;
 }
 
 export interface Recents {
@@ -100,7 +102,9 @@ export const pin = (path: WirePath) => invoke<Pins>("pin", { path });
 export const unpin = (path: WirePath) => invoke<Pins>("unpin", { path });
 export const pinsReorder = (paths: WirePath[]) => invoke<Pins>("pins_reorder", { paths });
 export const recentsGet = () => invoke<Recents>("recents_get");
-export const recentTouch = (path: WirePath) => invoke<Recents>("recent_touch", { path });
+/** Records `path` as opened now; `asEditor` for a folder open as an editor window. */
+export const recentTouch = (path: WirePath, asEditor = false) =>
+  invoke<Recents>("recent_touch", { path, asEditor });
 export const recentRemove = (path: WirePath) => invoke<Recents>("recent_remove", { path });
 export const prune = () => invoke<PruneReport>("prune");
 export const storeErrorsTake = () => invoke<CorruptReport[]>("store_errors_take");

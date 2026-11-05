@@ -261,9 +261,10 @@ pub async fn recents_get<R: Runtime>(app: AppHandle<R>) -> Result<Recents, WireE
 pub async fn recent_touch<R: Runtime>(
     app: AppHandle<R>,
     path: WirePath,
+    as_editor: bool,
 ) -> Result<Recents, WireError> {
     let store = app.state::<StoreState>().store()?;
-    let loaded = blocking(move || store.recent_touch(&path)).await?;
+    let loaded = blocking(move || store.recent_touch(&path, as_editor)).await?;
     Ok(finish(&app, loaded, EVENT_RECENTS_CHANGED))
 }
 

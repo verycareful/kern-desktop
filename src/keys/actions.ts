@@ -883,7 +883,7 @@ const pinnedActions: Action[] = [
     enabled: () => currentEntry() !== null,
     run: () => {
       const e = currentEntry();
-      if (e) void usePinnedRecent.getState().open(e.path);
+      if (e) void usePinnedRecent.getState().openEntry(e.list, e.path);
     },
   },
   {

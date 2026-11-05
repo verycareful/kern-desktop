@@ -168,7 +168,8 @@ fn settings_and_recents_emit_their_events() {
     e.expect_quiet();
 
     let p = e.files.join("doc.txt");
-    e.call("recent_touch", json!({"path": wp(&p)})).unwrap();
+    e.call("recent_touch", json!({"path": wp(&p), "asEditor": false}))
+        .unwrap();
     let ev = e.expect(EVENT_RECENTS_CHANGED);
     assert_eq!(ev["entries"][0]["path"], wp(&p));
     let got = e.call("recents_get", json!({})).unwrap();

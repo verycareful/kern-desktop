@@ -6,6 +6,7 @@ import { docController } from "../editor/doc-controller";
 import { errorText } from "../ops/error-text";
 import { useOps } from "../ops/useOps";
 import { tabTitle, useTabs } from "../store/tabs";
+import { recordEditorFolder } from "./editor-recent";
 import { flushLayout } from "./use-layout-sync";
 
 // Closing a document: a document with unsaved
@@ -151,8 +152,10 @@ export async function closeWindow(): Promise<void> {
     if (outcome === "discard") items.forEach((i) => givenUp.add(i.id));
   }
   closing = true;
-  // The layout of the window, changed last, is written before the window goes.
+  // The layout of the window, changed last, is written before the window goes, and an editor
+  // window's folder goes to the top of Recent.
   await flushLayout();
+  await recordEditorFolder();
   try {
     await confirmClose();
   } catch (e) {

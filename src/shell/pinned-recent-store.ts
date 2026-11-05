@@ -24,6 +24,7 @@ import { openFiles } from "../files/open-entries";
 import { errorText } from "../ops/error-text";
 import { baseName, namesText } from "../ops/labels";
 import { corruptText, useStoreErrors } from "../store/store-errors";
+import { openAsEditor } from "./layout-switch";
 import { showFolder } from "./place-nav";
 
 // The pins and recents of the right-hand panel, kept by the
@@ -95,6 +96,8 @@ interface PinnedRecentState {
   shift(path: WirePath, by: -1 | 1): Promise<void>;
   /** A folder shows in the current folder tab; a file goes to the open command. */
   open(path: WirePath): Promise<void>;
+  /** Opens an entry of a list: a recent editor folder as an editor window, anything else as `open`. */
+  openEntry(list: EntryList, path: WirePath): Promise<void>;
   setCurrent(current: { list: EntryList; path: WirePath } | null): void;
   /** Leaves a notice, unless one with the same text is already shown. */
   notify(text: string): void;
@@ -352,6 +355,14 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
       // An entry whose open failed is pruned, if its target is gone. A prune that
       // began before the failure may have found it still there, so this one starts after it.
       await get().prune(true);
+    },
+    async openEntry(list, path) {
+      const key = pathKey(path);
+      const editor =
+        list === "recent" &&
+        (get().recents ?? []).some((r) => r.as_editor === true && pathKey(r.path) === key);
+      if (editor) await openAsEditor(path);
+      else await get().open(path);
     },
     setCurrent(current) {
       set({ current });
