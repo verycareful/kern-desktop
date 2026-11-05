@@ -72,12 +72,15 @@
   padding-top: 12px;
 }
 
+/* The box is trimmed to the digits' cap height, so centring it in the row centres what is drawn:
+   untrimmed, the box holds the font's descender room, which digits never use, and they sat high. */
 .kern-logo-version {
   margin-left: auto;
   padding-left: 8px;
   font-family: var(--kern-font-mono);
   font-size: 11px;
   color: var(--kern-text-dim);
+  text-box: trim-both cap alphabetic;
 }
 
 .kern-settings-pane {
