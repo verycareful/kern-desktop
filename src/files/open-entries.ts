@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { openPaths, toWireError, type WireEntry, type WireError, type WirePath } from "../ipc";
+import { errorText } from "../ops/error-text";
+import { baseName } from "../ops/labels";
 import { useTabs } from "../store/tabs";
 import { isFolder } from "./file-type";
 
@@ -72,4 +74,14 @@ export async function openFiles(
     errors.push(toWireError(e));
   }
   return errors;
+}
+
+/**
+ * Opens `folder` in a folder tab of the main window, from any window: the open command with
+ * origin "inside" hands a folder to the main window. Each failure is said through `note`.
+ */
+export async function openFolderTab(folder: WirePath, note: (text: string) => void): Promise<void> {
+  for (const err of await openFiles([folder], false)) {
+    note(`${baseName(folder)} was not opened in a folder tab: ${errorText(err)}`);
+  }
 }

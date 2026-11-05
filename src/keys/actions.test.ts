@@ -10,7 +10,7 @@ import { useVolumes } from "../shell/volumes-store";
 import { useOps } from "../ops/useOps";
 import { VOLUME_MENU } from "../shell/volume-menu";
 import { ENTRY_MENU } from "../shell/entry-menu";
-import { TREE_MENU } from "../files/tree-menu";
+import { everyTreeAction } from "../files/tree-menu";
 import { usePinnedRecent } from "../shell/pinned-recent-store";
 import { useProperties } from "../files/properties-store";
 import { registerFolder, type FolderController } from "../files/folder-controller";
@@ -169,7 +169,7 @@ test("every_action_is_in_a_menu_or_on_a_button_with_a_key", () => {
         : a.when === "entry"
           ? ENTRY_MENU.some((s) => s.actions.includes(a))
           : a.when === "tree"
-            ? TREE_MENU.some((s) => s.actions.includes(a))
+            ? everyTreeAction().includes(a)
             : menuSections(a.when === "any" ? null : tabOf(a.when)).some((s) =>
                 s.actions.includes(a)
               );

@@ -6,14 +6,18 @@ import { editErrorText } from "./edit-error";
 import { Modal } from "./Modal";
 import { nameProblem } from "./names";
 
-// A name typed for something new: a folder or an empty file. A
-// name that cannot be one is refused here; whatever the backend refuses (the
+// A name typed for something new (a folder, an empty file) or for an item
+// being renamed. A name that cannot be one is refused here; whatever the backend refuses (the
 // name exists, the folder is read-only) is shown in the dialog, which stays
 // open for another try. The name is text, sent as a string.
 export function NameDialog(props: {
   title: string;
   initial: string;
   confirmLabel: string;
+  /** The part of `initial` selected when the dialog opens; all of it when absent. */
+  select?: readonly [number, number];
+  /** A further reason to refuse a name, or null when it may be sent. */
+  check?(name: string): string | null;
   /** Creates the item; a rejection is shown and keeps the dialog open. */
   onSubmit(name: string): Promise<void>;
   onCancel(): void;
@@ -24,10 +28,13 @@ export function NameDialog(props: {
   const input = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
   const id = useId();
+  const selectRange = useRef(props.select);
 
   useEffect(() => {
     alive.current = true;
-    input.current?.select();
+    const range = selectRange.current;
+    if (range) input.current?.setSelectionRange(range[0], range[1]);
+    else input.current?.select();
     return () => {
       alive.current = false;
     };
@@ -35,7 +42,7 @@ export function NameDialog(props: {
 
   const submit = async () => {
     if (busy) return;
-    const problem = nameProblem(text);
+    const problem = nameProblem(text) ?? props.check?.(text) ?? null;
     if (problem) {
       setError(problem);
       return;

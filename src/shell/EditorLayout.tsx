@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { displayPath, isEditorWindow, type WireEntry, type WirePath } from "../ipc";
 import { TextEditor } from "../editor/TextEditor";
 import { FolderTree } from "../files/FolderTree";
-import { TREE_MENU } from "../files/tree-menu";
+import { treeMenu } from "../files/tree-menu";
+import { TreeOps } from "../files/TreeOps";
 import { useTreeMenu } from "../files/tree-menu-store";
 import { useViewSettings } from "../files/view-settings";
 import { ActionMenu } from "../keys/ActionMenu";
@@ -50,14 +51,21 @@ function ColumnSplitter() {
 function LeftColumn() {
   const root = useLayout((s) => s.treeRoot);
   const hidden = useViewSettings((s) => s.showHidden);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; entry: WireEntry | null } | null>(null);
+  const column = useRef<HTMLElement>(null);
 
-  const onContextMenu = useCallback((entry: WireEntry | null, x: number, y: number) => {
-    // Nothing to act on in the empty part.
-    if (!entry) return;
-    useTreeMenu.getState().setCurrent(entry);
-    setMenu({ x, y });
-  }, []);
+  // The empty part below the rows stands for the root.
+  const onContextMenu = useCallback(
+    (entry: WireEntry | null, x: number, y: number) => {
+      useTreeMenu.getState().setCurrent(entry, root);
+      setMenu({ x, y, entry });
+    },
+    [root]
+  );
+  const focusTree = useCallback(
+    () => column.current?.querySelector<HTMLElement>("[role=tree]")?.focus(),
+    []
+  );
 
   // The root is gone: the tree moves to the nearest folder that is still there, and says so.
   const onRootGone = useCallback((nearest: WirePath | null) => {
@@ -72,8 +80,14 @@ function LeftColumn() {
   }, []);
 
   return (
-    <aside className="kern-editor-left" aria-label="Places and folders" data-testid="editor-left">
+    <aside
+      ref={column}
+      className="kern-editor-left"
+      aria-label="Places and folders"
+      data-testid="editor-left"
+    >
       <PlacesStrip column />
+      {root && <TreeOps scope={column} focusTree={focusTree} />}
       <div className="kern-editor-tree">
         {root ? (
           <FolderTree
@@ -89,7 +103,12 @@ function LeftColumn() {
         )}
       </div>
       {menu && (
-        <ActionMenu sections={TREE_MENU} x={menu.x} y={menu.y} onClose={() => setMenu(null)} />
+        <ActionMenu
+          sections={treeMenu(menu.entry)}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+        />
       )}
     </aside>
   );

@@ -12,7 +12,7 @@ import {
   toWireError,
   type WirePath,
 } from "../ipc";
-import { copyProblem } from "../files/use-folder-tools";
+import { copyPaths, copyProblem, openTerminalIn } from "../files/use-folder-tools";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { activeTab, tabTitle, useTabs, type Tab, type TabsState } from "../store/tabs";
@@ -33,7 +33,8 @@ import { moveTabToWindow } from "../shell/move-doc";
 import { closeTab } from "../shell/useCloseGuard";
 import { openAsEditor } from "../shell/layout-switch";
 import { isEditorLayout, useLayout } from "../store/layout";
-import { useTreeMenu } from "../files/tree-menu-store";
+import { treeMenuFolder, useTreeMenu } from "../files/tree-menu-store";
+import { openFiles, openFolderTab } from "../files/open-entries";
 import { isFolder } from "../files/file-type";
 import { useUserDirs } from "../shell/user-dirs-store";
 
@@ -659,19 +660,81 @@ const layoutActions: Action[] = [
     enabled: () => isEditorLayout(),
     run: () => useLayout.getState().toggleLeft(),
   },
-  // The right-click menu of the folder tree.
+];
+actions.push(...layoutActions);
+
+// ---- the folder tree's menu ----
+// Aimed at what the menu was opened on (files/tree-menu-store.ts): an entry, or the empty part,
+// which stands for the tree's root. Which of them a menu lists is files/tree-menu.ts's choice.
+
+const treeEntry = () => useTreeMenu.getState().current;
+const treeFolderEntry = () => {
+  const e = treeEntry();
+  return e !== null && isFolder(e) ? e : null;
+};
+const treeOps = () => useTreeMenu.getState().ops;
+const treeNote = (text: string) => treeOps()?.note(text);
+
+/** A tree action that runs one of the tree's file operations. */
+function treeOp(
+  id: string,
+  label: string,
+  area: Action["area"],
+  run: (ops: NonNullable<ReturnType<typeof treeOps>>) => void,
+  enabled: () => boolean = () => true
+): Action {
+  return {
+    id,
+    label,
+    area,
+    keys: [],
+    when: "tree",
+    enabled: () => treeOps() !== null && enabled(),
+    run: () => {
+      const ops = treeOps();
+      if (ops) run(ops);
+    },
+  };
+}
+
+const treeActions: Action[] = [
+  {
+    id: "tree.open",
+    label: "Open",
+    area: "Open",
+    keys: [],
+    when: "tree",
+    enabled: () => treeEntry() !== null && treeFolderEntry() === null,
+    run: () => {
+      const e = treeEntry();
+      if (!e) return;
+      void openFiles([e.path], false).then((errors) =>
+        errors.forEach((err) => treeNote(`${e.name} was not opened: ${errorText(err)}`))
+      );
+    },
+  },
+  // The folder in a folder tab of the main window.
+  {
+    id: "tree.openInFileManager",
+    label: "Open in file manager",
+    area: "Open",
+    keys: [],
+    when: "tree",
+    enabled: () => treeFolderEntry() !== null,
+    run: () => {
+      const e = treeFolderEntry();
+      if (e) void openFolderTab(e.path, treeNote);
+    },
+  },
   {
     id: "tree.openAsEditor",
     label: "Open as editor",
     area: "Open",
     keys: [],
     when: "tree",
-    enabled: () => {
-      const e = useTreeMenu.getState().current;
-      return e !== null && isFolder(e);
-    },
+    enabled: () => treeFolderEntry() !== null,
     run: () => {
-      const e = useTreeMenu.getState().current;
+      const e = treeFolderEntry();
       if (e) void openAsEditor(e.path);
     },
   },
@@ -681,17 +744,95 @@ const layoutActions: Action[] = [
     area: "Pinned",
     keys: [],
     when: "tree",
-    enabled: () => {
-      const e = useTreeMenu.getState().current;
-      return e !== null && isFolder(e);
-    },
+    enabled: () => treeFolderEntry() !== null,
     run: () => {
-      const e = useTreeMenu.getState().current;
+      const e = treeFolderEntry();
       if (e) void usePinnedRecent.getState().pinPaths([e.path], undefined, true);
     },
   },
+  // In the folder it was opened on, the folder of the file, or the root.
+  {
+    id: "tree.terminal",
+    label: "Open terminal here",
+    area: "Open",
+    keys: [],
+    when: "tree",
+    enabled: () => treeMenuFolder() !== null,
+    run: () => {
+      const dir = treeMenuFolder();
+      if (dir) void openTerminalIn(dir, treeNote);
+    },
+  },
+  treeOp(
+    "tree.new.file",
+    "New file",
+    "Create",
+    (o) => o.newFile(),
+    () => treeMenuFolder() !== null
+  ),
+  treeOp(
+    "tree.new.folder",
+    "New folder",
+    "Create",
+    (o) => o.newFolder(),
+    () => treeMenuFolder() !== null
+  ),
+  treeOp(
+    "tree.cut",
+    "Cut",
+    "Edit",
+    (o) => o.cut(),
+    () => treeEntry() !== null
+  ),
+  treeOp(
+    "tree.copy",
+    "Copy",
+    "Edit",
+    (o) => o.copy(),
+    () => treeEntry() !== null
+  ),
+  treeOp(
+    "tree.paste",
+    "Paste",
+    "Edit",
+    (o) => o.paste(),
+    () => treeMenuFolder() !== null
+  ),
+  treeOp(
+    "tree.rename",
+    "Rename",
+    "Edit",
+    (o) => o.rename(),
+    () => treeEntry() !== null
+  ),
+  {
+    id: "tree.copyPath",
+    label: "Copy path",
+    area: "Edit",
+    keys: [],
+    when: "tree",
+    enabled: () => (treeEntry()?.path ?? useTreeMenu.getState().root) !== null,
+    run: () => {
+      const path = treeEntry()?.path ?? useTreeMenu.getState().root;
+      if (path) copyPaths([path], treeNote);
+    },
+  },
+  treeOp(
+    "tree.trash",
+    "Move to Trash",
+    "Edit",
+    (o) => o.trash(),
+    () => treeEntry() !== null
+  ),
+  treeOp(
+    "tree.delete",
+    "Delete permanently",
+    "Edit",
+    (o) => o.askDelete(),
+    () => treeEntry() !== null
+  ),
 ];
-actions.push(...layoutActions);
+actions.push(...treeActions);
 
 // ---- the Trash ----
 

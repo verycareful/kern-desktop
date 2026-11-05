@@ -31,6 +31,14 @@ const ipc = vi.hoisted(() => ({
   docOpened: vi.fn(),
   docClosed: vi.fn(),
   docOpenElsewhere: vi.fn(),
+  createFile: vi.fn(),
+  createDir: vi.fn(),
+  rename: vi.fn(),
+  clipSet: vi.fn(),
+  clipGet: vi.fn(),
+  clipText: vi.fn(),
+  startOp: vi.fn(),
+  openTerminal: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 vi.mock("../files/sort-async", async () => {
@@ -320,13 +328,183 @@ test("a_right_click_on_a_folder_of_the_tree_offers_open_as_editor", async () => 
   const menu = await screen.findByTestId("action-menu");
   fireEvent.click(within(menu).getByRole("menuitem", { name: /Open as editor/ }));
   expect(ipc.openEditor).toHaveBeenCalledExactlyOnceWith(p("/home/a/work"));
-  // A file offers nothing to open as an editor: the entry is greyed.
+  // A file has no folder to open as an editor: its menu leaves the entry out.
   fireEvent.contextMenu(await screen.findByRole("treeitem", { name: /^notes/ }), {
     clientX: 5,
     clientY: 6,
   });
   const second = await screen.findByTestId("action-menu");
-  expect(within(second).getByRole("menuitem", { name: /Open as editor/ })).toBeDisabled();
+  expect(within(second).queryByRole("menuitem", { name: /Open as editor/ })).toBeNull();
+});
+
+/** Right-clicks a row of the tree, or the empty part below the rows, and returns the menu. */
+async function treeMenuOn(name: RegExp | null) {
+  const target = name
+    ? await screen.findByRole("treeitem", { name })
+    : await screen.findByTestId("tree-scroll");
+  fireEvent.contextMenu(target, { clientX: 5, clientY: 6 });
+  return screen.findByTestId("action-menu");
+}
+const labels = (menu: HTMLElement) =>
+  within(menu)
+    .getAllByRole("menuitem")
+    .map((m) => m.textContent);
+const choose = (menu: HTMLElement, name: RegExp) =>
+  fireEvent.click(within(menu).getByRole("menuitem", { name }));
+
+test("the_tree_menu_lists_what_applies_to_a_folder_a_file_and_the_empty_part", async () => {
+  await editorWindow();
+  // The main window in the editor layout holds no folder tabs: no Open in file manager.
+  expect(labels(await treeMenuOn(/^work/))).toEqual([
+    "Open as editor",
+    "Pin as editor",
+    "Open terminal here",
+    "New file",
+    "New folder",
+    "Cut",
+    "Copy",
+    "Paste",
+    "Rename",
+    "Copy path",
+    "Move to Trash",
+    "Delete permanently",
+  ]);
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(labels(await treeMenuOn(/^notes/))).toEqual([
+    "Open",
+    "Open terminal here",
+    "Cut",
+    "Copy",
+    "Rename",
+    "Copy path",
+    "Move to Trash",
+    "Delete permanently",
+  ]);
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(labels(await treeMenuOn(null))).toEqual([
+    "New file",
+    "New folder",
+    "Paste",
+    "Open terminal here",
+    "Copy path",
+  ]);
+});
+
+test("new_file_from_the_empty_part_is_made_in_the_root_and_from_a_folder_in_that_folder", async () => {
+  ipc.createFile.mockImplementation((dir: WirePath, name: string) =>
+    Promise.resolve(p(`${dir.v}/${name}`))
+  );
+  ipc.createDir.mockImplementation((dir: WirePath, name: string) =>
+    Promise.resolve(p(`${dir.v}/${name}`))
+  );
+  await editorWindow();
+  choose(await treeMenuOn(null), /^New file/);
+  const dialog = await screen.findByTestId("name-dialog");
+  fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "a.txt" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+  await waitFor(() => expect(ipc.createFile).toHaveBeenCalledExactlyOnceWith(HOME, "a.txt"));
+  await waitFor(() => expect(screen.queryByTestId("name-dialog")).toBeNull());
+
+  choose(await treeMenuOn(/^work/), /^New folder/);
+  const second = await screen.findByTestId("name-dialog");
+  fireEvent.change(within(second).getByRole("textbox"), { target: { value: "sub" } });
+  fireEvent.click(within(second).getByRole("button", { name: "Create" }));
+  await waitFor(() =>
+    expect(ipc.createDir).toHaveBeenCalledExactlyOnceWith(p("/home/a/work"), "sub")
+  );
+});
+
+test("rename_in_the_tree_asks_for_the_name_with_the_stem_selected", async () => {
+  ipc.rename.mockResolvedValue(p("/home/a/ideas.md"));
+  await editorWindow();
+  choose(await treeMenuOn(/^notes/), /^Rename/);
+  const input = within(await screen.findByTestId("name-dialog")).getByRole<HTMLInputElement>(
+    "textbox"
+  );
+  expect(input.value).toBe("notes.md");
+  expect([input.selectionStart, input.selectionEnd]).toEqual([0, "notes".length]);
+  fireEvent.change(input, { target: { value: "ideas.md" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() =>
+    expect(ipc.rename).toHaveBeenCalledExactlyOnceWith(p("/home/a/notes.md"), "ideas.md")
+  );
+  await waitFor(() => expect(screen.queryByTestId("name-dialog")).toBeNull());
+});
+
+test("a_refused_rename_is_said_in_the_dialog_which_stays_open", async () => {
+  ipc.rename.mockRejectedValue({ kind: "Exists", message: "exists", path: null });
+  await editorWindow();
+  choose(await treeMenuOn(/^notes/), /^Rename/);
+  const dialog = await screen.findByTestId("name-dialog");
+  fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "work" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
+  expect(await within(dialog).findByRole("alert")).not.toBeEmptyDOMElement();
+  expect(screen.getByTestId("name-dialog")).toBeInTheDocument();
+});
+
+test("cut_copy_and_paste_in_the_tree_use_the_file_clipboard", async () => {
+  ipc.clipSet.mockResolvedValue(undefined);
+  ipc.clipGet.mockResolvedValue({ op: "copy", paths: [p("/home/a/notes.md")] });
+  ipc.startOp.mockResolvedValue(7);
+  await editorWindow();
+  choose(await treeMenuOn(/^notes/), /^Copy$/);
+  await waitFor(() =>
+    expect(ipc.clipSet).toHaveBeenCalledExactlyOnceWith("copy", [p("/home/a/notes.md")])
+  );
+  choose(await treeMenuOn(/^work/), /^Cut/);
+  await waitFor(() => expect(ipc.clipSet).toHaveBeenLastCalledWith("cut", [p("/home/a/work")]));
+  choose(await treeMenuOn(/^work/), /^Paste/);
+  await waitFor(() =>
+    expect(ipc.startOp).toHaveBeenCalledExactlyOnceWith(
+      "copy",
+      [p("/home/a/notes.md")],
+      p("/home/a/work")
+    )
+  );
+});
+
+test("move_to_trash_runs_at_once_and_delete_permanently_asks_first", async () => {
+  ipc.startOp.mockResolvedValue(7);
+  await editorWindow();
+  choose(await treeMenuOn(/^notes/), /^Move to Trash/);
+  await waitFor(() =>
+    expect(ipc.startOp).toHaveBeenCalledExactlyOnceWith("trash", [p("/home/a/notes.md")], undefined)
+  );
+  choose(await treeMenuOn(/^work/), /^Delete permanently/);
+  const ask = await screen.findByRole("alertdialog", { name: "Delete permanently" });
+  expect(ask).toHaveTextContent(/work/);
+  expect(ipc.startOp).toHaveBeenCalledTimes(1);
+  fireEvent.click(within(ask).getByRole("button", { name: /^Delete 1 item/ }));
+  await waitFor(() =>
+    expect(ipc.startOp).toHaveBeenLastCalledWith("delete", [p("/home/a/work")], undefined)
+  );
+});
+
+test("open_terminal_here_opens_in_the_folder_the_folder_of_a_file_or_the_root", async () => {
+  ipc.openTerminal.mockResolvedValue(undefined);
+  await editorWindow();
+  choose(await treeMenuOn(/^work/), /^Open terminal here/);
+  await waitFor(() =>
+    expect(ipc.openTerminal).toHaveBeenLastCalledWith(p("/home/a/work"), undefined)
+  );
+  choose(await treeMenuOn(/^notes/), /^Open terminal here/);
+  await waitFor(() => expect(ipc.openTerminal).toHaveBeenLastCalledWith(HOME, undefined));
+  choose(await treeMenuOn(null), /^Open terminal here/);
+  await waitFor(() => expect(ipc.openTerminal).toHaveBeenCalledTimes(3));
+  expect(ipc.openTerminal).toHaveBeenLastCalledWith(HOME, undefined);
+});
+
+test("copy_path_copies_the_entry_or_the_root_and_open_sends_the_file_to_open", async () => {
+  ipc.clipText.mockResolvedValue(undefined);
+  await editorWindow();
+  choose(await treeMenuOn(/^notes/), /^Copy path/);
+  await waitFor(() => expect(ipc.clipText).toHaveBeenLastCalledWith("/home/a/notes.md"));
+  choose(await treeMenuOn(null), /^Copy path/);
+  await waitFor(() => expect(ipc.clipText).toHaveBeenLastCalledWith("/home/a"));
+  choose(await treeMenuOn(/^notes/), /^Open$/);
+  await waitFor(() =>
+    expect(ipc.openPaths).toHaveBeenCalledWith([p("/home/a/notes.md")], "inside", "default")
+  );
 });
 
 test("a_failed_open_as_editor_is_said", async () => {

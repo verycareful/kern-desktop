@@ -52,7 +52,7 @@ import { useTabs } from "../store/tabs";
 import MainWindow from "./MainWindow";
 import { VOLUME_MENU } from "./volume-menu";
 import { ENTRY_MENU } from "./entry-menu";
-import { TREE_MENU } from "../files/tree-menu";
+import { everyTreeAction } from "../files/tree-menu";
 import { usePinnedRecent } from "./pinned-recent-store";
 import { useCloseGuard } from "./useCloseGuard";
 import { useOps } from "../ops/useOps";
@@ -351,7 +351,7 @@ test("every_action_appears_in_a_menu", () => {
   // The entry actions are in the menu of an entry of Pinned or Recent.
   for (const section of ENTRY_MENU) for (const a of section.actions) seen.add(a.id);
   // The tree actions are in the folder tree's own menu.
-  for (const section of TREE_MENU) for (const a of section.actions) seen.add(a.id);
+  for (const a of everyTreeAction()) seen.add(a.id);
   // The rest are buttons of the top bar (actions.test.ts checks each has a key or is About).
   for (const a of actions) if (a.menu === false) seen.add(a.id);
   expect([...seen].sort()).toEqual(actions.map((a) => a.id).sort());

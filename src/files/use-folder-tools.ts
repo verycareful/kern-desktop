@@ -44,6 +44,49 @@ export function copyProblem(path: WirePath): string | null {
     : null;
 }
 
+/**
+ * Puts `paths` on the clipboard as text, one per line; success is said in the status bar, a path
+ * that cannot be copied or a failure goes to `note`.
+ */
+export function copyPaths(paths: readonly WirePath[], note: (text: string) => void): void {
+  const problem = paths.map(copyProblem).find((p) => p !== null) ?? listProblem(paths);
+  if (problem) {
+    note(`The path was not copied: ${problem}.`);
+    return;
+  }
+  clipText(paths.map(displayPath).join("\n")).then(
+    () => useOps.getState().notify(`Copied the path of ${itemsText(paths)}`),
+    (e: unknown) => note(`The path could not be copied: ${errorText(toWireError(e))}`)
+  );
+}
+
+/**
+ * Opens the terminal of the settings (else the system's) in `dir`; success is said in the status
+ * bar, a failure goes to `note`.
+ */
+export async function openTerminalIn(dir: WirePath, note: (text: string) => void): Promise<void> {
+  let setting: string | null;
+  try {
+    setting = (await settingsGet()).terminal;
+  } catch (e) {
+    note(
+      `No terminal was opened: the terminal setting could not be read: ${errorText(toWireError(e))}`
+    );
+    return;
+  }
+  try {
+    await openTerminal(dir, setting ?? undefined);
+    useOps.getState().notify(`Opened a terminal in ${baseName(dir)}`);
+  } catch (e) {
+    const err = toWireError(e);
+    note(
+      err.kind === "NoTerminal"
+        ? `No terminal could be opened (${err.message}). Choose one under Terminal in the settings, or set $TERMINAL.`
+        : `A terminal could not be opened in ${baseName(dir)}: ${errorText(err)}`
+    );
+  }
+}
+
 export interface FolderTools {
   copyPath(): void;
   canOpenTerminal(): boolean;
@@ -88,44 +131,13 @@ export function useFolderTools(args: {
 
   const copyPath = useCallback(() => {
     const picked = latest.current.selected().map((e) => e.path);
-    const paths = picked.length > 0 ? picked : [latest.current.folder];
-    const problem = paths.map(copyProblem).find((p) => p !== null) ?? listProblem(paths);
-    if (problem) {
-      note(`The path was not copied: ${problem}.`);
-      return;
-    }
-    clipText(paths.map(displayPath).join("\n")).then(
-      () => useOps.getState().notify(`Copied the path of ${itemsText(paths)}`),
-      (e: unknown) => note(`The path could not be copied: ${errorText(toWireError(e))}`)
-    );
+    copyPaths(picked.length > 0 ? picked : [latest.current.folder], note);
   }, [note]);
 
   const openTerminalHere = useCallback(() => {
     const picked = latest.current.selected();
     const only = picked.length === 1 ? picked[0] : undefined;
-    const dir = only && isFolder(only) ? only.path : latest.current.folder;
-    void (async () => {
-      let setting: string | null;
-      try {
-        setting = (await settingsGet()).terminal;
-      } catch (e) {
-        note(
-          `No terminal was opened: the terminal setting could not be read: ${errorText(toWireError(e))}`
-        );
-        return;
-      }
-      try {
-        await openTerminal(dir, setting ?? undefined);
-        useOps.getState().notify(`Opened a terminal in ${baseName(dir)}`);
-      } catch (e) {
-        const err = toWireError(e);
-        note(
-          err.kind === "NoTerminal"
-            ? `No terminal could be opened (${err.message}). Choose one under Terminal in the settings, or set $TERMINAL.`
-            : `A terminal could not be opened in ${baseName(dir)}: ${errorText(err)}`
-        );
-      }
-    })();
+    void openTerminalIn(only && isFolder(only) ? only.path : latest.current.folder, note);
   }, [note]);
 
   const canOpenWith = useCallback(() => {
