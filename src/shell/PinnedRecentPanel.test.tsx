@@ -26,7 +26,7 @@ import { useUserDirs } from "./user-dirs-store";
 import { useStoreErrors } from "../store/store-errors";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
-const FOLDERS = new Set(["/home/t/Invoices", "/home/t/Work"]);
+const FOLDERS = new Set(["/home/t/Invoices", "/home/t/Work", "/home/t/Docs"]);
 const NOW = Date.UTC(2026, 10, 1, 12, 0, 0);
 
 /** The handlers the panel subscribed, by event name. */
@@ -214,6 +214,36 @@ test("a_folder_pinned_as_an_editor_is_marked_and_opens_as_an_editor", async () =
   fireEvent.doubleClick(row);
   await waitFor(() => expect(ipc.openEditor).toHaveBeenCalledExactlyOnceWith(p("/home/t/Work")));
   expect(useTabs.getState().tabs).toHaveLength(0);
+});
+
+test("an_editor_pin_offers_its_folder_tab_and_a_folder_pin_the_editor", async () => {
+  ipc.prune.mockResolvedValue({
+    ...report(["/home/t/Work", "/home/t/Docs"]),
+    pins: { entries: [p("/home/t/Work"), p("/home/t/Docs")], editors: [p("/home/t/Work")] },
+  });
+  render(<PinnedRecentPanel />);
+  const pinned = screen.getByTestId("pinned");
+  const work = (await within(pinned).findByText("Work")).closest("button")!;
+  await waitFor(() => expect(within(work).getByText(/^Editor · /)).toBeInTheDocument());
+  const openSection = (menu: HTMLElement) =>
+    within(within(menu).getAllByRole("group")[0]!)
+      .getAllByRole("menuitem")
+      .map((m) => m.textContent?.trim());
+
+  fireEvent.keyDown(work, { key: "ContextMenu" });
+  const menu = await screen.findByRole("menu");
+  expect(openSection(menu)).toEqual(["Open", "Open file location", "Open in file manager"]);
+  fireEvent.click(within(menu).getByRole("menuitem", { name: /^Open in file manager/ }));
+  await waitFor(() =>
+    expect(ipc.openPaths).toHaveBeenCalledExactlyOnceWith([p("/home/t/Work")], "inside", "default")
+  );
+  expect(ipc.openEditor).not.toHaveBeenCalled();
+
+  const docs = within(pinned).getByText("Docs").closest("button")!;
+  fireEvent.keyDown(docs, { key: "ContextMenu" });
+  const second = await screen.findByRole("menu");
+  expect(openSection(second)).toEqual(["Open", "Open file location", "Open as editor"]);
+  expect(within(second).getByRole("menuitem", { name: /^Open as editor$/ })).toBeEnabled();
 });
 
 test("vanished_pin_pruned_on_focus", async () => {

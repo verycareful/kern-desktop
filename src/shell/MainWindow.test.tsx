@@ -51,7 +51,7 @@ import { useLayout } from "../store/layout";
 import { useTabs } from "../store/tabs";
 import MainWindow from "./MainWindow";
 import { VOLUME_MENU } from "./volume-menu";
-import { ENTRY_MENU } from "./entry-menu";
+import { everyEntryAction } from "./entry-menu";
 import { everyTreeAction } from "../files/tree-menu";
 import { usePinnedRecent } from "./pinned-recent-store";
 import { useCloseGuard } from "./useCloseGuard";
@@ -349,7 +349,7 @@ test("every_action_appears_in_a_menu", () => {
   // The volume actions are in the volume's own menu (right-click, Menu key), not the main one.
   for (const section of VOLUME_MENU) for (const a of section.actions) seen.add(a.id);
   // The entry actions are in the menu of an entry of Pinned or Recent.
-  for (const section of ENTRY_MENU) for (const a of section.actions) seen.add(a.id);
+  for (const a of everyEntryAction()) seen.add(a.id);
   // The tree actions are in the folder tree's own menu.
   for (const a of everyTreeAction()) seen.add(a.id);
   // The rest are buttons of the top bar (actions.test.ts checks each has a key or is About).

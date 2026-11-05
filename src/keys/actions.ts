@@ -1177,6 +1177,22 @@ const pinnedActions: Action[] = [
       if (e) void openAsEditor(e.path);
     },
   },
+  // The folder in a folder tab of the main window, for an entry whose Open opens an editor.
+  {
+    id: "entry.openInFileManager",
+    label: "Open in file manager",
+    area: "Pinned",
+    keys: [],
+    when: "entry",
+    enabled: () => {
+      const e = currentEntry();
+      return e !== null && usePinnedRecent.getState().kinds[pathKey(e.path)] === "folder";
+    },
+    run: () => {
+      const e = currentEntry();
+      if (e) void openFolderTab(e.path, usePinnedRecent.getState().notify);
+    },
+  },
   {
     id: "entry.copyPath",
     label: "Copy path",

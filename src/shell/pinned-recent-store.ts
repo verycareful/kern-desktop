@@ -59,7 +59,7 @@ export interface Notice {
   text: string;
 }
 
-interface PinnedRecentState {
+export interface PinnedRecentState {
   pins: WirePath[] | null;
   /** The pins that open as an editor window. */
   editors: WirePath[];
@@ -120,6 +120,21 @@ const pinsState = (p: Pins) => ({ pins: p.entries, editors: p.editors ?? [] });
 /** Whether `path` is pinned to open as an editor window. */
 export const isEditorPin = (editors: readonly WirePath[], path: WirePath): boolean =>
   editors.some((m) => pathKey(m) === pathKey(path));
+
+/**
+ * Whether opening an entry of `list` opens an editor window: a pin marked as an editor, or a recent
+ * folder that was open as one.
+ */
+export function opensAsEditor(
+  s: Pick<PinnedRecentState, "recents" | "editors">,
+  list: EntryList,
+  path: WirePath
+): boolean {
+  const key = pathKey(path);
+  return list === "recent"
+    ? (s.recents ?? []).some((r) => r.as_editor === true && pathKey(r.path) === key)
+    : s.editors.some((m) => pathKey(m) === key);
+}
 
 let nextNotice = 1;
 let pruning: Promise<void> | null = null;
@@ -382,12 +397,7 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
       await get().prune(true);
     },
     async openEntry(list, path) {
-      const key = pathKey(path);
-      const editor =
-        list === "recent"
-          ? (get().recents ?? []).some((r) => r.as_editor === true && pathKey(r.path) === key)
-          : get().editors.some((m) => pathKey(m) === key);
-      if (editor) await openAsEditor(path);
+      if (opensAsEditor(get(), list, path)) await openAsEditor(path);
       else await get().open(path);
     },
     setCurrent(current) {

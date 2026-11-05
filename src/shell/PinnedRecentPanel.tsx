@@ -8,7 +8,7 @@ import { ITEM_DRAG_THRESHOLD } from "../ops/dnd";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN, useLayout } from "../store/layout";
-import { ENTRY_MENU } from "./entry-menu";
+import { entryMenu } from "./entry-menu";
 import { Splitter } from "./Splitter";
 import { openOnDoubleClick } from "./double-click";
 import { isEditorPin, moveItem, usePinnedRecent, type EntryList } from "./pinned-recent-store";
@@ -299,7 +299,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
       </section>
       {menu && (
         <ActionMenu
-          sections={ENTRY_MENU}
+          sections={entryMenu()}
           x={menu.x}
           y={menu.y}
           onClose={() => {

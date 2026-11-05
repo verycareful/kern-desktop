@@ -9,7 +9,7 @@ import { useTabs } from "../store/tabs";
 import { useVolumes } from "../shell/volumes-store";
 import { useOps } from "../ops/useOps";
 import { VOLUME_MENU } from "../shell/volume-menu";
-import { ENTRY_MENU } from "../shell/entry-menu";
+import { entryMenu, everyEntryAction } from "../shell/entry-menu";
 import { everyTreeAction } from "../files/tree-menu";
 import { usePinnedRecent } from "../shell/pinned-recent-store";
 import { useProperties } from "../files/properties-store";
@@ -167,7 +167,7 @@ test("every_action_is_in_a_menu_or_on_a_button_with_a_key", () => {
       a.when === "volume"
         ? VOLUME_MENU.some((s) => s.actions.includes(a))
         : a.when === "entry"
-          ? ENTRY_MENU.some((s) => s.actions.includes(a))
+          ? everyEntryAction().includes(a)
           : a.when === "tree"
             ? everyTreeAction().includes(a)
             : menuSections(a.when === "any" ? null : tabOf(a.when)).some((s) =>
@@ -342,7 +342,8 @@ test("pinning_a_recent_editor_folder_pins_it_as_an_editor", () => {
 test("entry_actions_follow_the_entry_the_menu_was_opened_on", () => {
   const ctx = currentContext();
   const enabled = () =>
-    ENTRY_MENU.flatMap((s) => s.actions)
+    entryMenu()
+      .flatMap((s) => s.actions)
       .filter((a) => isEnabled(a, ctx))
       .map((a) => a.id);
   const always = ["entry.open", "entry.location", "entry.copyPath", "entry.properties"];
