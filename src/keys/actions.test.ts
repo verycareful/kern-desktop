@@ -259,6 +259,83 @@ test("ctrl_d_pins_the_selection_and_nothing_else", () => {
   }
 });
 
+test("pin_as_editor_pins_the_folder_open_as_editor_would_open", () => {
+  useTabs.getState().openFolder(p("/a"), false);
+  const tab = useTabs.getState().tabs[0]!;
+  const pinPaths = vi.fn(() => Promise.resolve(true));
+  const original = usePinnedRecent.getState().pinPaths;
+  usePinnedRecent.setState({ pinPaths });
+  let listed = false;
+  const off = registerFolder(tab.id, {
+    canOpenAsEditor: () => listed,
+    editorRoot: () => p("/a/project"),
+  } as Partial<FolderController> as FolderController);
+  try {
+    expect(runAction(getAction("folder.pinAsEditor"), currentContext())).toBe(false);
+    listed = true;
+    expect(runAction(getAction("folder.pinAsEditor"), currentContext())).toBe(true);
+    expect(pinPaths).toHaveBeenCalledExactlyOnceWith([p("/a/project")], undefined, true);
+  } finally {
+    off();
+    usePinnedRecent.setState({ pinPaths: original });
+  }
+});
+
+test("a_pinned_folder_switches_between_editor_and_folder_tab", () => {
+  const ctx = currentContext();
+  const action = getAction("entry.pinEditor");
+  const setPinEditor = vi.fn(() => Promise.resolve());
+  const original = usePinnedRecent.getState().setPinEditor;
+  usePinnedRecent.setState({
+    setPinEditor,
+    pins: [p("/a"), p("/f.txt")],
+    editors: [],
+    kinds: { [pathKey(p("/a"))]: "folder", [pathKey(p("/f.txt"))]: "file" },
+  });
+  try {
+    // A file, or a folder that is not pinned, has no editor mark to turn on.
+    usePinnedRecent.setState({ current: { list: "pinned", path: p("/f.txt") } });
+    expect(isEnabled(action, ctx)).toBe(false);
+    usePinnedRecent.setState({ current: { list: "recent", path: p("/b") } });
+    expect(isEnabled(action, ctx)).toBe(false);
+    usePinnedRecent.setState({ current: { list: "pinned", path: p("/a") } });
+    expect(action.menuLabel?.()).toBe("Open as editor by default");
+    runAction(action, ctx);
+    expect(setPinEditor).toHaveBeenLastCalledWith(p("/a"), true);
+    usePinnedRecent.setState({ editors: [p("/a")] });
+    expect(action.menuLabel?.()).toBe("Open in a folder tab by default");
+    runAction(action, ctx);
+    expect(setPinEditor).toHaveBeenLastCalledWith(p("/a"), false);
+  } finally {
+    usePinnedRecent.setState({ setPinEditor: original });
+    usePinnedRecent.getState().reset();
+  }
+});
+
+test("pinning_a_recent_editor_folder_pins_it_as_an_editor", () => {
+  const pinPaths = vi.fn(() => Promise.resolve(true));
+  const original = usePinnedRecent.getState().pinPaths;
+  usePinnedRecent.setState({
+    pinPaths,
+    pins: [],
+    recents: [
+      { path: p("/w"), opened_ms: 1, as_editor: true },
+      { path: p("/n.txt"), opened_ms: 1 },
+    ],
+  });
+  try {
+    usePinnedRecent.setState({ current: { list: "recent", path: p("/w") } });
+    runAction(getAction("entry.pin"), currentContext());
+    expect(pinPaths).toHaveBeenLastCalledWith([p("/w")], undefined, true);
+    usePinnedRecent.setState({ current: { list: "recent", path: p("/n.txt") } });
+    runAction(getAction("entry.pin"), currentContext());
+    expect(pinPaths).toHaveBeenLastCalledWith([p("/n.txt")], undefined, false);
+  } finally {
+    usePinnedRecent.setState({ pinPaths: original });
+    usePinnedRecent.getState().reset();
+  }
+});
+
 test("entry_actions_follow_the_entry_the_menu_was_opened_on", () => {
   const ctx = currentContext();
   const enabled = () =>

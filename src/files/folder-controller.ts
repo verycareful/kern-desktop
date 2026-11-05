@@ -58,6 +58,8 @@ export interface FolderController {
   canOpenAsEditor(): boolean;
   /** Opens a new editor window rooted at the one selected folder, or else at the folder on show. */
   openAsEditor(): void;
+  /** The folder Open as editor opens: the one selected folder, or else the folder on show. */
+  editorRoot(): WirePath;
 }
 
 const controllers = new Map<string, FolderController>();

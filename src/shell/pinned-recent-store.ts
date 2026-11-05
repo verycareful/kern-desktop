@@ -9,6 +9,7 @@ import {
   pathKey,
   pin,
   pinsGet,
+  pinEditorSet,
   pinsReorder,
   prune,
   recentRemove,
@@ -60,6 +61,8 @@ export interface Notice {
 
 interface PinnedRecentState {
   pins: WirePath[] | null;
+  /** The pins that open as an editor window. */
+  editors: WirePath[];
   recents: RecentEntry[] | null;
   /** What each listed path is, by path key, once looked up; for its icon only. */
   kinds: Record<string, EntryKind>;
@@ -85,7 +88,13 @@ interface PinnedRecentState {
    * Pins each path; true when all were pinned. A failure is said through `say`, a panel notice
    * when none is given (a document tab, with the panel folded away, gives the status bar).
    */
-  pinPaths(paths: readonly WirePath[], say?: (text: string) => void): Promise<boolean>;
+  pinPaths(
+    paths: readonly WirePath[],
+    say?: (text: string) => void,
+    asEditor?: boolean
+  ): Promise<boolean>;
+  /** Marks a pinned folder to open as an editor window (`on`) or in a folder tab. */
+  setPinEditor(path: WirePath, on: boolean): Promise<void>;
   /** As pinPaths, for one unpin. */
   unpin(path: WirePath, say?: (text: string) => void): Promise<boolean>;
   /** Takes one entry off Recent; the file itself is untouched. */
@@ -96,7 +105,7 @@ interface PinnedRecentState {
   shift(path: WirePath, by: -1 | 1): Promise<void>;
   /** A folder shows in the current folder tab; a file goes to the open command. */
   open(path: WirePath): Promise<void>;
-  /** Opens an entry of a list: a recent editor folder as an editor window, anything else as `open`. */
+  /** Opens an entry of a list: an editor folder (recent or pinned) as an editor window, anything else as `open`. */
   openEntry(list: EntryList, path: WirePath): Promise<void>;
   setCurrent(current: { list: EntryList; path: WirePath } | null): void;
   /** Leaves a notice, unless one with the same text is already shown. */
@@ -104,6 +113,13 @@ interface PinnedRecentState {
   dismiss(id: number): void;
   reset(): void;
 }
+
+/** The store's fields for a pins answer or event. */
+const pinsState = (p: Pins) => ({ pins: p.entries, editors: p.editors ?? [] });
+
+/** Whether `path` is pinned to open as an editor window. */
+export const isEditorPin = (editors: readonly WirePath[], path: WirePath): boolean =>
+  editors.some((m) => pathKey(m) === pathKey(path));
 
 let nextNotice = 1;
 let pruning: Promise<void> | null = null;
@@ -122,6 +138,7 @@ let epoch = 0;
 
 const initial = {
   pins: null,
+  editors: [] as WirePath[],
   recents: null,
   kinds: {},
   kindErrors: {},
@@ -136,7 +153,7 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
   /** Applies the pins an answer gave, if no pins event arrived since `seen`. */
   const answerPins = (value: Pins, seen: number) => {
     if (events.pins !== seen) return;
-    set({ pins: value.entries });
+    set(pinsState(value));
     lookKinds();
   };
 
@@ -191,7 +208,7 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
     const subscribed = await Promise.allSettled([
       on(EVENT_PINS_CHANGED, (p) => {
         events.pins++;
-        set({ pins: p.entries });
+        set(pinsState(p));
         lookKinds();
       }),
       on(EVENT_RECENTS_CHANGED, (r) => {
@@ -262,7 +279,7 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
           if (mine !== epoch) return;
           set((s) => ({
             loadError: null,
-            ...(seen.pins === events.pins || s.pins === null ? { pins: report.pins.entries } : {}),
+            ...(seen.pins === events.pins || s.pins === null ? pinsState(report.pins) : {}),
             ...(seen.recents === events.recents || s.recents === null
               ? { recents: report.recents.entries }
               : {}),
@@ -288,12 +305,12 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
       })();
       return pruning;
     },
-    async pinPaths(paths, say = get().notify) {
+    async pinPaths(paths, say = get().notify, asEditor = false) {
       let all = true;
       for (const p of paths) {
         const seen = events.pins;
         try {
-          answerPins(await pin(p), seen);
+          answerPins(await pin(p, asEditor), seen);
         } catch (e) {
           all = false;
           say(`${baseName(p)} could not be pinned: ${errorText(toWireError(e))}`);
@@ -309,6 +326,14 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
       } catch (e) {
         say(`${baseName(path)} could not be unpinned: ${errorText(toWireError(e))}`);
         return false;
+      }
+    },
+    async setPinEditor(path, on) {
+      const seen = events.pins;
+      try {
+        answerPins(await pinEditorSet(path, on), seen);
+      } catch (e) {
+        fail(`${baseName(path)} could not be changed`, e);
       }
     },
     async forget(path) {
@@ -359,8 +384,9 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
     async openEntry(list, path) {
       const key = pathKey(path);
       const editor =
-        list === "recent" &&
-        (get().recents ?? []).some((r) => r.as_editor === true && pathKey(r.path) === key);
+        list === "recent"
+          ? (get().recents ?? []).some((r) => r.as_editor === true && pathKey(r.path) === key)
+          : get().editors.some((m) => pathKey(m) === key);
       if (editor) await openAsEditor(path);
       else await get().open(path);
     },

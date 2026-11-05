@@ -115,6 +115,7 @@ pub fn run() {
             store_cmds::pins_get,
             store_cmds::pin,
             store_cmds::unpin,
+            store_cmds::pin_editor_set,
             store_cmds::pins_reorder,
             store_cmds::recents_get,
             store_cmds::recent_touch,

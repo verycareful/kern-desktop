@@ -53,6 +53,8 @@ export interface FolderTools {
   openWith(): void;
   canOpenAsEditor(): boolean;
   openAsEditor(): void;
+  /** The folder Open as editor opens: the one selected folder, or else the folder on show. */
+  editorRoot(): WirePath;
   /** The file the Open with dialog is open for. */
   choosing: WireEntry | null;
   closeOpenWith(): void;
@@ -135,12 +137,14 @@ export function useFolderTools(args: {
     if (picked.length === 1 && !isFolder(picked[0]!)) setChoosing(picked[0]!);
   }, []);
 
-  const openAsEditor = useCallback(() => {
+  const editorRoot = useCallback((): WirePath => {
     const picked = latest.current.selected();
     const only = picked.length === 1 ? picked[0] : undefined;
-    const dir = only && isFolder(only) ? only.path : latest.current.folder;
-    void openAsEditorWindow(dir);
+    return only && isFolder(only) ? only.path : latest.current.folder;
   }, []);
+  const openAsEditor = useCallback(() => {
+    void openAsEditorWindow(editorRoot());
+  }, [editorRoot]);
 
   return useMemo(
     () => ({
@@ -151,11 +155,12 @@ export function useFolderTools(args: {
       openWith,
       canOpenAsEditor: () => latest.current.listed(),
       openAsEditor,
+      editorRoot,
       choosing,
       closeOpenWith: () => setChoosing(null),
       notes,
       dismissNotes: () => setNotes([]),
     }),
-    [copyPath, openTerminalHere, canOpenWith, openWith, openAsEditor, choosing, notes]
+    [copyPath, openTerminalHere, canOpenWith, openWith, openAsEditor, editorRoot, choosing, notes]
   );
 }

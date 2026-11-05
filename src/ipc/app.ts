@@ -42,6 +42,8 @@ export type SettingsPatch = Partial<Omit<Settings, "follow">> & { follow?: Parti
 
 export interface Pins {
   entries: WirePath[];
+  /** The pinned folders that open as an editor window; each is also in `entries`. Absent when none. */
+  editors?: WirePath[];
 }
 
 export interface RecentEntry {
@@ -98,7 +100,11 @@ export const layoutGet = () => invoke<WindowLayout>("layout_get");
 export const layoutSet = (patch: WindowLayoutPatch) =>
   invoke<WindowLayout>("layout_set", { patch });
 export const pinsGet = () => invoke<Pins>("pins_get");
-export const pin = (path: WirePath) => invoke<Pins>("pin", { path });
+/** Pins `path`; `asEditor` marks it to open as an editor window. */
+export const pin = (path: WirePath, asEditor = false) => invoke<Pins>("pin", { path, asEditor });
+/** Marks the pinned `path` to open as an editor window, or as a folder. */
+export const pinEditorSet = (path: WirePath, on: boolean) =>
+  invoke<Pins>("pin_editor_set", { path, on });
 export const unpin = (path: WirePath) => invoke<Pins>("unpin", { path });
 export const pinsReorder = (paths: WirePath[]) => invoke<Pins>("pins_reorder", { paths });
 export const recentsGet = () => invoke<Recents>("recents_get");

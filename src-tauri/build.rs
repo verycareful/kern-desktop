@@ -12,6 +12,7 @@ const COMMANDS: &[&str] = &[
     "pins_get",
     "pin",
     "unpin",
+    "pin_editor_set",
     "pins_reorder",
     "recents_get",
     "recent_touch",

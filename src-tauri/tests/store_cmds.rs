@@ -139,11 +139,14 @@ fn wp(p: &Path) -> Value {
 fn pin_and_unpin_emit_only_on_change() {
     let e = env();
     let p = e.files.join("a");
-    let out = e.call("pin", json!({"path": wp(&p)})).unwrap();
+    let out = e
+        .call("pin", json!({"path": wp(&p), "asEditor": false}))
+        .unwrap();
     assert_eq!(out["entries"], json!([wp(&p)]));
     assert_eq!(e.expect(EVENT_PINS_CHANGED)["entries"], json!([wp(&p)]));
 
-    e.call("pin", json!({"path": wp(&p)})).unwrap();
+    e.call("pin", json!({"path": wp(&p), "asEditor": false}))
+        .unwrap();
     e.expect_quiet();
 
     e.call("unpin", json!({"path": wp(&p)})).unwrap();
@@ -223,7 +226,8 @@ fn prune_emits_changed_stores_and_returns_the_report() {
     let kept = e.files.join("kept");
     fs::write(&kept, b"x").unwrap();
     for p in [&gone, &kept] {
-        e.call("pin", json!({"path": wp(p)})).unwrap();
+        e.call("pin", json!({"path": wp(p), "asEditor": false}))
+            .unwrap();
         e.expect(EVENT_PINS_CHANGED);
     }
     let report = e.call("prune", json!({})).unwrap();

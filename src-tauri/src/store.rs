@@ -210,8 +210,20 @@ impl Default for WindowLayout {
 #[serde(default)]
 pub struct Pins {
     pub entries: Vec<WirePath>,
+    /// The pinned folders that open as an editor window: each is also in
+    /// `entries`. Written only when there is one.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub editors: Vec<WirePath>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+impl Pins {
+    /// Drops the editor marks of paths no longer pinned.
+    fn keep_editors_pinned(&mut self) {
+        let entries = &self.entries;
+        self.editors.retain(|m| entries.iter().any(|e| e == m));
+    }
 }
 
 /// One recent file or folder.
@@ -927,14 +939,48 @@ impl Store {
         self.pins.get()
     }
 
-    /// Pins `path` at the end. Pinning a pinned path changes nothing.
-    pub fn pin(&self, path: &WirePath) -> Result<Loaded<Pins>, WireError> {
+    /// Pins `path` at the end; `as_editor` also marks it to open as an
+    /// editor window. Pinning a pinned path adds the mark if asked and
+    /// changes nothing else.
+    pub fn pin(&self, path: &WirePath, as_editor: bool) -> Result<Loaded<Pins>, WireError> {
         let key = path.to_path_buf()?;
         self.pins.update(|pins| {
-            if pins.entries.iter().any(|e| same_path(e, &key)) {
-                return Ok(false);
+            let mut changed = false;
+            let pinned = match pins.entries.iter().find(|e| same_path(e, &key)) {
+                Some(e) => e.clone(),
+                None => {
+                    let e = WirePath::from(key.as_path());
+                    pins.entries.push(e.clone());
+                    changed = true;
+                    e
+                }
+            };
+            if as_editor && !pins.editors.iter().any(|m| same_path(m, &key)) {
+                pins.editors.push(pinned);
+                changed = true;
             }
-            pins.entries.push(WirePath::from(key.as_path()));
+            Ok(changed)
+        })
+    }
+
+    /// Marks the pinned `path` to open as an editor window (`on`) or as a
+    /// folder (`!on`). A path that is not pinned is refused.
+    pub fn pin_editor_set(&self, path: &WirePath, on: bool) -> Result<Loaded<Pins>, WireError> {
+        let key = path.to_path_buf()?;
+        self.pins.update(|pins| {
+            let Some(pinned) = pins.entries.iter().find(|e| same_path(e, &key)).cloned() else {
+                return Err(werr(
+                    "NotPinned",
+                    "it is not pinned".to_owned(),
+                    Some(key.as_path()),
+                ));
+            };
+            let marked = pins.editors.iter().any(|m| same_path(m, &key));
+            match (on, marked) {
+                (true, false) => pins.editors.push(pinned),
+                (false, true) => pins.editors.retain(|m| !same_path(m, &key)),
+                _ => return Ok(false),
+            }
             Ok(true)
         })
     }
@@ -944,6 +990,7 @@ impl Store {
         self.pins.update(|pins| {
             let before = pins.entries.len();
             pins.entries.retain(|e| !same_path(e, &key));
+            pins.keep_editors_pinned();
             Ok(pins.entries.len() != before)
         })
     }
@@ -1076,6 +1123,7 @@ impl Store {
                 }
                 !gone
             });
+            pins.keep_editors_pinned();
             Ok(!report.pins_removed.is_empty())
         })?;
         let recents = self.recents.update(|recents| {

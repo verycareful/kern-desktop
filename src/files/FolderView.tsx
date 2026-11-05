@@ -423,6 +423,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       openWith: tools.openWith,
       canOpenAsEditor: tools.canOpenAsEditor,
       openAsEditor: tools.openAsEditor,
+      editorRoot: tools.editorRoot,
     });
   }, [
     tab.id,

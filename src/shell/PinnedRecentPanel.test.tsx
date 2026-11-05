@@ -201,6 +201,21 @@ test("a_folder_open_as_an_editor_is_marked_and_reopens_as_an_editor", async () =
   expect(useTabs.getState().tabs).toHaveLength(0);
 });
 
+test("a_folder_pinned_as_an_editor_is_marked_and_opens_as_an_editor", async () => {
+  ipc.openEditor.mockResolvedValue("editor-2");
+  ipc.prune.mockResolvedValue({
+    ...report(["/home/t/Work"]),
+    pins: { entries: [p("/home/t/Work")], editors: [p("/home/t/Work")] },
+  });
+  render(<PinnedRecentPanel />);
+  const pinned = screen.getByTestId("pinned");
+  const row = (await within(pinned).findByText("Work")).closest("button")!;
+  await waitFor(() => expect(within(row).getByText(/^Editor · /)).toBeInTheDocument());
+  fireEvent.doubleClick(row);
+  await waitFor(() => expect(ipc.openEditor).toHaveBeenCalledExactlyOnceWith(p("/home/t/Work")));
+  expect(useTabs.getState().tabs).toHaveLength(0);
+});
+
 test("vanished_pin_pruned_on_focus", async () => {
   await shown(["/home/t/a.txt", "/home/t/gone.txt"]);
   expect(ipc.prune).toHaveBeenCalledTimes(1);

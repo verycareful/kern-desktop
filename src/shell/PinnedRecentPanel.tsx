@@ -11,7 +11,7 @@ import { RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN, useLayout } from "../store/layout";
 import { ENTRY_MENU } from "./entry-menu";
 import { Splitter } from "./Splitter";
 import { openOnDoubleClick } from "./double-click";
-import { moveItem, usePinnedRecent, type EntryList } from "./pinned-recent-store";
+import { isEditorPin, moveItem, usePinnedRecent, type EntryList } from "./pinned-recent-store";
 import { homeRelative } from "./home-relative";
 import { RELATIVE_TIME_TICK_MS, relativeTime } from "./relative-time";
 import { useUserDirs } from "./user-dirs-store";
@@ -19,7 +19,8 @@ import { useUserDirs } from "./user-dirs-store";
 // Pinned on top, Recent below, in the right third. A pin
 // shows its parent folder and a recent entry when it was opened, so entries of
 // the same name are told apart. A folder that was open as an editor window is
-// marked Editor in Recent and opens as an editor window again. A double-click opens the entry (a folder in the
+// marked Editor in Recent and opens as an editor window again; a pinned folder
+// can be marked so too (Pin as editor, or its menu). A double-click opens the entry (a folder in the
 // current folder tab, a file through the open command); right-click, the Menu
 // key or Shift+F10 gives the entry's menu. Pins are reordered by dragging one
 // along the list, or with Move up and Move down in its menu. The divider on
@@ -241,6 +242,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
             const key = pathKey(p);
             const where = parent(p);
             const name = baseName(p);
+            const editor = isEditorPin(s.editors, p);
             return (
               <li
                 key={key}
@@ -255,9 +257,13 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
                   onPointerDown={onPinPointerDown(key)}
                   {...menuHandlers("pinned", p)}
                 >
-                  {icon(p)}
+                  {editor ? <SquarePen size={16} strokeWidth={2} aria-hidden /> : icon(p)}
                   <span className="kern-place-label">{name}</span>
-                  {where && <span className="kern-entry-note">{homeRelative(where, home)}</span>}
+                  {where && (
+                    <span className="kern-entry-note">
+                      {editor ? `Editor · ${homeRelative(where, home)}` : homeRelative(where, home)}
+                    </span>
+                  )}
                 </button>
               </li>
             );

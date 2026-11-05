@@ -30,7 +30,7 @@ import {
 import { DEFAULT_INTERFACE_SIZE, stepInterfaceSize } from "../theme/interface-size";
 import { trashController, type TrashMove } from "../files/trash-controller";
 import { useVolumes } from "../shell/volumes-store";
-import { usePinnedRecent } from "../shell/pinned-recent-store";
+import { isEditorPin, usePinnedRecent } from "../shell/pinned-recent-store";
 import { useProperties } from "../files/properties-store";
 import { useSettingsNav } from "../settings/settings-nav";
 import { documentsController } from "../files/documents-controller";
@@ -335,6 +335,19 @@ const folderActions: Action[] = [
     enabled: (c) => controllerOf(c)?.canOpenAsEditor() ?? false,
     run: (c) => controllerOf(c)?.openAsEditor(),
   },
+  // Pins the folder Open as editor would open, marked to open as an editor window.
+  {
+    id: "folder.pinAsEditor",
+    label: "Pin as editor",
+    area: "Pinned",
+    keys: [],
+    when: "folder",
+    enabled: (c) => controllerOf(c)?.canOpenAsEditor() ?? false,
+    run: (c) => {
+      const root = controllerOf(c)?.editorRoot();
+      if (root) void usePinnedRecent.getState().pinPaths([root], undefined, true);
+    },
+  },
   {
     id: "folder.openNewWindow",
     label: "Open in new window",
@@ -626,6 +639,21 @@ const layoutActions: Action[] = [
       if (e) void openAsEditor(e.path);
     },
   },
+  {
+    id: "tree.pinAsEditor",
+    label: "Pin as editor",
+    area: "Pinned",
+    keys: [],
+    when: "tree",
+    enabled: () => {
+      const e = useTreeMenu.getState().current;
+      return e !== null && isFolder(e);
+    },
+    run: () => {
+      const e = useTreeMenu.getState().current;
+      if (e) void usePinnedRecent.getState().pinPaths([e.path], undefined, true);
+    },
+  },
 ];
 actions.push(...layoutActions);
 
@@ -852,6 +880,12 @@ function copyEntryPath(path: WirePath): void {
   );
 }
 
+/** Whether the entry a menu was opened on is pinned to open as an editor window. */
+function currentEntryIsEditorPin(): boolean {
+  const e = currentEntry();
+  return e !== null && isEditorPin(usePinnedRecent.getState().editors, e.path);
+}
+
 /** The place of the entry a menu was opened on among the pins, or -1. */
 function pinIndex(): number {
   const e = currentEntry();
@@ -895,7 +929,36 @@ const pinnedActions: Action[] = [
     enabled: () => currentEntry() !== null && pinIndex() < 0,
     run: () => {
       const e = currentEntry();
-      if (e) void usePinnedRecent.getState().pinPaths([e.path]);
+      if (!e) return;
+      // A folder that was open as an editor is pinned as one.
+      const asEditor =
+        e.list === "recent" &&
+        (usePinnedRecent.getState().recents ?? []).some(
+          (r) => r.as_editor === true && pathKey(r.path) === pathKey(e.path)
+        );
+      void usePinnedRecent.getState().pinPaths([e.path], undefined, asEditor);
+    },
+  },
+  // A pinned folder opens as an editor window or in a folder tab; this turns the one into the other.
+  {
+    id: "entry.pinEditor",
+    label: "Open as editor by default",
+    menuLabel: () =>
+      currentEntryIsEditorPin() ? "Open in a folder tab by default" : "Open as editor by default",
+    area: "Pinned",
+    keys: [],
+    when: "entry",
+    enabled: () => {
+      const e = currentEntry();
+      return (
+        e !== null &&
+        pinIndex() >= 0 &&
+        usePinnedRecent.getState().kinds[pathKey(e.path)] === "folder"
+      );
+    },
+    run: () => {
+      const e = currentEntry();
+      if (e) void usePinnedRecent.getState().setPinEditor(e.path, !currentEntryIsEditorPin());
     },
   },
   {

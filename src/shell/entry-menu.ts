@@ -15,6 +15,13 @@ export const ENTRY_MENU: MenuSection[] = [
   },
   {
     title: "Pinned",
-    actions: ["entry.pin", "entry.unpin", "entry.up", "entry.down", "entry.forget"].map(getAction),
+    actions: [
+      "entry.pin",
+      "entry.unpin",
+      "entry.pinEditor",
+      "entry.up",
+      "entry.down",
+      "entry.forget",
+    ].map(getAction),
   },
 ];

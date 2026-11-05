@@ -103,7 +103,7 @@ fn atomic_write_round_trip() {
     // The atomic writer leaves no temporary file behind.
     assert_eq!(names(&e.config), vec!["settings.json".to_owned()]);
 
-    s.pin(&wp(&e.files)).unwrap();
+    s.pin(&wp(&e.files), false).unwrap();
     s.recent_touch(&wp(&e.files), false).unwrap();
     assert_eq!(
         names(&e.state),
@@ -164,7 +164,7 @@ fn unknown_fields_survive() {
     assert_eq!(v["word_wrap"], json!(true));
     assert_eq!(v["show_hidden"], json!(true));
 
-    s.pin(&wp(&e.files)).unwrap();
+    s.pin(&wp(&e.files), false).unwrap();
     let v = read_json(&e.state.join("pins.json"));
     assert_eq!(v["future_pins"], json!("x"));
     assert_eq!(v["entries"].as_array().unwrap().len(), 1);
@@ -247,6 +247,39 @@ fn recent_remove_takes_one_entry_off() {
 }
 
 #[test]
+fn a_pinned_folder_marked_as_an_editor_keeps_the_mark_only_while_pinned() {
+    let e = env();
+    let s = store(&e);
+    let (project, plain) = (e.files.join("project"), e.files.join("plain"));
+    s.pin(&wp(&plain), false).unwrap();
+    let pinned = s.pin(&wp(&project), true).unwrap();
+    assert!(pinned.changed);
+    assert_eq!(pinned.value.entries, vec![wp(&plain), wp(&project)]);
+    assert_eq!(pinned.value.editors, vec![wp(&project)]);
+    // Pinned again as an editor: nothing changes; a plain pin gains the mark.
+    assert!(!s.pin(&wp(&project), true).unwrap().changed);
+    let marked = s.pin(&wp(&plain), true).unwrap();
+    assert!(marked.changed);
+    assert_eq!(marked.value.entries.len(), 2);
+
+    // The mark is turned off and on; a path that is not pinned is refused.
+    assert!(s.pin_editor_set(&wp(&plain), false).unwrap().changed);
+    assert!(!s.pin_editor_set(&wp(&plain), false).unwrap().changed);
+    assert_eq!(
+        s.pin_editor_set(&wp(&e.files.join("other")), true)
+            .unwrap_err()
+            .kind,
+        "NotPinned"
+    );
+
+    // Unpinned, the mark goes with it; with no mark left the key is not written.
+    s.unpin(&wp(&project)).unwrap();
+    assert!(s.pins_get().unwrap().value.editors.is_empty());
+    let on_disk = read_json(&e.state.join("pins.json"));
+    assert!(on_disk.get("editors").is_none(), "{on_disk}");
+}
+
+#[test]
 fn pins_order_and_non_utf8() {
     let e = env();
     let s = store(&e);
@@ -256,10 +289,10 @@ fn pins_order_and_non_utf8() {
     let a = e.files.join("a");
     let b = e.files.join("b");
     for p in [&a, &odd, &b] {
-        s.pin(&wp(p)).unwrap();
+        s.pin(&wp(p), false).unwrap();
     }
     // A second pin of the same path changes nothing.
-    assert!(!s.pin(&wp(&a)).unwrap().changed);
+    assert!(!s.pin(&wp(&a), false).unwrap().changed);
     assert_eq!(s.pins_get().unwrap().value.entries.len(), 3);
     assert!(matches!(wp(&odd), WirePath::Bytes(_)));
 
@@ -274,7 +307,9 @@ fn pins_order_and_non_utf8() {
     assert_eq!(s.pins_get().unwrap().value.entries, vec![wp(&b), wp(&a)]);
     assert!(!s.unpin(&wp(&odd)).unwrap().changed);
     assert_eq!(
-        s.pin(&WirePath::Utf8("rel".into())).unwrap_err().kind,
+        s.pin(&WirePath::Utf8("rel".into()), false)
+            .unwrap_err()
+            .kind,
         "NotAbsolute"
     );
 }
@@ -287,7 +322,7 @@ fn concurrent_pins_lose_nothing() {
         .map(|i| {
             let s = Arc::clone(&s);
             let p = e.files.join(format!("p{i}"));
-            std::thread::spawn(move || s.pin(&wp(&p)).unwrap())
+            std::thread::spawn(move || s.pin(&wp(&p), false).unwrap())
         })
         .collect();
     for h in handles {
@@ -308,7 +343,7 @@ fn prune_drops_vanished() {
     let dangling = e.files.join("dangling");
     std::os::unix::fs::symlink(e.files.join("nowhere"), &dangling).unwrap();
     for p in [&keep, &gone, &dangling] {
-        s.pin(&wp(p)).unwrap();
+        s.pin(&wp(p), false).unwrap();
         s.recent_touch(&wp(p), false).unwrap();
     }
     fs::remove_file(&gone).unwrap();
@@ -339,7 +374,7 @@ fn prune_keeps_offline_volume_entry() {
     let on_leftover = leftover.join("deleted.txt");
     let elsewhere = e.files.join("home-gone.txt");
     for p in [&missing_volume, &on_leftover, &elsewhere] {
-        s.pin(&wp(p)).unwrap();
+        s.pin(&wp(p), false).unwrap();
         s.recent_touch(&wp(p), false).unwrap();
     }
     let layouts = [(media.clone(), 2usize)];
@@ -374,7 +409,7 @@ fn prune_drops_entry_on_mounted_volume() {
     // Layout rooted at / with one component: /proc is a mount point, so a
     // missing file under it is really gone.
     let gone = PathBuf::from("/proc/kern-test-no-such-entry");
-    s.pin(&wp(&gone)).unwrap();
+    s.pin(&wp(&gone), false).unwrap();
     let report = s.prune_with(&[(PathBuf::from("/"), 1)]).unwrap();
     assert_eq!(report.pins_removed, vec![wp(&gone)]);
 }
@@ -387,7 +422,7 @@ fn prune_reports_other_lstat_errors_and_keeps_entry() {
     let file = e.files.join("plain");
     fs::write(&file, b"x").unwrap();
     let under = file.join("child");
-    s.pin(&wp(&under)).unwrap();
+    s.pin(&wp(&under), false).unwrap();
     let report = s.prune().unwrap();
     assert!(report.pins_removed.is_empty());
     assert_eq!(report.errors.len(), 1);
@@ -565,8 +600,8 @@ fn prune_report_holds_the_stores_after_removal() {
     let gone = e.files.join("gone");
     let kept = e.files.join("kept");
     fs::write(&kept, b"x").unwrap();
-    s.pin(&wp(&gone)).unwrap();
-    s.pin(&wp(&kept)).unwrap();
+    s.pin(&wp(&gone), false).unwrap();
+    s.pin(&wp(&kept), false).unwrap();
     let report = s.prune().unwrap();
     assert_eq!(report.pins_removed, vec![wp(&gone)]);
     assert_eq!(report.pins.entries, vec![wp(&kept)]);

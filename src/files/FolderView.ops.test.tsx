@@ -218,7 +218,7 @@ test("the_file_actions_are_greyed_in_the_menu_when_only_an_item_is_outlined", as
     /^Rename/,
     /^Move to Trash/,
     /^Delete permanently/,
-    /^Pin/,
+    /^Pin\s*Ctrl\+D$/,
     /^Open with/,
   ]) {
     expect(within(menu).getByRole("menuitem", { name })).toBeDisabled();

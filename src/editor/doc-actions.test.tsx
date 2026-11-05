@@ -181,7 +181,7 @@ test("ctrl_d_pins_the_document_and_unpins_it_when_pinned", async () => {
   expect(getAction("doc.pin").menuLabel?.()).toBe("Pin");
   expect(runAction(getAction("doc.pin"), currentContext())).toBe(true);
   // No pins read yet: they are read first, never guessed.
-  await vi.waitFor(() => expect(ipc.pin).toHaveBeenCalledWith(DOC));
+  await vi.waitFor(() => expect(ipc.pin).toHaveBeenCalledWith(DOC, false));
   expect(ipc.pinsGet).toHaveBeenCalledTimes(1);
   // A document tab folds Pinned and Recent away: the outcome is in the status bar.
   await vi.waitFor(() => expect(useOps.getState().notice?.text).toBe("Pinned n.md"));

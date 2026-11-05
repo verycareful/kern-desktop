@@ -227,9 +227,24 @@ pub async fn pins_get<R: Runtime>(app: AppHandle<R>) -> Result<Pins, WireError> 
 }
 
 #[tauri::command]
-pub async fn pin<R: Runtime>(app: AppHandle<R>, path: WirePath) -> Result<Pins, WireError> {
+pub async fn pin<R: Runtime>(
+    app: AppHandle<R>,
+    path: WirePath,
+    as_editor: bool,
+) -> Result<Pins, WireError> {
     let store = app.state::<StoreState>().store()?;
-    let loaded = blocking(move || store.pin(&path)).await?;
+    let loaded = blocking(move || store.pin(&path, as_editor)).await?;
+    Ok(finish(&app, loaded, EVENT_PINS_CHANGED))
+}
+
+#[tauri::command]
+pub async fn pin_editor_set<R: Runtime>(
+    app: AppHandle<R>,
+    path: WirePath,
+    on: bool,
+) -> Result<Pins, WireError> {
+    let store = app.state::<StoreState>().store()?;
+    let loaded = blocking(move || store.pin_editor_set(&path, on)).await?;
     Ok(finish(&app, loaded, EVENT_PINS_CHANGED))
 }
 

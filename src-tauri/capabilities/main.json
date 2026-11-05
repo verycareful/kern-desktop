@@ -13,6 +13,7 @@
     "allow-pins-get",
     "allow-pin",
     "allow-unpin",
+    "allow-pin-editor-set",
     "allow-pins-reorder",
     "allow-recents-get",
     "allow-recent-touch",
