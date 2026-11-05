@@ -3,9 +3,11 @@
 
 //! Persistent settings, pins and recents.
 //!
-//! Four JSON files: `settings.json` under `$XDG_CONFIG_HOME/kern/`, and
-//! `pins.json`, `recents.json` and `layout.json` (how the main window is laid
-//! out: its layout, left column width and tree root) under `$XDG_STATE_HOME/kern/` (XDG Base
+//! Six JSON files: `settings.json` under `$XDG_CONFIG_HOME/kern/`, and
+//! `pins.json`, `recents.json`, `layout.json` (how the main window is laid
+//! out: its column widths and tree root), `session.json` (the windows open
+//! and their tabs) and `closed-session.json` (the windows of the last run,
+//! set aside at launch) under `$XDG_STATE_HOME/kern/` (XDG Base
 //! Directory Specification 0.8, `$XDG_CONFIG_HOME` and `$XDG_STATE_HOME`,
 //! resolved by `kernkraft_fs::base_dirs_from`). Every write goes through
 //! `kernkraft_fs::write_bytes_atomic`, so a crash leaves the old file or the
@@ -26,7 +28,8 @@
 //! back unchanged, and is reported once per run; in memory it holds its
 //! default. Unknown keys, including unknown keys inside `follow`, survive a
 //! rewrite; the few Kern drops on purpose are in `DROPPED_SETTINGS` and
-//! `DROPPED_LAYOUT`.
+//! `DROPPED_LAYOUT`. `session.json` is read window by window the same way:
+//! an entry that does not parse is reported once and written back as it is.
 //!
 //! Paths are stored as [`WirePath`], so a name that is not UTF-8 survives.
 
@@ -275,6 +278,94 @@ pub struct Recents {
     pub extra: Map<String, Value>,
 }
 
+/// A tab of a window kept in `session.json`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SessionTab {
+    Folder {
+        path: WirePath,
+    },
+    Doc {
+        path: WirePath,
+    },
+    Trash,
+    /// The Library.
+    Documents,
+}
+
+impl SessionTab {
+    fn path(&self) -> Option<&WirePath> {
+        match self {
+            SessionTab::Folder { path } | SessionTab::Doc { path } => Some(path),
+            SessionTab::Trash | SessionTab::Documents => None,
+        }
+    }
+}
+
+/// A window kept in `session.json`: its label, the folder an editor window
+/// is rooted at, its tabs in order and the index of the tab in front.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionWindow {
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<WirePath>,
+    pub tabs: Vec<SessionTab>,
+    /// An index into `tabs`; `None` when no tab is in front.
+    #[serde(default)]
+    pub active: Option<usize>,
+}
+
+/// A label that is not empty, paths that are absolute, an `active` that
+/// names a tab.
+fn check_session_window(w: &SessionWindow) -> Result<(), String> {
+    if w.label.is_empty() {
+        return Err("the window has no label".to_owned());
+    }
+    check_optional_path(&w.root)?;
+    for path in w.tabs.iter().filter_map(SessionTab::path) {
+        path.to_path_buf().map_err(|e| e.to_string())?;
+    }
+    match w.active {
+        Some(i) if i >= w.tabs.len() => Err(format!(
+            "tab {i} is in front, but the window has {} tabs",
+            w.tabs.len()
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// `session.json`: the windows open now, kept as they change so the next
+/// launch can open them again.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Session {
+    pub windows: Vec<SessionWindow>,
+    /// Entries of `windows` this version could not read (a newer Kern's, or
+    /// a damaged one), written back unchanged after the ones it writes.
+    pub unread: Vec<Value>,
+    /// Top-level keys this version does not define.
+    pub extra: Map<String, Value>,
+}
+
+impl Session {
+    /// Puts `window` in place of the entry with its label (one this version
+    /// could not read included), or at the end.
+    fn put(&mut self, window: SessionWindow) -> bool {
+        let label = Value::String(window.label.clone());
+        self.unread.retain(|raw| raw.get("label") != Some(&label));
+        match self.windows.iter_mut().find(|w| w.label == window.label) {
+            Some(w) if *w == window => false,
+            Some(w) => {
+                *w = window;
+                true
+            }
+            None => {
+                self.windows.push(window);
+                true
+            }
+        }
+    }
+}
+
 /// A store file that was moved aside (`moved_to` set), or a settings field
 /// that could not be read and was kept as it is (`field` set).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -353,6 +444,15 @@ fn unix_secs() -> Result<u64, WireError> {
 
 fn unix_ms() -> Result<u64, WireError> {
     Ok(u64::try_from(since_epoch()?.as_millis()).unwrap_or(u64::MAX))
+}
+
+/// Removes `path`; one that is not there is already removed.
+fn remove_if_there(path: &Path) -> Result<(), WireError> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(io_err(path, &e)),
+    }
 }
 
 /// Moves `path` to `<path>.corrupt-<unix_secs>`, or `-1`, `-2`, ... after
@@ -737,6 +837,62 @@ impl Stored for WindowLayout {
     }
 }
 
+impl Stored for Session {
+    /// Reads `windows` entry by entry: an entry that does not parse, or
+    /// repeats a label already read, is a problem and is kept as it is.
+    fn parse(value: Value) -> Result<(Session, Vec<FieldProblem>), String> {
+        let Value::Object(mut obj) = value else {
+            return Err("not a JSON object".to_owned());
+        };
+        let mut s = Session::default();
+        let mut problems = Vec::new();
+        match obj.remove("windows") {
+            None => {}
+            Some(Value::Array(entries)) => {
+                for (i, raw) in entries.into_iter().enumerate() {
+                    let parsed = serde_json::from_value::<SessionWindow>(raw.clone())
+                        .map_err(|e| e.to_string())
+                        .and_then(|w| check_session_window(&w).map(|()| w))
+                        .and_then(|w| {
+                            if s.windows.iter().any(|seen| seen.label == w.label) {
+                                Err(format!("a second window labelled {:?}", w.label))
+                            } else {
+                                Ok(w)
+                            }
+                        });
+                    match parsed {
+                        Ok(w) => s.windows.push(w),
+                        Err(reason) => {
+                            problems.push(FieldProblem {
+                                field: format!("windows[{i}]"),
+                                reason,
+                            });
+                            s.unread.push(raw);
+                        }
+                    }
+                }
+            }
+            Some(_) => return Err("windows is not a list".to_owned()),
+        }
+        s.extra = obj;
+        Ok((s, problems))
+    }
+
+    fn render(&self) -> Result<Value, String> {
+        let mut windows = self
+            .windows
+            .iter()
+            .map(serde_json::to_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        windows.extend(self.unread.iter().cloned());
+        let mut out = Map::new();
+        out.insert("windows".to_owned(), Value::Array(windows));
+        out.extend(self.extra.clone());
+        Ok(Value::Object(out))
+    }
+}
+
 /// One JSON file with its lock.
 struct JsonFile<T> {
     path: PathBuf,
@@ -866,10 +1022,12 @@ pub struct Store {
     pins: JsonFile<Pins>,
     recents: JsonFile<Recents>,
     layout: JsonFile<WindowLayout>,
+    session: JsonFile<Session>,
+    closed: JsonFile<Session>,
 }
 
 impl Store {
-    /// A store keeping `settings.json` in `config_dir` and the other two
+    /// A store keeping `settings.json` in `config_dir` and the other
     /// files in `state_dir`. Neither directory is created until a write.
     pub fn new(config_dir: PathBuf, state_dir: PathBuf) -> Store {
         Store {
@@ -877,7 +1035,61 @@ impl Store {
             pins: JsonFile::new(state_dir.join("pins.json")),
             recents: JsonFile::new(state_dir.join("recents.json")),
             layout: JsonFile::new(state_dir.join("layout.json")),
+            session: JsonFile::new(state_dir.join("session.json")),
+            closed: JsonFile::new(state_dir.join("closed-session.json")),
         }
+    }
+
+    /// Sets the windows of the last run aside: `session.json` becomes
+    /// `closed-session.json` as it is, in place of an older one, and the
+    /// windows of this run start a new `session.json`. With no
+    /// `session.json` the older closed set goes too, so it is never offered
+    /// again.
+    pub fn session_set_aside(&self) -> Result<(), WireError> {
+        let _session = lock(&self.session.guard);
+        let _closed = lock(&self.closed.guard);
+        match fs::rename(&self.session.path, &self.closed.path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == ErrorKind::NotFound => remove_if_there(&self.closed.path),
+            Err(e) => Err(io_err(&self.session.path, &e)),
+        }
+    }
+
+    /// The windows of the last run, set aside at launch.
+    pub fn closed_get(&self) -> Result<Loaded<Session>, WireError> {
+        self.closed.get()
+    }
+
+    /// Drops the windows of the last run: they were opened again, or the
+    /// user does not want them.
+    pub fn closed_clear(&self) -> Result<(), WireError> {
+        let _held = lock(&self.closed.guard);
+        remove_if_there(&self.closed.path)
+    }
+
+    pub fn session_get(&self) -> Result<Loaded<Session>, WireError> {
+        self.session.get()
+    }
+
+    /// Keeps `window` in place of the entry with its label, or at the end.
+    /// A window with a label that is empty, a path that is not absolute or
+    /// an `active` that names no tab is refused and nothing is written.
+    pub fn session_put(&self, window: SessionWindow) -> Result<Loaded<Session>, WireError> {
+        check_session_window(&window).map_err(|e| invalid("window", e))?;
+        self.session.update(|s| Ok(s.put(window)))
+    }
+
+    /// Drops the entries of the windows `keep` does not name. Entries this
+    /// version could not read stay.
+    pub fn session_retain(
+        &self,
+        keep: impl Fn(&str) -> bool,
+    ) -> Result<Loaded<Session>, WireError> {
+        self.session.update(|s| {
+            let before = s.windows.len();
+            s.windows.retain(|w| keep(&w.label));
+            Ok(s.windows.len() != before)
+        })
     }
 
     /// The store under `$XDG_CONFIG_HOME/kern` and `$XDG_STATE_HOME/kern`.

@@ -11,6 +11,8 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use kern_lib::instance::Launches;
+use kern_lib::store::Store;
+use kern_lib::store_cmds::StoreState;
 use kern_lib::windows::WindowState;
 use kernkraft_tauri::WirePath;
 use serde_json::{json, Value};
@@ -29,7 +31,7 @@ pub const QUIET: Duration = Duration::from_millis(300);
 /// The window [`Env::run`] makes after a driver panics; no test uses it.
 const TEARDOWN: &str = "harness-teardown";
 
-pub const COMMANDS: [&str; 18] = [
+pub const COMMANDS: [&str; 22] = [
     "open_paths",
     "doc_opened",
     "doc_closed",
@@ -48,6 +50,10 @@ pub const COMMANDS: [&str; 18] = [
     "open_settings",
     "restart_request",
     "restart_abandon",
+    "session_put",
+    "session_closed_get",
+    "session_restore_closed",
+    "session_closed_dismiss",
 ];
 
 /// The place of a tab of window `window`, as it travels.
@@ -70,6 +76,8 @@ pub enum Answer {
 #[derive(Clone)]
 pub struct Ctx {
     pub files: PathBuf,
+    /// The state directory of the app's store, where `session.json` is.
+    pub state: PathBuf,
     pub handle: AppHandle<MockRuntime>,
 }
 
@@ -189,6 +197,8 @@ pub fn env_state(
     let tmp = tempfile::tempdir().unwrap();
     let files = tmp.path().canonicalize().unwrap().join("files");
     fs::create_dir(&files).unwrap();
+    let state_dir = tmp.path().canonicalize().unwrap().join("state");
+    let config_dir = tmp.path().canonicalize().unwrap().join("config");
     let mut ctx = mock_context(noop_assets());
     ctx.config_mut().app.windows.push(WindowConfig {
         label: "main".to_owned(),
@@ -207,6 +217,7 @@ pub fn env_state(
         .plugin(kernkraft_tauri::init())
         .manage(state)
         .manage(Launches::default())
+        .manage(StoreState::new(Store::new(config_dir, state_dir.clone())))
         .on_window_event(kern_lib::windows::on_window_event)
         .invoke_handler(tauri::generate_handler![
             kern_lib::windows::open_paths,
@@ -227,6 +238,10 @@ pub fn env_state(
             kern_lib::windows::open_settings,
             kern_lib::restart::restart_request,
             kern_lib::restart::restart_abandon,
+            kern_lib::session::session_put,
+            kern_lib::session::session_closed_get,
+            kern_lib::session::session_restore_closed,
+            kern_lib::session::session_closed_dismiss,
         ])
         .build(ctx)
         .unwrap();
@@ -235,11 +250,16 @@ pub fn env_state(
         .build()
         .unwrap();
     kern_lib::windows::announce_releases(app.handle()).unwrap();
+    kern_lib::session::manage(app.handle());
     let handle = app.handle().clone();
     Env {
         _tmp: tmp,
         app,
-        ctx: Ctx { files, handle },
+        ctx: Ctx {
+            files,
+            state: state_dir,
+            handle,
+        },
         run_log: Arc::default(),
     }
 }

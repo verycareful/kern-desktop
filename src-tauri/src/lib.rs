@@ -13,6 +13,7 @@ pub mod instance;
 pub mod open;
 pub mod prelaunch;
 pub mod restart;
+pub mod session;
 pub mod store;
 pub mod store_cmds;
 pub mod windows;
@@ -48,17 +49,15 @@ pub fn run() {
     // option is not used: it would claim the bus name the instance owns.
     gtk::glib::set_prgname(Some(instance::BUS_NAME));
     tauri::Builder::default()
-        // Document windows are not remembered: a new doc-1 is unrelated to
-        // an earlier one. The main window and the editor windows keep their
-        // place and size (an editor window is not reopened at launch, but
-        // the next editor-1 opens where the last one was). Whether a window
+        // Every window keeps its place and size by label, so a window opened
+        // again at launch (session.rs) comes back where it was, and a new
+        // editor-1 or doc-1 opens where the last one did. Whether a window
         // was maximized is not kept: under a tiling compositor (Hyprland) GTK
         // reports a tiled window as maximized, and asking for that state at
         // the next launch makes the compositor maximize it over its
         // neighbours instead of tiling it.
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                .with_filter(|label| !label.starts_with("doc-"))
                 .with_state_flags(StateFlags::all() - StateFlags::MAXIMIZED)
                 .build(),
         )
@@ -71,6 +70,7 @@ pub fn run() {
         .setup(move |app| {
             app.manage(store_cmds::StoreState::from_env());
             app.manage(windows::WindowState::default());
+            session::manage(app.handle());
             if let Err(e) = windows::announce_releases(app.handle()) {
                 eprintln!("kern: {e:?}");
             }
@@ -105,7 +105,7 @@ pub fn run() {
             // This process's own launch is handled like a forwarded one.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                windows::run_launch(&handle, own).await;
+                windows::run_first_launch(&handle, own, restarted).await;
             });
             Ok(())
         })
@@ -138,6 +138,10 @@ pub fn run() {
             windows::open_settings,
             restart::restart_request,
             restart::restart_abandon,
+            session::session_put,
+            session::session_closed_get,
+            session::session_restore_closed,
+            session::session_closed_dismiss,
             windows::move_doc_to_main,
             windows::hand_doc,
             windows::hand_refused,

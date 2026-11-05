@@ -5,8 +5,8 @@ import type { WirePath } from "./wire-path";
 import type { Density, Follow, KernAccent, OpId, ThemeMode } from "./kernkraft";
 
 // One typed function per command of Kern's own backend (src-tauri/src:
-// store_cmds.rs, windows.rs, filemanager1.rs, default_fm.rs, clipboard.rs,
-// dnd.rs), and one type per wire type it uses. These commands are not in a
+// store_cmds.rs, windows.rs, session.rs, filemanager1.rs, default_fm.rs,
+// clipboard.rs, dnd.rs), and one type per wire type it uses. These commands are not in a
 // plugin, so they are invoked by their bare names.
 
 // ---- settings, pins and recents (store.rs, store_cmds.rs) ----
@@ -192,7 +192,31 @@ export type Directive =
   /** Give the document open here at `path` to editor window `to` (handTo in shell/move-doc.ts). */
   | { kind: "hand_to"; path: WirePath; to: string }
   /** For the Settings window: bring this category into view. */
-  | { kind: "settings_section"; section: string };
+  | { kind: "settings_section"; section: string }
+  /** Open these tabs in order and bring tab `active` to the front (a window opened again). */
+  | { kind: "restore"; tabs: SessionTab[]; active: number | null };
+
+// ---- the windows kept for the next launch (session.rs) ----
+
+/** A tab as session.json keeps it (store.rs SessionTab). */
+export type SessionTab =
+  | { kind: "folder"; path: WirePath }
+  | { kind: "doc"; path: WirePath }
+  | { kind: "trash" }
+  | { kind: "documents" };
+
+/**
+ * Keeps the calling window's tabs for the next launch: `tabs` in order, `active` the index of the
+ * one in front, `root` an editor window's folder (null for any other window).
+ */
+export const sessionPut = (root: WirePath | null, tabs: SessionTab[], active: number | null) =>
+  invoke<void>("session_put", { root, tabs, active });
+/** How many windows of the last run can be opened again (main window only); 0 when none. */
+export const sessionClosedGet = () => invoke<number>("session_closed_get");
+/** Opens the windows of the last run again and drops the set (main window only). */
+export const sessionRestoreClosed = () => invoke<void>("session_restore_closed");
+/** Drops the windows of the last run unopened (main window only). */
+export const sessionClosedDismiss = () => invoke<void>("session_closed_dismiss");
 
 /** An event queued for a window that was not listening yet. */
 export interface Queued {

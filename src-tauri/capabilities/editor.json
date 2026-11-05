@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "editor",
-  "description": "Capability for the editor windows: tabs of documents, a folder tree and the places strip. Of kernkraft's commands only what that page calls (listing, watching, text open, save and check, the theme, volumes to look at, what a pinned or recent entry is, where a link points, and the copy or move of files dropped on the tree: same_filesystem, drop_start_op which starts only a copy or a move, cancel_op, answer_conflict, undo_state); no trash, rename, create, mount, launcher or default-application command, and not start_op, which can delete for good or empty the Trash",
+  "description": "Capability for the editor windows: tabs of documents, a folder tree and the places strip. Of kernkraft's commands only what that page calls (listing, watching, text open, save and check, the theme, volumes to look at, what a pinned or recent entry is, where a link points, and the copy or move of files dropped on the tree: same_filesystem, drop_start_op which starts only a copy or a move, cancel_op, answer_conflict, undo_state); and its tabs kept for the next launch (session_put); no trash, rename, create, mount, launcher or default-application command, and not start_op, which can delete for good or empty the Trash",
   "windows": ["editor-*"],
   "permissions": [
     "core:default",
@@ -51,6 +51,7 @@
     "allow-open-editor",
     "allow-open-settings",
     "allow-restart-abandon",
+    "allow-session-put",
     "allow-confirm-close",
     "allow-dnd-target",
     "allow-drop-start-op"

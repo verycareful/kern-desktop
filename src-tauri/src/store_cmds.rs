@@ -97,7 +97,7 @@ where
 }
 
 /// Queues and emits the corrupt-file reports, if any.
-fn announce_corrupt<R: Runtime>(app: &AppHandle<R>, reports: &[CorruptReport]) {
+pub(crate) fn announce_corrupt<R: Runtime>(app: &AppHandle<R>, reports: &[CorruptReport]) {
     if reports.is_empty() {
         return;
     }

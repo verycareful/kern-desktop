@@ -124,7 +124,7 @@ fn kern_opened_again_while_a_restart_waits_ends_it_and_main_says_so() {
         cwd: PathBuf::from("/"),
         activation_token: String::new(),
     };
-    tauri::async_runtime::block_on(kern_lib::windows::handle_launch(&e.handle, launch));
+    tauri::async_runtime::block_on(kern_lib::windows::handle_launch(&e.handle, launch, None));
     assert!(!kern_lib::restart::pending(&e.handle));
     common::wait_for("the error in main", || {
         errors

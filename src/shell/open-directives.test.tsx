@@ -2,7 +2,16 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useUserDirs } from "./user-dirs-store";
 import { StrictMode } from "react";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Queued, Settings, WirePath } from "../ipc";
 import { useFolderUi } from "../files/folder-ui";
@@ -10,7 +19,9 @@ import { entry } from "../files/test-entries";
 import { stubLayout } from "../files/test-layout";
 import { useViewSettings } from "../files/view-settings";
 import { usePanelsStore } from "../store/panels";
+import { useLayout } from "../store/layout";
 import { useTabs } from "../store/tabs";
+import { useOpenDirectives } from "./useOpenDirectives";
 
 // The main window subscribes, takes what was queued for it, applies that
 // and then the live events, in order. Nothing it cannot handle is dropped.
@@ -45,6 +56,8 @@ const ipc = vi.hoisted(() => ({
   adopted: vi.fn(),
   refuseAdoption: vi.fn(),
   moveDocToMain: vi.fn(),
+  sessionPut: vi.fn(),
+  sessionClosedGet: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
@@ -102,6 +115,8 @@ beforeEach(() => {
   ipc.adopted.mockResolvedValue(undefined);
   ipc.refuseAdoption.mockResolvedValue(undefined);
   ipc.moveDocToMain.mockResolvedValue(undefined);
+  ipc.sessionPut.mockResolvedValue(undefined);
+  ipc.sessionClosedGet.mockResolvedValue(0);
   useProperties.getState().close();
   ipc.confirmClose.mockResolvedValue(undefined);
   delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
@@ -199,6 +214,110 @@ test("queued_items_are_applied_in_order", async () => {
   expect(useTabs.getState().tabs.find((t) => t.id === useTabs.getState().activeId)).toMatchObject({
     kind: "doc",
   });
+});
+
+const restore = (tabs: unknown[], active: number | null) => open({ kind: "restore", tabs, active });
+const activeKind = () =>
+  useTabs.getState().tabs.find((t) => t.id === useTabs.getState().activeId)?.kind;
+
+test("a_restore_opens_its_tabs_in_order_with_the_kept_one_in_front_and_no_home", async () => {
+  queue(
+    restore(
+      [
+        { kind: "folder", path: p("/d/one") },
+        { kind: "doc", path: p("/d/n.md") },
+        { kind: "trash" },
+        { kind: "documents" },
+      ],
+      1
+    )
+  );
+  render(<App />);
+  await waitFor(() => expect(tabNames()).toEqual(["one", "n.md", "Trash", "Library"]));
+  expect(activeKind()).toBe("doc");
+  await act(async () => {});
+  expect(tabNames()).toEqual(["one", "n.md", "Trash", "Library"]);
+  // The window reports what it shows, so the next launch opens it again.
+  await waitFor(() =>
+    expect(ipc.sessionPut).toHaveBeenLastCalledWith(
+      null,
+      [
+        { kind: "folder", path: p("/d/one") },
+        { kind: "doc", path: p("/d/n.md") },
+        { kind: "trash" },
+        { kind: "documents" },
+      ],
+      1
+    )
+  );
+});
+
+test("a_restore_naming_no_tab_in_front_leaves_the_last_one_opened_in_front", async () => {
+  queue(
+    restore(
+      [
+        { kind: "doc", path: p("/d/n.md") },
+        { kind: "folder", path: p("/d/two") },
+      ],
+      null
+    )
+  );
+  render(<App />);
+  await waitFor(() => expect(tabNames()).toEqual(["n.md", "two"]));
+  expect(activeKind()).toBe("folder");
+});
+
+test("a_restore_in_an_editor_window_roots_its_tree_and_opens_its_documents", async () => {
+  queue(
+    open({ kind: "editor_root", path: p("/d/proj") }),
+    restore(
+      [
+        { kind: "doc", path: p("/d/proj/a.txt") },
+        { kind: "doc", path: p("/d/proj/b.txt") },
+      ],
+      0
+    )
+  );
+  const hook = renderHook(() => useOpenDirectives("editor"));
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  expect(useLayout.getState().treeRoot).toEqual(p("/d/proj"));
+  const tabs = useTabs.getState().tabs;
+  expect(tabs.map((t) => (t.kind === "doc" ? t.path : null))).toEqual([
+    p("/d/proj/a.txt"),
+    p("/d/proj/b.txt"),
+  ]);
+  expect(useTabs.getState().activeId).toBe(tabs[0]!.id);
+  expect(hook.result.current.notices).toEqual([]);
+  hook.unmount();
+  useLayout.getState().reset();
+});
+
+test("a_restore_into_an_untouched_home_replaces_it", async () => {
+  render(<App />);
+  await screen.findByRole("tab", { name: "t" });
+  await emit("kern://open", {
+    kind: "restore",
+    tabs: [{ kind: "folder", path: p("/d/one") }, { kind: "trash" }],
+    active: 0,
+  });
+  expect(tabNames()).toEqual(["one", "Trash"]);
+  expect(screen.getByRole("tab", { name: "one" })).toHaveAttribute("aria-selected", "true");
+});
+
+test("a_restore_after_home_was_left_or_joined_is_added_after_the_tabs", async () => {
+  render(<App />);
+  await screen.findByRole("tab", { name: "t" });
+  await emit("kern://open", { kind: "folder_tab", path: p("/d/more") });
+  await emit("kern://open", { kind: "restore", tabs: [{ kind: "trash" }], active: 0 });
+  expect(tabNames()).toEqual(["t", "more", "Trash"]);
+  // Home moved to another folder is not untouched either.
+  cleanup();
+  useTabs.setState({ tabs: [], activeId: null, views: {}, selectRequests: {} });
+  render(<App />);
+  await screen.findByRole("tab", { name: "t" });
+  act(() => useTabs.getState().openFolder(p("/d/sub"), false));
+  await emit("kern://open", { kind: "restore", tabs: [{ kind: "trash" }], active: 0 });
+  expect(tabNames()).toEqual(["sub", "Trash"]);
 });
 
 test("a_live_folder_directive_opens_a_tab", async () => {

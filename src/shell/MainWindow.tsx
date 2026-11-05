@@ -11,6 +11,7 @@ import { useSettingsReportNotice } from "../settings/settings-reports";
 import { OpsHost } from "../ops/OpsHost";
 import { usePanels } from "../store/panels";
 import { TextEditor } from "../editor/TextEditor";
+import { RestoreBar } from "./RestoreBar";
 import { activeTab, isPlaceTab, useTabs, type DocTab } from "../store/tabs";
 import { ClosePrompt } from "./ClosePrompt";
 import { PanelStub } from "./PanelStub";
@@ -73,7 +74,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
     body = (
       <main className="kern-empty" data-testid="no-tab">
         {props.starting && <p role="status">Starting…</p>}
-        {!props.starting && props.openingHome && <p>Opening the Home folder…</p>}
+        {!props.starting && props.openingHome && <p>Opening the new tab folder…</p>}
       </main>
     );
   } else if (tab.kind === "folder" || isPlaceTab(tab)) {
@@ -117,6 +118,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
 
   return (
     <div className="kern-window" data-testid="main-window">
+      <RestoreBar />
       {!layoutReady ? null : editorLayout ? (
         <EditorLayout>
           <EditorCentre tab={tab} docs={docs} starting={props.starting} />

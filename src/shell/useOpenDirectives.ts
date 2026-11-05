@@ -24,6 +24,7 @@ import {
   userDirs,
   type Directive,
   type Queued,
+  type SessionTab,
   type UnlistenFn,
   type WireError,
   type WirePath,
@@ -36,6 +37,7 @@ import { useTabs } from "../store/tabs";
 import { closeTab, closeWindow, isClosing } from "./useCloseGuard";
 import { useProperties } from "../files/properties-store";
 import { useSettingsNav } from "../settings/settings-nav";
+import { useUserDirs } from "./user-dirs-store";
 
 // What the backend tells the main window to do. The
 // backend queues events for a window until it has asked for them once with
@@ -49,7 +51,7 @@ import { useSettingsNav } from "../settings/settings-nav";
 // (load_doc); when a tab is being moved to it, it answers the backend once it
 // holds the document (DocumentWindow), or refuses here when it cannot. An editor
 // window (`editor-<n>`) is told its folder (editor_root) and opens documents into
-// tabs of its own (doc_tab, focus_tab). The main window takes over a document a document window sends
+// tabs of its own (doc_tab, focus_tab). A window opened again is told its tabs (restore). The main window takes over a document a document window sends
 // with Home (adopt-doc): it opens a tab from the state handed over, registers
 // it, and only then acknowledges, so the backend closes the other window once
 // the tab holds the document; adopt-cancelled drops such a tab again. Events
@@ -95,6 +97,18 @@ export interface OpenDirectives {
   notices: Notice[];
   dismissError(index: number): void;
   dismissNotice(id: number): void;
+}
+
+/**
+ * The id of the window's one tab when it is Home and has not moved from it (its history is Home
+ * alone), else null.
+ */
+function untouchedHome(): string | null {
+  const { tabs } = useTabs.getState();
+  const home = useUserDirs.getState().dirs?.home;
+  const only = tabs.length === 1 ? tabs[0] : undefined;
+  if (!home || only?.kind !== "folder" || only.history.length !== 1) return null;
+  return pathKey(only.path) === pathKey(home) ? only.id : null;
 }
 
 /** A close request sent for a restart (restart.rs) carries `{"restart": true}`. */
@@ -263,6 +277,36 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
       );
     };
 
+    /**
+     * A window opened again: its tabs, in order, with tab `active` in front. A path that is gone
+     * still gets its tab, which says why it shows nothing. The backend leaves out the main
+     * window's folder tabs in the editor layout. The window may already show Home, as a launch
+     * leaves it: when that is its only tab and it has not moved from it, the tabs take its place.
+     */
+    const restoreTabs = (list: SessionTab[], active: number | null) => {
+      const untouched = untouchedHome();
+      const ids = list.map((t) => {
+        switch (t.kind) {
+          case "folder":
+            tabs().openFolder(t.path, true);
+            break;
+          case "doc":
+            tabs().openDoc(t.path);
+            break;
+          case "trash":
+            tabs().openTrash();
+            break;
+          case "documents":
+            tabs().openDocuments();
+            break;
+        }
+        return tabs().activeId;
+      });
+      if (untouched && list.length > 0 && !ids.includes(untouched)) tabs().close(untouched);
+      const front = active === null ? undefined : ids[active];
+      if (front) tabs().activate(front);
+    };
+
     const apply = async (item: Queued): Promise<void> => {
       switch (item.event) {
         case EVENT_OPEN: {
@@ -286,6 +330,9 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
             switch (d.kind) {
               case "editor_root":
                 useLayout.getState().setTreeRoot(d.path);
+                return;
+              case "restore":
+                restoreTabs(d.tabs, d.active);
                 return;
               case "doc_tab":
                 openDocTab(d.path);
@@ -317,6 +364,9 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
             case "focus_tab":
               if (tabs().tabs.some((t) => t.id === d.tab_id)) tabs().activate(d.tab_id);
               else notice(`Kern was asked to show a tab that is gone (${d.tab_id}).`);
+              return;
+            case "restore":
+              restoreTabs(d.tabs, d.active);
               return;
             default:
               notice(unhandled(EVENT_OPEN, ` (${(d as { kind: string }).kind})`));

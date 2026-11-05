@@ -78,7 +78,9 @@ pub fn restart_request<R: Runtime>(
 /// A window asked to close for a restart stays open: the restart is off.
 #[tauri::command]
 pub fn restart_abandon<R: Runtime>(app: AppHandle<R>) -> Result<(), WireError> {
-    state(&app)?.restart.store(false, Ordering::SeqCst);
+    if state(&app)?.restart.swap(false, Ordering::SeqCst) {
+        crate::session::forget_closed(&app);
+    }
     Ok(())
 }
 
@@ -95,6 +97,7 @@ pub fn abandon_for_launch<R: Runtime>(app: &AppHandle<R>) {
         return;
     };
     if st.restart.swap(false, Ordering::SeqCst) {
+        crate::session::forget_closed(app);
         show_errors(
             app,
             &[wire_error(

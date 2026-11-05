@@ -39,6 +39,7 @@ use crate::instance::{exit_when_drained, Launches};
 use crate::open::{
     route, FileId, Gesture, Held, Kind, Location, OpenRegistry, Origin, Stat, Survey, Target,
 };
+use crate::store::SessionTab;
 use crate::store_cmds::StoreState;
 
 pub const EVENT_OPEN: &str = "kern://open";
@@ -169,6 +170,12 @@ pub enum Directive {
     /// For the `settings` window: bring this category into view.
     SettingsSection {
         section: String,
+    },
+    /// For the main window or an editor window opened again (session.rs):
+    /// open these tabs in order and bring tab `active` to the front.
+    Restore {
+        tabs: Vec<SessionTab>,
+        active: Option<usize>,
     },
 }
 
@@ -422,7 +429,7 @@ pub(crate) fn send<R: Runtime>(
     }
 }
 
-fn send_directive<R: Runtime>(
+pub(crate) fn send_directive<R: Runtime>(
     app: &AppHandle<R>,
     label: &str,
     d: &Directive,
@@ -472,6 +479,7 @@ pub fn ensure_main<R: Runtime>(app: &AppHandle<R>) -> Result<bool, WireError> {
         .iter()
         .find(|w| w.label == MAIN)
         .ok_or_else(|| wire_error("Internal", "no window configured as main", None))?;
+    crate::session::opening(app, MAIN);
     WebviewWindowBuilder::from_config(app, cfg)
         .and_then(|b| b.build())
         .map_err(window_error)?;
@@ -485,6 +493,8 @@ fn reserve_doc_label<R: Runtime>(app: &AppHandle<R>, st: &WindowState, token: &s
     let mut inner = st.lock();
     let label = next_doc_label(&mut inner.next_doc, |l| app.get_webview_window(l).is_some());
     inner.creating.insert(label.clone(), token.to_owned());
+    drop(inner);
+    crate::session::opening(app, &label);
     label
 }
 
@@ -518,7 +528,85 @@ fn reserve_editor_for<R: Runtime>(
     });
     inner.creating.insert(label.clone(), String::new());
     inner.editor_roots.insert(label.clone(), root);
+    drop(inner);
+    crate::session::opening(app, &label);
     EditorFor::Reserved(label)
+}
+
+/// The labels reserved for windows still being built.
+pub(crate) fn creating_labels<R: Runtime>(app: &AppHandle<R>) -> Vec<String> {
+    app.try_state::<WindowState>()
+        .map(|st| st.lock().creating.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
+/// The label a window opened again gets: `wanted` when it is free, else the
+/// next free one of its kind, reserved as being built.
+fn reserve_restored<R: Runtime>(
+    app: &AppHandle<R>,
+    inner: &mut Inner,
+    wanted: &str,
+    kind: WindowKind,
+) -> String {
+    let taken = |l: &str| app.get_webview_window(l).is_some();
+    let label = if !taken(wanted) && !inner.creating.contains_key(wanted) {
+        wanted.to_owned()
+    } else if kind == WindowKind::Editor {
+        next_editor_label(&mut inner.next_editor, taken)
+    } else {
+        next_doc_label(&mut inner.next_doc, taken)
+    };
+    inner.creating.insert(label.clone(), String::new());
+    label
+}
+
+/// An editor window on `root` opened again (session.rs): the one open on
+/// that folder when there is one (`false`), else a new one, labelled `wanted`
+/// when that label is free (`true`). A folder that is gone still gets its
+/// window, whose tree says why it shows nothing; it is recorded by the path as
+/// given.
+pub(crate) async fn build_restored_editor<R: Runtime>(
+    app: &AppHandle<R>,
+    wanted: &str,
+    root: &WirePath,
+) -> Result<(String, bool), WireError> {
+    let p = root.to_path_buf()?;
+    let resolved = blocking(move || Ok(std::fs::canonicalize(&p).unwrap_or(p))).await?;
+    let st = state(app)?;
+    let label = {
+        let mut inner = st.lock();
+        let open = inner.editor_roots.iter().find(|(label, r)| {
+            **r == resolved
+                && (app.get_webview_window(label).is_some() || inner.creating.contains_key(*label))
+        });
+        if let Some((label, _)) = open {
+            return Ok((label.clone(), false));
+        }
+        let label = reserve_restored(app, &mut inner, wanted, WindowKind::Editor);
+        inner.editor_roots.insert(label.clone(), resolved);
+        label
+    };
+    crate::session::opening(app, &label);
+    let result = build_editor_window(app, &label);
+    built(&st, &label);
+    if result.is_err() {
+        st.lock().editor_roots.remove(&label);
+    }
+    result.map(|()| (label, true))
+}
+
+/// A document window opened again (session.rs), labelled `wanted` when that
+/// label is free.
+pub(crate) fn build_restored_doc<R: Runtime>(
+    app: &AppHandle<R>,
+    wanted: &str,
+) -> Result<String, WireError> {
+    let st = state(app)?;
+    let label = reserve_restored(app, &mut st.lock(), wanted, WindowKind::Document);
+    crate::session::opening(app, &label);
+    let result = build_doc_window(app, &label);
+    built(&st, &label);
+    result.map(|()| label)
 }
 
 /// The reserved window `label` is built or has failed to be. Returns the
@@ -1094,12 +1182,21 @@ pub(crate) fn arg_error(e: &ArgError) -> WireError {
 /// Handles a launch from outside: this process's own, or one forwarded by a
 /// second launch. Errors cannot be returned to anyone, so they are shown in
 /// `main` (created if need be) as [`EVENT_OPEN_ERROR`]. (A launch that needs
-/// no window never gets here: see `prelaunch`.)
-pub async fn handle_launch<R: Runtime>(app: &AppHandle<R>, inv: crate::instance::Invocation) {
+/// no window never gets here: see `prelaunch`.) `restored` is the first
+/// window opened again after a restart (session.rs), if any: a launch with no
+/// path brings it forward instead of opening Home.
+pub async fn handle_launch<R: Runtime>(
+    app: &AppHandle<R>,
+    inv: crate::instance::Invocation,
+    restored: Option<String>,
+) {
     crate::restart::abandon_for_launch(app);
     let token = inv.activation_token.as_str();
     let errors = match cli::plan(&inv.argv, &inv.cwd) {
-        Plan::Home => open_home(app, token).err().into_iter().collect::<Vec<_>>(),
+        Plan::Home => match restored {
+            Some(label) => focus(app, &label, token).err().into_iter().collect(),
+            None => open_home(app, token).err().into_iter().collect::<Vec<_>>(),
+        },
         Plan::Open(parsed) => {
             let mut errors: Vec<WireError> = parsed.errors.iter().map(arg_error).collect();
             let outcomes =
@@ -2019,6 +2116,7 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
         WindowEvent::Destroyed => {
             let app = window.app_handle();
             crate::zoom::forget(app, window.label());
+            crate::session::window_gone(app, window.label());
             if let Some(st) = app.try_state::<WindowState>() {
                 // Its own document and its tabs; other windows' tabs stay.
                 st.open.remove_window(window.label());
@@ -2094,7 +2192,20 @@ pub fn launch_finished<R: Runtime>(app: &AppHandle<R>) {
 
 /// Handles a launch counted in [`Launches`], then counts it out.
 pub async fn run_launch<R: Runtime>(app: &AppHandle<R>, inv: crate::instance::Invocation) {
-    handle_launch(app, inv).await;
+    handle_launch(app, inv, None).await;
+    launch_finished(app);
+}
+
+/// This process's own launch: after a restart the windows of the last run are
+/// opened again first, otherwise they are set aside (session.rs); then the
+/// launch is handled.
+pub async fn run_first_launch<R: Runtime>(
+    app: &AppHandle<R>,
+    inv: crate::instance::Invocation,
+    restarted: bool,
+) {
+    let restored = crate::session::launch(app, restarted).await;
+    handle_launch(app, inv, restored).await;
     launch_finished(app);
 }
 

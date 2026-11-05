@@ -26,7 +26,7 @@ fn forwarded_launch_with_unknown_cwd_opens_absolute_and_reports_relative() {
         cwd: PathBuf::new(),
         activation_token: "token-1".to_owned(),
     };
-    tauri::async_runtime::block_on(handle_launch(&e.handle, inv));
+    tauri::async_runtime::block_on(handle_launch(&e.handle, inv, None));
     assert!(e.handle.get_webview_window("doc-1").is_some());
     let q = e.take("doc-1");
     assert_eq!(q[0]["payload"], json!({"kind": "load_doc", "path": wp(&f)}));
@@ -47,7 +47,7 @@ fn forwarded_non_utf8_path_reaches_the_window_with_its_bytes() {
         cwd: e.files.clone(),
         activation_token: String::new(),
     };
-    tauri::async_runtime::block_on(handle_launch(&e.handle, inv));
+    tauri::async_runtime::block_on(handle_launch(&e.handle, inv, None));
     let q = e.take("doc-1");
     assert_eq!(q[0]["payload"]["path"], wp(&f));
 }
@@ -75,7 +75,7 @@ fn a_bare_double_dash_is_a_launch_without_arguments() {
         cwd: e.files.clone(),
         activation_token: String::new(),
     };
-    tauri::async_runtime::block_on(handle_launch(&e.handle, inv));
+    tauri::async_runtime::block_on(handle_launch(&e.handle, inv, None));
     let q = e.take("main");
     assert_eq!(q.len(), 1);
     assert_eq!(q[0]["payload"], json!({"kind": "home_tab"}));

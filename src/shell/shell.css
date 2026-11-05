@@ -705,3 +705,20 @@
   border: 1px solid var(--kern-border);
   border-radius: var(--kern-radius-small);
 }
+
+/* The windows of the last run, offered at the top of the main window (RestoreBar.tsx). */
+.kern-restore-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kern-density-gap);
+  padding: 8px var(--kern-density-gap);
+  font-size: 13px;
+  background: var(--kern-accent-soft);
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-restore-bar-actions {
+  display: flex;
+  gap: var(--kern-density-gap);
+}

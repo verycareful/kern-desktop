@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use kern_lib::store::{
-    move_aside, volume_online, LayoutKind, NewTabDefault, Store, ViewMode, DEFAULT_INTERFACE_SIZE,
-    INTERFACE_SIZES, LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, RECENTS_CAP,
-    RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN,
+    move_aside, volume_online, LayoutKind, NewTabDefault, SessionTab, SessionWindow, Store,
+    ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES, LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX,
+    LEFT_WIDTH_MIN, RECENTS_CAP, RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN,
 };
 use kernkraft_tauri::WirePath;
 use serde_json::{json, Map, Value};
@@ -1006,4 +1006,173 @@ fn a_bad_stored_new_tab_folder_is_reported_and_kept() {
         read_json(&e.config.join("settings.json"))["new_tab_folder"],
         json!({"k": "Utf8", "v": "rel"})
     );
+}
+
+#[test]
+fn set_aside_makes_the_session_the_closed_set_and_starts_a_new_one() {
+    let e = env();
+    let s = store(&e);
+    fs::create_dir_all(&e.state).unwrap();
+    // An entry this version cannot read moves with the rest, unchanged.
+    let raw = json!({"windows": [{"label": "main", "tabs": [], "active": null}, {"label": "x"}]});
+    fs::write(e.state.join("session.json"), raw.to_string()).unwrap();
+    s.session_set_aside().unwrap();
+    assert!(!e.state.join("session.json").exists());
+    assert_eq!(read_json(&e.state.join("closed-session.json")), raw);
+    let closed = s.closed_get().unwrap().value;
+    assert_eq!(closed.windows.len(), 1);
+    assert!(s.session_get().unwrap().value.windows.is_empty());
+    // A run that kept no window leaves no closed set behind.
+    s.session_set_aside().unwrap();
+    assert!(!e.state.join("closed-session.json").exists());
+}
+
+#[test]
+fn clearing_the_closed_set_removes_it_and_clearing_none_is_fine() {
+    let e = env();
+    let s = store(&e);
+    s.session_put(session_window("main", vec![], None)).unwrap();
+    s.session_set_aside().unwrap();
+    s.closed_clear().unwrap();
+    assert!(!e.state.join("closed-session.json").exists());
+    s.closed_clear().unwrap();
+    assert!(s.closed_get().unwrap().value.windows.is_empty());
+}
+
+fn session_window(label: &str, tabs: Vec<SessionTab>, active: Option<usize>) -> SessionWindow {
+    SessionWindow {
+        label: label.to_owned(),
+        root: None,
+        tabs,
+        active,
+    }
+}
+
+#[test]
+fn no_session_file_is_no_window() {
+    let e = env();
+    let got = store(&e).session_get().unwrap();
+    assert!(got.value.windows.is_empty());
+    assert!(got.corrupt.is_empty());
+}
+
+#[test]
+fn a_window_put_is_read_back_in_place_of_its_entry() {
+    let e = env();
+    let s = store(&e);
+    let a = wp(&e.files.join("a"));
+    let doc = wp(&e.files.join("notes.txt"));
+    let main = session_window(
+        "main",
+        vec![
+            SessionTab::Folder { path: a.clone() },
+            SessionTab::Doc { path: doc.clone() },
+            SessionTab::Trash,
+            SessionTab::Documents,
+        ],
+        Some(1),
+    );
+    assert!(s.session_put(main.clone()).unwrap().changed);
+    let mut editor = session_window("editor-2", vec![], None);
+    editor.root = Some(a.clone());
+    s.session_put(editor.clone()).unwrap();
+    // The same window again writes nothing; a change replaces the entry in place.
+    assert!(!s.session_put(main.clone()).unwrap().changed);
+    let moved = session_window("main", vec![SessionTab::Trash], Some(0));
+    assert!(s.session_put(moved.clone()).unwrap().changed);
+    let got = store(&e).session_get().unwrap().value;
+    assert_eq!(got.windows, vec![moved, editor]);
+    assert_eq!(
+        read_json(&e.state.join("session.json"))["windows"][1],
+        json!({"label": "editor-2", "root": a, "tabs": [], "active": null})
+    );
+}
+
+#[test]
+fn a_window_with_a_relative_path_an_active_past_its_tabs_or_no_label_is_refused() {
+    let e = env();
+    let s = store(&e);
+    let rel = WirePath::Utf8("rel".to_owned());
+    for bad in [
+        session_window("main", vec![SessionTab::Folder { path: rel.clone() }], None),
+        session_window("main", vec![SessionTab::Trash], Some(1)),
+        session_window("", vec![], None),
+        SessionWindow {
+            root: Some(rel.clone()),
+            ..session_window("editor-1", vec![], None)
+        },
+    ] {
+        assert_eq!(s.session_put(bad).unwrap_err().kind, "InvalidArgument");
+    }
+    assert!(!e.state.join("session.json").exists());
+}
+
+#[test]
+fn retain_drops_the_windows_it_is_not_asked_to_keep() {
+    let e = env();
+    let s = store(&e);
+    for label in ["main", "doc-1", "doc-2"] {
+        s.session_put(session_window(label, vec![], None)).unwrap();
+    }
+    let out = s.session_retain(|l| l != "doc-1").unwrap();
+    assert!(out.changed);
+    let labels: Vec<String> = out.value.windows.into_iter().map(|w| w.label).collect();
+    assert_eq!(labels, ["main", "doc-2"]);
+    assert!(!s.session_retain(|_| true).unwrap().changed);
+}
+
+#[test]
+fn a_session_entry_that_does_not_parse_is_reported_once_kept_and_replaced_by_its_label() {
+    let e = env();
+    fs::create_dir_all(&e.state).unwrap();
+    let path = wp(&e.files);
+    let newer = json!({"label": "editor-1", "root": path, "tabs": [{"kind": "split"}]});
+    let file = json!({
+        "windows": [
+            {"label": "main", "tabs": [{"kind": "trash"}], "active": 0},
+            newer,
+            {"label": "main", "tabs": []},
+            {"label": "doc-1", "tabs": [{"kind": "doc", "path": {"k": "Utf8", "v": "rel"}}]}
+        ],
+        "future": 7
+    });
+    fs::write(e.state.join("session.json"), file.to_string()).unwrap();
+    let s = store(&e);
+    let got = s.session_get().unwrap();
+    let labels: Vec<&str> = got.value.windows.iter().map(|w| w.label.as_str()).collect();
+    assert_eq!(labels, ["main"]);
+    let fields: Vec<&str> = got
+        .corrupt
+        .iter()
+        .map(|r| r.field.as_deref().unwrap())
+        .collect();
+    assert_eq!(fields, ["windows[1]", "windows[2]", "windows[3]"]);
+    assert!(got.corrupt.iter().all(|r| r.file == "session.json"));
+    assert!(s.session_get().unwrap().corrupt.is_empty());
+    // A write keeps what it could not read and the keys it does not know.
+    s.session_put(session_window("doc-2", vec![], None))
+        .unwrap();
+    let on_disk = read_json(&e.state.join("session.json"));
+    assert_eq!(on_disk["future"], 7);
+    assert_eq!(on_disk["windows"][2], newer);
+    // A window of this run with the label of an entry that was not read takes its place.
+    let mut editor = session_window("editor-1", vec![], None);
+    editor.root = Some(path.clone());
+    s.session_put(editor).unwrap();
+    let on_disk = read_json(&e.state.join("session.json"));
+    let raws = on_disk["windows"].as_array().unwrap();
+    assert_eq!(raws.iter().filter(|w| w["label"] == "editor-1").count(), 1);
+    assert!(!raws.contains(&newer));
+}
+
+#[test]
+fn a_session_file_that_is_not_a_session_is_moved_aside() {
+    let e = env();
+    fs::create_dir_all(&e.state).unwrap();
+    fs::write(e.state.join("session.json"), r#"{"windows": 3}"#).unwrap();
+    let got = store(&e).session_get().unwrap();
+    assert!(got.value.windows.is_empty());
+    assert_eq!(got.corrupt.len(), 1);
+    assert!(got.corrupt[0].moved_to.is_some());
+    assert!(!e.state.join("session.json").exists());
 }
