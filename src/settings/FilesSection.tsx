@@ -3,22 +3,26 @@
 import { useEffect, useId, useState } from "react";
 import {
   defaultFmStatus,
+  displayPath,
   fm1Status,
   makeDefaultFm,
   toWireError,
   type DefaultFm,
   type Fm1Status,
   type LayoutKind,
+  type NewTabDefault,
   type Settings,
   type ViewMode,
   type WireError,
 } from "../ipc";
+import { parseLocation } from "../files/path-input";
 import { errorText } from "../ops/error-text";
+import { useUserDirs } from "../shell/user-dirs-store";
 import { useSettingsDraft } from "./settings-draft";
 import { Choices, Group, Row, Toggle } from "./settings-ui";
 
-// Files: the layout of a main window that has none yet, list or grid and hidden items in a new
-// folder view, the Terminal program, and whether Kern is the default file manager (default_fm.rs:
+// Files: the main window's layout, what a new tab opens and which of the
+// two new tabs Ctrl+T opens, list or grid and hidden items in a new folder view, the Terminal program, and whether Kern is the default file manager (default_fm.rs:
 // the inode/directory default, and the org.freedesktop.FileManager1 name other programs ask to
 // show folders). Making Kern the default is an action on the system, not a setting: it happens
 // when its button is pressed, not at Save.
@@ -32,6 +36,99 @@ const LAYOUTS: readonly { value: LayoutKind; label: string }[] = [
   { value: "file_manager", label: "File manager" },
   { value: "editor", label: "Editor" },
 ];
+
+const NEW_TAB_DEFAULTS: readonly { value: NewTabDefault; label: string }[] = [
+  { value: "folder", label: "New tab folder" },
+  { value: "current", label: "Current folder" },
+];
+
+type NewTabPlace = "home" | "other";
+
+const NEW_TAB_PLACES: readonly { value: NewTabPlace; label: string }[] = [
+  { value: "home", label: "Home" },
+  { value: "other", label: "Another folder" },
+];
+
+// Home, or a folder typed as a path (~ for Home), as a Library folder is. The path is taken when
+// the field is left or Enter is pressed; until a path is taken, Another folder changes nothing.
+function NewTabFolder(props: { settings: Settings }) {
+  const id = useId();
+  const edit = useSettingsDraft((s) => s.edit);
+  const folder = props.settings.new_tab_folder;
+  const [other, setOther] = useState(folder !== null);
+  const [text, setText] = useState(folder ? displayPath(folder) : "");
+  const [error, setError] = useState<string | null>(null);
+  // A change made elsewhere (Revert, another window) shows here.
+  const [seen, setSeen] = useState(folder);
+  if (seen !== folder) {
+    setSeen(folder);
+    setOther(folder !== null);
+    setText(folder ? displayPath(folder) : "");
+    setError(null);
+  }
+
+  const take = async () => {
+    let home = null;
+    try {
+      home = (await useUserDirs.getState().load()).home;
+    } catch {
+      // ~ is then refused by parseLocation with its own words.
+    }
+    const parsed = parseLocation(text, home);
+    if (!parsed.ok) {
+      setError(parsed.message);
+      return;
+    }
+    setError(null);
+    edit({ new_tab_folder: parsed.path });
+  };
+
+  const choose = (place: NewTabPlace) => {
+    setOther(place === "other");
+    setError(null);
+    if (place === "home") edit({ new_tab_folder: null });
+  };
+
+  return (
+    <Row
+      id="new_tab_folder"
+      wide
+      note="What New tab opens. A folder that is gone opens as a tab that says so, not as Home."
+    >
+      <Choices
+        label="New tab folder"
+        value={other ? "other" : "home"}
+        options={NEW_TAB_PLACES}
+        onChange={choose}
+      />
+      {other && (
+        <div className="kern-settings-inline">
+          <label htmlFor={`${id}-folder`} className="kern-settings-hidden-label">
+            Folder for new tabs
+          </label>
+          <input
+            id={`${id}-folder`}
+            type="text"
+            className="kern-modal-input"
+            spellCheck={false}
+            placeholder="~/Projects"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={() => void take()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void take();
+            }}
+          />
+        </div>
+      )}
+      {error && (
+        <p role="alert" className="kern-modal-error">
+          {error}
+        </p>
+      )}
+    </Row>
+  );
+}
 
 type Load<T> =
   { state: "loading" } | { state: "ready"; value: T } | { state: "failed"; error: WireError };
@@ -158,13 +255,27 @@ export function FilesSection(props: { settings: Settings }) {
       <Group rows={["default_layout"]}>
         <Row
           id="default_layout"
-          note="For a main window with no layout remembered yet. A layout you switch to is remembered and wins."
+          note="Applies as soon as it is saved. The editor layout shows folders in its tree and has no folder tabs: they close when it starts."
         >
           <Choices
-            label="Main window opens as"
+            label="Main window layout"
             value={settings.default_layout}
             options={LAYOUTS}
             onChange={(default_layout) => edit({ default_layout })}
+          />
+        </Row>
+      </Group>
+      <Group rows={["new_tab_folder", "new_tab_default"]}>
+        <NewTabFolder settings={settings} />
+        <Row
+          id="new_tab_default"
+          note="New tab here opens the folder of the tab in front. The other of the two is on Ctrl+Shift+T."
+        >
+          <Choices
+            label="Ctrl+T opens"
+            value={settings.new_tab_default}
+            options={NEW_TAB_DEFAULTS}
+            onChange={(new_tab_default) => edit({ new_tab_default })}
           />
         </Row>
       </Group>

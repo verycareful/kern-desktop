@@ -2,19 +2,24 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { WindowLayout, WirePath } from "../ipc";
+import type { Settings, WindowLayout, WirePath } from "../ipc";
 import { SETTINGS } from "../settings/test-settings";
 
-const ipc = vi.hoisted(() => ({ layoutGet: vi.fn(), layoutSet: vi.fn(), settingsGet: vi.fn() }));
+const ipc = vi.hoisted(() => ({
+  layoutGet: vi.fn(),
+  layoutSet: vi.fn(),
+  settingsGet: vi.fn(),
+  on: vi.fn(),
+}));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
 import { useOps } from "../ops/useOps";
 import { useLayout } from "../store/layout";
+import { useTabs } from "../store/tabs";
 import { WRITE_DELAY_MS, flushLayout, useLayoutSync } from "./use-layout-sync";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 const NONE: WindowLayout = {
-  layout: null,
   left_width: 280,
   left_open: true,
   right_width: 280,
@@ -24,6 +29,8 @@ const wireError = (message: string) => ({ kind: "Io", message, path: null, detai
 
 /** What layout.json holds, as the two commands see it. */
 let disk: WindowLayout;
+/** kern://settings-changed, as the hook listens to it. */
+let settingsChanged: ((s: Settings) => void) | undefined;
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -31,6 +38,12 @@ beforeEach(() => {
   useLayout.getState().reset();
   useOps.setState({ notice: null });
   ipc.settingsGet.mockResolvedValue(SETTINGS);
+  settingsChanged = undefined;
+  useTabs.setState({ tabs: [], activeId: null });
+  ipc.on.mockImplementation((name: string, handler: (s: Settings) => void) => {
+    if (name === "kern://settings-changed") settingsChanged = handler;
+    return Promise.resolve(() => undefined);
+  });
   ipc.layoutGet.mockImplementation(() => Promise.resolve({ ...disk }));
   ipc.layoutSet.mockImplementation((patch: Partial<WindowLayout>) => {
     disk = { ...disk, ...patch };
@@ -45,18 +58,16 @@ afterEach(() => {
 const settle = () => act(async () => void (await vi.advanceTimersByTimeAsync(0)));
 const wait = () => act(async () => void (await vi.advanceTimersByTimeAsync(WRITE_DELAY_MS + 10)));
 
-test("layout_remembered", async () => {
-  // First run: nothing chosen, so the default layout setting decides, and nothing is written.
+test("the_setting_is_the_layout_and_the_columns_and_tree_are_remembered", async () => {
   ipc.settingsGet.mockResolvedValue({ ...SETTINGS, default_layout: "editor" });
   const first = renderHook(() => useLayoutSync(true));
   await settle();
-  expect(useLayout.getState()).toMatchObject({ layout: "editor", chosen: false, loaded: true });
+  expect(useLayout.getState()).toMatchObject({ layout: "editor", loaded: true });
   await wait();
   expect(ipc.layoutSet).not.toHaveBeenCalled();
 
-  // The user changes the layout, the column and the tree: one write after the last change.
+  // The column and the tree change: one write after the last change, and no layout in it.
   act(() => {
-    useLayout.getState().setLayout("file_manager");
     useLayout.getState().setLeftWidth(333);
     useLayout.getState().setLeftWidth(340);
     useLayout.getState().toggleLeft();
@@ -65,20 +76,19 @@ test("layout_remembered", async () => {
   expect(ipc.layoutSet).not.toHaveBeenCalled();
   await wait();
   expect(ipc.layoutSet).toHaveBeenCalledExactlyOnceWith({
-    layout: "file_manager",
     left_width: 340,
     left_open: false,
     tree_root: p("/home/a/work"),
   });
   first.unmount();
 
-  // A restart: a new window reads what was written, and the default no longer decides.
+  // A restart: the columns and tree are read back, the layout is the setting's.
   useLayout.getState().reset();
+  ipc.settingsGet.mockResolvedValue(SETTINGS);
   renderHook(() => useLayoutSync(true));
   await settle();
   expect(useLayout.getState()).toMatchObject({
     layout: "file_manager",
-    chosen: true,
     leftWidth: 340,
     leftOpen: false,
     treeRoot: p("/home/a/work"),
@@ -86,6 +96,32 @@ test("layout_remembered", async () => {
   });
   await wait();
   expect(ipc.layoutSet).toHaveBeenCalledTimes(1);
+});
+
+test("a_changed_layout_setting_applies_at_once_and_closes_the_folder_tabs", async () => {
+  useTabs.getState().openFolder(p("/home/a/work"), false);
+  useTabs.getState().openDoc(p("/home/a/work/n.md"));
+  useTabs.getState().openTrash();
+  renderHook(() => useLayoutSync(true));
+  await settle();
+  expect(useLayout.getState().layout).toBe("file_manager");
+  // The folder tab in front gives the tree its folder.
+  useTabs.getState().activate(useTabs.getState().tabs[0]!.id);
+  await act(async () => settingsChanged!({ ...SETTINGS, default_layout: "editor" }));
+  await settle();
+  expect(useLayout.getState()).toMatchObject({ layout: "editor", treeRoot: p("/home/a/work") });
+  expect(useTabs.getState().tabs.map((t) => t.kind)).toEqual(["doc", "trash"]);
+  // Back to the file manager: the documents and the Trash stay.
+  await act(async () => settingsChanged!(SETTINGS));
+  await settle();
+  expect(useLayout.getState().layout).toBe("file_manager");
+  expect(useTabs.getState().tabs.map((t) => t.kind)).toEqual(["doc", "trash"]);
+});
+
+test("an_editor_window_does_not_follow_the_layout_setting", async () => {
+  renderHook(() => useLayoutSync(false));
+  await settle();
+  expect(settingsChanged).toBeUndefined();
 });
 
 test("what_changed_last_is_written_when_the_window_goes", async () => {
@@ -107,7 +143,7 @@ test("a_dragged_pinned_and_recent_width_is_written", async () => {
 });
 
 test("an_editor_window_reads_the_width_and_never_writes", async () => {
-  disk = { ...NONE, layout: "file_manager", left_width: 420 };
+  disk = { ...NONE, left_width: 420 };
   renderHook(() => useLayoutSync(false));
   await settle();
   expect(useLayout.getState()).toMatchObject({ layout: "editor", leftWidth: 420, loaded: true });
@@ -124,12 +160,12 @@ test("a_layout_that_cannot_be_read_is_said_and_the_default_stands", async () => 
   expect(useOps.getState().notice?.text).toMatch(/stored layout could not be read: .*disk gone/);
 });
 
-test("a_default_layout_that_cannot_be_read_is_said_and_the_file_manager_is_used", async () => {
+test("a_layout_setting_that_cannot_be_read_is_said_and_the_file_manager_is_used", async () => {
   ipc.settingsGet.mockRejectedValue(wireError("no settings"));
   renderHook(() => useLayoutSync(true));
   await settle();
   expect(useLayout.getState()).toMatchObject({ layout: "file_manager", loaded: true });
-  expect(useOps.getState().notice?.text).toMatch(/default layout could not be read.*no settings/);
+  expect(useOps.getState().notice?.text).toMatch(/layout setting could not be read.*no settings/);
 });
 
 test("a_layout_that_cannot_be_saved_is_said_and_tried_again_with_the_next_change", async () => {

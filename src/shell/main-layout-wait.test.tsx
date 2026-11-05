@@ -55,6 +55,7 @@ afterEach(() => {
 
 test("no_layout_is_drawn_until_the_stored_one_is_read_and_then_the_right_one", async () => {
   let reply!: (l: WindowLayout) => void;
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, default_layout: "editor" });
   ipc.layoutGet.mockReturnValue(new Promise<WindowLayout>((r) => (reply = r)));
   render(<MainWindow />);
   // Waiting: the window has its frame (status bar) and neither layout.
@@ -63,13 +64,13 @@ test("no_layout_is_drawn_until_the_stored_one_is_read_and_then_the_right_one", a
   expect(screen.queryByTestId("places-strip")).toBeNull();
   await act(async () => {});
   expect(screen.queryByTestId("main-grid")).toBeNull();
-  // The stored layout is the editor: the first layout drawn is the editor's.
-  await act(async () => reply({ ...NO_LAYOUT, layout: "editor" }));
+  // The layout setting is the editor: the first layout drawn is the editor's.
+  await act(async () => reply(NO_LAYOUT));
   expect(await screen.findByTestId("main-grid")).toHaveAttribute("data-layout", "editor");
 });
 
-test("a_stored_file_manager_layout_draws_the_file_manager", async () => {
-  ipc.layoutGet.mockResolvedValue({ ...NO_LAYOUT, layout: "file_manager" });
+test("a_file_manager_layout_setting_draws_the_file_manager", async () => {
+  ipc.layoutGet.mockResolvedValue(NO_LAYOUT);
   render(<MainWindow />);
   expect(await screen.findByTestId("main-grid")).toHaveAttribute("data-layout", "folder");
 });

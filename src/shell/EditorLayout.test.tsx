@@ -52,6 +52,7 @@ import { usePanelsStore } from "../store/panels";
 import { useTabs } from "../store/tabs";
 import { useViewSettings } from "../files/view-settings";
 import MainWindow from "./MainWindow";
+import { switchLayout } from "./layout-switch";
 import { EMPTY_PRUNE } from "./test-pinned-recent";
 import { usePinnedRecent } from "./pinned-recent-store";
 import { useUserDirs } from "./user-dirs-store";
@@ -89,9 +90,9 @@ beforeEach(() => {
   ipc.fileIdentity.mockResolvedValue([]);
   ipc.openPaths.mockResolvedValue([]);
   ipc.openEditor.mockResolvedValue("editor-1");
-  ipc.layoutGet.mockResolvedValue({ ...NO_LAYOUT, layout: "editor", tree_root: HOME });
+  ipc.layoutGet.mockResolvedValue({ ...NO_LAYOUT, tree_root: HOME });
   ipc.layoutSet.mockImplementation((patch: object) => Promise.resolve({ ...NO_LAYOUT, ...patch }));
-  ipc.settingsGet.mockResolvedValue(SETTINGS);
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, default_layout: "editor" });
   ipc.userDirs.mockResolvedValue({
     home: HOME,
     dirs: [{ name: "documents", path: p("/home/a/Documents") }],
@@ -148,14 +149,28 @@ test("editor_layout_keeps_tree_docked_in_doc_tab", async () => {
   expect(screen.queryByTestId("stub-left")).toBeNull();
   expect(screen.getByTestId("stub-right")).toBeInTheDocument();
   expect(screen.queryByTestId("side-panel")).toBeNull();
-  // The folder tab: the tree is still there, and the folder view is the centre.
-  fireEvent.click(screen.getAllByRole("tab")[0]!);
-  expect(screen.getByTestId("editor-left")).toContainElement(screen.getByTestId("folder-tree"));
-  expect(screen.getByTestId("folder-area")).toBeInTheDocument();
+  // The folder tab is closed: the editor layout holds documents, the tree the folders.
+  await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(1));
+  expect(useTabs.getState().tabs.map((t) => t.kind)).toEqual(["doc"]);
+  expect(screen.queryByTestId("folder-area")).toBeNull();
+});
+
+test("the_editor_layout_has_no_new_tab_buttons_and_its_keys_say_why", async () => {
+  useTabs.getState().openDoc(p("/home/a/notes.md"));
+  await editorWindow();
+  const row = screen.getByTestId("tab-bar");
+  expect(within(row).queryByRole("button", { name: "New tab" })).toBeNull();
+  expect(within(row).queryByRole("button", { name: "New tab here" })).toBeNull();
+  await waitFor(() => expect(useViewSettings.getState().loaded).toBe(true));
+  fireEvent.keyDown(window, { key: "t", ctrlKey: true });
+  expect(useOps.getState().notice?.text).toBe(
+    "The editor layout has no folder tabs: the folder tree on the left shows the folders"
+  );
+  expect(useTabs.getState().tabs).toHaveLength(1);
 });
 
 test("the_file_manager_layout_has_no_tree_and_folds_the_left_panel_to_a_stub_beside_a_document", async () => {
-  ipc.layoutGet.mockResolvedValue({ ...NO_LAYOUT, layout: "file_manager" });
+  ipc.settingsGet.mockResolvedValue(SETTINGS);
   useTabs.getState().openFolder(HOME, false);
   useTabs.getState().openDoc(p("/home/a/notes.md"));
   render(<MainWindow />);
@@ -272,36 +287,30 @@ test("the_divider_moves_with_the_keys_and_the_pointer_between_the_limits", async
   expect(useLayout.getState().leftWidth).toBe(180);
 });
 
-test("switching_layout_roots_the_tree_at_the_folder_shown_and_back_again", async () => {
-  ipc.layoutGet.mockResolvedValue({ ...NO_LAYOUT, layout: "file_manager" });
+test("switching_layout_roots_the_tree_at_the_folder_shown_closes_folder_tabs_and_back_again", async () => {
+  ipc.settingsGet.mockResolvedValue(SETTINGS);
+  ipc.layoutGet.mockResolvedValue(NO_LAYOUT);
   useTabs.getState().openFolder(p("/home/a/work"), false);
+  useTabs.getState().openDoc(p("/home/a/notes.md"));
+  useTabs.getState().activate(useTabs.getState().tabs[0]!.id);
   render(<MainWindow />);
   await screen.findByTestId("places-strip");
   await waitFor(() => expect(useLayout.getState().loaded).toBe(true));
-  const toEditor = getAction("layout.editor");
-  const toFiles = getAction("layout.fileManager");
-  expect(isEnabled(toEditor, currentContext())).toBe(true);
-  expect(isEnabled(toFiles, currentContext())).toBe(false);
-  act(() => void runAction(toEditor, currentContext()));
+  await act(() => switchLayout("editor"));
   await screen.findByTestId("folder-tree");
-  // The folder tab on show is where the tree starts.
+  // The folder tab on show is where the tree starts; folder tabs close, the document stays.
   expect(useLayout.getState().treeRoot).toEqual(p("/home/a/work"));
-  expect(isEnabled(toEditor, currentContext())).toBe(false);
-  act(() => void runAction(toFiles, currentContext()));
+  expect(useTabs.getState().tabs.map((t) => t.kind)).toEqual(["doc"]);
+  await act(() => switchLayout("file_manager"));
   await waitFor(() => expect(screen.queryByTestId("folder-tree")).toBeNull());
-  expect(screen.getByTestId("main-grid")).toHaveAttribute("data-layout", "folder");
+  expect(useTabs.getState().tabs.map((t) => t.kind)).toEqual(["doc"]);
 });
 
 test("the_tree_starts_at_home_when_no_folder_is_shown", async () => {
-  ipc.layoutGet.mockResolvedValue({ ...NO_LAYOUT, layout: "editor", tree_root: null });
+  ipc.layoutGet.mockResolvedValue({ ...NO_LAYOUT, tree_root: null });
   render(<MainWindow />);
   await screen.findByRole("tree", { name: "Folders of a" });
   expect(useLayout.getState().treeRoot).toEqual(HOME);
-});
-
-test("a_layout_cannot_be_chosen_before_the_stored_one_is_read", async () => {
-  expect(isEnabled(getAction("layout.editor"), currentContext())).toBe(false);
-  expect(isEnabled(getAction("layout.fileManager"), currentContext())).toBe(false);
 });
 
 test("a_right_click_on_a_folder_of_the_tree_offers_open_as_editor", async () => {
@@ -344,7 +353,7 @@ test("a_failed_open_as_editor_is_said", async () => {
 });
 
 test("a_gone_root_moves_the_tree_to_the_nearest_folder_and_says_so", async () => {
-  ipc.layoutGet.mockResolvedValue({ ...NO_LAYOUT, layout: "editor", tree_root: p("/home/a/gone") });
+  ipc.layoutGet.mockResolvedValue({ ...NO_LAYOUT, tree_root: p("/home/a/gone") });
   ipc.listDir.mockImplementation((path: WirePath) =>
     path.v === "/home/a/gone"
       ? Promise.reject({ kind: "NotFound", message: "gone", path: null, details: null })
@@ -357,13 +366,13 @@ test("a_gone_root_moves_the_tree_to_the_nearest_folder_and_says_so", async () =>
   );
 });
 
-test("every_layout_action_is_in_the_main_menu", async () => {
+test("the_main_menu_offers_the_column_toggle_and_no_layout_switch", async () => {
   useTabs.getState().openDoc(p("/home/a/notes.md"));
   await editorWindow();
   fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
   const menu = screen.getByTestId("action-menu");
-  for (const id of ["layout.editor", "layout.fileManager", "layout.left.toggle"]) {
-    expect(menu.querySelector(`[data-action-id="${id}"]`), id).not.toBeNull();
-  }
-  expect(actions.filter((a) => a.area === "Layout")).toHaveLength(3);
+  expect(menu.querySelector(`[data-action-id="layout.left.toggle"]`)).not.toBeNull();
+  expect(actions.filter((a) => a.area === "Layout").map((a) => a.id)).toEqual([
+    "layout.left.toggle",
+  ]);
 });

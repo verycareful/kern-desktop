@@ -6,6 +6,7 @@ import { useShortcuts } from "../keys/useShortcuts";
 import { useLayout } from "../store/layout";
 import { EditorCentre, EditorLayout } from "./EditorLayout";
 import { useLayoutSync } from "./use-layout-sync";
+import { closeFolderTabs } from "./layout-switch";
 import { useSettingsReportNotice } from "../settings/settings-reports";
 import { OpsHost } from "../ops/OpsHost";
 import { usePanels } from "../store/panels";
@@ -28,10 +29,10 @@ import "./shell.css";
 // slide them over the document. The status bar spans the bottom.
 export default function MainWindow(props: { openingHome?: boolean; starting?: boolean }) {
   useShortcuts();
-  // The interface size actions step the stored size whatever tab is shown.
+  // Hidden files, the view, the interface size and what a new tab opens.
   useViewSettingsSync();
   useSettingsReportNotice();
-  // How the window is laid out is remembered across restarts (layout.json).
+  // The layout is the setting; the columns and the tree are remembered (layout.json).
   useLayoutSync(true);
   const editorLayout = useLayout((s) => s.layout === "editor");
   // No layout is drawn until the stored one has been read, so the layout the window was left in
@@ -57,6 +58,13 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
   const tabs = useTabs((s) => s.tabs);
   const { leftOpen, rightOpen } = usePanels();
   const docs = tabs.filter((t): t is DocTab => t.kind === "doc");
+  // The editor layout holds no folder tabs, however they came (a start with tabs open, a switch).
+  // The tree takes its folder from the folder tab in front first (EditorLayout, whose effect runs
+  // before this one).
+  const hasFolderTab = tabs.some((t) => t.kind === "folder");
+  useEffect(() => {
+    if (layoutReady && editorLayout && hasFolderTab) closeFolderTabs();
+  }, [layoutReady, editorLayout, hasFolderTab]);
 
   let layout: "folder" | "doc" | "none";
   let body;

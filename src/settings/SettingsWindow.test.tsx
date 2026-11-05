@@ -492,3 +492,44 @@ test("a_link_that_cannot_be_opened_says_why", async () => {
     /github.com\/verycareful\/kern-desktop could not be opened: .*no browser/
   );
 });
+
+test("the_new_tab_folder_is_home_or_a_folder_typed_as_a_path", async () => {
+  await mount();
+  nav("Files");
+  expect(pressed("New tab folder", "Home")).toHaveAttribute("aria-pressed", "true");
+  // Another folder changes nothing until a path is taken.
+  fireEvent.click(pressed("New tab folder", "Another folder"));
+  const field = screen.getByLabelText("Folder for new tabs");
+  fireEvent.change(field, { target: { value: "projects" } });
+  fireEvent.blur(field);
+  expect(await screen.findByRole("alert")).toBeInTheDocument();
+  fireEvent.change(field, { target: { value: "~/Projects" } });
+  fireEvent.keyDown(field, { key: "Enter" });
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([
+    { new_tab_folder: { k: "Utf8", v: "/home/a/Projects" } },
+  ]);
+  // Home again stores none.
+  fireEvent.click(pressed("New tab folder", "Home"));
+  expect(screen.queryByLabelText("Folder for new tabs")).toBeNull();
+  await save();
+  expect(sent("settings_set")[1]!.args.patch).toEqual({ new_tab_folder: null });
+});
+
+test("a_stored_new_tab_folder_shows_as_another_folder_with_its_path", async () => {
+  stored = { ...stored, new_tab_folder: { k: "Utf8", v: "/srv/work" } };
+  await mount();
+  nav("Files");
+  expect(pressed("New tab folder", "Another folder")).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByLabelText("Folder for new tabs")).toHaveValue("/srv/work");
+});
+
+test("ctrl_t_opens_the_new_tab_folder_or_the_current_folder", async () => {
+  await mount();
+  nav("Files");
+  expect(pressed("Ctrl+T opens", "New tab folder")).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(pressed("Ctrl+T opens", "Current folder"));
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ new_tab_default: "current" }]);
+});

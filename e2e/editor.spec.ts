@@ -24,6 +24,8 @@ const COMMON = {
     show_hidden: false,
     view_mode: "list",
     default_layout: "file_manager",
+    new_tab_folder: null,
+    new_tab_default: "folder",
     word_wrap: false,
     editor_zoom: 1,
     interface_size: 90,

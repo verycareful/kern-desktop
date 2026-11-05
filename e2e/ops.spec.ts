@@ -35,6 +35,8 @@ const SETTINGS = {
   show_hidden: false,
   view_mode: "list",
   default_layout: "file_manager",
+  new_tab_folder: null,
+  new_tab_default: "folder",
   interface_size: 90,
 };
 
@@ -148,6 +150,8 @@ const BACKEND = {
     show_hidden: false,
     view_mode: "list",
     default_layout: "file_manager",
+    new_tab_folder: null,
+    new_tab_default: "folder",
     interface_size: 90,
     ...(args.patch as object),
   }),

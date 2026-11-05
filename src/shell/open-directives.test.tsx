@@ -124,9 +124,10 @@ beforeEach(() => {
     accent: "slate",
     follow: { colours: true, accent: true, fonts: true, radius: true },
     default_layout: "file_manager",
+    new_tab_folder: null,
+    new_tab_default: "folder",
   } as Settings);
   ipc.layoutGet.mockResolvedValue({
-    layout: null,
     left_width: 280,
     left_open: true,
     tree_root: null,
@@ -995,35 +996,7 @@ test("closing_a_tab_of_an_editor_window_leaves_the_window_open", async () => {
   expect(ipc.confirmClose).not.toHaveBeenCalled();
 });
 
-test("the_main_window_in_the_editor_layout_opens_no_home_tab_and_shows_the_welcome_pane", async () => {
-  ipc.layoutGet.mockResolvedValue({
-    layout: "editor",
-    left_width: 280,
-    left_open: true,
-    tree_root: p("/home/t"),
-  });
-  render(<App />);
-  expect(await screen.findByTestId("welcome-pane")).toBeInTheDocument();
-  await act(async () => {});
-  expect(useTabs.getState().tabs).toHaveLength(0);
-  // A folder asked for from outside still opens as a tab, in the centre.
-  await emit("kern://open", { kind: "folder_tab", path: p("/d/more") });
-  expect(await screen.findByRole("tab", { name: "more" })).toBeInTheDocument();
-  expect(screen.queryByTestId("welcome-pane")).toBeNull();
-});
-
-test("a_stored_file_manager_layout_still_opens_home", async () => {
-  ipc.layoutGet.mockResolvedValue({
-    layout: "file_manager",
-    left_width: 280,
-    left_open: true,
-    tree_root: null,
-  });
-  render(<App />);
-  expect(await screen.findByRole("tab", { name: "t" })).toBeInTheDocument();
-});
-
-test("the_default_layout_setting_decides_a_window_with_no_stored_layout", async () => {
+const editorSetting = () =>
   ipc.settingsGet.mockResolvedValue({
     show_hidden: false,
     view_mode: "list",
@@ -1031,10 +1004,32 @@ test("the_default_layout_setting_decides_a_window_with_no_stored_layout", async 
     accent: "slate",
     follow: { colours: true, accent: true, fonts: true, radius: true },
     default_layout: "editor",
+    new_tab_folder: null,
+    new_tab_default: "folder",
   } as Settings);
+
+test("the_main_window_in_the_editor_layout_opens_no_home_tab_and_shows_the_welcome_pane", async () => {
+  editorSetting();
+  ipc.layoutGet.mockResolvedValue({ left_width: 280, left_open: true, tree_root: p("/home/t") });
   render(<App />);
   expect(await screen.findByTestId("welcome-pane")).toBeInTheDocument();
+  await act(async () => {});
   expect(useTabs.getState().tabs).toHaveLength(0);
+  // A folder asked for from outside roots the tree: the editor layout has no folder tabs.
+  await emit("kern://open", { kind: "folder_tab", path: p("/d/more") });
+  const { useLayout } = await import("../store/layout");
+  await waitFor(() => expect(useLayout.getState().treeRoot).toEqual(p("/d/more")));
+  expect(useTabs.getState().tabs).toHaveLength(0);
+  expect(screen.getByTestId("welcome-pane")).toBeInTheDocument();
+  // Home asked for from outside roots it at Home.
+  await emit("kern://open", { kind: "home_tab" });
+  await waitFor(() => expect(useLayout.getState().treeRoot).toEqual(p("/home/t")));
+  expect(useTabs.getState().tabs).toHaveLength(0);
+});
+
+test("the_file_manager_layout_setting_opens_home", async () => {
+  render(<App />);
+  expect(await screen.findByRole("tab", { name: "t" })).toBeInTheDocument();
 });
 
 // ---- a second open of a file a tab of this window already shows without having registered it ----

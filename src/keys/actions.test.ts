@@ -151,8 +151,10 @@ test("refresh_volumes_is_greyed_while_no_strip_follows_the_volumes", async () =>
   useVolumes.getState().reset();
 });
 
-test("every_action_is_in_a_menu", () => {
+test("every_action_is_in_a_menu_or_on_a_button_with_a_key", () => {
   // The main menu of the tab kind the action applies to, or the volume's or entry's own menu.
+  // An action kept out of the main menu is a button of the top bar, and has a key besides, but
+  // About Kern, which the logo and Settings open.
   useTabs.getState().openFolder(p("/a"), false);
   useTabs.getState().openDoc(p("/a/n.md"));
   useTabs.getState().openTrash();
@@ -171,7 +173,8 @@ test("every_action_is_in_a_menu", () => {
             : menuSections(a.when === "any" ? null : tabOf(a.when)).some((s) =>
                 s.actions.includes(a)
               );
-    if (!inMenu) missing.push(a.id);
+    const button = a.menu === false && (a.keys.length > 0 || a.id === "place.about");
+    if (!inMenu && !button) missing.push(a.id);
   }
   expect(missing).toEqual([]);
 });
@@ -421,32 +424,15 @@ test("open_as_editor_is_a_folder_action_of_the_open_group_that_asks_the_folder_v
   }
 });
 
-test("the_layout_actions_belong_to_the_main_window_and_the_column_toggle_to_the_editor_layout", () => {
+test("no_action_switches_the_layout_and_the_column_toggle_is_the_editor_layouts", () => {
   useLayout.getState().reset();
-  const to = (id: string) => isEnabled(getAction(id), currentContext());
-  // Before the stored layout is read nothing can be chosen.
-  expect([to("layout.editor"), to("layout.fileManager"), to("layout.left.toggle")]).toEqual([
-    false,
-    false,
-    false,
-  ]);
-  useLayout
-    .getState()
-    .apply(
-      { layout: null, left_width: 280, left_open: true, right_width: 280, tree_root: p("/a") },
-      "file_manager"
-    );
-  expect([to("layout.editor"), to("layout.fileManager"), to("layout.left.toggle")]).toEqual([
-    true,
-    false,
-    false,
-  ]);
+  expect(actions.some((a) => a.id === "layout.editor" || a.id === "layout.fileManager")).toBe(
+    false
+  );
+  const toggle = () => isEnabled(getAction("layout.left.toggle"), currentContext());
+  expect(toggle()).toBe(false);
   useLayout.getState().setLayout("editor");
-  expect([to("layout.editor"), to("layout.fileManager"), to("layout.left.toggle")]).toEqual([
-    false,
-    true,
-    true,
-  ]);
+  expect(toggle()).toBe(true);
   useLayout.getState().reset();
 });
 
@@ -493,4 +479,31 @@ test("move_to_new_window_is_offered_for_a_document_tab_of_an_editor_window_too",
   } finally {
     labelled(null);
   }
+});
+
+test("the_actions_with_a_button_of_the_top_bar_are_not_in_the_main_menu", () => {
+  useTabs.getState().openFolder(p("/a"), false);
+  const shown = menuSections(useTabs.getState().tabs[0]!).flatMap((s) =>
+    s.actions.map((a) => a.id)
+  );
+  for (const id of [
+    "nav.back",
+    "nav.forward",
+    "nav.up",
+    "folder.new.folder",
+    "folder.search",
+    "folder.terminal",
+    "folder.hidden.toggle",
+    "folder.view.list",
+    "folder.view.grid",
+    "place.settings",
+    "place.about",
+    "newTab.folder",
+    "newTab.here",
+  ]) {
+    expect(shown, id).not.toContain(id);
+  }
+  // Open as editor has no key, so it is in the menu as well as on its button.
+  expect(shown).toContain("folder.openAsEditor");
+  expect(actions.some((a) => a.id.startsWith("view.size."))).toBe(false);
 });

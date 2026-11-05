@@ -25,7 +25,8 @@
 //! parse (a value a newer Kern wrote, say) keeps its raw JSON, is written
 //! back unchanged, and is reported once per run; in memory it holds its
 //! default. Unknown keys, including unknown keys inside `follow`, survive a
-//! rewrite; the few Kern drops on purpose are in `DROPPED_SETTINGS`.
+//! rewrite; the few Kern drops on purpose are in `DROPPED_SETTINGS` and
+//! `DROPPED_LAYOUT`.
 //!
 //! Paths are stored as [`WirePath`], so a name that is not UTF-8 survives.
 
@@ -69,6 +70,10 @@ pub const THEME_DENSITY: Density = Density::Cozy;
 /// [`THEME_DENSITY`].
 const DROPPED_SETTINGS: [&str; 1] = ["density"];
 
+/// Keys of `layout.json` Kern does not keep, dropped the same way. `layout`:
+/// the main window's layout is [`Settings::default_layout`] alone.
+const DROPPED_LAYOUT: [&str; 1] = ["layout"];
+
 /// Directory name under the XDG config and state homes.
 const APP_DIR: &str = "kern";
 
@@ -110,6 +115,17 @@ pub enum LayoutKind {
     Editor,
 }
 
+/// What Ctrl+T and the New tab button's shortcut open: the new tab folder
+/// ([`Settings::new_tab_folder`]) or the folder of the tab in front. The
+/// other of the two is on Ctrl+Shift+T.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NewTabDefault {
+    #[default]
+    Folder,
+    Current,
+}
+
 /// The Files view mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -141,8 +157,12 @@ pub struct Settings {
     /// The interface size in percent, one of [`INTERFACE_SIZES`]; applied as
     /// the zoom of every window (`zoom.rs`).
     pub interface_size: u32,
-    /// The layout of a window that has none remembered yet.
+    /// The main window's layout, applied as soon as it changes.
     pub default_layout: LayoutKind,
+    /// The folder a new tab opens, absolute; `None` is Home.
+    pub new_tab_folder: Option<WirePath>,
+    /// Which of the two new tabs Ctrl+T opens.
+    pub new_tab_default: NewTabDefault,
     /// Keys inside `follow` this version does not define.
     #[serde(skip)]
     pub follow_extra: Map<String, Value>,
@@ -169,20 +189,20 @@ impl Default for Settings {
             show_hidden: false,
             interface_size: DEFAULT_INTERFACE_SIZE,
             default_layout: LayoutKind::default(),
+            new_tab_folder: None,
+            new_tab_default: NewTabDefault::default(),
             follow_extra: Map::new(),
             extra: Map::new(),
         }
     }
 }
 
-/// `layout.json`: how the main window is laid out, kept across restarts.
+/// `layout.json`: the main window's columns and tree, kept across restarts
+/// (its layout itself is [`Settings::default_layout`]).
 /// Read field by field like the settings: a field that does not parse keeps
 /// its raw JSON, holds its default in memory and is reported once.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct WindowLayout {
-    /// The layout the user chose; `None` until they do, when
-    /// [`Settings::default_layout`] decides.
-    pub layout: Option<LayoutKind>,
     /// The width of the editor layout's left column in pixels,
     /// [`LEFT_WIDTH_MIN`] to [`LEFT_WIDTH_MAX`].
     pub left_width: u32,
@@ -202,7 +222,6 @@ pub struct WindowLayout {
 impl Default for WindowLayout {
     fn default() -> WindowLayout {
         WindowLayout {
-            layout: None,
             left_width: LEFT_WIDTH_DEFAULT,
             left_open: true,
             right_width: RIGHT_WIDTH_DEFAULT,
@@ -493,7 +512,8 @@ fn check_right_width(w: &u32) -> Result<(), String> {
     }
 }
 
-fn check_tree_root(root: &Option<WirePath>) -> Result<(), String> {
+/// An absent path, or one that is absolute and holds no NUL.
+fn check_optional_path(root: &Option<WirePath>) -> Result<(), String> {
     root.as_ref().map_or(Ok(()), |r| {
         r.to_path_buf().map(|_| ()).map_err(|e| e.to_string())
     })
@@ -609,6 +629,22 @@ impl Stored for Settings {
             &mut problems,
             any_value,
         );
+        take(
+            &mut obj,
+            "new_tab_folder",
+            &mut s.new_tab_folder,
+            &mut keep,
+            &mut problems,
+            check_optional_path,
+        );
+        take(
+            &mut obj,
+            "new_tab_default",
+            &mut s.new_tab_default,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
         for key in DROPPED_SETTINGS {
             obj.remove(key);
         }
@@ -652,14 +688,9 @@ impl Stored for WindowLayout {
         let mut l = WindowLayout::default();
         let mut keep = Map::new();
         let mut problems = Vec::new();
-        take(
-            &mut obj,
-            "layout",
-            &mut l.layout,
-            &mut keep,
-            &mut problems,
-            any_value,
-        );
+        for key in DROPPED_LAYOUT {
+            obj.remove(key);
+        }
         take(
             &mut obj,
             "left_width",
@@ -690,7 +721,7 @@ impl Stored for WindowLayout {
             &mut l.tree_root,
             &mut keep,
             &mut problems,
-            check_tree_root,
+            check_optional_path,
         );
         l.extra = obj;
         l.extra.extend(keep);

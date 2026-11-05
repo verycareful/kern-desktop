@@ -154,7 +154,7 @@ function answer(cmd: string, args: Record<string, unknown>): unknown {
     case "settings_set":
       return SETTINGS;
     case "layout_get":
-      return { ...NO_LAYOUT, layout: "editor", tree_root: p(PROJECT) };
+      return { ...NO_LAYOUT, tree_root: p(PROJECT) };
     case "user_dirs":
       return { home: p("/home/a"), dirs: [{ name: "documents", path: p("/home/a/Documents") }] };
     case "volumes_list":
@@ -332,8 +332,7 @@ test("every_command_an_editor_windows_page_sends_is_granted_to_editor_windows", 
   await run("tree.openAsEditor");
   await run("tab.detach");
 
-  // The interface size is a setting; a close with nothing unsaved is confirmed at once.
-  await run("view.size.larger");
+  // A close with nothing unsaved is confirmed at once.
   await act(async () => wire.handlers["kern://close-requested"]?.(null));
   await waitFor(() => expect(wire.sent.has("confirm_close")).toBe(true));
 
@@ -365,7 +364,6 @@ test("every_command_an_editor_windows_page_sends_is_granted_to_editor_windows", 
     "open_editor",
     "open_pending_take",
     "settings_get",
-    "settings_set",
     "layout_get",
     "pin",
     "unpin",

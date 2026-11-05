@@ -16,7 +16,6 @@ import {
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 const stored = (over: Partial<WindowLayout> = {}): WindowLayout => ({
-  layout: null,
   left_width: 300,
   left_open: true,
   right_width: 300,
@@ -28,9 +27,8 @@ beforeEach(() => useLayout.getState().reset());
 
 test("a_window_starts_in_the_file_manager_layout_with_the_default_column", () => {
   const s = useLayout.getState();
-  expect([s.layout, s.chosen, s.leftWidth, s.leftOpen, s.treeRoot, s.loaded]).toEqual([
+  expect([s.layout, s.leftWidth, s.leftOpen, s.treeRoot, s.loaded]).toEqual([
     "file_manager",
-    false,
     LEFT_WIDTH_DEFAULT,
     true,
     null,
@@ -64,24 +62,11 @@ test("the_stored_panel_width_is_read_by_the_main_window_and_by_an_editor_window"
   expect(useLayout.getState().rightWidth).toBe(RIGHT_WIDTH_MAX);
 });
 
-test("a_stored_layout_wins_over_the_default_and_none_chosen_follows_the_default", () => {
-  useLayout
-    .getState()
-    .apply(stored({ layout: "editor", left_open: false, tree_root: p("/r") }), "file_manager");
-  let s = useLayout.getState();
-  expect([s.layout, s.chosen, s.leftWidth, s.leftOpen, s.loaded]).toEqual([
-    "editor",
-    true,
-    300,
-    false,
-    true,
-  ]);
+test("the_layout_is_the_one_given_and_the_columns_and_tree_are_the_stored_ones", () => {
+  useLayout.getState().apply(stored({ left_open: false, tree_root: p("/r") }), "editor");
+  const s = useLayout.getState();
+  expect([s.layout, s.leftWidth, s.leftOpen, s.loaded]).toEqual(["editor", 300, false, true]);
   expect(s.treeRoot).toEqual(p("/r"));
-  useLayout.getState().reset();
-  useLayout.getState().apply(stored(), "editor");
-  s = useLayout.getState();
-  // The default is used, but it is not a choice: it is not written back.
-  expect([s.layout, s.chosen]).toEqual(["editor", false]);
 });
 
 test("a_stored_width_out_of_range_is_clamped", () => {
@@ -90,18 +75,11 @@ test("a_stored_width_out_of_range_is_clamped", () => {
 });
 
 test("an_editor_window_is_the_editor_layout_and_takes_only_the_width", () => {
-  useLayout
-    .getState()
-    .applyToEditorWindow(stored({ layout: "file_manager", left_width: 400, left_open: false }));
+  useLayout.getState().applyToEditorWindow(stored({ left_width: 400, left_open: false }));
   const s = useLayout.getState();
-  expect([s.layout, s.leftWidth, s.leftOpen, s.chosen]).toEqual(["editor", 400, true, false]);
+  expect([s.layout, s.leftWidth, s.leftOpen]).toEqual(["editor", 400, true]);
   useLayout.getState().reset();
   useLayout.getState().applyToEditorWindow(null);
   expect(useLayout.getState().layout).toBe("editor");
   expect(useLayout.getState().leftWidth).toBe(LEFT_WIDTH_DEFAULT);
-});
-
-test("switching_the_layout_is_a_choice", () => {
-  useLayout.getState().setLayout("editor");
-  expect([useLayout.getState().layout, useLayout.getState().chosen]).toEqual(["editor", true]);
 });

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use kern_lib::store::{
-    move_aside, volume_online, LayoutKind, Store, ViewMode, DEFAULT_INTERFACE_SIZE,
+    move_aside, volume_online, LayoutKind, NewTabDefault, Store, ViewMode, DEFAULT_INTERFACE_SIZE,
     INTERFACE_SIZES, LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, RECENTS_CAP,
     RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN,
 };
@@ -719,9 +719,8 @@ fn a_bad_stored_interface_size_is_reported_kept_and_replaced_by_the_next_choice(
 fn layout_remembered() {
     let e = env();
     let s = store(&e);
-    // Nothing chosen yet: no layout of its own, the default column, the tree not rooted.
+    // Nothing chosen yet: the default column, the tree not rooted.
     let first = s.layout_get().unwrap().value;
-    assert_eq!(first.layout, None);
     assert_eq!(
         (first.left_width, first.left_open, first.tree_root.clone()),
         (LEFT_WIDTH_DEFAULT, true, None)
@@ -731,19 +730,16 @@ fn layout_remembered() {
     let root = wp(&e.files);
     let out = s
         .layout_set(patch(json!({
-            "layout": "editor", "left_width": 333, "left_open": false, "tree_root": root,
+            "left_width": 333, "left_open": false, "tree_root": root,
         })))
         .unwrap();
     assert!(out.changed);
-    assert_eq!(out.value.layout, Some(LayoutKind::Editor));
     // A restart: a new store over the same directories reads what was written, in the state dir.
     let again = store(&e).layout_get().unwrap().value;
-    assert_eq!(again.layout, Some(LayoutKind::Editor));
     assert_eq!(again.left_width, 333);
     assert!(!again.left_open);
     assert_eq!(again.tree_root, Some(wp(&e.files)));
     let on_disk = read_json(&e.state.join("layout.json"));
-    assert_eq!(on_disk["layout"], json!("editor"));
     assert_eq!(on_disk["left_width"], json!(333));
     // The same patch again changes nothing; a partial one leaves the other fields.
     assert!(
@@ -751,8 +747,35 @@ fn layout_remembered() {
             .unwrap()
             .changed
     );
-    let part = s.layout_set(patch(json!({"layout": null}))).unwrap().value;
-    assert_eq!((part.layout, part.left_width), (None, 333));
+    let part = s
+        .layout_set(patch(json!({"left_open": true})))
+        .unwrap()
+        .value;
+    assert_eq!((part.left_open, part.left_width), (true, 333));
+}
+
+#[test]
+fn a_stored_layout_key_is_dropped_and_refused() {
+    // The main window's layout is the setting alone: a layout.json that still holds one loses it
+    // at the next write, is not reported, and a patch naming it is refused.
+    let e = env();
+    fs::create_dir_all(&e.state).unwrap();
+    fs::write(
+        e.state.join("layout.json"),
+        r#"{"layout": "editor", "left_width": 300}"#,
+    )
+    .unwrap();
+    let s = store(&e);
+    let got = s.layout_get().unwrap();
+    assert!(got.corrupt.is_empty());
+    assert_eq!(got.value.left_width, 300);
+    s.layout_set(patch(json!({"left_open": false}))).unwrap();
+    let disk = read_json(&e.state.join("layout.json"));
+    assert!(disk.get("layout").is_none(), "{disk}");
+    let err = s
+        .layout_set(patch(json!({"layout": "editor"})))
+        .unwrap_err();
+    assert_eq!(err.kind, "InvalidArgument");
 }
 
 #[test]
@@ -775,7 +798,6 @@ fn a_layout_patch_that_is_wrong_writes_nothing() {
     let s = store(&e);
     for bad in [
         json!({"nope": 1}),
-        json!({"layout": "sideways"}),
         json!({"left_width": LEFT_WIDTH_MIN - 1}),
         json!({"left_width": LEFT_WIDTH_MAX + 1}),
         json!({"left_width": "wide"}),
@@ -784,7 +806,7 @@ fn a_layout_patch_that_is_wrong_writes_nothing() {
         json!({"left_open": 1}),
         json!({"tree_root": {"k": "Utf8", "v": "relative/dir"}}),
         // One bad field refuses the good one beside it.
-        json!({"left_width": 300, "layout": "sideways"}),
+        json!({"left_width": 300, "left_open": "yes"}),
     ] {
         let err = s.layout_set(patch(bad.clone())).unwrap_err();
         assert_eq!(err.kind, "InvalidArgument", "{bad}");
@@ -816,18 +838,17 @@ fn a_bad_layout_field_is_reported_once_kept_and_never_a_crash() {
     fs::create_dir_all(&e.state).unwrap();
     fs::write(
         e.state.join("layout.json"),
-        r#"{"layout": "sideways", "left_width": 9999, "left_open": false, "tree_root": "/x", "future": [1]}"#,
+        r#"{"left_width": 9999, "left_open": false, "tree_root": "/x", "future": [1]}"#,
     )
     .unwrap();
     let s = store(&e);
     let got = s.layout_get().unwrap();
     // The bad fields hold their defaults in memory; the good one is read.
-    assert_eq!(got.value.layout, None);
     assert_eq!(got.value.left_width, LEFT_WIDTH_DEFAULT);
     assert!(!got.value.left_open);
     let mut fields: Vec<_> = got.corrupt.iter().filter_map(|r| r.field.clone()).collect();
     fields.sort();
-    assert_eq!(fields, ["layout", "left_width", "tree_root"]);
+    assert_eq!(fields, ["left_width", "tree_root"]);
     assert!(got
         .corrupt
         .iter()
@@ -837,7 +858,6 @@ fn a_bad_layout_field_is_reported_once_kept_and_never_a_crash() {
     // A write of another field keeps the raw bad values and the unknown key.
     s.layout_set(patch(json!({"left_open": true}))).unwrap();
     let disk = read_json(&e.state.join("layout.json"));
-    assert_eq!(disk["layout"], json!("sideways"));
     assert_eq!(disk["left_width"], json!(9999));
     assert_eq!(disk["future"], json!([1]));
     // Choosing the field again replaces the bad value.
@@ -854,7 +874,7 @@ fn a_layout_file_that_is_not_an_object_is_moved_aside() {
     fs::create_dir_all(&e.state).unwrap();
     fs::write(e.state.join("layout.json"), "[1, 2").unwrap();
     let got = store(&e).layout_get().unwrap();
-    assert_eq!(got.value.layout, None);
+    assert_eq!(got.value.left_width, LEFT_WIDTH_DEFAULT);
     let moved = got.corrupt[0].moved_to.clone().expect("moved aside");
     assert!(moved.to_path_buf().unwrap().exists());
     assert!(!e.state.join("layout.json").exists());
@@ -911,5 +931,79 @@ fn a_bad_stored_default_layout_is_reported_kept_and_replaced_by_the_next_choice(
     assert_eq!(
         read_json(&e.config.join("settings.json"))["default_layout"],
         json!("editor")
+    );
+}
+
+#[test]
+fn the_new_tab_settings_default_to_home_and_the_new_tab_folder() {
+    let e = env();
+    let got = store(&e).settings_get().unwrap().value;
+    assert_eq!(got.new_tab_folder, None);
+    assert_eq!(got.new_tab_default, NewTabDefault::Folder);
+}
+
+#[test]
+fn the_new_tab_settings_are_stored_and_read_back() {
+    let e = env();
+    let s = store(&e);
+    let dir = e.config.join("somewhere");
+    let out = s
+        .settings_set(patch(
+            json!({"new_tab_folder": wp(&dir), "new_tab_default": "current"}),
+        ))
+        .unwrap();
+    assert_eq!(out.value.new_tab_folder, Some(wp(&dir)));
+    assert_eq!(out.value.new_tab_default, NewTabDefault::Current);
+    let again = store(&e).settings_get().unwrap().value;
+    assert_eq!(again.new_tab_folder, Some(wp(&dir)));
+    assert_eq!(again.new_tab_default, NewTabDefault::Current);
+    // null is Home again.
+    let back = s
+        .settings_set(patch(json!({"new_tab_folder": null})))
+        .unwrap();
+    assert_eq!(back.value.new_tab_folder, None);
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["new_tab_folder"],
+        Value::Null
+    );
+}
+
+#[test]
+fn a_relative_new_tab_folder_or_an_unknown_default_is_refused_and_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    let err = s
+        .settings_set(patch(
+            json!({"new_tab_folder": {"k": "Utf8", "v": "relative/dir"}}),
+        ))
+        .unwrap_err();
+    assert_eq!(err.kind, "InvalidArgument");
+    let err = s
+        .settings_set(patch(json!({"new_tab_default": "elsewhere"})))
+        .unwrap_err();
+    assert_eq!(err.kind, "InvalidArgument");
+    let got = s.settings_get().unwrap().value;
+    assert_eq!(got.new_tab_folder, None);
+    assert_eq!(got.new_tab_default, NewTabDefault::Folder);
+}
+
+#[test]
+fn a_bad_stored_new_tab_folder_is_reported_and_kept() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    fs::write(
+        e.config.join("settings.json"),
+        r#"{"new_tab_folder": {"k": "Utf8", "v": "rel"}}"#,
+    )
+    .unwrap();
+    let s = store(&e);
+    let got = s.settings_get().unwrap();
+    assert_eq!(got.value.new_tab_folder, None);
+    assert_eq!(got.corrupt.len(), 1);
+    assert_eq!(got.corrupt[0].field.as_deref(), Some("new_tab_folder"));
+    s.settings_set(patch(json!({"word_wrap": true}))).unwrap();
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["new_tab_folder"],
+        json!({"k": "Utf8", "v": "rel"})
     );
 }

@@ -2,13 +2,12 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useRef, useState } from "react";
 import {
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
+  CopyPlus,
   EllipsisVertical,
   FileSearch,
   FileText,
   Folder,
+  Plus,
   Settings,
   Trash2,
   X,
@@ -19,10 +18,12 @@ import {
   currentContext,
   type Action,
   getAction,
-  isEnabled,
   menuSections,
   runAction,
 } from "../keys/actions";
+import { useViewSettings } from "../files/view-settings";
+import { useLayout } from "../store/layout";
+import { ActionButton } from "./ActionButton";
 import { FILE_KEYS_ATTR } from "../keys/file-keys";
 import { activeTab, tabTitle, useTabs } from "../store/tabs";
 
@@ -36,32 +37,12 @@ function allowed(sections: MenuSection[], allow?: (a: Action) => boolean): MenuS
     .filter((s) => s.actions.length > 0);
 }
 
-function NavButton(props: { id: string; icon: typeof ArrowLeft }) {
-  const action = getAction(props.id);
-  // The selector returns the active tab object, which changes when its history moves.
-  useTabs((s) => activeTab(s));
-  const Icon = props.icon;
-  const key = action.keys[0];
-  return (
-    <button
-      type="button"
-      className="kern-icon-button"
-      aria-label={action.label}
-      title={key ? `${action.label} (${key})` : action.label}
-      disabled={!isEnabled(action, currentContext())}
-      onClick={() => runAction(action, currentContext())}
-    >
-      <Icon size={20} strokeWidth={2} aria-hidden />
-    </button>
-  );
-}
-
 type OpenMenu =
   { kind: "tab"; x: number; y: number; targetId: string } | { kind: "app"; x: number; y: number };
 
-// The tab row and the navigation buttons sit over the
-// folder area. The breadcrumb and editable location bar are in the folder
-// view, under this row.
+// The tab row: the tabs, New tab and New tab here, then Settings and the main menu. A folder
+// tab's own buttons (navigation, create, the view) are the folder view's toolbar, under this row.
+// A window that does not answer an action (`allow`) has no button for it.
 export function TabBar(props: { allow?: (a: Action) => boolean }) {
   const { allow } = props;
   const { tabs, activeId, activate } = useTabs();
@@ -69,6 +50,12 @@ export function TabBar(props: { allow?: (a: Action) => boolean }) {
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const list = useRef<HTMLDivElement>(null);
   const close = (id: string) => runAction(getAction("tab.close"), currentContext(id));
+  const has = (id: string) => !allow || allow(getAction(id));
+  // The editor layout holds no folder tabs, so it has no new tab buttons.
+  const editorLayout = useLayout((s) => s.layout === "editor");
+  // The new tab buttons show their keys, which Settings can swap, and New tab waits for the settings.
+  useViewSettings((s) => s.newTabDefault);
+  useViewSettings((s) => s.loaded);
 
   // WAI-ARIA tabs: arrows move focus and select, Home and End jump.
   // Only plain arrows on a tab itself: Alt+Left is Back, and the close button is not a tab.
@@ -141,10 +128,13 @@ export function TabBar(props: { allow?: (a: Action) => boolean }) {
           );
         })}
       </div>
-      <div className="kern-nav" role="toolbar" aria-label="Navigation">
-        <NavButton id="nav.back" icon={ArrowLeft} />
-        <NavButton id="nav.forward" icon={ArrowRight} />
-        <NavButton id="nav.up" icon={ArrowUp} />
+      <div className="kern-nav" role="toolbar" aria-label="New tab">
+        {!editorLayout && has("newTab.folder") && <ActionButton id="newTab.folder" icon={Plus} />}
+        {!editorLayout && has("newTab.here") && <ActionButton id="newTab.here" icon={CopyPlus} />}
+      </div>
+      <div className="kern-nav-fill" />
+      <div className="kern-nav" role="toolbar" aria-label="Window">
+        {has("place.settings") && <ActionButton id="place.settings" icon={Settings} />}
         <button
           type="button"
           className="kern-icon-button"

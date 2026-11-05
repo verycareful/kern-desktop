@@ -4,7 +4,6 @@ import type { Settings, WindowLayout } from "../ipc";
 
 /** The stored layout of a user who never chose one, in the shape layout_get answers with. */
 export const NO_LAYOUT: WindowLayout = {
-  layout: null,
   left_width: 280,
   left_open: true,
   right_width: 280,
@@ -26,4 +25,6 @@ export const SETTINGS: Settings = {
   show_hidden: false,
   interface_size: 100,
   default_layout: "file_manager",
+  new_tab_folder: null,
+  new_tab_default: "folder",
 };

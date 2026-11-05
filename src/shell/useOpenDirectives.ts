@@ -31,7 +31,7 @@ import {
 import { parseHanded } from "../editor/handed-doc";
 import { handTo } from "./move-doc";
 import { errorText } from "../ops/error-text";
-import { useLayout } from "../store/layout";
+import { isEditorLayout, useLayout } from "../store/layout";
 import { useTabs } from "../store/tabs";
 import { closeTab, closeWindow, isClosing } from "./useCloseGuard";
 import { useProperties } from "../files/properties-store";
@@ -300,15 +300,20 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
             }
           }
           switch (d.kind) {
+            // The editor layout holds no folder tabs: a folder roots its tree.
             case "folder_tab":
-              tabs().focusOrOpenFolder(d.path);
+              if (isEditorLayout()) useLayout.getState().setTreeRoot(d.path);
+              else tabs().focusOrOpenFolder(d.path);
               return;
             case "doc_tab":
               openDocTab(d.path);
               return;
-            case "home_tab":
-              tabs().focusOrOpenFolder((await userDirs()).home);
+            case "home_tab": {
+              const home = (await userDirs()).home;
+              if (isEditorLayout()) useLayout.getState().setTreeRoot(home);
+              else tabs().focusOrOpenFolder(home);
               return;
+            }
             case "focus_tab":
               if (tabs().tabs.some((t) => t.id === d.tab_id)) tabs().activate(d.tab_id);
               else notice(`Kern was asked to show a tab that is gone (${d.tab_id}).`);

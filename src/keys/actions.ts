@@ -15,19 +15,12 @@ import {
 import { copyProblem } from "../files/use-folder-tools";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
-import { activeTab, useTabs, type Tab, type TabsState } from "../store/tabs";
+import { activeTab, tabTitle, useTabs, type Tab, type TabsState } from "../store/tabs";
 import { usePanelsStore } from "../store/panels";
 import { folderController, type MoveTo } from "../files/folder-controller";
 import { useFolderUi } from "../files/folder-ui";
 import type { SortBy } from "../files/sort";
-import {
-  setInterfaceSize,
-  setViewMode,
-  stepSize,
-  toggleHidden,
-  useViewSettings,
-} from "../files/view-settings";
-import { DEFAULT_INTERFACE_SIZE, stepInterfaceSize } from "../theme/interface-size";
+import { setViewMode, toggleHidden, useViewSettings } from "../files/view-settings";
 import { trashController, type TrashMove } from "../files/trash-controller";
 import { useVolumes } from "../shell/volumes-store";
 import { isEditorPin, usePinnedRecent } from "../shell/pinned-recent-store";
@@ -38,10 +31,11 @@ import { useOps } from "../ops/useOps";
 import { docController } from "../editor/doc-controller";
 import { moveTabToWindow } from "../shell/move-doc";
 import { closeTab } from "../shell/useCloseGuard";
-import { openAsEditor, switchLayout } from "../shell/layout-switch";
+import { openAsEditor } from "../shell/layout-switch";
 import { isEditorLayout, useLayout } from "../store/layout";
 import { useTreeMenu } from "../files/tree-menu-store";
 import { isFolder } from "../files/file-type";
+import { useUserDirs } from "../shell/user-dirs-store";
 
 // The single table of user-visible actions. Shortcuts (useShortcuts), the
 // main menu and the tab context menu (ActionMenu) all read it, so keyboard and
@@ -98,6 +92,11 @@ export type Action = {
   keys: string[];
   /** The tab kind the action applies to. */
   when: ActionContextKind | "any";
+  /**
+   * False keeps the action out of the main menu: a button of the top bar and its shortcut reach
+   * it, so the menu holds what has no button.
+   */
+  menu?: false;
   /** True when the shortcut also fires while focus is in an editable field. */
   inEditable?: boolean;
   /** "view": the shortcut acts only while the keyboard is in the folder view or the tab row (keys/file-keys.ts). Menus are not limited. */
@@ -130,6 +129,52 @@ export function currentContext(targetId?: string, extend = false): ActionContext
           : panels.toggleLeft()
         : panels.toggleRight(),
   };
+}
+
+/** The keys of a new tab: Ctrl+T for the one Settings names, Ctrl+Shift+T for the other. */
+function newTabKeys(kind: "folder" | "current"): string[] {
+  return useViewSettings.getState().newTabDefault === kind ? ["Ctrl+T"] : ["Ctrl+Shift+T"];
+}
+
+/** Why a new tab waits: the settings that say what it opens are not read yet. */
+function settingsNotRead(): string | null {
+  const s = useViewSettings.getState();
+  if (s.loaded) return null;
+  return s.error
+    ? `A new tab cannot open: the settings could not be read: ${errorText(s.error)}`
+    : "A new tab cannot open yet: the settings are still being read";
+}
+
+/** Why no folder tab opens in the editor layout, or null outside it. */
+function noFolderTabs(): string | null {
+  return isEditorLayout()
+    ? "The editor layout has no folder tabs: the folder tree on the left shows the folders"
+    : null;
+}
+
+/** The folder of a tab: a folder tab's own, a document's folder; Trash and the Library have none. */
+export function hereFolder(tab: Tab | null): WirePath | null {
+  if (tab?.kind === "folder") return tab.path;
+  if (tab?.kind === "doc") return parent(tab.path);
+  return null;
+}
+
+/** Opens the new tab folder, or Home when Settings names none. */
+async function openNewTabFolder(): Promise<void> {
+  let folder = useViewSettings.getState().newTabFolder;
+  if (!folder) {
+    try {
+      folder = (await useUserDirs.getState().load()).home;
+    } catch (e) {
+      useOps
+        .getState()
+        .notify(
+          `A new tab could not open: the Home folder was not found: ${errorText(toWireError(e))}`
+        );
+      return;
+    }
+  }
+  useTabs.getState().openFolder(folder, true);
 }
 
 export const actions: Action[] = [
@@ -170,6 +215,44 @@ export const actions: Action[] = [
     enabled: (c) => c.tabs.tabs.length > 1,
     run: (c) => c.tabs.prev(),
   },
+  // New tab opens the folder set in Settings (Home when none is), New tab here the folder of the
+  // tab in front. Ctrl+T is the new-tab key of browsers and file managers; Settings decides which
+  // of the two it opens, and the other is on Ctrl+Shift+T. The top bar has a button for each.
+  {
+    id: "newTab.folder",
+    label: "New tab",
+    menu: false,
+    area: "Tabs",
+    get keys() {
+      return newTabKeys("folder");
+    },
+    when: "any",
+    inEditable: true,
+    enabled: () => useViewSettings.getState().loaded && !isEditorLayout(),
+    refusal: () => settingsNotRead() ?? noFolderTabs(),
+    run: () => void openNewTabFolder(),
+  },
+  {
+    id: "newTab.here",
+    label: "New tab here",
+    menu: false,
+    area: "Tabs",
+    get keys() {
+      return newTabKeys("current");
+    },
+    when: "any",
+    inEditable: true,
+    enabled: (c) =>
+      useViewSettings.getState().loaded && !isEditorLayout() && hereFolder(c.active) !== null,
+    refusal: (c) =>
+      settingsNotRead() ??
+      noFolderTabs() ??
+      `${c.active ? tabTitle(c.active) : "This window"} has no folder to open in a new tab`,
+    run: (c) => {
+      const folder = hereFolder(c.active);
+      if (folder) c.tabs.openFolder(folder, true);
+    },
+  },
   // A document tab can have a window of its own; its unsaved text goes with it.
   {
     id: "tab.detach",
@@ -190,6 +273,7 @@ export const actions: Action[] = [
   // desktop file managers (Dolphin, Nautilus).
   {
     id: "nav.back",
+    menu: false,
     label: "Back",
     area: "Navigation",
     keys: ["Alt+ArrowLeft"],
@@ -199,6 +283,7 @@ export const actions: Action[] = [
   },
   {
     id: "nav.forward",
+    menu: false,
     label: "Forward",
     area: "Navigation",
     keys: ["Alt+ArrowRight"],
@@ -208,6 +293,7 @@ export const actions: Action[] = [
   },
   {
     id: "nav.up",
+    menu: false,
     label: "Up one folder",
     area: "Navigation",
     keys: ["Alt+ArrowUp"],
@@ -282,6 +368,7 @@ const folderActions: Action[] = [
   // F4 is Dolphin's key for the terminal.
   {
     id: "folder.terminal",
+    menu: false,
     scope: "view",
     label: "Open terminal here",
     area: "Open",
@@ -444,6 +531,7 @@ const folderActions: Action[] = [
   },
   {
     id: "folder.new.folder",
+    menu: false,
     scope: "view",
     label: "New folder",
     area: "Create",
@@ -500,6 +588,7 @@ const folderActions: Action[] = [
   // Ctrl+F searches, as in a file manager or an editor.
   {
     id: "folder.search",
+    menu: false,
     label: "Search",
     area: "Navigation",
     keys: ["Ctrl+F"],
@@ -518,6 +607,7 @@ const folderActions: Action[] = [
   },
   {
     id: "folder.hidden.toggle",
+    menu: false,
     label: "Show or hide hidden files",
     area: "View",
     keys: ["Ctrl+H"],
@@ -527,6 +617,7 @@ const folderActions: Action[] = [
   // Ctrl+1 and Ctrl+2 are Dolphin's keys for its view modes.
   {
     id: "folder.view.list",
+    menu: false,
     label: "List view",
     area: "View",
     keys: ["Ctrl+1"],
@@ -536,6 +627,7 @@ const folderActions: Action[] = [
   },
   {
     id: "folder.view.grid",
+    menu: false,
     label: "Grid view",
     area: "View",
     keys: ["Ctrl+2"],
@@ -551,68 +643,12 @@ const folderActions: Action[] = [
 
 actions.push(...folderActions);
 
-// ---- the interface size ----
-// No keys: Ctrl+= and Ctrl+- are the editor's text zoom. Every
-// window is zoomed alike, so these apply whatever tab is shown. They wait for the
-// stored settings: until they are read the size held is the default, not the user's.
-
-const size = () => useViewSettings.getState().interfaceSize;
-const settingsLoaded = () => useViewSettings.getState().loaded;
-const sizeActions: Action[] = [
-  {
-    id: "view.size.larger",
-    label: "Larger interface",
-    area: "View",
-    keys: [],
-    when: "any",
-    enabled: () => settingsLoaded() && stepInterfaceSize(size(), 1) !== size(),
-    run: () => void stepSize(1),
-  },
-  {
-    id: "view.size.smaller",
-    label: "Smaller interface",
-    area: "View",
-    keys: [],
-    when: "any",
-    enabled: () => settingsLoaded() && stepInterfaceSize(size(), -1) !== size(),
-    run: () => void stepSize(-1),
-  },
-  {
-    id: "view.size.reset",
-    label: "Reset interface size",
-    area: "View",
-    keys: [],
-    when: "any",
-    enabled: () => settingsLoaded() && size() !== DEFAULT_INTERFACE_SIZE,
-    run: () => void setInterfaceSize(DEFAULT_INTERFACE_SIZE),
-  },
-];
-actions.push(...sizeActions);
-
 // ---- the layout of the window ----
-// "Switch to ..." changes the current window, the main window only: an editor window is the
-// editor layout by kind. Ctrl+B is not bound by CodeMirror's keymaps on Linux (editor/editor-keys.ts
+// The main window's layout is a setting (Settings, Files), so no action switches it. Ctrl+B is not
+// bound by CodeMirror's keymaps on Linux (editor/editor-keys.ts
 // KEYS; its test checks), so it works inside the editor too.
 
 const layoutActions: Action[] = [
-  {
-    id: "layout.editor",
-    label: "Switch to editor layout",
-    area: "Layout",
-    keys: [],
-    when: "any",
-    enabled: () => isMainWindow() && useLayout.getState().loaded && !isEditorLayout(),
-    run: () => void switchLayout("editor"),
-  },
-  {
-    id: "layout.fileManager",
-    label: "Switch to file manager layout",
-    area: "Layout",
-    keys: [],
-    when: "any",
-    enabled: () => isMainWindow() && useLayout.getState().loaded && isEditorLayout(),
-    run: () => void switchLayout("file_manager"),
-  },
   {
     id: "layout.left.toggle",
     label: "Show or hide the folder column",
@@ -770,6 +806,7 @@ const placeActions: Action[] = [
   // key is bound to it.
   {
     id: "place.settings",
+    menu: false,
     label: "Open Settings",
     area: "Navigation",
     keys: ["Ctrl+,"],
@@ -780,6 +817,7 @@ const placeActions: Action[] = [
   // The logo in the places strip: Settings, at About.
   {
     id: "place.about",
+    menu: false,
     label: "About Kern",
     area: "Navigation",
     keys: [],
@@ -1184,7 +1222,12 @@ export function runAction(a: Action, ctx: ActionContext): boolean {
 export function menuSections(tab: Tab | null): { title: string; actions: Action[] }[] {
   const sections: { title: string; actions: Action[] }[] = [];
   for (const a of actions.filter(
-    (x) => x.when !== "volume" && x.when !== "entry" && x.when !== "tree" && appliesTo(x, tab)
+    (x) =>
+      x.menu !== false &&
+      x.when !== "volume" &&
+      x.when !== "entry" &&
+      x.when !== "tree" &&
+      appliesTo(x, tab)
   )) {
     const s = sections.find((x) => x.title === a.area);
     if (s) s.actions.push(a);

@@ -25,7 +25,7 @@ export const EMPTY_PINNED_RECENT: MockResponses = {
 };
 
 /** The window layout of a user who never chose one, as layout_get answers. */
-export const NO_LAYOUT = { layout: null, left_width: 280, left_open: true, tree_root: null };
+export const NO_LAYOUT = { left_width: 280, left_open: true, tree_root: null };
 
 export type InvokeCall = { cmd: string; args: Record<string, unknown> };
 

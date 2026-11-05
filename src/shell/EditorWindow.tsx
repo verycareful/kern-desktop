@@ -25,13 +25,14 @@ import "./shell.css";
 // progress, questions and reports of those operations (OpsHost).
 
 /**
- * What an editor window answers to: the document's keys, closing and switching tabs, and the
- * interface size. Not the places (Trash, Library, Settings), which are the main window's.
+ * What an editor window answers to: the document's keys, closing and switching tabs, the layout
+ * and Pinned and Recent, and Settings (a window of its own). Not Trash or the Library, which are
+ * the main window's, and not the new tabs: an editor's tabs are documents of its folder.
  */
 export const EDITOR_WINDOW_KEYS = (a: Action): boolean =>
   a.when === "doc" ||
   a.id.startsWith("tab.") ||
-  a.id.startsWith("view.size.") ||
+  a.id === "place.settings" ||
   a.id.startsWith("layout.") ||
   a.id.startsWith("panel.right");
 

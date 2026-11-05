@@ -2,7 +2,9 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect } from "react";
 import {
+  EVENT_SETTINGS_CHANGED,
   layoutGet,
+  on,
   layoutSet,
   settingsGet,
   toWireError,
@@ -13,11 +15,12 @@ import {
 import { errorText } from "../ops/error-text";
 import { useOps } from "../ops/useOps";
 import { LEFT_WIDTH_DEFAULT, RIGHT_WIDTH_DEFAULT, useLayout } from "../store/layout";
+import { switchLayout } from "./layout-switch";
 
 // Keeps the layout store and layout.json in step (store.rs WindowLayout). On start it reads the
-// stored layout and the default layout setting; the main window then writes every change of its
-// layout, column width, column visibility and tree root back, a moment after the last one so a
-// drag of the divider is one write. What is read or written wrong is said, never dropped, and the
+// stored columns and tree and the layout setting; the main window then writes every change of its
+// column width, column visibility and tree root back, a moment after the last one so a drag of the
+// divider is one write, and switches layout as soon as the setting changes. What is read or written wrong is said, never dropped, and the
 // window runs on its defaults meanwhile. A read that does not answer within a bound counts as one
 // that failed. An editor window only reads (for the column width).
 
@@ -55,9 +58,8 @@ function boundedRead<T>(read: Promise<T>): Promise<T> {
 
 const say = (text: string) => useOps.getState().notify(text);
 
-/** What the store holds when nothing could be read: no layout chosen, the defaults. */
+/** What the store holds when nothing could be read: the defaults. */
 const UNREAD: WindowLayout = {
-  layout: null,
   left_width: LEFT_WIDTH_DEFAULT,
   left_open: true,
   right_width: RIGHT_WIDTH_DEFAULT,
@@ -76,7 +78,6 @@ export const flushLayout = (): Promise<void> => flushNow?.() ?? Promise.resolve(
 /** The patch that brings `stored` to what the store holds; null when nothing differs. */
 function patchFor(stored: WindowLayout, s: ReturnType<typeof useLayout.getState>) {
   const patch: WindowLayoutPatch = {};
-  if (s.chosen && s.layout !== stored.layout) patch.layout = s.layout;
   if (s.leftWidth !== stored.left_width) patch.left_width = s.leftWidth;
   if (s.leftOpen !== stored.left_open) patch.left_open = s.leftOpen;
   if (s.rightWidth !== stored.right_width) patch.right_width = s.rightWidth;
@@ -115,7 +116,7 @@ export function useLayoutSync(persist: boolean): void {
         fallback = (await boundedRead(settingsGet())).default_layout;
       } catch (e) {
         say(
-          `The default layout could not be read, so the file manager layout is used: ${errorText(toWireError(e))}`
+          `The layout setting could not be read, so the file manager layout is used: ${errorText(toWireError(e))}`
         );
       }
       try {
@@ -141,6 +142,21 @@ export function useLayoutSync(persist: boolean): void {
           timer = setTimeout(flush, WRITE_DELAY_MS);
         })
       : () => undefined;
+    // The main window takes a new layout setting at once, once its first layout is applied.
+    let unlisten: (() => void) | undefined;
+    if (persist) {
+      on(EVENT_SETTINGS_CHANGED, (s) => {
+        const l = useLayout.getState();
+        if (l.loaded && s.default_layout !== l.layout) void switchLayout(s.default_layout);
+      }).then(
+        (u) => (alive ? (unlisten = u) : u()),
+        (e: unknown) =>
+          alive &&
+          say(
+            `A change of the layout setting will show only when Kern starts again: ${errorText(toWireError(e))}`
+          )
+      );
+    }
     const settle = async () => {
       if (timer !== undefined) {
         clearTimeout(timer);
@@ -152,6 +168,7 @@ export function useLayoutSync(persist: boolean): void {
     return () => {
       alive = false;
       off();
+      unlisten?.();
       if (flushNow === settle) flushNow = null;
       // What was changed last is written now, not lost with the window.
       void settle();

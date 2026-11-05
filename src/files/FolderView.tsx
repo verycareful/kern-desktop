@@ -1,7 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FolderOpen, LayoutGrid, List, SquareTerminal, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Eye,
+  FolderOpen,
+  FolderPlus,
+  LayoutGrid,
+  List,
+  Search,
+  SquarePen,
+  SquareTerminal,
+  X,
+} from "lucide-react";
 import {
   EVENT_DROP,
   displayPath,
@@ -15,7 +28,8 @@ import {
   type WirePath,
 } from "../ipc";
 import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
-import { actions, currentContext, getAction, runAction } from "../keys/actions";
+import { actions } from "../keys/actions";
+import { ActionButton } from "../shell/ActionButton";
 import { FILE_KEYS_ATTR } from "../keys/file-keys";
 import {
   DROP_AREA_ATTR,
@@ -595,24 +609,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         );
   }
 
-  const viewButton = (id: string, Icon: typeof List, pressed: boolean) => {
-    const action = getAction(id);
-    return (
-      <button
-        type="button"
-        className="kern-icon-button"
-        aria-label={action.label}
-        aria-pressed={pressed}
-        title={`${action.label} (${action.keys[0]})`}
-        onClick={() => {
-          focusSoon.current = true;
-          runAction(action, currentContext(tab.id));
-        }}
-      >
-        <Icon size={20} strokeWidth={2} aria-hidden />
-      </button>
-    );
-  };
+  const refocus = () => (focusSoon.current = true);
 
   return (
     <div
@@ -624,6 +621,45 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       onFocus={keep.onFocus}
       onBlur={keep.onBlur}
     >
+      {isActive && (
+        <div className="kern-folder-toolbar" role="toolbar" aria-label="Folder">
+          <ActionButton id="nav.back" icon={ArrowLeft} targetId={tab.id} />
+          <ActionButton id="nav.forward" icon={ArrowRight} targetId={tab.id} />
+          <ActionButton id="nav.up" icon={ArrowUp} targetId={tab.id} />
+          <span className="kern-toolbar-sep" aria-hidden />
+          <ActionButton id="folder.new.folder" icon={FolderPlus} targetId={tab.id} />
+          <ActionButton id="folder.search" icon={Search} targetId={tab.id} />
+          <ActionButton id="folder.terminal" icon={SquareTerminal} targetId={tab.id} />
+          <span className="kern-toolbar-sep" aria-hidden />
+          <div className="kern-view-toggle" role="group" aria-label="View">
+            <ActionButton
+              id="folder.view.list"
+              icon={List}
+              targetId={tab.id}
+              pressed={viewMode === "list"}
+              enabled
+              after={refocus}
+            />
+            <ActionButton
+              id="folder.view.grid"
+              icon={LayoutGrid}
+              targetId={tab.id}
+              pressed={viewMode === "grid"}
+              enabled
+              after={refocus}
+            />
+          </div>
+          <ActionButton
+            id="folder.hidden.toggle"
+            icon={Eye}
+            targetId={tab.id}
+            pressed={showHidden}
+            after={refocus}
+          />
+          <span className="kern-toolbar-fill" />
+          <ActionButton id="folder.openAsEditor" icon={SquarePen} targetId={tab.id} />
+        </div>
+      )}
       <div className="kern-files-bar">
         {editing ? (
           <LocationBar
@@ -638,20 +674,6 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         ) : (
           <Breadcrumb path={tab.path} onNavigate={navigate} onEdit={() => setEditing(true)} />
         )}
-        <button
-          type="button"
-          className="kern-icon-button"
-          aria-label="Open terminal here"
-          title="Open terminal here (F4)"
-          disabled={folder.phase !== "ready"}
-          onClick={() => runAction(getAction("folder.terminal"), currentContext(tab.id))}
-        >
-          <SquareTerminal size={20} strokeWidth={2} aria-hidden />
-        </button>
-        <div className="kern-view-toggle" role="group" aria-label="View">
-          {viewButton("folder.view.list", List, viewMode === "list")}
-          {viewButton("folder.view.grid", LayoutGrid, viewMode === "grid")}
-        </div>
       </div>
       {settingsError && (
         <div role="alert" className="kern-banner">

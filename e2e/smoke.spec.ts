@@ -14,6 +14,8 @@ test("boots_with_mocked_ipc", async ({ page, mockTauri }) => {
       show_hidden: false,
       view_mode: "list",
       default_layout: "file_manager",
+      new_tab_folder: null,
+      new_tab_default: "folder",
     },
     "plugin:kernkraft-tauri|list_dir": [],
     "plugin:kernkraft-tauri|watch_dir": null,

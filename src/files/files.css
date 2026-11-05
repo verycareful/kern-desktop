@@ -21,6 +21,27 @@
   flex-direction: column;
 }
 
+/* The folder's buttons, under the tab row: navigation, create and find, the view, Open as editor. */
+.kern-folder-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 4px var(--kern-density-gap);
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-toolbar-sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--kern-border);
+}
+
+.kern-toolbar-fill {
+  flex: 1;
+}
+
 .kern-files-bar {
   display: flex;
   align-items: flex-start;
@@ -103,7 +124,7 @@
   gap: 2px;
 }
 
-.kern-view-toggle .kern-icon-button[aria-pressed="true"] {
+.kern-folder-toolbar .kern-icon-button[aria-pressed="true"] {
   background: var(--kern-accent-soft);
   color: var(--kern-accent);
 }

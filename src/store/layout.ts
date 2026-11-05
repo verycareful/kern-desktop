@@ -5,9 +5,10 @@ import type { LayoutKind, WindowLayout, WirePath } from "../ipc";
 
 // How this window is laid out. Two layouts: the file manager and
 // the editor, whose left column (a places strip over a folder tree) stays docked whatever tab is
-// shown. The main window keeps its layout, column width, column visibility and tree root across
-// restarts (shell/use-layout-sync.ts writes them to layout.json); an editor window (`editor-<n>`)
-// is always the editor layout and is told its root by the backend.
+// shown. The main window's layout is the setting (Settings, Files); it keeps its column width,
+// column visibility and tree root across restarts (shell/use-layout-sync.ts writes them to
+// layout.json). An editor window (`editor-<n>`) is always the editor layout and is told its root
+// by the backend.
 
 /**
  * The column's width limits in pixels: the places strip is 180 px in the file manager layout, the
@@ -36,8 +37,6 @@ export const clampRightWidth = (w: number): number =>
 
 interface LayoutState {
   layout: LayoutKind;
-  /** The user chose `layout` (it is stored); until then the default layout setting decides. */
-  chosen: boolean;
   /** Width of the editor layout's left column. */
   leftWidth: number;
   /** Whether the editor layout's left column is shown (Ctrl+B). */
@@ -53,18 +52,17 @@ interface LayoutState {
   setRightWidth(width: number): void;
   toggleLeft(): void;
   setTreeRoot(root: WirePath | null): void;
-  /** Takes the stored layout; `fallback` is the layout when none was chosen. */
-  apply(stored: WindowLayout, fallback: LayoutKind): void;
+  /** Takes the stored columns and tree, and `layout` from the settings. */
+  apply(stored: WindowLayout, layout: LayoutKind): void;
   /** This window is an editor window: the editor layout, with the widths the main window ended with. */
   applyToEditorWindow(stored: WindowLayout | null): void;
   /** Nothing could be read: the defaults stand and the window is usable. */
-  applyDefaults(fallback: LayoutKind): void;
+  applyDefaults(layout: LayoutKind): void;
   reset(): void;
 }
 
 const initial = {
   layout: "file_manager" as LayoutKind,
-  chosen: false,
   leftWidth: LEFT_WIDTH_DEFAULT,
   leftOpen: true,
   rightWidth: RIGHT_WIDTH_DEFAULT,
@@ -74,15 +72,14 @@ const initial = {
 
 export const useLayout = create<LayoutState>()((set) => ({
   ...initial,
-  setLayout: (layout) => set({ layout, chosen: true }),
+  setLayout: (layout) => set({ layout }),
   setLeftWidth: (width) => set({ leftWidth: clampWidth(width) }),
   setRightWidth: (width) => set({ rightWidth: clampRightWidth(width) }),
   toggleLeft: () => set((s) => ({ leftOpen: !s.leftOpen })),
   setTreeRoot: (treeRoot) => set({ treeRoot }),
-  apply: (stored, fallback) =>
+  apply: (stored, layout) =>
     set({
-      layout: stored.layout ?? fallback,
-      chosen: stored.layout !== null,
+      layout,
       leftWidth: clampWidth(stored.left_width),
       leftOpen: stored.left_open,
       rightWidth: clampRightWidth(stored.right_width),
@@ -96,7 +93,7 @@ export const useLayout = create<LayoutState>()((set) => ({
       rightWidth: stored ? clampRightWidth(stored.right_width) : s.rightWidth,
       loaded: true,
     })),
-  applyDefaults: (fallback) => set({ layout: fallback, loaded: true }),
+  applyDefaults: (layout) => set({ layout, loaded: true }),
   reset: () => set(initial),
 }));
 

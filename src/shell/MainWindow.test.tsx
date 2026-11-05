@@ -330,7 +330,12 @@ test("every_action_appears_in_a_menu", () => {
     // Exactly the actions that apply here, each showing its shortcut, grouped by area.
     const active = useTabs.getState().tabs.find((t) => t.id === useTabs.getState().activeId)!;
     const applicable = actions.filter(
-      (a) => a.when !== "volume" && a.when !== "entry" && a.when !== "tree" && appliesTo(a, active)
+      (a) =>
+        a.menu !== false &&
+        a.when !== "volume" &&
+        a.when !== "entry" &&
+        a.when !== "tree" &&
+        appliesTo(a, active)
     );
     expect(within(menu).getAllByRole("menuitem")).toHaveLength(applicable.length);
     for (const a of applicable) {
@@ -347,6 +352,8 @@ test("every_action_appears_in_a_menu", () => {
   for (const section of ENTRY_MENU) for (const a of section.actions) seen.add(a.id);
   // The tree actions are in the folder tree's own menu.
   for (const section of TREE_MENU) for (const a of section.actions) seen.add(a.id);
+  // The rest are buttons of the top bar (actions.test.ts checks each has a key or is About).
+  for (const a of actions) if (a.menu === false) seen.add(a.id);
   expect([...seen].sort()).toEqual(actions.map((a) => a.id).sort());
 });
 
@@ -366,4 +373,75 @@ test("modified_arrows_on_a_focused_tab_are_not_tab_navigation", () => {
   // The close button is not a tab: arrows there do nothing to the tabs.
   fireEvent.keyDown(screen.getByRole("button", { name: "Close a" }), { key: "ArrowRight" });
   expect(useTabs.getState().activeId).toBe(active);
+});
+
+test("the_tab_row_has_the_new_tab_buttons_settings_and_the_menu", async () => {
+  useTabs.getState().openFolder(p("/home/a/work"), false);
+  render(<MainWindow />);
+  const row = screen.getByTestId("tab-bar");
+  const newTab = within(row).getByRole("button", { name: "New tab" });
+  expect(newTab).toHaveAttribute("title", "New tab (Ctrl+T)");
+  expect(within(row).getByRole("button", { name: "New tab here" })).toHaveAttribute(
+    "title",
+    "New tab here (Ctrl+Shift+T)"
+  );
+  expect(within(row).getByRole("button", { name: "Open Settings" })).toHaveAttribute(
+    "title",
+    "Open Settings (Ctrl+,)"
+  );
+  expect(within(row).getByRole("button", { name: "Main menu" })).toBeInTheDocument();
+  // Navigation is the folder's, in its toolbar.
+  expect(within(row).queryByRole("button", { name: "Back" })).toBeNull();
+  // New tab waits for the settings, then opens Home in front.
+  await waitFor(() => expect(newTab).toBeEnabled());
+  fireEvent.click(newTab);
+  await waitFor(() => expect(useTabs.getState().tabs).toHaveLength(2));
+  const added = useTabs.getState().tabs[1]!;
+  expect(added.kind === "folder" && added.path.v).toBe("/home/a");
+  expect(useTabs.getState().activeId).toBe(added.id);
+  fireEvent.click(within(row).getByRole("button", { name: "Open Settings" }));
+  await waitFor(() => expect(opened.settings).toContain(undefined));
+});
+
+test("the_folder_toolbar_shows_on_a_folder_tab_only", async () => {
+  useTabs.getState().openFolder(p("/home/a"), false);
+  useTabs.getState().openDoc(p("/home/a/n.md"));
+  render(<MainWindow />);
+  // The document tab is in front: no folder toolbar.
+  expect(screen.queryByRole("toolbar", { name: "Folder" })).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "a" }));
+  const bar = await screen.findByRole("toolbar", { name: "Folder" });
+  for (const name of [
+    "Back",
+    "Forward",
+    "Up one folder",
+    "New folder",
+    "Search",
+    "Open terminal here",
+    "List view",
+    "Grid view",
+    "Show or hide hidden files",
+    "Open as editor",
+  ]) {
+    expect(within(bar).getByRole("button", { name }), name).toBeInTheDocument();
+  }
+  expect(within(bar).getByRole("button", { name: "Up one folder" })).toHaveAttribute(
+    "title",
+    "Up one folder (Alt+ArrowUp)"
+  );
+  expect(within(bar).getByRole("button", { name: "Show or hide hidden files" })).toHaveAttribute(
+    "aria-pressed",
+    "false"
+  );
+});
+
+test("the_main_menu_has_no_interface_size_and_no_about", () => {
+  useTabs.getState().openFolder(p("/home/a"), false);
+  render(<MainWindow />);
+  fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
+  const menu = screen.getByTestId("action-menu");
+  for (const name of [/interface/i, /About Kern/, /Open Settings/, /^Back/, /New folder/]) {
+    expect(within(menu).queryByRole("menuitem", { name }), String(name)).toBeNull();
+  }
+  expect(within(menu).getByRole("menuitem", { name: /Open as editor/ })).toBeInTheDocument();
 });

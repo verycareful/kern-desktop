@@ -8,8 +8,9 @@ import { useLayout } from "../store/layout";
 import { activeTab, useTabs } from "../store/tabs";
 import { useUserDirs } from "./user-dirs-store";
 
-// Changing the layout of the window (the actions "Switch to editor layout" and "Switch to file
-// manager layout") and opening a folder as an editor window.
+// Changing the layout of the main window (when its setting changes) and opening a folder as an
+// editor window. The editor layout holds no folder tabs: the tree shows the folders, and the
+// centre a document, the Trash, the Library or the welcome pane.
 
 const say = (text: string) => useOps.getState().notify(text);
 
@@ -36,13 +37,25 @@ export async function ensureTreeRoot(): Promise<boolean> {
   return true;
 }
 
-/** Switches this window to `kind`. The editor layout needs a folder for its tree, found first. */
+/**
+ * Switches this window to `kind`. The editor layout needs a folder for its tree, found first (the
+ * folder tab in front gives it); then the folder tabs close, which hold nothing unsaved.
+ */
 export async function switchLayout(kind: LayoutKind): Promise<void> {
-  if (kind === "editor" && !(await ensureTreeRoot())) {
-    say("The layout was not changed.");
-    return;
+  if (kind === "editor") {
+    if (!(await ensureTreeRoot())) {
+      say("The layout was not changed.");
+      return;
+    }
+    closeFolderTabs();
   }
   useLayout.getState().setLayout(kind);
+}
+
+/** Closes every folder tab, which the editor layout does not hold (they keep nothing unsaved). */
+export function closeFolderTabs(): void {
+  const tabs = useTabs.getState();
+  for (const t of tabs.tabs) if (t.kind === "folder") tabs.close(t.id);
 }
 
 /** Opens `folder` in a new editor window; a failure is said in the status bar. */

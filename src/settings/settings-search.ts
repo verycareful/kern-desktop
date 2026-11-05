@@ -78,8 +78,20 @@ export const ROWS = {
   default_layout: {
     category: "files",
     group: "Main window",
-    label: "Main window opens as",
+    label: "Main window layout",
     words: "layout file manager editor",
+  },
+  new_tab_folder: {
+    category: "files",
+    group: "New tabs",
+    label: "New tab folder",
+    words: "new tab home folder start ctrl+t",
+  },
+  new_tab_default: {
+    category: "files",
+    group: "New tabs",
+    label: "Ctrl+T opens",
+    words: "new tab here current folder ctrl+t ctrl+shift+t shortcut swap",
   },
   view_mode: { category: "files", group: "New folder views", label: "View", words: "list grid" },
   show_hidden: {

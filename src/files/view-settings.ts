@@ -8,18 +8,18 @@ import {
   settingsGet,
   settingsSet,
   toWireError,
+  type NewTabDefault,
   type Settings,
   type SettingsPatch,
   type ViewMode,
   type WireError,
   type WirePath,
 } from "../ipc";
-import { DEFAULT_INTERFACE_SIZE, stepInterfaceSize } from "../theme/interface-size";
+import { DEFAULT_INTERFACE_SIZE } from "../theme/interface-size";
 
 // The settings the folder view follows: whether hidden files show,
-// list or grid, the interface size
-// (the zoom itself is applied by the backend; the actions step it), and the
-// folders the Library walks. The stored settings
+// list or grid, the interface size (the zoom itself is applied by the
+// backend), the folders the Library walks, and what a new tab opens. The stored settings
 // are the source; this holds their last known value for the view and for the
 // actions (Ctrl+H, the view buttons), which write through settings_set.
 interface ViewSettingsState {
@@ -35,6 +35,10 @@ interface ViewSettingsState {
   /** The editor: wrap long lines, and the text zoom factor (0.25 to 5.0). */
   wordWrap: boolean;
   editorZoom: number;
+  /** The folder a new tab opens; null is Home. */
+  newTabFolder: WirePath | null;
+  /** Which of the two new tabs Ctrl+T opens. */
+  newTabDefault: NewTabDefault;
   /** The last read or write that failed, until the next one succeeds. */
   error: WireError | null;
 }
@@ -49,6 +53,8 @@ export const useViewSettings = create<ViewSettingsState>()(() => ({
   scanRoots: [],
   wordWrap: false,
   editorZoom: 1,
+  newTabFolder: null,
+  newTabDefault: "folder",
   error: null,
 }));
 
@@ -63,6 +69,8 @@ function apply(s: Settings): void {
     scanRoots: s.scan_roots,
     wordWrap: s.word_wrap,
     editorZoom: s.editor_zoom,
+    newTabFolder: s.new_tab_folder,
+    newTabDefault: s.new_tab_default,
     error: null,
   });
 }
@@ -86,11 +94,8 @@ async function write(patch: SettingsPatch): Promise<void> {
 
 export const toggleHidden = () => write({ show_hidden: !useViewSettings.getState().showHidden });
 export const setViewMode = (view_mode: ViewMode) => write({ view_mode });
-export const setInterfaceSize = (interface_size: number) => write({ interface_size });
 export const setScanFolder = (folder: "documents" | "downloads", on: boolean) =>
   write(folder === "documents" ? { scan_documents: on } : { scan_downloads: on });
-export const stepSize = (direction: 1 | -1) =>
-  setInterfaceSize(stepInterfaceSize(useViewSettings.getState().interfaceSize, direction));
 
 /** Keeps the store in step with the stored settings while a folder view is mounted. */
 export function useViewSettingsSync(): void {

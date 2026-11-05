@@ -6,12 +6,11 @@ import { test, expect, EMPTY_PINNED_RECENT } from "./support/mockInvoke";
 const COMMON = {
   open_pending_take: [],
   layout_get: {
-    layout: "editor",
     left_width: 300,
     left_open: true,
     tree_root: { k: "Utf8", v: "/home/tester" },
   },
-  layout_set: { layout: "editor", left_width: 300, left_open: true, tree_root: null },
+  layout_set: { left_width: 300, left_open: true, tree_root: null },
   settings_get: {
     follow: { colours: true, accent: true, fonts: true, radius: true },
     theme_mode: "system",
@@ -19,7 +18,9 @@ const COMMON = {
     density: "cozy",
     show_hidden: false,
     view_mode: "list",
-    default_layout: "file_manager",
+    default_layout: "editor",
+    new_tab_folder: null,
+    new_tab_default: "folder",
   },
   "plugin:kernkraft-tauri|theme_get": { css: ":root{}", tokens: {}, fallbacks: [], problems: [] },
   "plugin:kernkraft-tauri|watch_dir": null,

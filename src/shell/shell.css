@@ -90,7 +90,7 @@
 .kern-tabs {
   display: flex;
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
   gap: 2px;
   overflow-x: auto;
 }
@@ -186,6 +186,11 @@
   display: flex;
   gap: 2px;
   padding-bottom: 4px;
+}
+
+/* Puts Settings and the main menu at the right end, the new tab buttons after the last tab. */
+.kern-nav-fill {
+  flex: 1;
 }
 
 .kern-icon-button {

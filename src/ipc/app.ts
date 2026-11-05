@@ -13,6 +13,9 @@ import type { Density, Follow, KernAccent, OpId, ThemeMode } from "./kernkraft";
 
 export type ViewMode = "list" | "grid";
 
+/** Which of the two new tabs Ctrl+T opens; the other is on Ctrl+Shift+T. */
+export type NewTabDefault = "folder" | "current";
+
 /** The two layouts of a window (store.rs LayoutKind). */
 export type LayoutKind = "file_manager" | "editor";
 
@@ -34,6 +37,10 @@ export interface Settings {
   interface_size: number;
   /** The layout of a window that has none remembered yet. */
   default_layout: LayoutKind;
+  /** The folder a new tab opens; null is Home. */
+  new_tab_folder: WirePath | null;
+  /** What Ctrl+T opens: the new tab folder, or the folder of the tab in front (store.rs NewTabDefault). */
+  new_tab_default: NewTabDefault;
 }
 
 /** The row density handed to the theme: Kern has one row height (store.rs THEME_DENSITY). */
@@ -83,8 +90,6 @@ export const settingsGet = () => invoke<Settings>("settings_get");
 export const settingsSet = (patch: SettingsPatch) => invoke<Settings>("settings_set", { patch });
 /** How the main window is laid out, as stored (store.rs WindowLayout, layout.json). */
 export interface WindowLayout {
-  /** The layout the user chose; null until they do, when `default_layout` decides. */
-  layout: LayoutKind | null;
   /** Width of the editor layout's left column in pixels, 180 to 640 (store.rs LEFT_WIDTH_MIN, LEFT_WIDTH_MAX). */
   left_width: number;
   left_open: boolean;
