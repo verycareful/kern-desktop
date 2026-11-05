@@ -54,6 +54,7 @@ const COMMANDS: &[&str] = &[
     "drag_out",
     "dnd_target",
     "drop_start_op",
+    "remove_start_op",
 ];
 
 fn main() {

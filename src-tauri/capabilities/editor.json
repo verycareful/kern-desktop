@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "editor",
-  "description": "Capability for the editor windows: tabs of documents, a folder tree and the places strip. Of kernkraft's commands only what that page calls (listing, watching, text open, save and check, the theme, volumes to look at, what a pinned or recent entry is, where a link points, and the copy or move of files dropped on the tree: same_filesystem, drop_start_op which starts only a copy or a move, cancel_op, answer_conflict, undo_state); and its tabs kept for the next launch (session_put); no trash, rename, create, mount, launcher or default-application command, and not start_op, which can delete for good or empty the Trash",
+  "description": "Capability for the editor windows: tabs of documents, a folder tree with its file operations, and the places strip. Of kernkraft's commands what that page calls: listing, watching, text open, save and check, the theme, volumes to look at, what a pinned or recent entry is, where a link points, creating, renaming, the name search, a terminal and https links; copies and moves through drop_start_op and the Trash and delete for good of given items through remove_start_op, each starting only those operations (cancel_op, answer_conflict, undo_state, same_filesystem with them); the file clipboard; and its tabs kept for the next launch (session_put). Never start_op, which can also empty the Trash or purge it, and no mount, launcher, default-application or Trash listing command",
   "windows": ["editor-*"],
   "permissions": [
     "core:default",
@@ -18,6 +18,11 @@
     "kernkraft-tauri:allow-volumes-problems-take",
     "kernkraft-tauri:allow-open-default",
     "kernkraft-tauri:allow-open-url",
+    "kernkraft-tauri:allow-create-dir",
+    "kernkraft-tauri:allow-create-file",
+    "kernkraft-tauri:allow-rename",
+    "kernkraft-tauri:allow-open-terminal",
+    "kernkraft-tauri:allow-search",
     "kernkraft-tauri:allow-mime-of",
     "kernkraft-tauri:allow-same-filesystem",
     "kernkraft-tauri:allow-cancel-op",
@@ -55,6 +60,11 @@
     "allow-session-put",
     "allow-confirm-close",
     "allow-dnd-target",
-    "allow-drop-start-op"
+    "allow-drop-start-op",
+    "allow-remove-start-op",
+    "allow-clip-set",
+    "allow-clip-get",
+    "allow-clip-clear-if",
+    "allow-clip-text"
   ]
 }

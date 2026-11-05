@@ -12,6 +12,7 @@ pub mod identity;
 pub mod instance;
 pub mod open;
 pub mod prelaunch;
+pub mod remove;
 pub mod restart;
 pub mod session;
 pub mod store;
@@ -159,6 +160,7 @@ pub fn run() {
             dnd::drag_out,
             dnd::dnd_target,
             dnd::drop_start_op,
+            remove::remove_start_op,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Kern")

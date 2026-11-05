@@ -70,6 +70,7 @@ fn env(label: &str) -> Env {
             kern_lib::default_fm::make_default_fm,
             kern_lib::dnd::dnd_target,
             kern_lib::dnd::drop_start_op,
+            kern_lib::remove::remove_start_op,
         ])
         .build(tauri::generate_context!())
         .unwrap();
@@ -249,15 +250,11 @@ fn granted(name: &str, windows: &str) -> (Vec<String>, Vec<String>) {
 
 /// Every command of Kern's own that only the main window (or a document window) needs, each
 /// refused to an editor window by its capability: moving a document Home, answering for a
-/// document window, the clipboard and drags out of the file manager, the default file manager.
-const NOT_FOR_EDITORS: [&str; 12] = [
+/// document window, drags out of the file manager, the default file manager, the stored layout.
+const NOT_FOR_EDITORS: [&str; 8] = [
     "detached",
     "refuse_detach",
     "move_doc_to_main",
-    "clip_get",
-    "clip_set",
-    "clip_text",
-    "clip_clear_if",
     "drag_out",
     "fm1_status",
     "default_fm_status",
@@ -265,20 +262,18 @@ const NOT_FOR_EDITORS: [&str; 12] = [
     "layout_set",
 ];
 
-/// The kernkraft commands that change files, the Trash, volumes and applications and that the
-/// editor window's page does not send: it has no file manager. `start_op` is among them: it takes
-/// the kind of operation as a string, a capability cannot look at an argument, and so granting it
-/// would let the page delete for good or empty the Trash. (The page copies or moves a file dropped
-/// on its tree through `drop_start_op`, which takes only those two; `cancel_op`, `answer_conflict`,
-/// `undo_state` and `same_filesystem` are granted; see `EDITOR_DROP_GRANTS`.)
-const KERNKRAFT_NOT_FOR_EDITORS: [&str; 18] = [
+/// The kernkraft commands that the editor window's page does not send: the Trash's own (its
+/// listing, restore and purge), undo and redo (they are a folder tab's), volumes changed,
+/// applications launched or made defaults, the theme's preferences, the Documents scan. `start_op`
+/// is among them: it takes the kind of operation as a string, a capability cannot look at an
+/// argument, and so granting it would let the page empty the Trash. The page copies or moves
+/// through `drop_start_op`, which takes only those two, and trashes or deletes given items through
+/// `remove_start_op`, which takes only those two (see `EDITOR_DROP_GRANTS`).
+const KERNKRAFT_NOT_FOR_EDITORS: [&str; 13] = [
     "start_op",
     "trash_purge",
     "trash_restore",
     "trash_list",
-    "rename",
-    "create_dir",
-    "create_file",
     "undo",
     "redo",
     "volume_mount",
@@ -286,9 +281,7 @@ const KERNKRAFT_NOT_FOR_EDITORS: [&str; 18] = [
     "volume_eject",
     "launch_app",
     "set_default_app",
-    "open_terminal",
     "theme_set_prefs",
-    "search",
     "documents",
 ];
 
@@ -369,9 +362,10 @@ fn an_editor_window_has_no_file_operation_of_kernkraft() {
 /// What an editor window is granted so that a file dropped on its tree is copied or moved with
 /// the progress, the conflict question and the report of any other operation, and so that the
 /// pointer can be told where the drop would land.
-const EDITOR_DROP_GRANTS: [(&str, bool); 6] = [
+const EDITOR_DROP_GRANTS: [(&str, bool); 7] = [
     ("same_filesystem", true),
     ("drop_start_op", false),
+    ("remove_start_op", false),
     ("cancel_op", true),
     ("answer_conflict", true),
     ("undo_state", true),
@@ -468,6 +462,46 @@ fn an_editor_window_starts_a_copy_or_move_and_no_other_operation() {
         &stranger,
         "drop_start_op",
         json!({"kind": "copy", "sources": source, "dest": dest}),
+    )
+    .unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+}
+
+#[test]
+fn an_editor_window_trashes_or_deletes_given_items_and_empties_nothing() {
+    let e = env("editor-1");
+    let source = json!([{"k": "Utf8", "v": "/no/such/file"}]);
+    // Reached for the two kinds it takes: the operation's own answer, not the access control's and
+    // not a bad argument.
+    for kind in ["trash", "delete"] {
+        let outcome = invoke(
+            &e,
+            "remove_start_op",
+            json!({"kind": kind, "sources": source}),
+        );
+        if let Err(err) = outcome {
+            let text = err.to_string();
+            assert!(!text.contains("not allowed"), "{kind}: {text}");
+            assert!(!text.contains("invalid args"), "{kind}: {text}");
+        }
+    }
+    // Any other kind is refused before the command runs, by the kind not being one it takes.
+    for kind in ["empty_trash", "purge", "copy", "move", "Trash", ""] {
+        let err = invoke(
+            &e,
+            "remove_start_op",
+            json!({"kind": kind, "sources": source}),
+        )
+        .unwrap_err();
+        let text = err.as_str().unwrap();
+        assert!(text.contains("invalid args `kind`"), "{kind}: {text}");
+    }
+    // A window the capability does not name has none of it.
+    let stranger = env("stranger");
+    let err = invoke(
+        &stranger,
+        "remove_start_op",
+        json!({"kind": "trash", "sources": source}),
     )
     .unwrap_err();
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");

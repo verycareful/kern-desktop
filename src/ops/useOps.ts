@@ -5,6 +5,8 @@ import {
   answerConflict,
   redo,
   dropStartOp,
+  isEditorWindow,
+  removeStartOp,
   startOp,
   toWireError,
   undo,
@@ -79,6 +81,32 @@ export interface QueuedReport {
 export interface OpEnd {
   report: WireReport | null;
   error: WireError | null;
+}
+
+/**
+ * Starts `spec` through a command the window is granted. An editor window is not granted the
+ * general start_op, which can also empty the Trash: it copies and moves into a folder through
+ * dropStartOp and trashes or deletes given items through removeStartOp, and anything else is
+ * refused here, said like any failure to start.
+ */
+function startCommand(spec: OpSpec) {
+  const narrow = spec.copyOrMoveOnly === true || isEditorWindow();
+  if (narrow && spec.dest && (spec.kind === "copy" || spec.kind === "move")) {
+    return dropStartOp(spec.kind, spec.sources, spec.dest);
+  }
+  if (isEditorWindow()) {
+    if (spec.kind === "trash" || spec.kind === "delete") {
+      return removeStartOp(spec.kind, spec.sources);
+    }
+    const refused: WireError = {
+      kind: "InvalidArgument",
+      message: "an editor window does not start this operation; do it in the main window",
+      path: null,
+      details: null,
+    };
+    return Promise.reject(refused);
+  }
+  return startOp(spec.kind, spec.sources, spec.dest);
 }
 
 export interface OpSpec {
@@ -183,10 +211,7 @@ export const useOps = create<OpsState>()((set, get) => ({
     let outcome: Outcome;
     try {
       const op = runOp(
-        () =>
-          spec.copyOrMoveOnly && spec.dest && (spec.kind === "copy" || spec.kind === "move")
-            ? dropStartOp(spec.kind, spec.sources, spec.dest)
-            : startOp(spec.kind, spec.sources, spec.dest),
+        () => startCommand(spec),
         (progress) => patch((o) => ({ ...o, progress })),
         // A cancelled operation asks nothing more; a late question is not shown.
         (conflict) => patch((o) => (o.cancelling ? o : { ...o, conflict, askedAt: nextAsked++ }))

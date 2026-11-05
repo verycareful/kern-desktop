@@ -18,6 +18,9 @@ const ipc = vi.hoisted(() => ({
   undo: vi.fn(),
   redo: vi.fn(),
   undoState: vi.fn(),
+  dropStartOp: vi.fn(),
+  removeStartOp: vi.fn(),
+  isEditorWindow: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
@@ -215,6 +218,47 @@ test("an_operation_that_cannot_start_is_reported_with_the_reason", async () => {
   expect(ops).toEqual([]);
   expect(reports[0]!.outcome.error).toMatchObject({ kind: "Busy" });
   expect(reports[0]!.outcome.title).toMatch(/Move x to the Trash/);
+});
+
+test("an_editor_window_starts_each_operation_through_the_command_it_is_granted", async () => {
+  ipc.isEditorWindow.mockReturnValue(true);
+  ipc.dropStartOp.mockResolvedValue(1);
+  ipc.removeStartOp.mockResolvedValue(2);
+  void useOps.getState().start({ kind: "copy", sources: [p("/a/x")], dest: p("/b") });
+  void useOps.getState().start({ kind: "move", sources: [p("/a/y")], dest: p("/b") });
+  void useOps.getState().start({ kind: "trash", sources: [p("/a/z")] });
+  void useOps.getState().start({ kind: "delete", sources: [p("/a/w")] });
+  await vi.waitFor(() => expect(ipc.removeStartOp).toHaveBeenCalledTimes(2));
+  expect(ipc.dropStartOp.mock.calls).toEqual([
+    ["copy", [p("/a/x")], p("/b")],
+    ["move", [p("/a/y")], p("/b")],
+  ]);
+  expect(ipc.removeStartOp.mock.calls).toEqual([
+    ["trash", [p("/a/z")]],
+    ["delete", [p("/a/w")]],
+  ]);
+  expect(ipc.startOp).not.toHaveBeenCalled();
+});
+
+test("an_editor_window_refuses_to_empty_the_trash_and_says_why", async () => {
+  ipc.isEditorWindow.mockReturnValue(true);
+  await useOps.getState().start({ kind: "empty_trash", sources: [] });
+  expect(ipc.startOp).not.toHaveBeenCalled();
+  expect(ipc.removeStartOp).not.toHaveBeenCalled();
+  expect(useOps.getState().reports[0]!.outcome.error).toMatchObject({
+    kind: "InvalidArgument",
+    message: expect.stringMatching(/editor window/),
+  });
+});
+
+test("the_main_window_starts_through_start_op", async () => {
+  ipc.isEditorWindow.mockReturnValue(false);
+  ipc.startOp.mockResolvedValue(3);
+  void useOps.getState().start({ kind: "trash", sources: [p("/a/z")] });
+  await vi.waitFor(() =>
+    expect(ipc.startOp).toHaveBeenCalledExactlyOnceWith("trash", [p("/a/z")], undefined)
+  );
+  expect(ipc.removeStartOp).not.toHaveBeenCalled();
 });
 
 test("an_operation_whose_worker_failed_is_reported_with_the_error", async () => {

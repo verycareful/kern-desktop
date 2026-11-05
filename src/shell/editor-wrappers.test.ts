@@ -90,41 +90,30 @@ function importedWrappers(entry: string, known: Set<string>): Set<string> {
 /**
  * The commands a file the editor window mounts imports and the editor window never sends. The
  * window mounts the places strip, whose folder area, Trash, Library and Settings tabs belong to the
- * main window, and the shared file operations; an editor window has only document tabs, the folder
- * tree and the strip's Places and mounted Volumes (src/shell/EditorWindow.tsx).
+ * main window, and the shared file operations; an editor window has document tabs, the folder
+ * tree with its file operations, search and terminal, and the strip's Places and mounted Volumes
+ * (src/shell/EditorWindow.tsx).
  */
 const NOT_FOR_EDITORS: Record<string, string[]> = {
-  "folder tabs, search, the Library, the Trash, Open with, the terminal and thumbnails exist only in the main window":
-    [
-      "allApps",
-      "appsFor",
-      "createDir",
-      "createFile",
-      "documents",
-      "launchApp",
-      "openTerminal",
-      "rename",
-      "search",
-      "setDefaultApp",
-      "thumbCancel",
-      "thumbRequest",
-      "trashList",
-      "trashPurge",
-      "trashRestore",
-    ],
-  "the clipboard and drags out of Kern belong to the folder view": [
-    "clipClearIf",
-    "clipGet",
-    "clipSet",
-    "clipText",
-    "dragOut",
+  "folder tabs, the Library, the Trash, Open with and thumbnails exist only in the main window": [
+    "allApps",
+    "appsFor",
+    "documents",
+    "launchApp",
+    "setDefaultApp",
+    "thumbCancel",
+    "thumbRequest",
+    "trashList",
+    "trashPurge",
+    "trashRestore",
   ],
+  "drags out of Kern start from the folder view": ["dragOut"],
   "mounting, unmounting and ejecting are buttons of the main window's strip": [
     "volumeEject",
     "volumeMount",
     "volumeUnmount",
   ],
-  "kernkraft's start_op takes any kind of operation, delete and empty Trash among them, and the editor window starts only a copy or a move, through dropStartOp":
+  "kernkraft's start_op takes any kind of operation, empty Trash among them; the editor window starts a copy or a move through dropStartOp and a trash or delete of given items through removeStartOp":
     ["startOp"],
   "Undo and Redo run from the Edit menu, which only the main window has": ["redo", "undo"],
   "only the main window stores its layout": ["layoutSet"],
@@ -143,7 +132,14 @@ test("every_wrapper_a_file_the_editor_window_mounts_imports_is_granted_or_listed
   expect(permissions.size).toBeGreaterThan(40);
   const imported = importedWrappers(ENTRY, new Set(permissions.keys()));
   // The walk reaches the page's real imports.
-  for (const must of ["listDir", "textOpen", "docOpened", "openPaths", "dropStartOp"]) {
+  for (const must of [
+    "listDir",
+    "textOpen",
+    "docOpened",
+    "openPaths",
+    "dropStartOp",
+    "removeStartOp",
+  ]) {
     expect(imported, must).toContain(must);
   }
   const listed = new Set(Object.values(NOT_FOR_EDITORS).flat());

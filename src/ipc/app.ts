@@ -145,6 +145,13 @@ export const fileIdentity = (paths: WirePath[]) =>
 export const dropStartOp = (kind: "copy" | "move", sources: WirePath[], dest: WirePath) =>
   invoke<OpId>("drop_start_op", { kind, sources, dest });
 
+/**
+ * Moves `sources` to the Trash or deletes them for good, and nothing else: the command an editor
+ * window is granted in place of start_op, which can also empty the Trash.
+ */
+export const removeStartOp = (kind: "trash" | "delete", sources: WirePath[]) =>
+  invoke<OpId>("remove_start_op", { kind, sources });
+
 // ---- where a symbolic link points (identity.rs) ----
 
 /**
