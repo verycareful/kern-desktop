@@ -278,6 +278,29 @@ test("keyboard_focus_outlines_the_current_item_not_the_list", async ({ page, moc
   }
 });
 
+test("the_keyboard_ring_of_a_tab_goes_round_its_close_button", async ({ page, mockTauri }) => {
+  await mockTauri({ ...COMMON, "plugin:kernkraft-tauri|list_dir": [] });
+  await page.goto("/");
+  const tab = page.getByTestId("tab").first();
+  await expect(tab).toBeVisible();
+  // Tab from the page start reaches the tab with the keyboard, which is what shows the ring.
+  await tab.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(tab).toBeFocused();
+  const ring = await tab.evaluate((el) => {
+    const whole = el.parentElement!;
+    const close = whole.querySelector(".kern-tab-close")!.getBoundingClientRect();
+    const box = whole.getBoundingClientRect();
+    return {
+      main: getComputedStyle(el).outlineStyle,
+      whole: getComputedStyle(whole).outlineStyle,
+      closeInside: close.left >= box.left && close.right <= box.right,
+    };
+  });
+  expect(ring).toEqual({ main: "none", whole: "solid", closeInside: true });
+});
+
 test("the_first_row_is_spaced_from_the_path_bar", async ({ page, mockTauri }) => {
   await mockTauri({
     ...COMMON,

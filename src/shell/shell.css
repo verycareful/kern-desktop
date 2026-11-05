@@ -139,6 +139,17 @@
   cursor: pointer;
 }
 
+/* The keyboard ring of a tab goes round the whole tab, its close button included. Drawn on the
+   tab's border, inside the tab row, which scrolls and so clips what lies outside it. */
+.kern-tab-main:focus-visible {
+  outline: none;
+}
+
+.kern-tab:has(> .kern-tab-main:focus-visible) {
+  outline: 2px solid var(--kern-accent);
+  outline-offset: -1px;
+}
+
 .kern-tab-title {
   overflow: hidden;
   text-overflow: ellipsis;
