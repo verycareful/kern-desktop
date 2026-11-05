@@ -19,24 +19,23 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     # Every step has a limit of its own, so a hang costs that step's limit and
-    # not the job's. Measured on a runner with nothing cached, before the
-    # driver suite and the smoke checks were added: the job took 18 minutes,
-    # the Rust tests 3, the release-mode timing tests 8.5 (the longest step,
-    # limit 30), Clippy 1.6, the deb build 1.2 and everything else under a
-    # minute each. Steps that need no more than that carry a limit of 5 or 10
-    # minutes. The steps added since carry their own estimate in the comment
-    # above them (nothing of them has run on a runner yet): about 1 minute for
-    # tauri-driver, 3 for the debug build, 3 for the driver suite and under 1
-    # for the two smoke steps, some 8 minutes in all, so about 26 minutes in
-    # total (an estimate, to be replaced by the first measured run). The job
-    # limit is over twice that.
+    # not the job's. Measured on two runs of this job (2026-11-04, runs
+    # 41890146490 and 41891273523): the job takes 14 to 15 minutes; the
+    # release-mode timing tests 5.4 to 5.8 (the longest step, limit 30), the
+    # Rust tests 2.4 to 2.6, Clippy 1.0 to 1.2, the deb build 0.8, the driver
+    # suite 0.5, the debug build 0.4, tauri-driver 0.2, and every other step
+    # under 0.7. Steps that need no more than that carry a limit of 5 or 10
+    # minutes. The job limit is four times the whole.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
         timeout-minutes: 5
 
+      # Measured at 0.4 minutes. The limit is for the package mirror, which has
+      # stalled on a single large package for over 10 minutes on two runs
+      # (2026-11-04) and then finished on a rerun.
       - name: System libraries for Tauri
-        timeout-minutes: 10
+        timeout-minutes: 20
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
@@ -195,18 +194,16 @@ jobs:
 
       # The driver is part of the test harness and listens on localhost; the
       # application it drives opens no socket. The version is pinned. Measured
-      # on a machine with nothing cached: 25 seconds of CPU, 6 seconds in all
-      # on 24 cores. Estimate for the runner: 1 minute.
+      # on the runner: 0.2 minutes.
       - name: tauri-driver
-        timeout-minutes: 10
+        timeout-minutes: 5
         run: cargo install tauri-driver --locked --version 2.1.0
 
       # The same build as the deb above, in the debug profile, whose
-      # dependencies the Rust tests have built. The deb build measured 1.2
-      # minutes; this one measured 15 seconds with a warm cache locally.
-      # Estimate for the runner: 3 minutes.
+      # dependencies the Rust tests have built. Measured on the runner: 0.4
+      # minutes.
       - name: Debug build for the driver suite
-        timeout-minutes: 15
+        timeout-minutes: 10
         run: npx tauri build --debug --no-bundle
 
       # Each spec file runs under its own session bus and home directory
@@ -214,9 +211,8 @@ jobs:
       # which the WebKitGTK sandbox needs, so the sandbox is off for this step
       # and this step only. run.sh stops a spec file after 300 seconds, so the
       # three files take at most 15 minutes, and the limit is that plus 5
-      # for starting the displays. Measured locally: 1, 6 and 9 seconds for
-      # the three files. Estimate for the runner, with software rendering and
-      # slower starts: 3 minutes.
+      # for starting the displays. Measured on the runner: 0.5 minutes for
+      # all three.
       - name: Driver suite
         timeout-minutes: 20
         env:
