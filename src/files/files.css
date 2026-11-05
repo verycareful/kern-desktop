@@ -652,9 +652,23 @@
 
 .kern-tree-head-name {
   min-width: 0;
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The tree's buttons, at the end of its heading; the name gives way to them. */
+.kern-tree-tools {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  font-weight: normal;
+}
+
+.kern-tree-tools .kern-tree-tool {
+  width: 26px;
+  height: 26px;
 }
 
 .kern-tree-notes {

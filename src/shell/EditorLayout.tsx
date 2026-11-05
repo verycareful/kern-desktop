@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { displayPath, isEditorWindow, type WireEntry, type WirePath } from "../ipc";
 import { TextEditor } from "../editor/TextEditor";
-import { FolderTree } from "../files/FolderTree";
+import { ChevronsDownUp, ChevronsUpDown, Eye, Search, SquareTerminal } from "lucide-react";
+import { FolderTree, type FolderTreeHandle } from "../files/FolderTree";
+import { isFolder } from "../files/file-type";
+import { openFiles } from "../files/open-entries";
+import { SearchView } from "../files/SearchView";
+import { openTerminalIn } from "../files/use-folder-tools";
+import { toggleHidden } from "../files/view-settings";
+import { errorText } from "../ops/error-text";
 import { treeMenu } from "../files/tree-menu";
 import { TreeOps } from "../files/TreeOps";
 import { useTreeMenu } from "../files/tree-menu-store";
@@ -47,12 +54,82 @@ function ColumnSplitter() {
   );
 }
 
+/** Says `text` where the tree shows its problems, else in the status bar. */
+function treeNote(text: string): void {
+  const ops = useTreeMenu.getState().ops;
+  if (ops) ops.note(text);
+  else useOps.getState().notify(text);
+}
+
+/**
+ * The buttons of the tree's heading: the name search in the window's folder, a terminal at the
+ * root, hidden items shown or not (the window's choice, which folder tabs follow too), and every
+ * folder closed or opened.
+ */
+function TreeTools(props: {
+  root: WirePath;
+  tree: React.RefObject<FolderTreeHandle | null>;
+  searching: boolean;
+  onSearch(): void;
+}) {
+  const hidden = useViewSettings((s) => s.showHidden);
+  const button = (label: string, Icon: typeof Search, onClick: () => void, pressed?: boolean) => (
+    <button
+      type="button"
+      className="kern-icon-button kern-tree-tool"
+      aria-label={label}
+      title={label}
+      aria-pressed={pressed}
+      onClick={onClick}
+    >
+      <Icon size={16} strokeWidth={2} aria-hidden />
+    </button>
+  );
+  return (
+    <span className="kern-tree-tools" role="toolbar" aria-label="Folder tree">
+      {button(`Search in ${displayPath(props.root)}`, Search, props.onSearch, props.searching)}
+      {button(
+        "Open terminal here",
+        SquareTerminal,
+        () => void openTerminalIn(props.root, treeNote)
+      )}
+      {button("Show hidden files", Eye, () => void toggleHidden(), hidden)}
+      {button("Collapse all", ChevronsDownUp, () => props.tree.current?.collapseAll())}
+      {button("Expand all", ChevronsUpDown, () => props.tree.current?.expandAll())}
+    </span>
+  );
+}
+
 /** The left column: the places strip on top, the folder tree below it. */
 function LeftColumn() {
   const root = useLayout((s) => s.treeRoot);
   const hidden = useViewSettings((s) => s.showHidden);
   const [menu, setMenu] = useState<{ x: number; y: number; entry: WireEntry | null } | null>(null);
   const column = useRef<HTMLElement>(null);
+  const tree = useRef<FolderTreeHandle>(null);
+  const [searching, setSearching] = useState(false);
+  // A new root ends a search of the old one.
+  const [searchedRoot, setSearchedRoot] = useState(root);
+  if (searchedRoot !== root) {
+    setSearchedRoot(root);
+    setSearching(false);
+  }
+
+  const closeSearch = useCallback(() => {
+    setSearching(false);
+    column.current?.querySelector<HTMLElement>("[role=tree]")?.focus();
+  }, []);
+  // A file found opens as from the tree; a folder found is shown in the tree.
+  const onFound = useCallback((entry: WireEntry, newWindow: boolean) => {
+    if (isFolder(entry)) {
+      setSearching(false);
+      tree.current?.reveal(entry.path);
+      return;
+    }
+    void openFiles([entry.path], newWindow).then((errors) =>
+      errors.forEach((e) => treeNote(`${entry.name} was not opened: ${errorText(e)}`))
+    );
+  }, []);
 
   // The empty part below the rows stands for the root.
   const onContextMenu = useCallback(
@@ -90,12 +167,27 @@ function LeftColumn() {
       {root && <TreeOps scope={column} focusTree={focusTree} />}
       <div className="kern-editor-tree">
         {root ? (
-          <FolderTree
-            root={root}
-            hidden={hidden}
-            onRootGone={onRootGone}
-            onContextMenu={onContextMenu}
-          />
+          <>
+            {searching && <SearchView root={root} onClose={closeSearch} onOpen={onFound} />}
+            {/* Kept while the search is on show, so the folders open in it stay open. */}
+            <div className="kern-editor-tree-body" hidden={searching}>
+              <FolderTree
+                root={root}
+                hidden={hidden}
+                onRootGone={onRootGone}
+                onContextMenu={onContextMenu}
+                handle={tree}
+                tools={
+                  <TreeTools
+                    root={root}
+                    tree={tree}
+                    searching={searching}
+                    onSearch={() => setSearching((on) => !on)}
+                  />
+                }
+              />
+            </div>
+          </>
         ) : (
           <p role="status" className="kern-place-note">
             No folder to show yet.

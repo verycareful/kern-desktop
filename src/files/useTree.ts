@@ -20,6 +20,7 @@ import {
 } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
+import { isFolder } from "./file-type";
 import { createSorter, type Sorter } from "./sort-async";
 import {
   branchPaths,
@@ -41,6 +42,15 @@ import {
 // folder that vanished (deleted, unmounted) is closed with a note, never shown stale. A link to
 // a folder that leads back to a folder above it is shown as a loop and not opened; one whose identity cannot be told is not opened either, and says why.
 
+/**
+ * How many folders Expand all opens before it stops and says so. Every open folder is listed and
+ * holds a watch from the user's inotify allowance (inotify(7), /proc/sys/fs/inotify/max_user_watches:
+ * 8192 on a kernel that does not scale it with memory), which every program of the user shares; a
+ * column of 256 open folders is also far longer than anyone reads. A folder such as a home folder
+ * or a build tree holds thousands, so without a limit one click could take the whole allowance.
+ */
+export const EXPAND_ALL_MAX = 256;
+
 export interface TreeNote {
   id: number;
   text: string;
@@ -61,6 +71,18 @@ export interface TreeApi {
   dismissNote(id: number): void;
   /** Whether folder `key` is open. */
   isOpen(key: string): boolean;
+  /** Closes every folder below the root. */
+  collapseAll(): void;
+  /**
+   * Opens every folder below the root, as each listing arrives, up to EXPAND_ALL_MAX; links are
+   * left closed (one can lead to a whole other tree). Stopping at the limit is said in the notes.
+   */
+  expandAll(): void;
+  /**
+   * Opens the folders between the root and `path`, so its row shows. False when `path` is not
+   * below the root.
+   */
+  reveal(path: WirePath): boolean;
 }
 
 export interface TreeOptions {
@@ -98,6 +120,9 @@ interface Controller {
   collapse(key: string): void;
   refresh(): void;
   isOpen(key: string): boolean;
+  collapseAll(): void;
+  expandAll(): void;
+  reveal(path: WirePath): boolean;
 }
 
 const NONE: Controller = {
@@ -105,6 +130,9 @@ const NONE: Controller = {
   collapse: () => undefined,
   refresh: () => undefined,
   isOpen: () => false,
+  collapseAll: () => undefined,
+  expandAll: () => undefined,
+  reveal: () => false,
 };
 
 export function useTree(opts: TreeOptions): TreeApi {
@@ -189,8 +217,10 @@ export function useTree(opts: TreeOptions): TreeApi {
       closed.removed.forEach(stopWatch);
       say(`${displayPath(gone.path)} is gone, so it was closed.`);
     };
-    const showListing = (key: string, listing: Listing) =>
+    const showListing = (key: string, listing: Listing) => {
       commit((m) => updateFolder(m, key, (n) => ({ ...n, listing })));
+      if (listing.state === "ready") pursue(key, listing.entries);
+    };
 
     const listFolder = async (key: string): Promise<void> => {
       const target = node(key);
@@ -199,7 +229,15 @@ export function useTree(opts: TreeOptions): TreeApi {
       seq.set(key, mine);
       const stale = () => !alive || seq.get(key) !== mine || !current.folders.has(key);
       try {
-        const raw = await listDir(target.path, hidden.current);
+        await listOnce(key, target.path, stale);
+      } finally {
+        // A listing that a newer one replaced leaves the wave to that one.
+        if (seq.get(key) === mine || !current.folders.has(key)) settle(key);
+      }
+    };
+    const listOnce = async (key: string, path: WirePath, stale: () => boolean): Promise<void> => {
+      try {
+        const raw = await listDir(path, hidden.current);
         if (stale()) return;
         const entries = await sorter.sort(raw, "name", "asc");
         if (stale()) return;
@@ -277,7 +315,92 @@ export function useTree(opts: TreeOptions): TreeApi {
       });
     };
     const refresh = () => [...current.folders.keys()].forEach((k) => void listFolder(k));
-    ctl.current = { expand, collapse, refresh, isOpen: (k) => current.folders.has(k) };
+
+    // ---- opening folders without a click: Expand all, and the way down to a revealed row ----
+    // Both work through the listings: a folder wanted open is opened when the folder it is in has
+    // listed, and its own listing then opens what is wanted below it. `wave` holds the folders
+    // Expand all opened that have not listed yet; when it empties, Expand all is over, so a folder
+    // opened by hand afterwards opens alone.
+    const want = { keys: new Set<string>(), all: false, budget: 0, wave: new Set<string>() };
+    const endWave = () => {
+      want.all = false;
+      want.wave.clear();
+    };
+    const settle = (key: string) => {
+      if (want.wave.delete(key) && want.wave.size === 0) endWave();
+    };
+    const pursue = (key: string, entries: readonly WireEntry[]) => {
+      for (const e of entries) {
+        if (!isFolder(e)) continue;
+        const k = pathKey(e.path);
+        if (current.folders.has(k)) continue;
+        if (want.keys.delete(k)) {
+          expand(e, key);
+          continue;
+        }
+        if (!want.all || e.kind === "symlink") continue;
+        if (want.budget === 0) {
+          endWave();
+          say(
+            `Expand all opened ${EXPAND_ALL_MAX} folders and stopped there, since each open folder is watched for changes. Open the others by hand.`
+          );
+          return;
+        }
+        want.budget--;
+        want.wave.add(k);
+        expand(e, key);
+      }
+    };
+    /** Runs `pursue` over every open folder that has listed. */
+    const pursueListed = () => {
+      for (const [key, n] of [...current.folders]) {
+        if (n.listing.state === "ready") pursue(key, n.listing.entries);
+      }
+    };
+    const stopWanting = () => {
+      endWave();
+      want.keys.clear();
+    };
+    const collapseAll = () => {
+      stopWanting();
+      for (const [key, n] of [...current.folders]) {
+        if (n.parent === current.rootKey) collapse(key);
+      }
+    };
+    const expandAll = () => {
+      stopWanting();
+      want.all = true;
+      want.budget = EXPAND_ALL_MAX;
+      pursueListed();
+      // Nothing was left to open.
+      if (want.wave.size === 0) endWave();
+    };
+    const reveal = (path: WirePath): boolean => {
+      const chain: string[] = [];
+      for (let p = parent(path); p !== null; p = parent(p)) {
+        const k = pathKey(p);
+        if (k === current.rootKey) {
+          chain.forEach((c) => want.keys.add(c));
+          pursueListed();
+          return true;
+        }
+        chain.push(k);
+      }
+      return false;
+    };
+    const closeByHand = (key: string) => {
+      stopWanting();
+      collapse(key);
+    };
+    ctl.current = {
+      expand,
+      collapse: closeByHand,
+      refresh,
+      isOpen: (k) => current.folders.has(k),
+      collapseAll,
+      expandAll,
+      reveal,
+    };
 
     // ---- changes ----
     const unlisten: UnlistenFn[] = [];
@@ -354,5 +477,8 @@ export function useTree(opts: TreeOptions): TreeApi {
     notify,
     dismissNote: useCallback((id: number) => setNotes((n) => n.filter((x) => x.id !== id)), []),
     isOpen: useCallback((k: string) => ctl.current.isOpen(k), []),
+    collapseAll: useCallback(() => ctl.current.collapseAll(), []),
+    expandAll: useCallback(() => ctl.current.expandAll(), []),
+    reveal: useCallback((path: WirePath) => ctl.current.reveal(path), []),
   };
 }

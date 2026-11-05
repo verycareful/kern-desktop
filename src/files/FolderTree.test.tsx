@@ -27,7 +27,8 @@ vi.mock("./sort-async", async () => {
   };
 });
 
-import { FolderTree } from "./FolderTree";
+import { FolderTree, type FolderTreeHandle } from "./FolderTree";
+import { EXPAND_ALL_MAX } from "./useTree";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 const file = (dir: string, name: string): WireEntry => entry(name, {}, dir);
@@ -534,4 +535,90 @@ test("arrow_right_on_an_open_folder_with_nothing_in_it_stays_put", async () => {
   expect(current()).toBe("src");
   fireEvent.keyDown(tree, { key: "ArrowRight" });
   expect(current()).toBe("src");
+});
+
+/** Mounts the tree with a handle to it. */
+async function mountWithHandle() {
+  const handle: { current: FolderTreeHandle | null } = { current: null };
+  await mount({ handle });
+  return handle;
+}
+
+test("expand_all_opens_every_folder_and_collapse_all_closes_them", async () => {
+  const h = await mountWithHandle();
+  act(() => h.current!.expandAll());
+  await waitFor(() =>
+    expect(names()).toEqual([
+      "docs",
+      "deep",
+      "d.txt",
+      "a.txt",
+      "src",
+      "main.rs",
+      "readme.md",
+      "z.txt",
+    ])
+  );
+  act(() => h.current!.collapseAll());
+  await waitFor(() => expect(names()).toEqual(["docs", "src", "readme.md", "z.txt"]));
+  // Every folder Expand all opened had a watch, and each one ended.
+  for (const f of ["/r/docs", "/r/docs/deep", "/r/src"]) {
+    expect(ipc.unwatchDir).toHaveBeenCalledWith(`tree:t:Utf8:${f}`);
+  }
+});
+
+test("expand_all_is_over_once_its_folders_have_listed", async () => {
+  const h = await mountWithHandle();
+  act(() => h.current!.expandAll());
+  await waitFor(() => expect(names()).toContain("d.txt"));
+  // A folder that appears later is not opened by itself.
+  disk["/r/new"] = [file("/r/new", "n.txt")];
+  disk["/r"] = [...disk["/r"]!, folder("/r", "new")];
+  await emit("kernkraft://dir-changed", { key: "tree:t:Utf8:/r" });
+  await waitFor(() => expect(names()).toContain("new"));
+  expect(names()).not.toContain("n.txt");
+});
+
+test("expand_all_leaves_links_closed", async () => {
+  disk["/r"] = [...disk["/r"]!, link("/r", "elsewhere")];
+  disk["/r/elsewhere"] = [file("/r/elsewhere", "x.txt")];
+  const h = await mountWithHandle();
+  act(() => h.current!.expandAll());
+  await waitFor(() => expect(names()).toContain("main.rs"));
+  expect(names()).toContain("elsewhere");
+  expect(names()).not.toContain("x.txt");
+  expect(ipc.listDir).not.toHaveBeenCalledWith(p("/r/elsewhere"), false);
+});
+
+test("expand_all_stops_at_its_limit_and_says_so", async () => {
+  // One more folder than the limit, each in the root.
+  const many = Array.from({ length: EXPAND_ALL_MAX + 1 }, (_, i) =>
+    folder("/r", `f${String(i).padStart(4, "0")}`)
+  );
+  disk = { "/r": many };
+  for (const f of many) disk[`/r/${f.name}`] = [];
+  const h = await mountWithHandle();
+  act(() => h.current!.expandAll());
+  await screen.findByText(new RegExp(`Expand all opened ${EXPAND_ALL_MAX} folders and stopped`));
+  const opened = ipc.listDir.mock.calls.filter(([q]) => (q as WirePath).v !== "/r");
+  expect(opened).toHaveLength(EXPAND_ALL_MAX);
+});
+
+test("reveal_opens_the_folders_down_to_a_path_and_makes_it_the_current_row", async () => {
+  const h = await mountWithHandle();
+  let shown = false;
+  act(() => {
+    shown = h.current!.reveal(p("/r/docs/deep"));
+  });
+  expect(shown).toBe(true);
+  await waitFor(() => expect(names()).toContain("deep"));
+  // The folders above it opened; the folder itself did not.
+  expect(names()).not.toContain("d.txt");
+  await waitFor(() => expect(row("deep")).toHaveAttribute("data-active", "true"));
+  expect(screen.getByRole("tree")).toHaveFocus();
+  // A path outside the root is refused.
+  act(() => {
+    shown = h.current!.reveal(p("/elsewhere/x"));
+  });
+  expect(shown).toBe(false);
 });

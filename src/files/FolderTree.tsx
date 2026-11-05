@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Repeat, X } from "lucide-react";
-import { displayPath, toWireError, type WireEntry, type WirePath } from "../ipc";
+import { displayPath, pathKey, toWireError, type WireEntry, type WirePath } from "../ipc";
 import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
@@ -40,6 +48,17 @@ function insideRow(rows: readonly Row[], at: Map<string, number>, key: string, a
   return false;
 }
 
+/** What the column around the tree can ask of it. */
+export interface FolderTreeHandle {
+  collapseAll(): void;
+  expandAll(): void;
+  /**
+   * Opens the folders down to `path` and makes its row the current one once it shows. False when
+   * `path` is not below the root.
+   */
+  reveal(path: WirePath): boolean;
+}
+
 export function FolderTree(props: {
   root: WirePath;
   /** Whether hidden items are listed. */
@@ -49,6 +68,9 @@ export function FolderTree(props: {
   onRootGone?(nearest: WirePath | null): void;
   /** A right-click or the Menu key on an entry, or on the empty part (null), at a point. */
   onContextMenu?(entry: WireEntry | null, x: number, y: number): void;
+  /** Buttons shown at the end of the tree's heading. */
+  tools?: React.ReactNode;
+  handle?: React.Ref<FolderTreeHandle>;
 }) {
   const { root } = props;
   const uid = useId();
@@ -65,6 +87,8 @@ export function FolderTree(props: {
   const scroller = useRef<HTMLDivElement>(null);
   const typed = useRef({ text: "", at: 0 });
   const activeIndex = active !== null ? (at.get(active) ?? -1) : -1;
+  // The row a reveal asked for, made current once its folder has listed it.
+  const [revealing, setRevealing] = useState<string | null>(null);
 
   const virtual = useVirtualizer({
     count: rows.length,
@@ -90,6 +114,32 @@ export function FolderTree(props: {
     const folder = folderOfActive.current;
     setActive(folder !== null && at.has(folder) ? folder : null);
   }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useImperativeHandle(
+    props.handle,
+    () => ({
+      collapseAll: () => {
+        setRevealing(null);
+        tree.collapseAll();
+      },
+      expandAll: tree.expandAll,
+      reveal: (path) => {
+        if (!tree.reveal(path)) return false;
+        setRevealing(pathKey(path));
+        return true;
+      },
+    }),
+    [tree]
+  );
+  useEffect(() => {
+    if (revealing === null) return;
+    const i = at.get(revealing);
+    if (i === undefined) return;
+    setRevealing(null);
+    setActive(revealing);
+    virtual.scrollToIndex(i);
+    scroller.current?.focus();
+  }, [revealing, at, virtual]);
 
   const openFile = useCallback(
     (entry: WireEntry) => {
@@ -184,6 +234,7 @@ export function FolderTree(props: {
       <div className="kern-tree-head" title={displayPath(root)}>
         <FolderOpen size={16} strokeWidth={2} aria-hidden />
         <span className="kern-tree-head-name">{baseName(root)}</span>
+        {props.tools}
       </div>
       {tree.notes.length > 0 && (
         <ul className="kern-tree-notes" role="status" aria-label="Notes about the folder tree">

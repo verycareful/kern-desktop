@@ -39,6 +39,9 @@ const ipc = vi.hoisted(() => ({
   clipText: vi.fn(),
   startOp: vi.fn(),
   openTerminal: vi.fn(),
+  search: vi.fn(),
+  cancelOp: vi.fn(),
+  settingsSet: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 vi.mock("../files/sort-async", async () => {
@@ -553,4 +556,61 @@ test("the_main_menu_offers_the_column_toggle_and_no_layout_switch", async () => 
   expect(actions.filter((a) => a.area === "Layout").map((a) => a.id)).toEqual([
     "layout.left.toggle",
   ]);
+});
+
+const tools = () => within(screen.getByRole("toolbar", { name: "Folder tree" }));
+
+test("the_tree_buttons_open_a_terminal_at_the_root_and_show_hidden_items", async () => {
+  ipc.openTerminal.mockResolvedValue(undefined);
+  ipc.settingsSet.mockImplementation((patch: object) => Promise.resolve({ ...SETTINGS, ...patch }));
+  await editorWindow();
+  fireEvent.click(tools().getByRole("button", { name: "Open terminal here" }));
+  await waitFor(() => expect(ipc.openTerminal).toHaveBeenCalledExactlyOnceWith(HOME, undefined));
+  const hidden = tools().getByRole("button", { name: "Show hidden files" });
+  expect(hidden).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(hidden);
+  await waitFor(() => expect(ipc.settingsSet).toHaveBeenCalledWith({ show_hidden: true }));
+});
+
+test("collapse_all_and_expand_all_close_and_open_the_folders_of_the_tree", async () => {
+  await editorWindow();
+  fireEvent.click(tools().getByRole("button", { name: "Expand all" }));
+  expect(await screen.findByRole("treeitem", { name: /^todo/ })).toBeInTheDocument();
+  fireEvent.click(tools().getByRole("button", { name: "Collapse all" }));
+  await waitFor(() => expect(screen.queryByRole("treeitem", { name: /^todo/ })).toBeNull());
+});
+
+test("the_tree_search_finds_in_the_root_opens_a_file_and_shows_a_folder_in_the_tree", async () => {
+  const handlers: Record<string, ((payload: unknown) => void)[]> = {};
+  ipc.on.mockImplementation((name: string, h: (payload: unknown) => void) => {
+    (handlers[name] ??= []).push(h);
+    return Promise.resolve(() => undefined);
+  });
+  ipc.search.mockResolvedValue(1);
+  ipc.cancelOp.mockResolvedValue(undefined);
+  await editorWindow();
+  const searchButton = tools().getByRole("button", { name: /^Search in / });
+  fireEvent.click(searchButton);
+  const box = await screen.findByRole("searchbox");
+  fireEvent.change(box, { target: { value: "o" } });
+  await waitFor(() =>
+    expect(ipc.search).toHaveBeenCalledWith(expect.any(String), [HOME], "o", false)
+  );
+  const key = ipc.search.mock.lastCall![0] as string;
+  const hits = [entry("todo.md", {}, "/home/a/work"), folder("/home/a", "work")];
+  act(() =>
+    (handlers["kernkraft://search-hit"] ?? []).forEach((h) => h({ key, op: 1, entries: hits }))
+  );
+  const found = await screen.findAllByTestId("scan-hit");
+  // A file found opens as from the tree.
+  fireEvent.doubleClick(found[0]!);
+  await waitFor(() =>
+    expect(ipc.openPaths).toHaveBeenCalledWith([p("/home/a/work/todo.md")], "inside", "default")
+  );
+  // A folder found closes the search and is the tree's current row.
+  fireEvent.doubleClick(found[1]!);
+  await waitFor(() => expect(screen.queryByTestId("search-view")).toBeNull());
+  await waitFor(() =>
+    expect(screen.getByRole("treeitem", { name: /^work/ })).toHaveAttribute("data-active", "true")
+  );
 });

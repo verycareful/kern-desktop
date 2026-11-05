@@ -630,8 +630,20 @@
 }
 
 .kern-editor-tree {
+  display: flex;
   min-height: 0;
   flex: 1;
+  flex-direction: column;
+}
+
+/* The tree, kept in the page (hidden) while the name search takes the column. */
+.kern-editor-tree-body {
+  min-height: 0;
+  flex: 1;
+}
+
+.kern-editor-tree-body[hidden] {
+  display: none;
 }
 
 .kern-splitter {
