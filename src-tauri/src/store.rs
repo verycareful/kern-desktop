@@ -974,6 +974,16 @@ impl Store {
         })
     }
 
+    /// Takes `path` off the recents. A path that is not there changes nothing.
+    pub fn recent_remove(&self, path: &WirePath) -> Result<Loaded<Recents>, WireError> {
+        let key = path.to_path_buf()?;
+        self.recents.update(|recents| {
+            let before = recents.entries.len();
+            recents.entries.retain(|e| !same_path(&e.path, &key));
+            Ok(recents.entries.len() != before)
+        })
+    }
+
     /// Drops the pins and recents whose target is gone, using the system's
     /// removable-volume mount points ([`MOUNT_LAYOUTS`]).
     pub fn prune(&self) -> Result<PruneReport, WireError> {

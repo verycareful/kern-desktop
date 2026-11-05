@@ -15,6 +15,7 @@ import {
 import type { WirePath } from "../ipc";
 import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 import { showFolder } from "./place-nav";
+import { openOnDoubleClick } from "./double-click";
 import { placeKey, useCurrentPlace } from "./use-current-place";
 import { useUserDirs } from "./user-dirs-store";
 
@@ -113,7 +114,7 @@ export function PlacesList() {
               className="kern-place"
               aria-current={current === placeKey(key) ? "page" : undefined}
               title={label}
-              onClick={() => showFolder(path)}
+              {...openOnDoubleClick(() => showFolder(path))}
             >
               <Icon size={16} strokeWidth={2} aria-hidden />
               <span className="kern-place-label">{label}</span>

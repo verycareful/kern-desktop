@@ -6,6 +6,7 @@ import { displayPath, isMainWindow, type Device, type Identity } from "../ipc";
 import { formatSize } from "../files/format";
 import { ActionMenu } from "../keys/ActionMenu";
 import { showFolder } from "./place-nav";
+import { openOnDoubleClick } from "./double-click";
 import { VOLUME_MENU } from "./volume-menu";
 import { useCurrentPlace } from "./use-current-place";
 import { identityNote, volumeErrorText } from "./volume-text";
@@ -114,7 +115,7 @@ export function VolumesList() {
                   aria-busy={busy ? true : undefined}
                   aria-current={currentKey === v.key ? "page" : undefined}
                   title={`${label(v)} (${displayPath(v.mount.mount_point)})`}
-                  onClick={() => showFolder(v.mount.mount_point)}
+                  {...openOnDoubleClick(() => showFolder(v.mount.mount_point))}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     if (manage) openMenu(v, { x: e.clientX, y: e.clientY }, e.currentTarget);

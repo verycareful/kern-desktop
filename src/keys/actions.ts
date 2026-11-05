@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import {
+  clipText,
+  displayPath,
   isEditorWindow,
   isMainWindow,
   parent,
   pathKey,
   pinsGet,
+  showInFolder,
   toWireError,
   type WirePath,
 } from "../ipc";
+import { copyProblem } from "../files/use-folder-tools";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { activeTab, useTabs, type Tab, type TabsState } from "../store/tabs";
@@ -811,6 +815,30 @@ function currentEntry() {
   return usePinnedRecent.getState().current;
 }
 
+/** Opens the folder an entry is in, with the entry selected; each problem is said in the panel. */
+async function showEntryInFolder(path: WirePath): Promise<void> {
+  const say = usePinnedRecent.getState().notify;
+  try {
+    for (const err of await showInFolder([path])) say(`Not shown in its folder: ${errorText(err)}`);
+  } catch (e) {
+    say(`Not shown in its folder: ${errorText(toWireError(e))}`);
+  }
+}
+
+/** Puts an entry's path on the clipboard as text. */
+function copyEntryPath(path: WirePath): void {
+  const say = usePinnedRecent.getState().notify;
+  const problem = copyProblem(path);
+  if (problem) {
+    say(`The path was not copied: ${problem}.`);
+    return;
+  }
+  clipText(displayPath(path)).then(
+    () => useOps.getState().notify(`Copied the path of ${baseName(path)}`),
+    (e: unknown) => say(`The path could not be copied: ${errorText(toWireError(e))}`)
+  );
+}
+
 /** The place of the entry a menu was opened on among the pins, or -1. */
 function pinIndex(): number {
   const e = currentEntry();
@@ -867,6 +895,70 @@ const pinnedActions: Action[] = [
     run: () => {
       const e = currentEntry();
       if (e) void usePinnedRecent.getState().unpin(e.path);
+    },
+  },
+  // The folder the entry is in, shown in the main window with the entry selected.
+  {
+    id: "entry.location",
+    label: "Open file location",
+    area: "Pinned",
+    keys: [],
+    when: "entry",
+    enabled: () => currentEntry() !== null,
+    run: () => {
+      const e = currentEntry();
+      if (e) void showEntryInFolder(e.path);
+    },
+  },
+  {
+    id: "entry.openAsEditor",
+    label: "Open as editor",
+    area: "Pinned",
+    keys: [],
+    when: "entry",
+    enabled: () => {
+      const e = currentEntry();
+      return e !== null && usePinnedRecent.getState().kinds[pathKey(e.path)] === "folder";
+    },
+    run: () => {
+      const e = currentEntry();
+      if (e) void openAsEditor(e.path);
+    },
+  },
+  {
+    id: "entry.copyPath",
+    label: "Copy path",
+    area: "Pinned",
+    keys: [],
+    when: "entry",
+    enabled: () => currentEntry() !== null,
+    run: () => {
+      const e = currentEntry();
+      if (e) copyEntryPath(e.path);
+    },
+  },
+  {
+    id: "entry.properties",
+    label: "Properties",
+    area: "Pinned",
+    keys: [],
+    when: "entry",
+    enabled: () => currentEntry() !== null,
+    run: () => {
+      const e = currentEntry();
+      if (e) useProperties.getState().show([e.path]);
+    },
+  },
+  {
+    id: "entry.forget",
+    label: "Remove from Recent",
+    area: "Pinned",
+    keys: [],
+    when: "entry",
+    enabled: () => currentEntry()?.list === "recent",
+    run: () => {
+      const e = currentEntry();
+      if (e) void usePinnedRecent.getState().forget(e.path);
     },
   },
   // Reordering by drag has these as its keyboard and menu form.

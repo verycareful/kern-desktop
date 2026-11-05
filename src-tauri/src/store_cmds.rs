@@ -268,6 +268,16 @@ pub async fn recent_touch<R: Runtime>(
 }
 
 #[tauri::command]
+pub async fn recent_remove<R: Runtime>(
+    app: AppHandle<R>,
+    path: WirePath,
+) -> Result<Recents, WireError> {
+    let store = app.state::<StoreState>().store()?;
+    let loaded = blocking(move || store.recent_remove(&path)).await?;
+    Ok(finish(&app, loaded, EVENT_RECENTS_CHANGED))
+}
+
+#[tauri::command]
 pub async fn prune<R: Runtime>(app: AppHandle<R>) -> Result<PruneReport, WireError> {
     let store = app.state::<StoreState>().store()?;
     let report = blocking(move || store.prune()).await?;

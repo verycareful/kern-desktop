@@ -15,6 +15,8 @@ const COMMANDS: &[&str] = &[
     "pins_reorder",
     "recents_get",
     "recent_touch",
+    "recent_remove",
+    "show_in_folder",
     "prune",
     "store_errors_take",
     "file_identity",

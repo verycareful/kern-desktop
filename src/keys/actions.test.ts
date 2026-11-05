@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import type { WirePath } from "../ipc";
+import { pathKey, type WirePath } from "../ipc";
 import { usePanelsStore } from "../store/panels";
 import { useLayout } from "../store/layout";
 import { useTreeMenu } from "../files/tree-menu-store";
@@ -261,19 +261,39 @@ test("ctrl_d_pins_the_selection_and_nothing_else", () => {
 
 test("entry_actions_follow_the_entry_the_menu_was_opened_on", () => {
   const ctx = currentContext();
-  const enabled = () => ENTRY_MENU[0]!.actions.filter((a) => isEnabled(a, ctx)).map((a) => a.id);
+  const enabled = () =>
+    ENTRY_MENU.flatMap((s) => s.actions)
+      .filter((a) => isEnabled(a, ctx))
+      .map((a) => a.id);
+  const always = ["entry.open", "entry.location", "entry.copyPath", "entry.properties"];
   usePinnedRecent.setState({ pins: [p("/a"), p("/b")], current: null });
   try {
     expect(enabled()).toEqual([]);
     usePinnedRecent.setState({ current: { list: "pinned", path: p("/a") } });
-    expect(enabled()).toEqual(["entry.open", "entry.unpin", "entry.down"]);
+    expect(enabled()).toEqual([...always, "entry.unpin", "entry.down"]);
     usePinnedRecent.setState({ current: { list: "pinned", path: p("/b") } });
-    expect(enabled()).toEqual(["entry.open", "entry.unpin", "entry.up"]);
+    expect(enabled()).toEqual([...always, "entry.unpin", "entry.up"]);
     // A recent entry that is also pinned can be unpinned there, not moved.
     usePinnedRecent.setState({ current: { list: "recent", path: p("/b") } });
-    expect(enabled()).toEqual(["entry.open", "entry.unpin"]);
+    expect(enabled()).toEqual([...always, "entry.unpin", "entry.forget"]);
     usePinnedRecent.setState({ current: { list: "recent", path: p("/c") } });
-    expect(enabled()).toEqual(["entry.open", "entry.pin"]);
+    expect(enabled()).toEqual([...always, "entry.pin", "entry.forget"]);
+  } finally {
+    usePinnedRecent.getState().reset();
+  }
+});
+
+test("open_as_editor_is_offered_on_an_entry_only_for_a_folder", () => {
+  const action = getAction("entry.openAsEditor");
+  const ctx = currentContext();
+  try {
+    usePinnedRecent.setState({
+      current: { list: "pinned", path: p("/a") },
+      kinds: { [pathKey(p("/a"))]: "file" },
+    });
+    expect(isEnabled(action, ctx)).toBe(false);
+    usePinnedRecent.setState({ kinds: { [pathKey(p("/a"))]: "folder" } });
+    expect(isEnabled(action, ctx)).toBe(true);
   } finally {
     usePinnedRecent.getState().reset();
   }

@@ -8,6 +8,7 @@ import { ITEM_DRAG_THRESHOLD } from "../ops/dnd";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { ENTRY_MENU } from "./entry-menu";
+import { openOnDoubleClick } from "./double-click";
 import { moveItem, usePinnedRecent, type EntryList } from "./pinned-recent-store";
 import { homeRelative } from "./home-relative";
 import { RELATIVE_TIME_TICK_MS, relativeTime } from "./relative-time";
@@ -15,7 +16,7 @@ import { useUserDirs } from "./user-dirs-store";
 
 // Pinned on top, Recent below, in the right third. A pin
 // shows its parent folder and a recent entry when it was opened, so entries of
-// the same name are told apart. A click opens the entry (a folder in the
+// the same name are told apart. A double-click opens the entry (a folder in the
 // current folder tab, a file through the open command); right-click, the Menu
 // key or Shift+F10 gives the entry's menu. Pins are reordered by dragging one
 // along the list, or with Move up and Move down in its menu.
@@ -234,7 +235,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
                   type="button"
                   className="kern-place"
                   title={title(p)}
-                  onClick={() => void s.open(p)}
+                  {...openOnDoubleClick(() => void s.open(p))}
                   onPointerDown={onPinPointerDown(key)}
                   {...menuHandlers("pinned", p)}
                 >
@@ -259,7 +260,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
                 type="button"
                 className="kern-place"
                 title={title(r.path)}
-                onClick={() => void s.open(r.path)}
+                {...openOnDoubleClick(() => void s.open(r.path))}
                 {...menuHandlers("recent", r.path)}
               >
                 {icon(r.path)}

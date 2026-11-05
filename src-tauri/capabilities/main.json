@@ -16,6 +16,8 @@
     "allow-pins-reorder",
     "allow-recents-get",
     "allow-recent-touch",
+    "allow-recent-remove",
+    "allow-show-in-folder",
     "allow-prune",
     "allow-store-errors-take",
     "allow-file-identity",

@@ -11,6 +11,7 @@ import {
   pinsGet,
   pinsReorder,
   prune,
+  recentRemove,
   toWireError,
   unpin,
   type CorruptReport,
@@ -86,6 +87,8 @@ interface PinnedRecentState {
   pinPaths(paths: readonly WirePath[], say?: (text: string) => void): Promise<boolean>;
   /** As pinPaths, for one unpin. */
   unpin(path: WirePath, say?: (text: string) => void): Promise<boolean>;
+  /** Takes one entry off Recent; the file itself is untouched. */
+  forget(path: WirePath): Promise<void>;
   /** Puts the pins in this order. */
   reorder(paths: readonly WirePath[]): Promise<void>;
   /** Moves a pin one place up (-1) or down (1). */
@@ -303,6 +306,15 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
       } catch (e) {
         say(`${baseName(path)} could not be unpinned: ${errorText(toWireError(e))}`);
         return false;
+      }
+    },
+    async forget(path) {
+      const seen = events.recents;
+      try {
+        const value = await recentRemove(path);
+        if (events.recents === seen) set({ recents: value.entries });
+      } catch (e) {
+        fail(`${baseName(path)} could not be removed from Recent`, e);
       }
     },
     async reorder(paths) {

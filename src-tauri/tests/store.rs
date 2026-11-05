@@ -202,6 +202,28 @@ fn recents_capped_and_deduped() {
 }
 
 #[test]
+fn recent_remove_takes_one_entry_off() {
+    let e = env();
+    let s = store(&e);
+    let a = e.files.join("a");
+    let b = e.files.join("b");
+    s.recent_touch_at(&wp(&a), 1).unwrap();
+    s.recent_touch_at(&wp(&b), 2).unwrap();
+
+    let removed = s.recent_remove(&wp(&a)).unwrap();
+    assert!(removed.changed);
+    let r = removed.value.entries;
+    assert_eq!(r.len(), 1);
+    assert_eq!(r[0].path, wp(&b));
+    assert_eq!(s.recents_get().unwrap().value.entries.len(), 1);
+
+    // A path that is not among the recents changes nothing.
+    let again = s.recent_remove(&wp(&a)).unwrap();
+    assert!(!again.changed);
+    assert_eq!(again.value.entries.len(), 1);
+}
+
+#[test]
 fn pins_order_and_non_utf8() {
     let e = env();
     let s = store(&e);

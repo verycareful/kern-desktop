@@ -99,6 +99,7 @@ export const unpin = (path: WirePath) => invoke<Pins>("unpin", { path });
 export const pinsReorder = (paths: WirePath[]) => invoke<Pins>("pins_reorder", { paths });
 export const recentsGet = () => invoke<Recents>("recents_get");
 export const recentTouch = (path: WirePath) => invoke<Recents>("recent_touch", { path });
+export const recentRemove = (path: WirePath) => invoke<Recents>("recent_remove", { path });
 export const prune = () => invoke<PruneReport>("prune");
 export const storeErrorsTake = () => invoke<CorruptReport[]>("store_errors_take");
 
@@ -250,6 +251,8 @@ export interface DefaultFm {
 }
 
 export const fm1Status = () => invoke<Fm1Status>("fm1_status");
+/** Shows each path selected in a folder tab of the main window; resolves to the problems met. */
+export const showInFolder = (paths: WirePath[]) => invoke<WireError[]>("show_in_folder", { paths });
 export const defaultFmStatus = () => invoke<DefaultFm>("default_fm_status");
 export const makeDefaultFm = () => invoke<DefaultFm>("make_default_fm");
 

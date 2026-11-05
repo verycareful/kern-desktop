@@ -455,6 +455,23 @@ pub fn serve_requests<R: Runtime>(app: AppHandle<R>, requests: Receiver<Request>
     });
 }
 
+/// Shows each of `paths` selected in a folder tab of the main window, the
+/// same as `ShowItems` (Open file location). Resolves to the problems met,
+/// each said once; an item that could not be shown leaves the others shown.
+#[tauri::command]
+pub async fn show_in_folder<R: Runtime>(
+    app: AppHandle<R>,
+    paths: Vec<WirePath>,
+) -> Result<Vec<WireError>, WireError> {
+    let paths = paths
+        .iter()
+        .map(WirePath::to_path_buf)
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut errors = Vec::new();
+    show_items(&app, &paths, "", &mut errors).await;
+    Ok(errors)
+}
+
 /// Whether Kern serves `org.freedesktop.FileManager1`, and if not why.
 #[tauri::command]
 pub fn fm1_status(state: tauri::State<'_, Fm1State>) -> Fm1Status {
