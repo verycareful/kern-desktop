@@ -12,6 +12,7 @@ use std::sync::Arc;
 use kern_lib::store::{
     move_aside, volume_online, LayoutKind, Store, ViewMode, DEFAULT_INTERFACE_SIZE,
     INTERFACE_SIZES, LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, RECENTS_CAP,
+    RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN,
 };
 use kernkraft_tauri::WirePath;
 use serde_json::{json, Map, Value};
@@ -690,6 +691,8 @@ fn a_layout_patch_that_is_wrong_writes_nothing() {
         json!({"left_width": LEFT_WIDTH_MIN - 1}),
         json!({"left_width": LEFT_WIDTH_MAX + 1}),
         json!({"left_width": "wide"}),
+        json!({"right_width": RIGHT_WIDTH_MIN - 1}),
+        json!({"right_width": RIGHT_WIDTH_MAX + 1}),
         json!({"left_open": 1}),
         json!({"tree_root": {"k": "Utf8", "v": "relative/dir"}}),
         // One bad field refuses the good one beside it.
@@ -699,6 +702,15 @@ fn a_layout_patch_that_is_wrong_writes_nothing() {
         assert_eq!(err.kind, "InvalidArgument", "{bad}");
     }
     assert!(!e.state.join("layout.json").exists());
+    for good in [RIGHT_WIDTH_MIN, RIGHT_WIDTH_MAX] {
+        assert_eq!(
+            s.layout_set(patch(json!({"right_width": good})))
+                .unwrap()
+                .value
+                .right_width,
+            good
+        );
+    }
     for good in [LEFT_WIDTH_MIN, LEFT_WIDTH_MAX] {
         assert_eq!(
             s.layout_set(patch(json!({"left_width": good})))

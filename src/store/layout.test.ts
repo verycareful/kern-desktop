@@ -6,6 +6,10 @@ import {
   LEFT_WIDTH_DEFAULT,
   LEFT_WIDTH_MAX,
   LEFT_WIDTH_MIN,
+  RIGHT_WIDTH_DEFAULT,
+  RIGHT_WIDTH_MAX,
+  RIGHT_WIDTH_MIN,
+  clampRightWidth,
   clampWidth,
   useLayout,
 } from "./layout";
@@ -15,6 +19,7 @@ const stored = (over: Partial<WindowLayout> = {}): WindowLayout => ({
   layout: null,
   left_width: 300,
   left_open: true,
+  right_width: 300,
   tree_root: null,
   ...over,
 });
@@ -41,6 +46,22 @@ test("the_width_stays_between_the_limits_the_backend_also_enforces", () => {
   expect(clampWidth(300.6)).toBe(301);
   useLayout.getState().setLeftWidth(5);
   expect(useLayout.getState().leftWidth).toBe(180);
+});
+
+test("pinned_and_recent_starts_at_its_default_and_stays_between_the_limits", () => {
+  expect(useLayout.getState().rightWidth).toBe(RIGHT_WIDTH_DEFAULT);
+  expect(clampRightWidth(0)).toBe(RIGHT_WIDTH_MIN);
+  expect(clampRightWidth(10_000)).toBe(RIGHT_WIDTH_MAX);
+  useLayout.getState().setRightWidth(5);
+  expect(useLayout.getState().rightWidth).toBe(RIGHT_WIDTH_MIN);
+});
+
+test("the_stored_panel_width_is_read_by_the_main_window_and_by_an_editor_window", () => {
+  useLayout.getState().apply(stored({ right_width: 420 }), "file_manager");
+  expect(useLayout.getState().rightWidth).toBe(420);
+  useLayout.getState().reset();
+  useLayout.getState().applyToEditorWindow(stored({ right_width: 9999 }));
+  expect(useLayout.getState().rightWidth).toBe(RIGHT_WIDTH_MAX);
 });
 
 test("a_stored_layout_wins_over_the_default_and_none_chosen_follows_the_default", () => {

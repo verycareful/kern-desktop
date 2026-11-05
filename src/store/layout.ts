@@ -21,6 +21,19 @@ export const LEFT_WIDTH_DEFAULT = 280;
 export const clampWidth = (w: number): number =>
   Math.min(LEFT_WIDTH_MAX, Math.max(LEFT_WIDTH_MIN, Math.round(w)));
 
+/**
+ * The Pinned and Recent panel's width limits in pixels: the left column's, since a pin's row is a
+ * name and its folder as a place's row is a name. Its default is the left column's too: a third of
+ * the window was too wide (maintainer, 2026-11-05). store.rs RIGHT_WIDTH_MIN and RIGHT_WIDTH_MAX
+ * are the same.
+ */
+export const RIGHT_WIDTH_MIN = LEFT_WIDTH_MIN;
+export const RIGHT_WIDTH_MAX = LEFT_WIDTH_MAX;
+export const RIGHT_WIDTH_DEFAULT = LEFT_WIDTH_DEFAULT;
+
+export const clampRightWidth = (w: number): number =>
+  Math.min(RIGHT_WIDTH_MAX, Math.max(RIGHT_WIDTH_MIN, Math.round(w)));
+
 interface LayoutState {
   layout: LayoutKind;
   /** The user chose `layout` (it is stored); until then the default layout setting decides. */
@@ -29,17 +42,20 @@ interface LayoutState {
   leftWidth: number;
   /** Whether the editor layout's left column is shown (Ctrl+B). */
   leftOpen: boolean;
+  /** Width of the Pinned and Recent panel. */
+  rightWidth: number;
   /** The folder the tree is rooted at; null until it is known. */
   treeRoot: WirePath | null;
   /** The stored layout has been read and applied. */
   loaded: boolean;
   setLayout(layout: LayoutKind): void;
   setLeftWidth(width: number): void;
+  setRightWidth(width: number): void;
   toggleLeft(): void;
   setTreeRoot(root: WirePath | null): void;
   /** Takes the stored layout; `fallback` is the layout when none was chosen. */
   apply(stored: WindowLayout, fallback: LayoutKind): void;
-  /** This window is an editor window: the editor layout, with the column width the main window ended with. */
+  /** This window is an editor window: the editor layout, with the widths the main window ended with. */
   applyToEditorWindow(stored: WindowLayout | null): void;
   /** Nothing could be read: the defaults stand and the window is usable. */
   applyDefaults(fallback: LayoutKind): void;
@@ -51,6 +67,7 @@ const initial = {
   chosen: false,
   leftWidth: LEFT_WIDTH_DEFAULT,
   leftOpen: true,
+  rightWidth: RIGHT_WIDTH_DEFAULT,
   treeRoot: null as WirePath | null,
   loaded: false,
 };
@@ -59,6 +76,7 @@ export const useLayout = create<LayoutState>()((set) => ({
   ...initial,
   setLayout: (layout) => set({ layout, chosen: true }),
   setLeftWidth: (width) => set({ leftWidth: clampWidth(width) }),
+  setRightWidth: (width) => set({ rightWidth: clampRightWidth(width) }),
   toggleLeft: () => set((s) => ({ leftOpen: !s.leftOpen })),
   setTreeRoot: (treeRoot) => set({ treeRoot }),
   apply: (stored, fallback) =>
@@ -67,6 +85,7 @@ export const useLayout = create<LayoutState>()((set) => ({
       chosen: stored.layout !== null,
       leftWidth: clampWidth(stored.left_width),
       leftOpen: stored.left_open,
+      rightWidth: clampRightWidth(stored.right_width),
       treeRoot: stored.tree_root,
       loaded: true,
     }),
@@ -74,6 +93,7 @@ export const useLayout = create<LayoutState>()((set) => ({
     set((s) => ({
       layout: "editor",
       leftWidth: stored ? clampWidth(stored.left_width) : s.leftWidth,
+      rightWidth: stored ? clampRightWidth(stored.right_width) : s.rightWidth,
       loaded: true,
     })),
   applyDefaults: (fallback) => set({ layout: fallback, loaded: true }),

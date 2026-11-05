@@ -28,9 +28,9 @@
 /*
  * A folder tab: the places strip and the side panel run
  * from the window top down to the status bar; the tab row sits over the folder
- * area only, starting at the strip's right edge and ending at the right third.
- * The left two thirds are the strip and the folder area; the third column is
- * the right third. A document tab: the tab row spans both columns.
+ * area only, between the strip and Pinned and Recent, whose width is
+ * --shell-right-width (set on this element from the stored layout). A
+ * document tab: the tab row spans both columns.
  */
 .kern-main {
   display: grid;
@@ -43,8 +43,8 @@
 .kern-main[data-layout="folder"] {
   grid-template-columns:
     var(--shell-places-width)
-    calc(200% / 3 - var(--shell-places-width))
-    minmax(0, 1fr);
+    minmax(0, 1fr)
+    var(--shell-right-width);
 }
 
 .kern-main > .kern-tabbar {
@@ -224,7 +224,22 @@
 }
 
 .kern-panel-right {
+  position: relative;
   flex-direction: column;
+}
+
+/*
+ * The divider on the left edge of Pinned and Recent, over its border. Half of
+ * it lies over the folder area, so it sits above the folder list's sticky
+ * header row (files.css .kern-list-head, z-index 2).
+ */
+.kern-edge-splitter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 3;
+  background: transparent;
 }
 
 .kern-places {
@@ -447,8 +462,8 @@
   top: 0;
   bottom: 0;
   z-index: 10;
-  /* Proportions measured from the window edges: the file manager spans the left two thirds, Pinned and Recent the right third, so slid in together they meet. */
-  width: calc(200% / 3 - var(--shell-stub-width));
+  /* Slid in together, the file manager takes what Pinned and Recent leave between the stubs, so the two meet. */
+  width: calc(100% - var(--shell-right-width) - 2 * var(--shell-stub-width));
   box-shadow: 0 10px 30px color-mix(in srgb, var(--kern-text) 12%, transparent);
 }
 
@@ -459,7 +474,7 @@
 
 .kern-panel-right.kern-overlay {
   right: var(--shell-stub-width);
-  width: calc(100% / 3 - var(--shell-stub-width));
+  width: var(--shell-right-width);
   animation: kern-slide-right 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 

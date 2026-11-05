@@ -13,7 +13,13 @@ import { useLayout } from "../store/layout";
 import { WRITE_DELAY_MS, flushLayout, useLayoutSync } from "./use-layout-sync";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
-const NONE: WindowLayout = { layout: null, left_width: 280, left_open: true, tree_root: null };
+const NONE: WindowLayout = {
+  layout: null,
+  left_width: 280,
+  left_open: true,
+  right_width: 280,
+  tree_root: null,
+};
 const wireError = (message: string) => ({ kind: "Io", message, path: null, details: null });
 
 /** What layout.json holds, as the two commands see it. */
@@ -89,6 +95,15 @@ test("what_changed_last_is_written_when_the_window_goes", async () => {
   hook.unmount();
   await settle();
   expect(ipc.layoutSet).toHaveBeenCalledExactlyOnceWith({ left_width: 400 });
+});
+
+test("a_dragged_pinned_and_recent_width_is_written", async () => {
+  const hook = renderHook(() => useLayoutSync(true));
+  await settle();
+  act(() => useLayout.getState().setRightWidth(360));
+  hook.unmount();
+  await settle();
+  expect(ipc.layoutSet).toHaveBeenCalledExactlyOnceWith({ right_width: 360 });
 });
 
 test("an_editor_window_reads_the_width_and_never_writes", async () => {

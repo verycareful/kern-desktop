@@ -12,7 +12,7 @@ import {
 } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { useOps } from "../ops/useOps";
-import { LEFT_WIDTH_DEFAULT, useLayout } from "../store/layout";
+import { LEFT_WIDTH_DEFAULT, RIGHT_WIDTH_DEFAULT, useLayout } from "../store/layout";
 
 // Keeps the layout store and layout.json in step (store.rs WindowLayout). On start it reads the
 // stored layout and the default layout setting; the main window then writes every change of its
@@ -60,6 +60,7 @@ const UNREAD: WindowLayout = {
   layout: null,
   left_width: LEFT_WIDTH_DEFAULT,
   left_open: true,
+  right_width: RIGHT_WIDTH_DEFAULT,
   tree_root: null,
 };
 
@@ -78,6 +79,7 @@ function patchFor(stored: WindowLayout, s: ReturnType<typeof useLayout.getState>
   if (s.chosen && s.layout !== stored.layout) patch.layout = s.layout;
   if (s.leftWidth !== stored.left_width) patch.left_width = s.leftWidth;
   if (s.leftOpen !== stored.left_open) patch.left_open = s.leftOpen;
+  if (s.rightWidth !== stored.right_width) patch.right_width = s.rightWidth;
   const rootChanged = JSON.stringify(s.treeRoot) !== JSON.stringify(stored.tree_root);
   if (s.treeRoot && rootChanged) patch.tree_root = s.treeRoot;
   return Object.keys(patch).length > 0 ? patch : null;

@@ -7,6 +7,7 @@ export const NO_LAYOUT: WindowLayout = {
   layout: null,
   left_width: 280,
   left_open: true,
+  right_width: 280,
   tree_root: null,
 };
 

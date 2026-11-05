@@ -80,6 +80,16 @@ pub const LEFT_WIDTH_MAX: u32 = 640;
 /// The left column's width before the user drags it.
 pub const LEFT_WIDTH_DEFAULT: u32 = 280;
 
+/// Smallest and largest width of the Pinned and Recent panel in pixels: the
+/// same bounds as the left column ([`LEFT_WIDTH_MIN`], [`LEFT_WIDTH_MAX`]),
+/// since a pin's row is a name and its folder as a place's row is a name.
+/// The frontend's `RIGHT_WIDTH_MIN` and `RIGHT_WIDTH_MAX` are the same.
+pub const RIGHT_WIDTH_MIN: u32 = LEFT_WIDTH_MIN;
+pub const RIGHT_WIDTH_MAX: u32 = LEFT_WIDTH_MAX;
+/// The panel's width before the user drags it: the left column's default,
+/// since a third of the window was too wide (maintainer, 2026-11-05).
+pub const RIGHT_WIDTH_DEFAULT: u32 = LEFT_WIDTH_DEFAULT;
+
 /// The two layouts of a window (the file manager and the editor layout).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -171,6 +181,9 @@ pub struct WindowLayout {
     pub left_width: u32,
     /// Whether the editor layout's left column is shown.
     pub left_open: bool,
+    /// The width of the Pinned and Recent panel in pixels,
+    /// [`RIGHT_WIDTH_MIN`] to [`RIGHT_WIDTH_MAX`].
+    pub right_width: u32,
     /// The folder the tree is rooted at, absolute; `None` until it is set.
     pub tree_root: Option<WirePath>,
     /// Top-level keys this version does not define, and the raw value of any
@@ -185,6 +198,7 @@ impl Default for WindowLayout {
             layout: None,
             left_width: LEFT_WIDTH_DEFAULT,
             left_open: true,
+            right_width: RIGHT_WIDTH_DEFAULT,
             tree_root: None,
             extra: Map::new(),
         }
@@ -446,6 +460,16 @@ fn check_left_width(w: &u32) -> Result<(), String> {
     }
 }
 
+fn check_right_width(w: &u32) -> Result<(), String> {
+    if (RIGHT_WIDTH_MIN..=RIGHT_WIDTH_MAX).contains(w) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Pinned and Recent width {w} is outside {RIGHT_WIDTH_MIN} to {RIGHT_WIDTH_MAX}"
+        ))
+    }
+}
+
 fn check_tree_root(root: &Option<WirePath>) -> Result<(), String> {
     root.as_ref().map_or(Ok(()), |r| {
         r.to_path_buf().map(|_| ()).map_err(|e| e.to_string())
@@ -633,6 +657,14 @@ impl Stored for WindowLayout {
             &mut keep,
             &mut problems,
             any_value,
+        );
+        take(
+            &mut obj,
+            "right_width",
+            &mut l.right_width,
+            &mut keep,
+            &mut problems,
+            check_right_width,
         );
         take(
             &mut obj,
@@ -858,7 +890,8 @@ impl Store {
 
     /// Merges `patch` (field name to new value) into the stored layout. A
     /// field this version does not define, a value of the wrong type, a
-    /// `left_width` outside [`LEFT_WIDTH_MIN`] to [`LEFT_WIDTH_MAX`] or a
+    /// `left_width` outside [`LEFT_WIDTH_MIN`] to [`LEFT_WIDTH_MAX`], a
+    /// `right_width` outside [`RIGHT_WIDTH_MIN`] to [`RIGHT_WIDTH_MAX`] or a
     /// `tree_root` that is not an absolute path refuses the whole patch and
     /// writes nothing. A `null` clears `layout` and `tree_root`.
     pub fn layout_set(&self, patch: Map<String, Value>) -> Result<Loaded<WindowLayout>, WireError> {

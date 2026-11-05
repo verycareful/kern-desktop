@@ -7,7 +7,9 @@ import { ActionMenu } from "../keys/ActionMenu";
 import { ITEM_DRAG_THRESHOLD } from "../ops/dnd";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
+import { RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN, useLayout } from "../store/layout";
 import { ENTRY_MENU } from "./entry-menu";
+import { Splitter } from "./Splitter";
 import { openOnDoubleClick } from "./double-click";
 import { moveItem, usePinnedRecent, type EntryList } from "./pinned-recent-store";
 import { homeRelative } from "./home-relative";
@@ -19,7 +21,8 @@ import { useUserDirs } from "./user-dirs-store";
 // the same name are told apart. A double-click opens the entry (a folder in the
 // current folder tab, a file through the open command); right-click, the Menu
 // key or Shift+F10 gives the entry's menu. Pins are reordered by dragging one
-// along the list, or with Move up and Move down in its menu.
+// along the list, or with Move up and Move down in its menu. The divider on
+// its left edge sets its width, which the main window remembers.
 
 /** The attribute a pinned row carries: the path key of its pin. */
 const PIN_ATTR = "data-pin";
@@ -52,6 +55,8 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [drag, setDrag] = useState<{ key: string; slot: number } | null>(null);
   const list = useRef<HTMLUListElement>(null);
+  const width = useLayout((l) => l.rightWidth);
+  const setWidth = useLayout((l) => l.setRightWidth);
   const stopDrag = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -184,6 +189,16 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
       aria-label="Pinned and Recent"
       data-testid="side-panel"
     >
+      <Splitter
+        width={width}
+        min={RIGHT_WIDTH_MIN}
+        max={RIGHT_WIDTH_MAX}
+        setWidth={setWidth}
+        grows="left"
+        label="Resize Pinned and Recent"
+        className="kern-splitter kern-edge-splitter"
+        testId="side-panel-splitter"
+      />
       {(s.loadError || s.notices.length > 0) && (
         <div className="kern-side-notices">
           {s.loadError && (

@@ -11,12 +11,13 @@ import { ActionMenu } from "../keys/ActionMenu";
 import type { Action } from "../keys/actions";
 import { DROP_DOCS_ATTR } from "../ops/dnd";
 import { useOps } from "../ops/useOps";
-import { LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, clampWidth, useLayout } from "../store/layout";
+import { LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, useLayout } from "../store/layout";
 import { usePanels } from "../store/panels";
 import type { DocTab, Tab } from "../store/tabs";
 import { FolderArea, PlacesStrip } from "./PlacesPanel";
 import { PanelStub } from "./PanelStub";
 import { PinnedRecentPanel } from "./PinnedRecentPanel";
+import { Splitter } from "./Splitter";
 import { TabBar } from "./TabBar";
 import { WelcomePane } from "./WelcomePane";
 import { ensureTreeRoot } from "./layout-switch";
@@ -27,57 +28,20 @@ import { ensureTreeRoot } from "./layout-switch";
 // document in the file manager layout. Ctrl+B shows or hides the column. The main window shows it
 // when its layout is the editor; an editor window (`editor-<n>`) always does.
 
-/** How far an arrow key moves the divider, in pixels, and Shift with it: a step a hand can follow. */
-const SPLIT_STEP = 16;
-const SPLIT_STEP_BIG = 64;
-
-/** The divider between the column and the centre: dragged, or moved with the arrow keys. */
-function Splitter() {
+/** The divider between the column and the centre. */
+function ColumnSplitter() {
   const width = useLayout((s) => s.leftWidth);
   const setWidth = useLayout((s) => s.setLeftWidth);
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    const startX = e.clientX;
-    const start = useLayout.getState().leftWidth;
-    const move = (ev: PointerEvent) => setWidth(start + ev.clientX - startX);
-    const stop = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", stop);
-      window.removeEventListener("pointercancel", stop);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", stop);
-    window.addEventListener("pointercancel", stop);
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    const step = e.shiftKey ? SPLIT_STEP_BIG : SPLIT_STEP;
-    const to = {
-      ArrowLeft: width - step,
-      ArrowRight: width + step,
-      Home: LEFT_WIDTH_MIN,
-      End: LEFT_WIDTH_MAX,
-    }[e.key];
-    if (to === undefined || e.ctrlKey || e.altKey || e.metaKey) return;
-    e.preventDefault();
-    setWidth(clampWidth(to));
-  };
-
   return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize the folder column"
-      aria-valuenow={width}
-      aria-valuemin={LEFT_WIDTH_MIN}
-      aria-valuemax={LEFT_WIDTH_MAX}
-      tabIndex={0}
+    <Splitter
+      width={width}
+      min={LEFT_WIDTH_MIN}
+      max={LEFT_WIDTH_MAX}
+      setWidth={setWidth}
+      grows="right"
+      label="Resize the folder column"
       className="kern-splitter"
-      data-testid="column-splitter"
-      onPointerDown={onPointerDown}
-      onKeyDown={onKeyDown}
+      testId="column-splitter"
     />
   );
 }
@@ -177,7 +141,11 @@ export function EditorLayout(props: {
   const leftOpen = useLayout((s) => s.leftOpen);
   const width = useLayout((s) => s.leftWidth);
   const { rightOpen } = usePanels();
-  const style = { "--editor-left-width": `${width}px` } as CSSProperties;
+  const rightWidth = useLayout((s) => s.rightWidth);
+  const style = {
+    "--editor-left-width": `${width}px`,
+    "--shell-right-width": `${rightWidth}px`,
+  } as CSSProperties;
 
   // The tree needs a folder: the main window finds one (Home, or the folder tab shown); an editor
   // window is told its folder by the backend.
@@ -195,7 +163,7 @@ export function EditorLayout(props: {
       {leftOpen && (
         <>
           <LeftColumn />
-          <Splitter />
+          <ColumnSplitter />
         </>
       )}
       <div

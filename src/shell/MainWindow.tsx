@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useEffect } from "react";
+import { useEffect, type CSSProperties } from "react";
 import { useViewSettingsSync } from "../files/view-settings";
 import { useShortcuts } from "../keys/useShortcuts";
 import { useLayout } from "../store/layout";
@@ -22,8 +22,8 @@ import { TabBar } from "./TabBar";
 import "./shell.css";
 
 // The places strip and Pinned and Recent run the full
-// height of the window (the strip on the left, Pinned and Recent on the right
-// third); the tab row sits over the folder area between them. In a document tab
+// height of the window (the strip on the left, Pinned and Recent on the right,
+// as wide as the user dragged it); the tab row sits over the folder area between them. In a document tab
 // the tab row spans the window and both panels are folded to stubs that
 // slide them over the document. The status bar spans the bottom.
 export default function MainWindow(props: { openingHome?: boolean; starting?: boolean }) {
@@ -38,6 +38,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
   // is the first one it shows. A layout that cannot be read still ends the wait (the defaults
   // stand and the failure is said, use-layout-sync.ts).
   const layoutReady = useLayout((s) => s.loaded);
+  const rightWidth = useLayout((s) => s.rightWidth);
   // Pinned and Recent is followed while the window is open, not only while its panel shows:
   // a document tab folds the panel away, and Ctrl+D there reads whether the document is pinned.
   useEffect(() => {
@@ -113,7 +114,12 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
           <EditorCentre tab={tab} docs={docs} starting={props.starting} />
         </EditorLayout>
       ) : (
-        <div className="kern-main" data-layout={layout} data-testid="main-grid">
+        <div
+          className="kern-main"
+          data-layout={layout}
+          data-testid="main-grid"
+          style={{ "--shell-right-width": `${rightWidth}px` } as CSSProperties}
+        >
           <TabBar />
           {body}
           {docBody}

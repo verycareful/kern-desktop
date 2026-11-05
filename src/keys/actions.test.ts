@@ -355,7 +355,10 @@ test("the_layout_actions_belong_to_the_main_window_and_the_column_toggle_to_the_
   ]);
   useLayout
     .getState()
-    .apply({ layout: null, left_width: 280, left_open: true, tree_root: p("/a") }, "file_manager");
+    .apply(
+      { layout: null, left_width: 280, left_open: true, right_width: 280, tree_root: p("/a") },
+      "file_manager"
+    );
   expect([to("layout.editor"), to("layout.fileManager"), to("layout.left.toggle")]).toEqual([
     true,
     false,

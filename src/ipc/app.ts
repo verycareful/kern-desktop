@@ -82,6 +82,8 @@ export interface WindowLayout {
   /** Width of the editor layout's left column in pixels, 180 to 640 (store.rs LEFT_WIDTH_MIN, LEFT_WIDTH_MAX). */
   left_width: number;
   left_open: boolean;
+  /** Width of the Pinned and Recent panel in pixels, 180 to 640 (store.rs RIGHT_WIDTH_MIN, RIGHT_WIDTH_MAX). */
+  right_width: number;
   /** The folder the tree is rooted at; null until it is set. */
   tree_root: WirePath | null;
 }
