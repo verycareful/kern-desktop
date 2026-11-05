@@ -477,6 +477,14 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   }, [tab.id, folder.phase, entries, sel, searching]);
   useEffect(() => () => useFolderStatus.getState().clear(tab.id), [tab.id]);
 
+  // The toolbar's buttons ask the controller whether they can run, and it reads what the effects
+  // above store, after the render that drew them. So once the folder's phase or the search
+  // changes, the view is drawn once more, with the buttons reading what is stored now.
+  const [, setToolsDrawnFor] = useState("");
+  useEffect(() => {
+    setToolsDrawnFor(`${folder.phase}\n${searching}`);
+  }, [folder.phase, searching]);
+
   const onItemClick = useCallback(
     (i: number, e: React.MouseEvent) => {
       if (e.ctrlKey || e.metaKey) dispatch((s) => ctrlClick(s, i));

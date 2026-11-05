@@ -231,6 +231,22 @@ test("the_file_actions_are_greyed_in_the_menu_when_only_an_item_is_outlined", as
   expect(within(menu).getByRole("menuitem", { name: /^Open terminal here/ })).toBeEnabled();
 });
 
+test("the_toolbar_buttons_are_live_once_the_folder_is_listed", async () => {
+  await mount([entry("a")]);
+  const bar = screen.getByRole("toolbar", { name: "Folder" });
+  for (const name of ["New folder", "Search", "Open terminal here"]) {
+    await waitFor(() => expect(within(bar).getByRole("button", { name })).toBeEnabled());
+  }
+});
+
+test("the_toolbar_buttons_are_live_in_an_empty_folder", async () => {
+  await mount([]);
+  const bar = screen.getByRole("toolbar", { name: "Folder" });
+  for (const name of ["New folder", "Search", "Open terminal here"]) {
+    await waitFor(() => expect(within(bar).getByRole("button", { name })).toBeEnabled());
+  }
+});
+
 test("a_right_click_in_an_empty_folder_opens_the_folder_menu", async () => {
   await mount([]);
   const shown = fireEvent.contextMenu(screen.getByTestId("folder-empty"));
