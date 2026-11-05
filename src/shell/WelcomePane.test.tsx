@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { actions, type Action } from "../keys/actions";
+
+const ipc = vi.hoisted(() => ({ openUrl: vi.fn(), settingsGet: vi.fn() }));
+vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 import { WelcomePane } from "./WelcomePane";
-import { WELCOME_FACTS } from "./welcome-content";
+import { WELCOME_ASKS, WELCOME_FACTS, WELCOME_ROTATION } from "./welcome-content";
 import { ROTATE_MS, tipsFromActions } from "./welcome-tips";
 
 beforeEach(() => vi.useFakeTimers());
@@ -73,22 +74,46 @@ test("the_pane_shows_a_tip_and_a_fact_and_rotates_them", () => {
   render(<WelcomePane />);
   const tips = tipsFromActions();
   const shown = () => screen.getByTestId("welcome-tip").textContent ?? "";
+  const fact = () => screen.getByTestId("welcome-fact").querySelector("p")?.textContent ?? "";
   const first = shown();
   expect(first).toContain(tips[0]!.label);
   expect(screen.getByTestId("welcome-tip").querySelector("kbd")).toHaveTextContent(tips[0]!.key);
-  expect(screen.getByTestId("welcome-fact")).toHaveTextContent(WELCOME_FACTS[0]!.text);
+  const firstFact = fact();
   act(() => void vi.advanceTimersByTime(ROTATE_MS));
   expect(shown()).toContain(tips[1]!.label);
-  expect(screen.getByTestId("welcome-fact")).toHaveTextContent(WELCOME_FACTS[1]!.text);
+  expect(fact()).not.toBe(firstFact);
   // By hand too.
   fireEvent.click(screen.getByRole("button", { name: "Another tip" }));
   expect(shown()).toContain(tips[2]!.label);
-  fireEvent.click(screen.getByRole("button", { name: "Another fact" }));
-  expect(screen.getByTestId("welcome-fact")).toHaveTextContent(WELCOME_FACTS[2]!.text);
   // The last wraps to the first.
   for (let i = 0; i < tips.length; i++)
     fireEvent.click(screen.getByRole("button", { name: "Another tip" }));
   expect(shown()).toContain(tips[2]!.label);
+});
+
+test("every_fact_is_shown_once_before_any_comes_back_in_an_order_of_its_own", () => {
+  const orderOf = () => {
+    const seen: string[] = [];
+    const view = render(<WelcomePane />);
+    const fact = () => screen.getByTestId("welcome-fact").querySelector("p")?.textContent ?? "";
+    for (let i = 0; i < WELCOME_ROTATION.length; i++) {
+      seen.push(fact());
+      fireEvent.click(screen.getByRole("button", { name: "Another fact" }));
+    }
+    // After the last, the round starts again with the first.
+    expect(fact()).toBe(seen[0]);
+    view.unmount();
+    return seen;
+  };
+  const random = vi.spyOn(Math, "random");
+  random.mockReturnValue(0);
+  const one = orderOf();
+  expect([...one].sort()).toEqual(WELCOME_ROTATION.map((f) => f.text).sort());
+  random.mockReturnValue(0.999);
+  const other = orderOf();
+  expect(new Set(other).size).toBe(WELCOME_ROTATION.length);
+  expect(other).not.toEqual(one);
+  random.mockRestore();
 });
 
 test("a_pane_that_goes_stops_rotating", () => {
@@ -100,27 +125,67 @@ test("a_pane_that_goes_stops_rotating", () => {
 
 // ---- the facts ----
 
-test("welcome_facts_each_name_a_source_that_holds_their_symbol", () => {
-  expect(WELCOME_FACTS.length).toBeGreaterThanOrEqual(5);
+test("welcome_facts_are_sentences_each_with_a_reference", () => {
+  expect(WELCOME_FACTS.length).toBeGreaterThanOrEqual(50);
   for (const f of WELCOME_FACTS) {
-    const text = readFileSync(resolve(process.cwd(), f.source), "utf8");
-    expect(text, `${f.source} should contain ${f.symbol}`).toContain(f.symbol);
-  }
-});
-
-test("welcome_facts_carry_no_version_and_do_not_speak_of_other_software", () => {
-  for (const f of WELCOME_FACTS) {
-    expect(f.text, f.text).not.toMatch(/\d+\.\d+/);
-    expect(f.text, f.text).not.toMatch(/\b(VS ?Code|Dolphin|Thunar|Nautilus|Vim|Emacs|Qyra)\b/i);
     expect(f.text.endsWith("."), f.text).toBe(true);
+    expect(f.source.trim(), f.text).not.toBe("");
   }
   expect(new Set(WELCOME_FACTS.map((f) => f.text)).size).toBe(WELCOME_FACTS.length);
 });
 
-test("the_facts_name_files_that_are_tracked_by_the_repository", () => {
-  // A source is a file of this repository, never a local or ignored one.
-  for (const f of WELCOME_FACTS) {
-    expect(f.source).toMatch(/^(src|src-tauri|scripts)\//);
-    expect(f.source).not.toMatch(/^(local|tools)\//);
-  }
+test("the_facts_are_about_the_world_not_about_kern", () => {
+  for (const f of WELCOME_FACTS) expect(f.text, f.text).not.toMatch(/\bkern\b/i);
+});
+
+// ---- the words from the author ----
+
+/** Shows the rotation's items in their own order (no shuffle) and returns the pane. */
+function inOrder() {
+  // Math.random at 0.999 swaps nothing: index i is drawn as floor(0.999 * (i + 1)) = i.
+  vi.spyOn(Math, "random").mockReturnValue(0.999);
+  render(<WelcomePane />);
+}
+const toAsk = (at: number) => {
+  for (let i = 0; i < at; i++)
+    fireEvent.click(screen.getByRole("button", { name: "Another fact" }));
+};
+
+test("a_word_from_the_author_takes_its_turn_among_the_facts_and_opens_its_page", async () => {
+  vi.useRealTimers();
+  ipc.settingsGet.mockResolvedValue({ terminal: null });
+  ipc.openUrl.mockResolvedValue(undefined);
+  inOrder();
+  const card = screen.getByTestId("welcome-fact");
+  expect(within(card).queryByRole("button", { name: WELCOME_ASKS[0]!.label })).toBeNull();
+  toAsk(WELCOME_FACTS.length);
+  expect(card).toHaveTextContent(WELCOME_ASKS[0]!.text);
+  expect(within(card).getByRole("heading")).toHaveTextContent("From the author");
+  fireEvent.click(within(card).getByRole("button", { name: WELCOME_ASKS[0]!.label }));
+  await waitFor(() =>
+    expect(ipc.openUrl).toHaveBeenCalledExactlyOnceWith(WELCOME_ASKS[0]!.url, undefined)
+  );
+  vi.restoreAllMocks();
+});
+
+test("a_page_that_cannot_be_opened_is_said_while_its_word_shows", async () => {
+  vi.useRealTimers();
+  ipc.settingsGet.mockResolvedValue({ terminal: null });
+  ipc.openUrl.mockRejectedValue({ kind: "Open", message: "no browser", path: null });
+  inOrder();
+  toAsk(WELCOME_FACTS.length);
+  fireEvent.click(screen.getByRole("button", { name: WELCOME_ASKS[0]!.label }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(/could not be opened: .*no browser/);
+  fireEvent.click(screen.getByRole("button", { name: "Another fact" }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  vi.restoreAllMocks();
+});
+
+test("the_words_name_the_author_s_github_pages", () => {
+  expect(WELCOME_ASKS.map((a) => a.url)).toEqual([
+    "https://github.com/verycareful/kern-desktop",
+    "https://github.com/verycareful",
+    "https://github.com/verycareful/kern",
+    "https://github.com/verycareful?tab=repositories",
+  ]);
 });

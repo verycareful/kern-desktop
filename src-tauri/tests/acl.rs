@@ -271,7 +271,7 @@ const NOT_FOR_EDITORS: [&str; 12] = [
 /// would let the page delete for good or empty the Trash. (The page copies or moves a file dropped
 /// on its tree through `drop_start_op`, which takes only those two; `cancel_op`, `answer_conflict`,
 /// `undo_state` and `same_filesystem` are granted; see `EDITOR_DROP_GRANTS`.)
-const KERNKRAFT_NOT_FOR_EDITORS: [&str; 19] = [
+const KERNKRAFT_NOT_FOR_EDITORS: [&str; 18] = [
     "start_op",
     "trash_purge",
     "trash_restore",
@@ -288,7 +288,6 @@ const KERNKRAFT_NOT_FOR_EDITORS: [&str; 19] = [
     "set_default_app",
     "open_terminal",
     "theme_set_prefs",
-    "open_url",
     "search",
     "documents",
 ];

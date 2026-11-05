@@ -1,62 +1,276 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-// The short facts the welcome pane of the editor layout rotates through, beside the keyboard tips
-// (which come from the action table, WelcomePane.tsx). Each is true of Kern as built, says nothing
-// of other software and carries no version number, and names its source: a file of this
-// repository and a symbol or phrase in it. welcome-content.test.ts opens each source and looks for
-// the symbol, so a fact whose source moved or went fails there.
+// The fun facts the welcome pane of the editor layout shows beside the keyboard tips (which come
+// from the action table, WelcomePane.tsx). They are about the world, not about Kern, and are kept
+// to ones that are well established; each names the published reference it rests on. They ship
+// with the application, which never fetches anything.
+
+import { ANDROID_URL, PROFILE_URL, PROJECTS_URL, SOURCE_URL } from "../settings/links";
+
+/** A word from the author, with the page its button opens. */
+export interface WelcomeAsk {
+  text: string;
+  /** The button's label. */
+  label: string;
+  url: string;
+}
+
+export const WELCOME_ASKS: readonly WelcomeAsk[] = [
+  { text: "Like Kern? A star on GitHub helps it.", label: "Star Kern on GitHub", url: SOURCE_URL },
+  { text: "Kern is made by one person.", label: "Follow the author on GitHub", url: PROFILE_URL },
+  { text: "Kern runs on Android phones too.", label: "See Kern for Android", url: ANDROID_URL },
+  {
+    text: "The author of Kern makes other things too.",
+    label: "See the other projects",
+    url: PROJECTS_URL,
+  },
+];
 
 export interface WelcomeFact {
   /** The sentence shown. */
   text: string;
-  /** The file, relative to the repository root, that makes it true. */
+  /** The published reference the fact rests on. */
   source: string;
-  /** What to look for in that file. */
-  symbol: string;
 }
 
 export const WELCOME_FACTS: readonly WelcomeFact[] = [
   {
-    // The content security policy allows only the application's own origin and the IPC channel
-    // (tauri.conf.json app.security.csp, connect-src), and scripts/check-no-network.sh fails the
-    // build when a source names a network API.
-    text: "Kern never connects to the network: its pages may talk only to the application itself.",
-    source: "src-tauri/tauri.conf.json",
-    symbol: "connect-src ipc: http://ipc.localhost",
+    text: "Sunlight takes about eight minutes and twenty seconds to reach Earth.",
+    source:
+      "IAU 2012 Resolution B2 (the astronomical unit); BIPM, SI Brochure (the speed of light)",
   },
   {
-    // textOpen and textSave take the path of the file itself (src/ipc/kernkraft.ts): there is no
-    // project, library or copy that a document is imported into.
-    text: "Kern edits a file where it is. There is no project or library to add it to first.",
-    source: "src/ipc/kernkraft.ts",
-    symbol: "export const textSave",
+    text: "Venus turns so slowly that its day is longer than its year, and it turns the opposite way to most planets.",
+    source: "NASA Goddard Space Flight Center, Venus Fact Sheet",
   },
   {
-    // The registry of open documents (OpenRegistry, route's Target::Focus) sends an open of a file
-    // that is open anywhere, under any of its names, to the window that has it.
-    text: "A file is never open twice: opening it again brings the window that has it forward.",
-    source: "src-tauri/src/open.rs",
-    symbol: "Target::Focus",
+    text: "An octopus has three hearts and blue blood.",
+    source: "Encyclopaedia Britannica, 'Octopus'",
   },
   {
-    // Moving a tab to a new window hands the editor's state over (HandedDoc, stateToHand), unsaved
-    // text included.
-    text: "A tab moved to a new window takes its unsaved text with it.",
-    source: "src/shell/move-doc.ts",
-    symbol: "export async function moveTabToWindow",
+    text: "Botanically, bananas are berries and strawberries are not.",
+    source: "Encyclopaedia Britannica, 'Berry'",
   },
   {
-    // closeWindow asks about every document that closing would lose something of.
-    text: "Closing a window with unsaved changes asks first. So does closing a tab.",
-    source: "src/shell/useCloseGuard.ts",
-    symbol: "export async function closeWindow",
+    text: "Water expands by about nine percent when it freezes, which is why ice floats.",
+    source: "U.S. Geological Survey, Water Science School",
   },
   {
-    // A save expects the file as it was opened (TextExpect "unchanged"); a file another program
-    // changed is not written over without a question (useTextDoc, ExternalModification).
-    text: "If another program changes a file you are editing, Kern asks before it writes over it.",
-    source: "src/editor/useTextDoc.ts",
-    symbol: "ExternalModification",
+    text: "Sharks were swimming in the oceans before the first trees grew on land.",
+    source: "Encyclopaedia Britannica, 'Chondrichthyan' and 'Devonian Period'",
   },
-] as const;
+  {
+    text: "Teaching was going on at Oxford before the Aztec capital Tenochtitlan was founded.",
+    source:
+      "University of Oxford, 'Introduction and history'; Encyclopaedia Britannica, 'Tenochtitlan'",
+  },
+  {
+    text: "Cleopatra lived closer in time to the Moon landing than to the building of the Great Pyramid of Giza.",
+    source: "Encyclopaedia Britannica, 'Cleopatra' and 'Pyramids of Giza'",
+  },
+  {
+    text: "Wombats leave droppings shaped like cubes.",
+    source: "Yang et al., Soft Matter 17 (2021), on how wombat intestines shape their faeces",
+  },
+  {
+    text: "A human body is made of roughly 37 trillion cells.",
+    source: "Bianconi et al., Annals of Human Biology 40 (2013)",
+  },
+  {
+    text: "There are more ways to order a deck of 52 cards than there are atoms in Earth.",
+    source: "52! is about 8 × 10^67; Earth holds about 10^50 atoms",
+  },
+  {
+    text: "The summit of Chimborazo in Ecuador is farther from Earth's centre than the top of Everest.",
+    source: "NOAA National Geodetic Survey",
+  },
+  {
+    text: "Sound travels about four times faster in water than in air.",
+    source: "CRC Handbook of Chemistry and Physics, speed of sound in water and in air",
+  },
+  {
+    text: "The shortest war on record, between Britain and Zanzibar in 1896, lasted under an hour.",
+    source: "Guinness World Records, 'Shortest war'",
+  },
+  {
+    text: "Venus is the hottest planet, hotter than Mercury, though Mercury is closer to the Sun.",
+    source: "NASA Science, Venus",
+  },
+  {
+    text: "Saturn is less dense than water.",
+    source: "NASA Goddard Space Flight Center, Saturn Fact Sheet",
+  },
+  {
+    text: "The Great Red Spot on Jupiter is a storm wider than Earth.",
+    source: "NASA Science, Jupiter",
+  },
+  {
+    text: "Butterflies taste with their feet.",
+    source: "Encyclopaedia Britannica, 'Lepidopteran'",
+  },
+  {
+    text: "Koala fingerprints are so like human ones that they are hard to tell apart under a microscope.",
+    source: "Henneberg, Lambert and Leigh, Nature (1996), on koala and human fingerprints",
+  },
+  {
+    text: "The Moon drifts away from Earth by nearly four centimetres a year.",
+    source: "NASA, Lunar Laser Ranging",
+  },
+  {
+    text: "Lightning strikes somewhere on Earth more than forty times every second.",
+    source: "NASA Global Hydrometeorology Resource Center, lightning climatology",
+  },
+  {
+    text: "A bolt of lightning is about five times hotter than the surface of the Sun.",
+    source: "NOAA National Weather Service, lightning science",
+  },
+  {
+    text: "Earth has about three trillion trees, more than there are stars in the Milky Way.",
+    source: "Crowther et al., Nature 525 (2015)",
+  },
+  {
+    text: "Tardigrades have survived being exposed to the vacuum of space.",
+    source: "Jönsson et al., Current Biology 18 (2008)",
+  },
+  {
+    text: "Pluto has not finished a single orbit of the Sun since it was discovered in 1930.",
+    source: "NASA Science, Pluto",
+  },
+  {
+    text: "The unicorn is the national animal of Scotland.",
+    source: "VisitScotland, 'Scotland's national animal'",
+  },
+  {
+    text: "Peanuts are not nuts but legumes, like peas and beans.",
+    source: "Encyclopaedia Britannica, 'Peanut'",
+  },
+  {
+    text: "Antarctica is the largest desert on Earth.",
+    source: "Encyclopaedia Britannica, 'Desert'",
+  },
+  {
+    text: "Gallium is a metal that melts in your hand.",
+    source: "CRC Handbook of Chemistry and Physics, melting point of gallium",
+  },
+  {
+    text: "Diamond and graphite are both made of nothing but carbon.",
+    source: "Encyclopaedia Britannica, 'Carbon'",
+  },
+  {
+    text: "Seen from an aeroplane, a rainbow can be a full circle.",
+    source: "Met Office, 'How are rainbows formed?'",
+  },
+  {
+    text: "The Atlantic Ocean grows a few centimetres wider every year.",
+    source: "U.S. Geological Survey, 'This Dynamic Earth'",
+  },
+  {
+    text: "A newborn baby has around 300 bones; many fuse, leaving an adult with 206.",
+    source: "Encyclopaedia Britannica, 'Human skeleton'",
+  },
+  {
+    text: "The word robot comes from a Czech word for forced labour, first used in a play in 1920.",
+    source: "Encyclopaedia Britannica, 'R.U.R.'",
+  },
+  {
+    text: "An ostrich's eye is bigger than its brain.",
+    source: "Encyclopaedia Britannica, 'Ostrich'",
+  },
+  {
+    text: "For nearly four thousand years the Great Pyramid of Giza was the tallest structure people had built.",
+    source: "Encyclopaedia Britannica, 'Pyramids of Giza'",
+  },
+  {
+    text: "The metre is defined by light: it is the distance light travels in 1/299,792,458 of a second.",
+    source: "BIPM, The International System of Units (SI Brochure)",
+  },
+  {
+    text: "A year on Mercury lasts 88 Earth days.",
+    source: "NASA Goddard Space Flight Center, Mercury Fact Sheet",
+  },
+  {
+    text: "Olympus Mons on Mars is about two and a half times as tall as Mount Everest.",
+    source: "NASA Science, Mars",
+  },
+  {
+    text: "Sea otters sometimes hold paws while they sleep, so they do not drift apart.",
+    source: "Monterey Bay Aquarium, sea otter facts",
+  },
+  {
+    text: "The deepest point of the Mariana Trench lies farther below sea level than Mount Everest rises above it.",
+    source: "NOAA Ocean Exploration, 'How deep is the ocean?'",
+  },
+  {
+    text: "Male seahorses carry the eggs and give birth to the young.",
+    source: "Encyclopaedia Britannica, 'Seahorse'",
+  },
+  {
+    text: "Honeybees tell each other where food is with a dance.",
+    source: "von Frisch, The Dance Language and Orientation of Bees (1967)",
+  },
+  {
+    text: "Dolphins can sleep with one half of the brain at a time.",
+    source: "Rattenborg, Amlaner and Lima, Neuroscience and Biobehavioral Reviews 24 (2000)",
+  },
+  {
+    text: "Crows can recognise a human face and remember it for years.",
+    source: "Marzluff et al., Animal Behaviour 79 (2010)",
+  },
+  {
+    text: "The Sun holds more than 99 percent of all the mass in the Solar System.",
+    source: "NASA Science, the Sun",
+  },
+  {
+    text: "Neptune was found by calculation before anyone saw it, from the pull it had on Uranus.",
+    source: "Encyclopaedia Britannica, 'Neptune'",
+  },
+  {
+    text: "The first photograph known to show a person was taken on a Paris street in 1838.",
+    source: "Encyclopaedia Britannica, 'Louis-Jacques-Mandé Daguerre'",
+  },
+  {
+    text: "There are more possible games of chess than atoms in the observable universe.",
+    source: "Shannon, Philosophical Magazine 41 (1950)",
+  },
+  {
+    text: "The blue whale is the largest animal known ever to have lived.",
+    source: "Encyclopaedia Britannica, 'Blue whale'",
+  },
+  {
+    text: "The Eiffel Tower grows up to about fifteen centimetres taller in the summer heat.",
+    source: "Société d'Exploitation de la Tour Eiffel, the tower's official site",
+  },
+  {
+    text: "Some kinds of bamboo can grow almost a metre in a single day.",
+    source: "Guinness World Records, 'Fastest growing plant'",
+  },
+  {
+    text: "Earth's days are slowly getting longer, by about two milliseconds a century.",
+    source: "Stephenson, Morrison and Hohenkerk, Proceedings of the Royal Society A 472 (2016)",
+  },
+  {
+    text: "Glass is made mostly from sand.",
+    source: "Encyclopaedia Britannica, 'Glass'",
+  },
+  {
+    text: "A giraffe has seven bones in its neck, the same number as a person.",
+    source: "Encyclopaedia Britannica, 'Giraffe'",
+  },
+  {
+    text: "Cats cannot taste sweetness.",
+    source: "Li et al., PLoS Genetics 1 (2005)",
+  },
+];
+
+/** What the fun-fact card shows: a fact, or a word from the author with its button. */
+export interface WelcomeItem {
+  text: string;
+  link?: { label: string; url: string };
+}
+
+/** The facts and the words from the author, which take their turn among the facts. */
+export const WELCOME_ROTATION: readonly WelcomeItem[] = [
+  ...WELCOME_FACTS.map((f) => ({ text: f.text })),
+  ...WELCOME_ASKS.map((a) => ({ text: a.text, link: { label: a.label, url: a.url } })),
+];

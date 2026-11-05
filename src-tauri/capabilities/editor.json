@@ -17,6 +17,7 @@
     "kernkraft-tauri:allow-volumes-list",
     "kernkraft-tauri:allow-volumes-problems-take",
     "kernkraft-tauri:allow-open-default",
+    "kernkraft-tauri:allow-open-url",
     "kernkraft-tauri:allow-mime-of",
     "kernkraft-tauri:allow-same-filesystem",
     "kernkraft-tauri:allow-cancel-op",

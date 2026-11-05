@@ -3,6 +3,7 @@
 import { ChevronRight, ExternalLink } from "lucide-react";
 import { useRef, useState } from "react";
 import { openUrl, toWireError, type Settings } from "../ipc";
+import { ANDROID_URL, KERNKRAFT_URL, SOURCE_URL } from "./links";
 import { errorText } from "../ops/error-text";
 import { Modal } from "../ops/Modal";
 import { LICENCE_TEXT } from "./licence";
@@ -16,9 +17,6 @@ import { VERSION_LABEL } from "./version";
 // is opened by the default application for https links (kernkraft open_url, with the terminal
 // the settings name for a browser that needs one); Kern itself connects to nothing.
 
-const KERNKRAFT_URL = "https://github.com/verycareful/kernkraft";
-const SOURCE_URL = "https://github.com/verycareful/kern-desktop";
-const ANDROID_URL = "https://github.com/verycareful/kern";
 /** The licence by its SPDX short name: the GNU AGPL, version 3. */
 const LICENCE_NAME = "AGPL-3.0";
 
