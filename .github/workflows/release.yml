@@ -3,7 +3,9 @@
 
 # Publishes a GitHub Release for a version tag, with the notes taken from the
 # matching CHANGELOG.md section so the release page and the changelog are the
-# same text. The deb and the AppImage are built from the tag and attached.
+# same text. The deb and the AppImage are built from the tag and attached,
+# with uninstall.sh and SHA256SUMS over the three: install.sh reads the file
+# names from SHA256SUMS and checks every download against it.
 #
 # Separate from ci.yml: it fires only when a version tag is pushed, or when it
 # is dispatched by hand to republish an existing tag.
@@ -100,11 +102,24 @@ jobs:
             --notes-file release-notes.md \
             --verify-tag
 
+      # One deb and one AppImage, or the checksums would name a file the
+      # installer cannot choose between.
+      - name: Collect the assets and their checksums
+        run: |
+          mkdir assets
+          shopt -s nullglob
+          debs=(src-tauri/target/release/bundle/deb/*.deb)
+          images=(src-tauri/target/release/bundle/appimage/*.AppImage)
+          if [ "${#debs[@]}" -ne 1 ] || [ "${#images[@]}" -ne 1 ]; then
+            echo "::error::expected one deb and one AppImage, found ${#debs[@]} and ${#images[@]}"
+            exit 1
+          fi
+          cp "${debs[0]}" "${images[0]}" uninstall.sh assets/
+          (cd assets && sha256sum -- *.deb *.AppImage uninstall.sh > SHA256SUMS)
+          cat assets/SHA256SUMS
+
       - name: Attach the packages
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.value }}
-        run: |
-          gh release upload "$TAG" \
-            src-tauri/target/release/bundle/deb/*.deb \
-            src-tauri/target/release/bundle/appimage/*.AppImage
+        run: gh release upload "$TAG" assets/*

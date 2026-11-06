@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-//! Command-line arguments as paths.
+//! Command-line arguments as paths, and the one option.
+//!
+//! `--apply-settings FILE`, as the first argument with exactly one more,
+//! merges the JSON object in FILE into the settings and exits, with no window
+//! (the installer uses it). Anywhere else it is an ordinary argument, and
+//! after the first `--` a path, so a file of that name still opens.
 //!
 //! The arguments are the ones after the program name, as raw bytes: a file
 //! name need not be UTF-8 and must reach the router unchanged. The desktop
@@ -46,17 +51,55 @@ pub enum Plan {
     Home,
     /// Open these.
     Open(ParsedArgs),
+    /// Merge the JSON object in this file into the settings, then exit.
+    ApplySettings(PathBuf),
 }
+
+/// The option that applies a settings patch from a file.
+pub const APPLY_SETTINGS: &str = "--apply-settings";
 
 /// Decides what a command line asks for. Every argument but the first `--`
 /// gives a path or an error, so a command line that gives neither had no
 /// arguments.
 pub fn plan(argv: &[OsString], cwd: &Path) -> Plan {
+    if argv
+        .first()
+        .is_some_and(|a| a.as_bytes() == APPLY_SETTINGS.as_bytes())
+    {
+        return apply_settings_plan(argv, cwd);
+    }
     let parsed = parse_args_report(argv, cwd);
     if parsed.paths.is_empty() && parsed.errors.is_empty() {
         Plan::Home
     } else {
         Plan::Open(parsed)
+    }
+}
+
+/// `--apply-settings` takes exactly one file, a path like any argument.
+fn apply_settings_plan(argv: &[OsString], cwd: &Path) -> Plan {
+    let refuse = |reason: &str| {
+        Plan::Open(ParsedArgs {
+            paths: Vec::new(),
+            errors: vec![ArgError {
+                arg: argv[0].clone(),
+                reason: reason.to_owned(),
+            }],
+        })
+    };
+    match argv {
+        [_, file] => match one(file, cwd) {
+            Ok(p) => Plan::ApplySettings(p),
+            Err(reason) => Plan::Open(ParsedArgs {
+                paths: Vec::new(),
+                errors: vec![ArgError {
+                    arg: file.clone(),
+                    reason,
+                }],
+            }),
+        },
+        [_] => refuse("--apply-settings needs the settings file"),
+        _ => refuse("--apply-settings takes exactly one file"),
     }
 }
 

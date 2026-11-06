@@ -99,6 +99,45 @@ Kern Desktop is in alpha.
 The other document formats of Kern for Android (spreadsheets, Word and
 PowerPoint files, PDF, EPUB) come in later versions.
 
+## Installing
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/verycareful/kern-desktop/main/install.sh | bash
+```
+
+The installer shows what Kern is, then asks its questions with arrow-key
+menus: whether Kern is for you alone (no administrator password) or for
+everyone on the computer, every setting from the Settings window, whether
+Kern becomes the default file manager, and whether to start it. Nothing
+changes until the last question is answered. It downloads the latest release
+from GitHub and checks every file against the release's `SHA256SUMS` before
+installing anything. The installer is the only part that uses the network;
+Kern itself never does.
+
+Run it again when Kern is installed to update to a newer release (your
+settings, pins and recents stay as they are) or to reinstall from scratch,
+choosing whether to keep your settings and whether to clear pins and recents.
+Anything a reinstall replaces is moved to a `.backup-<time>` file beside it.
+
+- `--defaults` installs for you alone with the default settings and asks
+  nothing; on an installed Kern it updates when a newer release exists.
+- `--from DIR` installs from release files you have already downloaded
+  (`SHA256SUMS`, the deb, the AppImage and `uninstall.sh`), with no network.
+
+For you alone, the AppImage is unpacked under `~/.local/lib/kern`, so it needs
+no FUSE, with `~/.local/bin/kern` and the menu entry under `~/.local/share`.
+For everyone, Debian and Ubuntu get the deb through apt; other distributions
+get the unpacked AppImage under `/opt/kern`.
+
+To remove Kern:
+
+```bash
+bash ~/.local/lib/kern/uninstall.sh   # or /opt/kern/uninstall.sh
+```
+
+It asks whether to keep Kern's settings, pins and recents or delete them, and
+gives the default file manager back to the one Kern replaced.
+
 ## Building
 
 ```bash

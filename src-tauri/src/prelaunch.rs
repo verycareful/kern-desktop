@@ -10,6 +10,9 @@
 //! (no arguments, a folder, a text file) goes on to claim the name or
 //! forward to the running instance. A folder is a window, and so is a
 //! file kernkraft's MIME database says the editor opens as text.
+//!
+//! `--apply-settings FILE` is also finished here: it writes the settings and
+//! exits without a window or the bus name.
 
 use std::path::{Path, PathBuf};
 
@@ -63,6 +66,7 @@ pub fn run(inv: &Invocation) -> Option<i32> {
     let parsed = match cli::plan(&inv.argv, &inv.cwd) {
         Plan::Home => return None,
         Plan::Open(p) => p,
+        Plan::ApplySettings(file) => return Some(apply_settings_launch(&file)),
     };
     let base = base_dirs();
     let db: Result<MimeDb, String> = match &base {
@@ -94,6 +98,38 @@ pub fn run(inv: &Invocation) -> Option<i32> {
         eprintln!("kern: {f}");
     }
     Some(status(failures.len()))
+}
+
+/// Applies the settings patch in `file` to the user's store, reporting a
+/// failure on stderr: 0 when written, else 1.
+fn apply_settings_launch(file: &Path) -> i32 {
+    let Some(base) = base_dirs() else {
+        eprintln!("kern: HOME is not set to an absolute path");
+        return 1;
+    };
+    match apply_settings(&Store::from_base_dirs(&base), file) {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("kern: {e}");
+            1
+        }
+    }
+}
+
+/// Merges the JSON object in `file` into `store`'s settings through
+/// [`Store::settings_set`], which refuses the whole patch (and writes
+/// nothing) when any field is unknown or out of range.
+pub fn apply_settings(store: &Store, file: &Path) -> Result<(), String> {
+    let bytes = std::fs::read(file).map_err(|e| format!("{}: {e}", file.display()))?;
+    let patch = match serde_json::from_slice(&bytes) {
+        Ok(serde_json::Value::Object(m)) => m,
+        Ok(_) => return Err(format!("{}: not a JSON object", file.display())),
+        Err(e) => return Err(format!("{}: {e}", file.display())),
+    };
+    store
+        .settings_set(patch)
+        .map(|_| ())
+        .map_err(|e| format!("{}: {}", file.display(), e.message))
 }
 
 /// Starts each file's default application, one launch per application with

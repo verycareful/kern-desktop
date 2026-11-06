@@ -1209,6 +1209,13 @@ pub async fn handle_launch<R: Runtime>(
             }
             errors
         }
+        // Only a launching process applies settings (prelaunch); one
+        // forwarded here is refused, so nothing is written behind the
+        // running windows.
+        Plan::ApplySettings(_) => vec![arg_error(&cli::ArgError {
+            arg: inv.argv[0].clone(),
+            reason: "--apply-settings is applied by a new launch, not the running Kern".to_owned(),
+        })],
     };
     show_errors(app, &errors, token);
 }

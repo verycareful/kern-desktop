@@ -132,6 +132,18 @@ jobs:
         timeout-minutes: 15
         run: python3 -I scripts/test_desktop_entry.py
 
+      # install.sh and uninstall.sh are built from installer/ and committed;
+      # the committed files must be what the parts build, and must pass
+      # shellcheck. Their tests drive them through a pseudo-terminal against
+      # a fixture release, with stand-ins for the system commands.
+      - name: Install scripts
+        timeout-minutes: 5
+        run: |
+          installer/build.sh --check
+          shellcheck install.sh uninstall.sh installer/build.sh
+          python3 -I scripts/test_installer_ui.py
+          python3 -I scripts/test_installer.py
+
       - name: Build the deb
         timeout-minutes: 30
         run: npx tauri build --bundles deb
@@ -173,14 +185,35 @@ jobs:
       # Every connect, sendto, sendmsg and sendmmsg of the binary and of what
       # it starts is then checked: none may use an IPv4 or IPv6 address (Unix
       # sockets, for D-Bus and X11, are fine). The log must hold traced calls,
-      # so a strace that did not run cannot pass. Estimate: 5 seconds of run
-      # plus the display starting, under 20 seconds in all.
+      # so a strace that did not run cannot pass.
+      #
+      # The display is started first and outside the namespace, and the
+      # 5 seconds start only once Xvfb has written its display number
+      # (-displayfd), so a slow display start cannot use up Kern's time. Kern
+      # reaches it through the socket in /tmp/.X11-unix, which a network
+      # namespace does not hide. sudo clears the environment, so DISPLAY is
+      # passed through env. Estimate: under 20 seconds in all.
       - name: Smoke run without network
         timeout-minutes: 5
         run: |
           log="$RUNNER_TEMP/kern-smoke.strace"
+          display_file="$RUNNER_TEMP/xvfb-display"
+          : > "$display_file"
+          Xvfb -displayfd 9 -nolisten tcp -screen 0 1280x800x24 9>"$display_file" &
+          xvfb_pid=$!
+          trap 'kill "$xvfb_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 100); do
+            [ -s "$display_file" ] && break
+            sleep 0.1
+          done
+          if [ ! -s "$display_file" ]; then
+            echo "::error::Xvfb did not report a display within 10 seconds"
+            exit 1
+          fi
+          display=":$(tr -d '[:space:]' < "$display_file")"
+          echo "display $display"
           status=0
-          scripts/trace-in-empty-netns.sh "$log" 5 xvfb-run -a src-tauri/target/release/kern || status=$?
+          scripts/trace-in-empty-netns.sh "$log" 5 env DISPLAY="$display" src-tauri/target/release/kern || status=$?
           if [ "$status" -ne 124 ]; then
             echo "::error::kern exited with status $status before the timeout"
             exit 1
