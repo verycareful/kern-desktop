@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { openPaths, toWireError, type WireEntry, type WireError, type WirePath } from "../ipc";
+import {
+  openPaths,
+  showInFolder,
+  toWireError,
+  type WireEntry,
+  type WireError,
+  type WirePath,
+} from "../ipc";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { useTabs } from "../store/tabs";
@@ -84,4 +91,22 @@ export async function openFolderTab(folder: WirePath, note: (text: string) => vo
   for (const err of await openFiles([folder], false)) {
     note(`${baseName(folder)} was not opened in a folder tab: ${errorText(err)}`);
   }
+}
+
+/**
+ * Opens the folder a file is in as a folder tab of the main window, with the file selected
+ * (`show_in_folder`, as Open file location does). Each problem is said through `note`.
+ */
+export async function showFileInFolder(
+  file: WirePath,
+  note: (text: string) => void
+): Promise<void> {
+  let errors: WireError[];
+  try {
+    errors = await showInFolder([file]);
+  } catch (e) {
+    errors = [toWireError(e)];
+  }
+  for (const err of errors)
+    note(`${baseName(file)} was not shown in its folder: ${errorText(err)}`);
 }

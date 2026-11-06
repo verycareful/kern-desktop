@@ -34,7 +34,7 @@ import { closeTab } from "../shell/useCloseGuard";
 import { openAsEditor } from "../shell/layout-switch";
 import { isEditorLayout, useLayout } from "../store/layout";
 import { treeMenuFolder, useTreeMenu } from "../files/tree-menu-store";
-import { openFiles, openFolderTab } from "../files/open-entries";
+import { openFiles, openFolderTab, showFileInFolder } from "../files/open-entries";
 import { isFolder } from "../files/file-type";
 import { useUserDirs } from "../shell/user-dirs-store";
 
@@ -329,6 +329,20 @@ export const actions: Action[] = [
     inEditable: true,
     enabled: (c) => c.target?.kind === "doc" || isEditorLayout(),
     run: (c) => c.togglePanel("right"),
+  },
+  // An editor window's folder, the root of its tree, as a folder tab of the main window. The main
+  // window shows its folders in folder tabs already, so this is an editor window's only.
+  {
+    id: "editor.openInFileManager",
+    label: "Open in file manager",
+    area: "Open",
+    keys: [],
+    when: "any",
+    enabled: () => isEditorWindow() && useLayout.getState().treeRoot !== null,
+    run: () => {
+      const root = useLayout.getState().treeRoot;
+      if (root) void openFolderTab(root, (text) => useOps.getState().notify(text));
+    },
   },
 ];
 
@@ -701,17 +715,23 @@ const treeActions: Action[] = [
       );
     },
   },
-  // The folder in a folder tab of the main window.
+  // In a folder tab of the main window: the folder it was opened on, the folder of the file it
+  // was opened on with the file selected, or the root when it was opened on the empty part.
   {
     id: "tree.openInFileManager",
     label: "Open in file manager",
     area: "Open",
     keys: [],
     when: "tree",
-    enabled: () => treeFolderEntry() !== null,
+    enabled: () => treeMenuFolder() !== null,
     run: () => {
-      const e = treeFolderEntry();
-      if (e) void openFolderTab(e.path, treeNote);
+      const e = treeEntry();
+      if (e && !isFolder(e)) {
+        void showFileInFolder(e.path, treeNote);
+        return;
+      }
+      const dir = treeMenuFolder();
+      if (dir) void openFolderTab(dir, treeNote);
     },
   },
   {

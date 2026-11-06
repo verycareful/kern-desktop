@@ -236,3 +236,52 @@ test("the_panel_buttons_share_the_tab_row_with_settings_and_the_menu", async ({
   await toggle.click();
   await expect(page.getByTestId("side-panel")).toHaveCount(0);
 });
+
+test("in_an_editor_window_the_tree_opens_a_folder_or_a_files_folder_in_the_file_manager", async ({
+  page,
+  mockTauri,
+  invokeCalls,
+}) => {
+  await mockTauri({
+    ...COMMON,
+    // An editor window is told its folder.
+    open_pending_take: [
+      {
+        event: "kern://open",
+        payload: { kind: "editor_root", path: { k: "Utf8", v: "/home/tester" } },
+      },
+    ],
+    "plugin:kernkraft-tauri|list_dir": SMALL_TREE,
+    open_paths: [],
+    show_in_folder: [],
+  });
+  // This page is an editor window.
+  await page.addInitScript(() => {
+    const w = window as unknown as { __TAURI_INTERNALS__: { metadata: unknown } };
+    w.__TAURI_INTERNALS__.metadata = {
+      currentWindow: { label: "editor-1" },
+      currentWebview: { label: "editor-1" },
+    };
+  });
+  await page.goto("/");
+  const item = (name: string) => page.locator(`[role=treeitem][data-name="${name}"]`);
+  await expect(item("docs")).toBeVisible();
+
+  await item("docs").click({ button: "right" });
+  await page.getByRole("menuitem", { name: /^Open in file manager/ }).click();
+  await expect
+    .poll(async () =>
+      (await invokeCalls()).filter((c) => c.cmd === "open_paths").map((c) => c.args)
+    )
+    .toEqual([
+      { paths: [{ k: "Utf8", v: "/home/tester/docs" }], origin: "inside", gesture: "default" },
+    ]);
+
+  await item("readme.md").click({ button: "right" });
+  await page.getByRole("menuitem", { name: /^Open in file manager/ }).click();
+  await expect
+    .poll(async () =>
+      (await invokeCalls()).filter((c) => c.cmd === "show_in_folder").map((c) => c.args)
+    )
+    .toEqual([{ paths: [{ k: "Utf8", v: "/home/tester/readme.md" }] }]);
+});

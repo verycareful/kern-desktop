@@ -4,6 +4,25 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.1.0] - 2026-11-06 23:10 (IST)
+
+### Added
+
+- **Open in file manager from an editor window**: the editor window's folder, or anything in its folder tree, opens in a folder tab of the main window, which comes forward (and opens first if it was closed). In the tree's right-click menu it opens the folder right-clicked, the folder holding the file right-clicked with that file selected, or the tree's folder when the empty part below the rows is right-clicked. The main menu and a button in the tree's heading open the window's folder.
+
+### Fixed
+
+- **Editor window panel buttons**: in an editor window, the folder column's button on the tab row and Ctrl+B did nothing since 0.1.0.7, as the window did not answer the action that shows and hides the column.
+
+### Tests
+
+- Unit tests check what Open in file manager opens for a folder, a file and the empty part of the tree, and from the main menu; that a file that cannot be shown says why; that the tree's menu offers it on a folder, a file and the empty part except in the main window, whose tree has no folder tabs to open; that the tree's heading button is an editor window's only; and that an editor window answers both panel buttons, their keys and Open in file manager.
+- A browser test, as an editor window, right-clicks a folder and then a file in the tree and checks that the folder opens as a folder tab and the file's folder opens with the file selected.
+
+### Results
+
+- 1225 tests across 112 suites (every unit test, and the editor, editor layout, folder, places and smoke browser tests), all passed (69.6s, CachyOS x86-64, Chromium through Playwright).
+
 ## [0.1.0.7] - 2026-11-06 21:40 (IST)
 
 ### Changed

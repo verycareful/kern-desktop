@@ -29,6 +29,20 @@ test("open_in_file_manager_is_offered_wherever_it_opens_a_folder_tab", () => {
   expect(ids(true)).not.toContain("tree.openInFileManager");
 });
 
+test("open_in_file_manager_is_offered_on_a_file_and_on_the_empty_part_too", () => {
+  win.main = false;
+  const of = (e: Parameters<typeof treeMenu>[0]) =>
+    treeMenu(e).flatMap((s) => s.actions.map((a) => a.id));
+  expect(of(entry("a.txt", {}, "/home/a"))).toContain("tree.openInFileManager");
+  expect(of(null)).toContain("tree.openInFileManager");
+  // Not in the main window's editor layout, whatever it was opened on.
+  win.main = true;
+  useLayout.getState().setLayout("editor");
+  expect(of(entry("a.txt", {}, "/home/a"))).not.toContain("tree.openInFileManager");
+  expect(of(null)).not.toContain("tree.openInFileManager");
+  useLayout.getState().reset();
+});
+
 test("every_tree_action_is_in_some_form_of_the_menu", () => {
   expect(everyTreeAction().every((a) => a.when === "tree")).toBe(true);
   expect(new Set(everyTreeAction().map((a) => a.id)).size).toBe(everyTreeAction().length);

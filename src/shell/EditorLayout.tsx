@@ -3,7 +3,15 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { displayPath, isEditorWindow, type WireEntry, type WirePath } from "../ipc";
 import { TextEditor } from "../editor/TextEditor";
-import { ChevronsDownUp, ChevronsUpDown, Eye, EyeOff, Search, SquareTerminal } from "lucide-react";
+import {
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Eye,
+  EyeOff,
+  FolderOutput,
+  Search,
+  SquareTerminal,
+} from "lucide-react";
 import { FolderTree, type FolderTreeHandle } from "../files/FolderTree";
 import { isFolder } from "../files/file-type";
 import { openFiles } from "../files/open-entries";
@@ -16,7 +24,7 @@ import { TreeOps } from "../files/TreeOps";
 import { useTreeMenu } from "../files/tree-menu-store";
 import { useViewSettings } from "../files/view-settings";
 import { ActionMenu } from "../keys/ActionMenu";
-import type { Action } from "../keys/actions";
+import { currentContext, getAction, runAction, type Action } from "../keys/actions";
 import { DROP_DOCS_ATTR } from "../ops/dnd";
 import { useOps } from "../ops/useOps";
 import { LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, useLayout } from "../store/layout";
@@ -63,8 +71,8 @@ function treeNote(text: string): void {
 
 /**
  * The buttons of the tree's heading: the name search in the window's folder, a terminal at the
- * root, hidden items shown or not (the window's choice, which folder tabs follow too), and every
- * folder closed or opened.
+ * root, in an editor window the folder opened in the file manager, hidden items shown or not (the
+ * window's choice, which folder tabs follow too), and every folder closed or opened.
  */
 function TreeTools(props: {
   root: WirePath;
@@ -93,6 +101,10 @@ function TreeTools(props: {
         SquareTerminal,
         () => void openTerminalIn(props.root, treeNote)
       )}
+      {isEditorWindow() &&
+        button("Open in file manager", FolderOutput, () =>
+          runAction(getAction("editor.openInFileManager"), currentContext())
+        )}
       {button("Show hidden files", hidden ? Eye : EyeOff, () => void toggleHidden(), hidden)}
       {button("Collapse all", ChevronsDownUp, () => props.tree.current?.collapseAll())}
       {button("Expand all", ChevronsUpDown, () => props.tree.current?.expandAll())}

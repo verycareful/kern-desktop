@@ -25,16 +25,17 @@ import "./shell.css";
 // progress, questions and reports of those operations (OpsHost).
 
 /**
- * What an editor window answers to: the document's keys, closing and switching tabs, the layout
- * and Pinned and Recent, and Settings (a window of its own). Not Trash or the Library, which are
- * the main window's, and not the new tabs: an editor's tabs are documents of its folder.
+ * What an editor window answers to: the document's keys, closing and switching tabs, both side
+ * panels (the folder column and Pinned and Recent), its folder opened in the file manager, and
+ * Settings (a window of its own). Not Trash or the Library, which are the main window's, and not
+ * the new tabs: an editor's tabs are documents of its folder.
  */
 export const EDITOR_WINDOW_KEYS = (a: Action): boolean =>
   a.when === "doc" ||
   a.id.startsWith("tab.") ||
   a.id === "place.settings" ||
-  a.id.startsWith("layout.") ||
-  a.id.startsWith("panel.right");
+  a.id.startsWith("panel.") ||
+  a.id === "editor.openInFileManager";
 
 export function EditorWindow(props: { starting: boolean }) {
   useShortcuts(EDITOR_WINDOW_KEYS);

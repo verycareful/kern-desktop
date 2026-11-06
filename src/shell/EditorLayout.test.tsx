@@ -589,6 +589,26 @@ test("the_tree_buttons_open_a_terminal_at_the_root_and_show_hidden_items", async
   expect(hidden.querySelector("svg.lucide-eye-off")).not.toBeNull();
 });
 
+test("in_an_editor_window_the_tree_heading_opens_the_folder_in_the_file_manager", async () => {
+  const w = window as { __TAURI_INTERNALS__?: { metadata?: unknown } };
+  const kept = w.__TAURI_INTERNALS__;
+  w.__TAURI_INTERNALS__ = { ...kept, metadata: { currentWindow: { label: "editor-1" } } };
+  try {
+    await editorWindow();
+    fireEvent.click(tools().getByRole("button", { name: "Open in file manager" }));
+    await waitFor(() =>
+      expect(ipc.openPaths).toHaveBeenCalledExactlyOnceWith([HOME], "inside", "default")
+    );
+  } finally {
+    w.__TAURI_INTERNALS__ = kept;
+  }
+});
+
+test("the_main_windows_tree_heading_has_no_open_in_file_manager", async () => {
+  await editorWindow();
+  expect(tools().queryByRole("button", { name: "Open in file manager" })).toBeNull();
+});
+
 test("collapse_all_and_expand_all_close_and_open_the_folders_of_the_tree", async () => {
   await editorWindow();
   fireEvent.click(tools().getByRole("button", { name: "Expand all" }));

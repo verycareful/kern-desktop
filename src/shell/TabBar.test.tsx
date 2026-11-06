@@ -3,6 +3,8 @@
 import { render, screen, within } from "@testing-library/react";
 import type { WirePath } from "../ipc";
 import { useViewSettings } from "../files/view-settings";
+import { getAction } from "../keys/actions";
+import { useLayout } from "../store/layout";
 import { useTabs } from "../store/tabs";
 import { EDITOR_WINDOW_KEYS } from "./EditorWindow";
 import { TabBar } from "./TabBar";
@@ -25,6 +27,20 @@ test("an_editor_window_has_settings_and_the_menu_but_no_new_tab_buttons", () => 
   expect(within(row).queryByRole("button", { name: "New tab here" })).toBeNull();
   expect(within(row).getByRole("button", { name: "Open Settings" })).toBeInTheDocument();
   expect(within(row).getByRole("button", { name: "Main menu" })).toBeInTheDocument();
+});
+
+test("an_editor_window_answers_both_panel_toggles_and_open_in_file_manager", () => {
+  // What an editor window lets through decides its buttons, its keys and its main menu.
+  for (const id of ["panel.left.toggle", "panel.right.toggle", "editor.openInFileManager"]) {
+    expect(EDITOR_WINDOW_KEYS(getAction(id)), id).toBe(true);
+  }
+  useLayout.getState().setLayout("editor");
+  useTabs.getState().openDoc(p("/w/n.md"));
+  render(<TabBar allow={EDITOR_WINDOW_KEYS} />);
+  const row = screen.getByTestId("tab-bar");
+  expect(within(row).getByRole("button", { name: "Folder column" })).toBeInTheDocument();
+  expect(within(row).getByRole("button", { name: "Pinned and Recent panel" })).toBeInTheDocument();
+  useLayout.getState().reset();
 });
 
 test("the_new_tab_buttons_show_the_keys_the_setting_gives_them", () => {

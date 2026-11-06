@@ -21,21 +21,24 @@ const CREATE = ["tree.new.file", "tree.new.folder"];
 /**
  * The right-click menu of the folder tree, for what it was opened on: a folder, a file, or the
  * empty part below the rows (null, the tree's root). Only what applies to it is listed.
- * Open in file manager is left out of the main window in the editor layout: that window holds no
+ * Open in file manager opens a folder, the folder of a file with the file selected, or the root for
+ * the empty part. It is left out of the main window in the editor layout: that window holds no
  * folder tabs, so the folder would only become the tree's root.
  */
 export function treeMenu(entry: WireEntry | null): MenuSection[] {
+  const folderTab = isMainWindow() && isEditorLayout() ? [] : ["tree.openInFileManager"];
   if (!entry) {
-    return [{ actions: pick([...CREATE, "tree.paste", "tree.terminal", "tree.copyPath"]) }];
+    return [
+      { actions: pick([...folderTab, ...CREATE, "tree.paste", "tree.terminal", "tree.copyPath"]) },
+    ];
   }
   if (!isFolder(entry)) {
     return [
-      { actions: pick(["tree.open", "tree.terminal"]) },
+      { actions: pick(["tree.open", ...folderTab, "tree.terminal"]) },
       { actions: pick(EDIT) },
       { actions: pick(REMOVE) },
     ];
   }
-  const folderTab = isMainWindow() && isEditorLayout() ? [] : ["tree.openInFileManager"];
   return [
     { actions: pick([...folderTab, "tree.openAsEditor", "tree.pinAsEditor", "tree.terminal"]) },
     { actions: pick(CREATE) },
