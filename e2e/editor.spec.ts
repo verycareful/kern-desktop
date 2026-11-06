@@ -129,3 +129,47 @@ test("a_mixed_line_ending_file_opens_read_only_with_the_reason", async ({ page, 
   await expect(page.locator(".cm-content")).not.toContainText("zzz");
   await expect(page.getByTestId("status-dirty")).toHaveCount(0);
 });
+
+test("the_focus_ring_shows_on_all_four_edges_of_the_editor", async ({ page, mockTauri }) => {
+  await mockTauri({
+    ...COMMON,
+    "plugin:kernkraft-tauri|text_open": OPENED("one\ntwo\nthree"),
+  });
+  await page.goto("/");
+  await page.locator(".cm-content").click();
+  const editor = page.locator(".cm-editor");
+  await expect(editor).toHaveClass(/cm-focused/);
+  const shot = (await page.screenshot({ scale: "css" })).toString("base64");
+  // The page's screenshot is read back through a canvas in the page: one pixel inside each edge of
+  // the editor, at its middle, is the accent colour. The left one lies over the line-number gutter.
+  const edges = await editor.evaluate(async (el, png) => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--kern-accent)";
+    el.appendChild(probe);
+    const accent = getComputedStyle(probe).color.match(/\d+/g)!.slice(0, 3).map(Number);
+    probe.remove();
+    const img = new Image();
+    img.src = `data:image/png;base64,${png}`;
+    await img.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(img, 0, 0);
+    const at = (px: number, py: number) => {
+      const d = ctx.getImageData(Math.floor(px), Math.floor(py), 1, 1).data;
+      return [d[0], d[1], d[2]].every((c, i) => Math.abs(c - accent[i]) <= 2);
+    };
+    // The ring is 2px wide, so a point 1px in from an edge is in its middle.
+    const r = el.getBoundingClientRect();
+    const midX = (r.left + r.right) / 2;
+    const midY = (r.top + r.bottom) / 2;
+    return {
+      left: at(r.left + 1, midY),
+      right: at(r.right - 1, midY),
+      top: at(midX, r.top + 1),
+      bottom: at(midX, r.bottom - 1),
+    };
+  }, shot);
+  expect(edges).toEqual({ left: true, right: true, top: true, bottom: true });
+});

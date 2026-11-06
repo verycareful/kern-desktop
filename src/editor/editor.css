@@ -25,9 +25,25 @@
   background: var(--kern-bg);
 }
 
+/* The focus ring is a layer over the whole editor rather than an outline: CodeMirror's gutter is
+   sticky at z-index 200 with an opaque background and would cover an inset outline on the left.
+   It takes no pointer events, so clicks reach the text and the gutter beneath it. */
 .kern-doc-host .cm-editor.cm-focused {
-  outline: 2px solid var(--kern-accent);
-  outline-offset: -2px;
+  outline: none;
+}
+
+.kern-doc-host .cm-editor.cm-focused::after {
+  position: absolute;
+  inset: 0;
+  z-index: var(--kern-doc-ring-z);
+  border: 2px solid var(--kern-accent);
+  pointer-events: none;
+  content: "";
+}
+
+.kern-doc-host {
+  /* Above the gutter's 200 and the cursor layer's 150 (CodeMirror's base theme). */
+  --kern-doc-ring-z: 300;
 }
 
 .kern-doc-host .cm-scroller {

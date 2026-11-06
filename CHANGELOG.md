@@ -4,6 +4,20 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.0.5] - 2026-11-06 19:10 (IST)
+
+### Fixed
+
+- **Editor focus ring**: the accent ring round a focused text editor was missing down its left side. The ring was an outline drawn just inside the editor, and the line-number column, which stays in place as the text scrolls sideways, has a solid background drawn over it. The ring is now a layer over the whole editor, above the line numbers, that lets clicks through.
+
+### Tests
+
+- A browser test focuses the editor, takes a screenshot and checks that the pixel one in from each of the four edges, at its middle, is the accent colour.
+
+### Results
+
+- 142 tests across 8 suites (the editor browser tests and the editor unit tests), all passed (10.1s, CachyOS x86-64, Chromium through Playwright).
+
 ## [0.1.0.4] - 2026-11-06 18:05 (IST)
 
 ### Fixed
