@@ -16,7 +16,12 @@ vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()),
 import { useOps } from "../ops/useOps";
 import { useLayout } from "../store/layout";
 import { useTabs } from "../store/tabs";
-import { WRITE_DELAY_MS, flushLayout, useLayoutSync } from "./use-layout-sync";
+import {
+  LAYOUT_READ_BOUND_MS,
+  WRITE_DELAY_MS,
+  flushLayout,
+  useLayoutSync,
+} from "./use-layout-sync";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 const NONE: WindowLayout = {
@@ -220,4 +225,50 @@ test("a_flush_that_fails_is_said_and_does_not_hold_the_window", async () => {
   act(() => useLayout.getState().toggleLeft());
   await act(async () => void (await flushLayout()));
   expect(useOps.getState().notice?.text).toMatch(/could not be saved: .*read-only disk/);
+});
+
+/** A read that answers only when the test says so. */
+function lateRead<T>() {
+  let answer!: (v: T) => void;
+  const read = new Promise<T>((resolve) => (answer = resolve));
+  return { read, answer };
+}
+const pastTheBound = () =>
+  act(async () => void (await vi.advanceTimersByTimeAsync(LAYOUT_READ_BOUND_MS + 1)));
+
+test("two_stuck_reads_hold_the_window_for_one_bound_not_two", async () => {
+  ipc.settingsGet.mockReturnValue(new Promise(() => undefined));
+  ipc.layoutGet.mockReturnValue(new Promise(() => undefined));
+  renderHook(() => useLayoutSync(true));
+  await act(async () => void (await vi.advanceTimersByTimeAsync(LAYOUT_READ_BOUND_MS - 1)));
+  expect(useLayout.getState().loaded).toBe(false);
+  await act(async () => void (await vi.advanceTimersByTimeAsync(2)));
+  expect(useLayout.getState()).toMatchObject({ layout: "file_manager", loaded: true });
+  expect(useOps.getState().notice?.text).toMatch(/stored layout could not be read/);
+});
+
+test("a_layout_that_answers_after_the_bound_changes_nothing", async () => {
+  const late = lateRead<WindowLayout>();
+  ipc.layoutGet.mockReturnValue(late.read);
+  renderHook(() => useLayoutSync(true));
+  await pastTheBound();
+  expect(useLayout.getState()).toMatchObject({ leftWidth: 280, leftOpen: true, loaded: true });
+  late.answer({ ...NONE, left_width: 500, left_open: false });
+  await wait();
+  expect(useLayout.getState()).toMatchObject({ leftWidth: 280, leftOpen: true });
+  expect(ipc.layoutSet).not.toHaveBeenCalled();
+});
+
+test("a_change_after_the_bound_writes_only_the_changed_field", async () => {
+  const late = lateRead<WindowLayout>();
+  ipc.layoutGet.mockReturnValue(late.read);
+  renderHook(() => useLayoutSync(true));
+  await pastTheBound();
+  act(() => useLayout.getState().setLeftWidth(410));
+  await wait();
+  expect(ipc.layoutSet).toHaveBeenCalledExactlyOnceWith({ left_width: 410 });
+  late.answer({ ...NONE, left_width: 500 });
+  await wait();
+  expect(useLayout.getState().leftWidth).toBe(410);
+  expect(ipc.layoutSet).toHaveBeenCalledOnce();
 });

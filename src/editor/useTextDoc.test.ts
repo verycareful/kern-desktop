@@ -1110,6 +1110,20 @@ test("creating_the_file_a_link_points_to_that_cannot_read_the_link_says_so_and_w
   expect(hook.result.current.dirty).toBe(true);
 });
 
+test("creating_the_file_a_link_points_to_when_the_link_became_a_file_during_the_read_asks_about_the_change", async () => {
+  const hook = await askedAboutDanglingLink();
+  // A link to nothing at the look; a regular file by the time the link is read, which then fails.
+  ipc.entryOf.mockResolvedValueOnce(LINK).mockResolvedValue({ ...LINK, kind: "file" });
+  ipc.textCheck.mockResolvedValueOnce("deleted").mockResolvedValue("changed");
+  ipc.linkTarget.mockRejectedValue(wireError("Io"));
+  await act(() => hook.result.current.overwrite());
+  expect(ipc.textSave).toHaveBeenCalledTimes(1);
+  expect(hook.result.current.prompt).toBe("external");
+  expect(hook.result.current.changedOnDisk).toBe(true);
+  expect(hook.result.current.problem).toBeNull();
+  expect(hook.result.current.dirty).toBe(true);
+});
+
 test("a_link_to_a_file_that_exists_is_a_changed_file_and_not_a_dangling_link", async () => {
   const hook = await askedToRecreate();
   ipc.textSave.mockRejectedValueOnce(wireError("Exists"));

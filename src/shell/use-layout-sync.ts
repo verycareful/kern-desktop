@@ -111,23 +111,26 @@ export function useLayoutSync(persist: boolean): void {
     };
 
     (async () => {
+      // Both reads run at once, so a stuck folder holds the window for one bound, not two.
+      const [setting, layout] = await Promise.allSettled([
+        boundedRead(settingsGet()),
+        boundedRead(layoutGet()),
+      ]);
       let fallback: LayoutKind = "file_manager";
-      try {
-        fallback = (await boundedRead(settingsGet())).default_layout;
-      } catch (e) {
+      if (setting.status === "fulfilled") {
+        fallback = setting.value.default_layout;
+      } else {
         say(
-          `The layout setting could not be read, so the file manager layout is used: ${errorText(toWireError(e))}`
+          `The layout setting could not be read, so the file manager layout is used: ${errorText(toWireError(setting.reason))}`
         );
       }
-      try {
-        const got = await boundedRead(layoutGet());
-        if (!alive) return;
-        stored = got;
-        if (persist) useLayout.getState().apply(got, fallback);
-        else useLayout.getState().applyToEditorWindow(got);
-      } catch (e) {
-        if (!alive) return;
-        say(`The stored layout could not be read: ${errorText(toWireError(e))}`);
+      if (!alive) return;
+      if (layout.status === "fulfilled") {
+        stored = layout.value;
+        if (persist) useLayout.getState().apply(layout.value, fallback);
+        else useLayout.getState().applyToEditorWindow(layout.value);
+      } else {
+        say(`The stored layout could not be read: ${errorText(toWireError(layout.reason))}`);
         // The next change is written all the same (and said again if that fails too).
         stored = UNREAD;
         if (persist) useLayout.getState().applyDefaults(fallback);

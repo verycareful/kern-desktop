@@ -155,3 +155,53 @@ fn a_file_created_only_if_nothing_is_there_lands_at_the_end_of_a_link_and_replac
     assert!(matches!(err, FsError::Exists { .. }), "{err:?}");
     assert_eq!(fs::read(t.path().join("made.txt")).unwrap(), b"theirs");
 }
+
+#[test]
+fn a_file_created_through_a_link_into_a_missing_folder_fails_and_makes_nothing() {
+    let t = tempfile::tempdir().unwrap();
+    let l = t.path().join("l");
+    link(std::path::Path::new("gone/made.txt"), &l);
+    let target = link_target_of(&l).unwrap();
+    // The temporary file is made in the target's folder, which is not there.
+    let err = write_atomic(&target, Expect::Nothing, |w| {
+        std::io::Write::write_all(w, b"mine")
+    })
+    .unwrap_err();
+    assert!(matches!(err, FsError::Io { .. }), "{err:?}");
+    assert!(!t.path().join("gone").exists());
+    let names: Vec<_> = fs::read_dir(t.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(names, vec![OsString::from("l")]);
+}
+
+#[test]
+fn a_file_created_through_a_link_to_a_folder_is_refused_and_the_folder_is_untouched() {
+    let t = tempfile::tempdir().unwrap();
+    let folder = t.path().join("dir");
+    fs::create_dir(&folder).unwrap();
+    fs::write(folder.join("inside.txt"), "kept").unwrap();
+    let l = t.path().join("l");
+    link(std::path::Path::new("dir"), &l);
+    let target = link_target_of(&l).unwrap();
+    let err = write_atomic(&target, Expect::Nothing, |w| {
+        std::io::Write::write_all(w, b"mine")
+    })
+    .unwrap_err();
+    assert!(matches!(err, FsError::Exists { .. }), "{err:?}");
+    assert!(fs::metadata(&folder).unwrap().is_dir());
+    let inside: Vec<_> = fs::read_dir(&folder)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(inside, vec![OsString::from("inside.txt")]);
+    assert_eq!(fs::read(folder.join("inside.txt")).unwrap(), b"kept");
+    // The temporary file did not stay behind next to the folder.
+    let mut names: Vec<_> = fs::read_dir(t.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    names.sort();
+    assert_eq!(names, vec![OsString::from("dir"), OsString::from("l")]);
+}

@@ -763,17 +763,26 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
           // looked at again and its target read; the file is created at that path, and only if
           // nothing is there by the time it is written, since a write through the link itself
           // cannot say "only if nothing is there".
+          // Something is there now, or the link is no longer a link: not what they agreed to.
+          const askAboutTheChange = () => {
+            if (st.current.prompt !== "dangling") return;
+            ensureWatch.current();
+            patch({ prompt: "external", deletedOnDisk: false, changedOnDisk: true });
+          };
+          if (!(await isDanglingLink(f.path, f.stamp))) {
+            askAboutTheChange();
+            return;
+          }
           let target: WirePath;
           try {
-            if (!(await isDanglingLink(f.path, f.stamp))) {
-              // Something is there now, or the link is no longer a link: not what they agreed to.
-              if (st.current.prompt !== "dangling") return;
-              ensureWatch.current();
-              patch({ prompt: "external", deletedOnDisk: false, changedOnDisk: true });
-              return;
-            }
             target = await linkTarget(f.path);
           } catch (e) {
+            // A link replaced by a file between the look and the read cannot be read as a link;
+            // looked at once more, that is the change on disk it is, not an unreadable link.
+            if (!(await isDanglingLink(f.path, f.stamp))) {
+              askAboutTheChange();
+              return;
+            }
             if (st.current.prompt === "dangling") patch({ prompt: null });
             patch({
               problem: `${baseName(f.path)} was not saved: Kern could not read where the link points: ${errorText(toWireError(e))}`,
