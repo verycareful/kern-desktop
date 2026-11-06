@@ -156,6 +156,13 @@ layout_install() {
             as_scope rm -rf "$stage"
             ui_fail 1 "The AppImage could not be extracted; nothing was changed."
         fi
+        # --appimage-extract writes every directory 0700 whatever the image
+        # stores, which shuts a system install to everyone but root. Kern's
+        # image stores its directories 0755; they get that mode back here.
+        if ! as_scope find "$stage/squashfs-root" -type d -exec chmod u=rwx,go=rx {} +; then
+            as_scope rm -rf "$stage"
+            ui_fail 1 "The extracted AppImage could not be made readable; nothing was changed."
+        fi
         as_scope rm -rf "${L_LIB:?}/$version"
         as_scope mv "$stage/squashfs-root" "$L_LIB/$version"
         as_scope rm -rf "$stage"

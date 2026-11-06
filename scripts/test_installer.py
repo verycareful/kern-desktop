@@ -57,7 +57,7 @@ echo "launch $*" >> "$w/calls.log"
 """
 
 # The fake AppImage: --appimage-extract makes squashfs-root in the working
-# directory, as the AppImage runtime does.
+# directory with every directory 0700, as the AppImage runtime does.
 FAKE_APPIMAGE = """#!/bin/bash
 [[ "$1" == --appimage-extract ]] || exit 9
 r=squashfs-root
@@ -73,6 +73,7 @@ ENTRY
 echo svg > "$r/usr/share/icons/hicolor/scalable/apps/kern.svg"
 echo png > "$r/usr/share/icons/hicolor/32x32/apps/kern.png"
 echo xml > "$r/usr/share/metainfo/__APP__.metainfo.xml"
+find "$r" -type d -exec chmod 700 {} +
 """
 
 STANDINS = {
@@ -301,6 +302,12 @@ class Layout(unittest.TestCase):
         self.w = World()
         self.addCleanup(self.w.close)
 
+    def assertDirsOpenToAll(self, top: Path) -> None:
+        dirs = [top, *(p for p in top.rglob("*") if p.is_dir() and not p.is_symlink())]
+        self.assertGreater(len(dirs), 1)
+        for d in dirs:
+            self.assertEqual(stat.S_IMODE(d.stat().st_mode), 0o755, d)
+
     def install(self) -> subprocess.CompletedProcess:
         return self.w.bash(
             f'd=$(mktemp -d -p "$W"); release_fetch "{self.w.release}" "$d" && '
@@ -314,6 +321,7 @@ class Layout(unittest.TestCase):
         lib = self.w.lib
         self.assertTrue((lib / VERSION / "AppRun").is_file())
         self.assertEqual(os.readlink(lib / "current"), VERSION)
+        self.assertDirsOpenToAll(lib / VERSION)
         launcher = self.w.home / ".local" / "bin" / "kern"
         self.assertFalse(launcher.is_symlink())
         self.assertTrue(os.access(launcher, os.X_OK))
@@ -345,6 +353,7 @@ class Layout(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("sudo mktemp -d", self.w.calls())
         self.assertTrue((self.w.lib / VERSION / "AppRun").is_file())
+        self.assertDirsOpenToAll(self.w.lib / VERSION)
         self.assertEqual([p.name for p in self.w.lib.glob(".stage-*")], [])
 
     def test_record_read_parses_without_sourcing(self) -> None:
