@@ -8,8 +8,9 @@
 
 import { writeFileSync } from "node:fs";
 import path from "node:path";
-import { browser, expect } from "@wdio/globals";
+import { expect } from "@wdio/globals";
 import {
+  clickClosingWindow,
   ctrlDoubleClick,
   doubleClick,
   focusWindow,
@@ -57,7 +58,7 @@ describe("windows", () => {
     );
 
     await focusWindow(only(ws, "doc").handle);
-    await browser.$('button[aria-label^="Home"]').click();
+    await clickClosingWindow('button[aria-label^="Home"]');
 
     // The document window closes and the main window holds the document in a tab.
     const after = await waitForWindows(

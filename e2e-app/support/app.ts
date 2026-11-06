@@ -313,6 +313,24 @@ export async function doubleClick(selector: string): Promise<void> {
   await browser.releaseActions();
 }
 
+/**
+ * Clicks `selector` in the current window where the click closes that window.
+ * The driver answers a click only after the page has handled it, so when the
+ * window is destroyed first the click has happened and the answer is the W3C
+ * error "no such window" (W3C WebDriver 6.6, "Errors"). That error is the
+ * window closing; any other error is thrown. The caller checks what the click
+ * did by reading the windows that remain.
+ */
+export async function clickClosingWindow(selector: string): Promise<void> {
+  const el = await browser.$(selector);
+  await el.waitForClickable({ timeout: SHOWS_WITHIN_MS });
+  try {
+    await el.click();
+  } catch (err) {
+    if (!(err instanceof Error) || err.name !== "no such window") throw err;
+  }
+}
+
 /** Clicks the tab of the current window titled `title`. */
 export async function activateTab(title: string): Promise<void> {
   const seen: string[] = [];
