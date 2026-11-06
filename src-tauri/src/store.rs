@@ -57,8 +57,8 @@ pub const RECENTS_CAP: usize = 50;
 pub const ZOOM_MIN: f32 = 0.25;
 pub const ZOOM_MAX: f32 = 5.0;
 
-/// The interface sizes, in percent of the webview's normal size: the steps of
-/// the Larger and Smaller actions (maintainer, 2026-10-28). The frontend's
+/// The interface sizes, in percent of the webview's normal size: the choices
+/// Settings offers under Appearance (maintainer, 2026-10-28). The frontend's
 /// `INTERFACE_SIZES` lists the same values.
 pub const INTERFACE_SIZES: [u32; 5] = [80, 90, 100, 110, 125];
 /// A little smaller than the webview's normal size (maintainer, 2026-10-28).
