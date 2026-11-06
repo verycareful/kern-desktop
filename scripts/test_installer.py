@@ -73,8 +73,27 @@ echo xml > "$r/usr/share/metainfo/__APP__.metainfo.xml"
 """
 
 STANDINS = {
-    # sudo runs its command as the caller: the world has no root.
-    "sudo": 'echo "sudo $*" >> "$W/calls.log"; exec "$@"',
+    # The world has no root, so sudo stands in for the identity switch: a
+    # directory mktemp makes under sudo is listed in root-only and is open
+    # only while a sudo command runs, as a 0700 directory owned by root is.
+    "sudo": textwrap.dedent(
+        """\
+        echo "sudo $*" >> "$W/calls.log"
+        lock() { [[ -e "$W/root-only" ]] && while IFS= read -r d; do chmod "$1" "$d" 2>/dev/null; done < "$W/root-only"; }
+        lock 700
+        FAKE_ROOT=1 "$@"
+        rc=$?
+        lock 000
+        exit $rc
+        """
+    ),
+    "mktemp": textwrap.dedent(
+        """\
+        out=$(/usr/bin/mktemp "$@") || exit
+        [[ -n "$FAKE_ROOT" && -d "$out" ]] && echo "$out" >> "$W/root-only"
+        echo "$out"
+        """
+    ),
     "apt-get": 'echo "apt-get $*" >> "$W/calls.log"',
     "update-desktop-database": 'echo "update-desktop-database $*" >> "$W/calls.log"',
     "gtk-update-icon-cache": "true",
@@ -307,6 +326,21 @@ class Layout(unittest.TestCase):
         self.assertIn("KERN_FORMAT=appimage", rec)
         self.assertIn("KERN_PREV_FM=", rec)
         self.assertIn("update-desktop-database", self.w.calls())
+
+    @unittest.skipIf(os.geteuid() == 0, "root opens a 0000 directory, so the lock models nothing")
+    def test_install_through_sudo_never_enters_a_root_only_directory(self) -> None:
+        # The system scope's switch to root, kept inside the world: the user
+        # paths, with every layout command run through sudo.
+        r = self.w.bash(
+            'eval "$(declare -f scope_paths | sed 1s/scope_paths/user_paths/)"; '
+            'scope_paths() { user_paths user; L_SUDO=(sudo); }; '
+            f'd=$(mktemp -d -p "$W"); release_fetch "{self.w.release}" "$d" && '
+            'layout_install system appimage "$REL_VERSION" "$REL_APPIMAGE" "$REL_DEB" "$REL_UNINSTALL"'
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("sudo mktemp -d", self.w.calls())
+        self.assertTrue((self.w.lib / VERSION / "AppRun").is_file())
+        self.assertEqual([p.name for p in self.w.lib.glob(".stage-*")], [])
 
     def test_record_read_parses_without_sourcing(self) -> None:
         self.assertEqual(self.install().returncode, 0)

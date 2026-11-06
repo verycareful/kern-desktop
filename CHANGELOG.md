@@ -4,6 +4,20 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.0.1] - 2026-11-06 14:13 (IST)
+
+### Fixed
+
+- **Installing for everyone on the computer**: the install script stopped with "The AppImage could not be extracted; nothing was changed." when a normal user installed with sudo. It made its staging folder under `/opt/kern` as root and then entered that folder and checked what it extracted as the user, so it was refused. Both steps now run through sudo. Installing for one user was not affected.
+
+### Tests
+
+- The installer tests replace `sudo` with a stand-in that switches identity: a folder `mktemp` makes under it can be entered only by commands run through it, as a root-owned 0700 folder can. A new test installs through this stand-in and checks that the AppImage is extracted and that no staging folder is left behind.
+
+### Results
+
+- 1630 tests across 139 suites, all passed (75.6s, CachyOS x86-64, rustc 1.99.1).
+
 ## [0.1.0.0] - 2026-11-06 13:26 (IST)
 
 The first release of Kern Desktop: a file manager and a plain text editor in one app for Linux, built on kernkraft 0.1.1.0. It is an alpha. The document formats of Kern for Android (spreadsheets, Word, PowerPoint, PDF, EPUB) are not in it yet.

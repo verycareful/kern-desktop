@@ -500,8 +500,10 @@ layout_install() {
         : | as_scope tee "$L_LIB/installed-files" >/dev/null
     else
         stage=$(as_scope mktemp -d "$L_LIB/.stage-XXXXXX") || ui_fail 1 "Could not write to $L_LIB."
-        if ! (cd "$stage" && as_scope "$appimage" --appimage-extract >/dev/null 2>&1) ||
-            [[ ! -x $stage/squashfs-root/AppRun ]]; then
+        # The stage is mktemp's 0700 directory, owned by whoever as_scope
+        # runs as, so only an as_scope command may enter or test it.
+        if ! as_scope env -C "$stage" "$appimage" --appimage-extract >/dev/null 2>&1 ||
+            ! as_scope test -x "$stage/squashfs-root/AppRun"; then
             as_scope rm -rf "$stage"
             ui_fail 1 "The AppImage could not be extracted; nothing was changed."
         fi
