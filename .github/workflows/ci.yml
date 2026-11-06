@@ -92,7 +92,7 @@ jobs:
 
       - name: ESLint
         timeout-minutes: 5
-        run: npx eslint .
+        run: npx eslint . --max-warnings 0
 
       - name: Prettier
         timeout-minutes: 5

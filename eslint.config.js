@@ -31,7 +31,10 @@ export default tseslint.config(
     rules: {
       ...reactHooks.configs.recommended.rules,
       "react-refresh/only-export-components": "warn",
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", ignoreRestSiblings: true },
+      ],
       "@typescript-eslint/no-explicit-any": "warn",
       "no-restricted-globals": ["error", ...bannedGlobals],
       "no-restricted-properties": [
