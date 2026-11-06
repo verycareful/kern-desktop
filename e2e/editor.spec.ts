@@ -158,7 +158,7 @@ test("the_focus_ring_shows_on_all_four_edges_of_the_editor", async ({ page, mock
     ctx.drawImage(img, 0, 0);
     const at = (px: number, py: number) => {
       const d = ctx.getImageData(Math.floor(px), Math.floor(py), 1, 1).data;
-      return [d[0], d[1], d[2]].every((c, i) => Math.abs(c - accent[i]) <= 2);
+      return accent.every((c, i) => Math.abs((d[i] ?? -1) - c) <= 2);
     };
     // The ring is 2px wide, so a point 1px in from an edge is in its middle.
     const r = el.getBoundingClientRect();

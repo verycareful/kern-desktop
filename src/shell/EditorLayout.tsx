@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { displayPath, isEditorWindow, type WireEntry, type WirePath } from "../ipc";
 import { TextEditor } from "../editor/TextEditor";
-import { ChevronsDownUp, ChevronsUpDown, Eye, Search, SquareTerminal } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, Eye, EyeOff, Search, SquareTerminal } from "lucide-react";
 import { FolderTree, type FolderTreeHandle } from "../files/FolderTree";
 import { isFolder } from "../files/file-type";
 import { openFiles } from "../files/open-entries";
@@ -93,7 +93,7 @@ function TreeTools(props: {
         SquareTerminal,
         () => void openTerminalIn(props.root, treeNote)
       )}
-      {button("Show hidden files", Eye, () => void toggleHidden(), hidden)}
+      {button("Show hidden files", hidden ? Eye : EyeOff, () => void toggleHidden(), hidden)}
       {button("Collapse all", ChevronsDownUp, () => props.tree.current?.collapseAll())}
       {button("Expand all", ChevronsUpDown, () => props.tree.current?.expandAll())}
     </span>

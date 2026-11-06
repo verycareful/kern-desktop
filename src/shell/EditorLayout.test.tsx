@@ -568,8 +568,15 @@ test("the_tree_buttons_open_a_terminal_at_the_root_and_show_hidden_items", async
   await waitFor(() => expect(ipc.openTerminal).toHaveBeenCalledExactlyOnceWith(HOME, undefined));
   const hidden = tools().getByRole("button", { name: "Show hidden files" });
   expect(hidden).toHaveAttribute("aria-pressed", "false");
+  expect(hidden.querySelector("svg.lucide-eye-off")).not.toBeNull();
   fireEvent.click(hidden);
   await waitFor(() => expect(ipc.settingsSet).toHaveBeenCalledWith({ show_hidden: true }));
+  // The eye is open while hidden items show and crossed out while they are hidden.
+  await waitFor(() => expect(hidden).toHaveAttribute("aria-pressed", "true"));
+  expect(hidden.querySelector("svg.lucide-eye")).not.toBeNull();
+  fireEvent.click(hidden);
+  await waitFor(() => expect(hidden).toHaveAttribute("aria-pressed", "false"));
+  expect(hidden.querySelector("svg.lucide-eye-off")).not.toBeNull();
 });
 
 test("collapse_all_and_expand_all_close_and_open_the_folders_of_the_tree", async () => {

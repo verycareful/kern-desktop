@@ -4,6 +4,22 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.0.6] - 2026-11-06 20:30 (IST)
+
+### Fixed
+
+- **Show hidden files button**: the button did not show whether hidden files were shown. In the editor layout this made showing or hiding them seem slow, since the tree's button never changed and the only sign was the tree itself. The eye is now open while hidden files show and crossed out while they are hidden, in a folder tab's toolbar and in the folder tree of the editor layout. The tree's buttons also take the highlighted look of a pressed button, as the folder toolbar's do.
+- **Cargo.lock**: the kernkraft crates were recorded without their git source, so a build from the lock file alone did not resolve them. Each again names the kernkraft 0.1.1.0 tag and commit.
+
+### Tests
+
+- The folder tab's Ctrl+H test and the editor layout's tree button test check the open and crossed-out eye, and the pressed state, through a show and a hide.
+- The tab row and focus ring browser tests from 0.1.0.4 and 0.1.0.5 now pass the TypeScript check.
+
+### Results
+
+- 433 tests across 37 suites (the files and editor layout unit tests, and the hidden files, tab row and focus ring browser tests), all passed (28.2s, CachyOS x86-64, Chromium through Playwright).
+
 ## [0.1.0.5] - 2026-11-06 19:10 (IST)
 
 ### Fixed

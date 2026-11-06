@@ -152,12 +152,19 @@ test("hidden_toggle_ctrl_h", async ({ page, mockTauri }) => {
     },
   });
   await page.goto("/");
+  // The toolbar's eye is crossed out while hidden files are hidden and open while they show.
+  const eye = page.getByRole("button", { name: /^Show or hide hidden files/ });
   await expect(rows(page)).toHaveCount(1);
+  await expect(eye).toHaveAttribute("aria-pressed", "false");
+  await expect(eye.locator("svg.lucide-eye-off")).toHaveCount(1);
   await page.keyboard.press("Control+h");
   await expect(rows(page)).toHaveCount(2);
   await expect(rows(page).first()).toHaveAttribute("data-name", ".secret");
+  await expect(eye).toHaveAttribute("aria-pressed", "true");
+  await expect(eye.locator("svg.lucide-eye")).toHaveCount(1);
   await page.keyboard.press("Control+h");
   await expect(rows(page)).toHaveCount(1);
+  await expect(eye.locator("svg.lucide-eye-off")).toHaveCount(1);
 });
 
 test.describe("non-ASCII names", () => {
@@ -320,7 +327,7 @@ test("the_tab_row_has_no_vertical_scroll_and_the_close_button_owns_its_box", asy
     return {
       overflowY: getComputedStyle(el).overflowY,
       scrollTop: el.scrollTop,
-      gutter: el.offsetWidth - el.clientWidth,
+      gutter: (el as HTMLElement).offsetWidth - el.clientWidth,
       edges: [
         hit(box.left + 1, box.top + box.height / 2),
         hit(box.right - 1, box.top + box.height / 2),

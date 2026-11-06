@@ -6,6 +6,7 @@ import {
   ArrowRight,
   ArrowUp,
   Eye,
+  EyeOff,
   FolderOpen,
   FolderPlus,
   LayoutGrid,
@@ -667,7 +668,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
           </div>
           <ActionButton
             id="folder.hidden.toggle"
-            icon={Eye}
+            icon={showHidden ? Eye : EyeOff}
             targetId={tab.id}
             pressed={showHidden}
             after={refocus}

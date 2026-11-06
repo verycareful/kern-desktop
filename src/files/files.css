@@ -671,6 +671,11 @@
   height: 26px;
 }
 
+.kern-tree-tools .kern-tree-tool[aria-pressed="true"] {
+  background: var(--kern-accent-soft);
+  color: var(--kern-accent);
+}
+
 .kern-tree-notes {
   margin: 0;
   padding: 4px var(--kern-density-gap);
