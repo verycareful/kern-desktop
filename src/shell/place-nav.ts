@@ -1,0 +1,97 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { displayPath, pathKey, type WirePath } from "../ipc";
+import { isEditorLayout, useLayout } from "../store/layout";
+import {
+  activeTab,
+  isPlaceTab,
+  recentFolderTab,
+  useTabs,
+  type Tab,
+  type TabsState,
+} from "../store/tabs";
+
+// A place of the strip (Home, a user folder, a volume) is shown in
+// the current folder tab. In a document tab, where the strip is slid in over
+// the document, that is the folder tab used last; from the Trash or the
+// Library that tab is brought forward, since they have no folder to navigate. With no
+// folder tab at all one is opened.
+//
+// In the editor layout the strip is the top of the left column and a place is where the tree is
+// rooted: it re-roots the tree and opens no folder tab.
+export function showFolder(path: WirePath): void {
+  if (isEditorLayout()) {
+    useLayout.getState().setTreeRoot(path);
+    return;
+  }
+  const s = useTabs.getState();
+  const active = activeTab(s);
+  if (active?.kind === "folder") {
+    s.navigateTab(active.id, path);
+    return;
+  }
+  const recent = recentFolderTab(s);
+  if (!recent) {
+    s.openFolder(path, true);
+    return;
+  }
+  s.navigateTab(recent.id, path);
+  if (isPlaceTab(active)) s.activate(recent.id);
+}
+
+/** The folder the places strip marks as current: the active folder tab's, else the one a slid-in panel shows. */
+export function shownFolder(
+  s: Pick<TabsState, "tabs" | "activeId" | "lastFolderId">
+): WirePath | null {
+  const active: Tab | null = activeTab(s);
+  if (isPlaceTab(active)) return null;
+  if (active?.kind === "folder") return active.path;
+  return recentFolderTab(s)?.path ?? null;
+}
+
+/** True when the Library is the tab on show. */
+export function documentsShown(s: Pick<TabsState, "tabs" | "activeId">): boolean {
+  return activeTab(s)?.kind === "documents";
+}
+
+/** True when the Trash is the tab on show. */
+export function trashShown(s: Pick<TabsState, "tabs" | "activeId">): boolean {
+  return activeTab(s)?.kind === "trash";
+}
+
+/**
+ * True when `path` is `place` or lies inside it. Paths are compared by key; a
+ * Bytes path is compared whole, since its text is base64 of the bytes.
+ */
+export function within(place: WirePath, path: WirePath, inside: boolean): boolean {
+  if (pathKey(place) === pathKey(path)) return true;
+  if (!inside || place.k !== "Utf8" || path.k !== "Utf8") return false;
+  const base = place.v.endsWith("/") ? place.v : `${place.v}/`;
+  return path.v.startsWith(base);
+}
+
+export interface PlaceCandidate {
+  key: string;
+  path: WirePath;
+  /** True for a volume: it also holds the folders below its mount point. */
+  inside: boolean;
+}
+
+/**
+ * The one place the strip marks for `shown`: of those that are it or hold it,
+ * the one with the longest path (the most specific). Equal paths go to the
+ * first candidate, so a place listed before a volume wins.
+ */
+export function currentPlace(
+  shown: WirePath | null,
+  candidates: readonly PlaceCandidate[]
+): string | null {
+  if (shown === null) return null;
+  let best: { key: string; length: number } | null = null;
+  for (const c of candidates) {
+    if (!within(c.path, shown, c.inside)) continue;
+    const length = displayPath(c.path).length;
+    if (best === null || length > best.length) best = { key: c.key, length };
+  }
+  return best?.key ?? null;
+}

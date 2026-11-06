@@ -1,0 +1,254 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # The Tauri CLI reads CI as its --ci flag, which takes true or false.
+  CI: "true"
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    # Every step has a limit of its own, so a hang costs that step's limit and
+    # not the job's. Measured on two runs of this job (2026-11-04, runs
+    # 41890146490 and 41891273523): the job takes 14 to 15 minutes; the
+    # release-mode timing tests 5.4 to 5.8 (the longest step, limit 30), the
+    # Rust tests 2.4 to 2.6, Clippy 1.0 to 1.2, the deb build 0.8, the driver
+    # suite 0.5, the debug build 0.4, tauri-driver 0.2, and every other step
+    # under 0.7. Steps that need no more than that carry a limit of 5 or 10
+    # minutes. The job limit is four times the whole.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        timeout-minutes: 5
+
+      # Measured at 0.4 minutes. The limit is for the package mirror, which has
+      # stalled on a single large package for over 10 minutes on two runs
+      # (2026-11-04) and then finished on a rerun.
+      - name: System libraries for Tauri
+        timeout-minutes: 20
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev xvfb \
+            desktop-file-utils appstream webkit2gtk-driver dbus libglib2.0-bin xauth \
+            strace
+
+      - uses: dtolnay/rust-toolchain@stable
+        timeout-minutes: 5
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-node@v7
+        timeout-minutes: 5
+        with:
+          node-version: 22
+          cache: npm
+
+      # Install scripts are off: nothing in the build needs one (the
+      # platform binaries of esbuild and the Tauri CLI come as optional
+      # packages), and a script that downloads a binary is a way to fetch
+      # something the lock file does not pin.
+      - run: npm ci --ignore-scripts
+        timeout-minutes: 10
+
+      - name: Format
+        timeout-minutes: 5
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all --check
+
+      - name: Clippy
+        timeout-minutes: 15
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: Rust tests
+        timeout-minutes: 15
+        run: cargo test --manifest-path src-tauri/Cargo.toml --all-features
+
+      - name: Timing budgets (release build)
+        timeout-minutes: 30
+        run: cargo test --release --manifest-path src-tauri/Cargo.toml --all-features -- --ignored
+
+      - name: cargo-deny
+        timeout-minutes: 10
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: src-tauri/Cargo.toml
+
+      - name: Typecheck
+        timeout-minutes: 5
+        run: |
+          npx tsc --noEmit
+          npx tsc -p tsconfig.node.json
+          npx tsc -p e2e-app
+
+      - name: ESLint
+        timeout-minutes: 5
+        run: npx eslint . --max-warnings 0
+
+      - name: Prettier
+        timeout-minutes: 5
+        run: npx prettier --check .
+
+      - name: Vitest
+        timeout-minutes: 5
+        run: npx vitest run
+
+      - name: Playwright
+        timeout-minutes: 15
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test
+
+      - name: No network APIs in source
+        timeout-minutes: 5
+        run: scripts/check-no-network.sh
+
+      - name: Source file headers
+        timeout-minutes: 5
+        run: scripts/check-headers.sh
+
+      - name: Header check tests
+        timeout-minutes: 5
+        run: python3 -I scripts/test_check_headers.py
+
+      - name: Release-notes script tests
+        timeout-minutes: 5
+        run: python3 -I scripts/test_changelog_section.py
+
+      - name: Network filter tests
+        timeout-minutes: 5
+        run: python3 -I scripts/test_inet_calls.py
+
+      - name: Desktop entry and metainfo
+        timeout-minutes: 15
+        run: python3 -I scripts/test_desktop_entry.py
+
+      # install.sh and uninstall.sh are built from installer/ and committed;
+      # the committed files must be what the parts build, and must pass
+      # shellcheck. Their tests drive them through a pseudo-terminal against
+      # a fixture release, with stand-ins for the system commands.
+      - name: Install scripts
+        timeout-minutes: 5
+        run: |
+          installer/build.sh --check
+          shellcheck install.sh uninstall.sh installer/build.sh
+          python3 -I scripts/test_installer_ui.py
+          python3 -I scripts/test_installer.py
+
+      - name: Build the deb
+        timeout-minutes: 30
+        run: npx tauri build --bundles deb
+
+      # The runner forbids unprivileged user namespaces, so the empty network
+      # namespace is made as root; setpriv then drops back to the runner user
+      # before anything else runs, so Kern itself is unprivileged. Takes under
+      # a second; the limit is the shortest one in the job.
+      - name: Network namespace for the smoke run
+        timeout-minutes: 2
+        run: |
+          if ! sudo unshare -n setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups true; then
+            echo "::error::cannot create a network namespace on this runner"
+            exit 1
+          fi
+
+      # The filter that decides the smoke run below must be able to fail: a
+      # command that does connect to an inet address (bash's /dev/tcp, to
+      # loopback, which fails in the empty namespace but is still traced) runs
+      # under the same strace and the same filter, and the filter must report
+      # it. A dead strace or a dead filter fails here, not by passing the
+      # smoke run. The command ends at once; the limit allows for sudo and
+      # strace starting slowly.
+      - name: Positive control for the network filter
+        timeout-minutes: 2
+        run: |
+          log="$RUNNER_TEMP/inet-control.strace"
+          scripts/trace-in-empty-netns.sh "$log" 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/9' || true
+          found=0
+          python3 -I scripts/inet_calls.py --min-calls 1 "$log" || found=$?
+          if [ "$found" -ne 1 ]; then
+            echo "::error::the filter did not report a connect to 127.0.0.1 (status $found): the smoke run below would prove nothing"
+            exit 1
+          fi
+
+      # The built binary runs for 5 seconds in a network namespace with no
+      # interfaces, under a virtual display and strace. It must still be
+      # running when timeout stops it (exit 124); any other status is a crash.
+      # Every connect, sendto, sendmsg and sendmmsg of the binary and of what
+      # it starts is then checked: none may use an IPv4 or IPv6 address (Unix
+      # sockets, for D-Bus and X11, are fine). The log must hold traced calls,
+      # so a strace that did not run cannot pass.
+      #
+      # The display is started first and outside the namespace, and the
+      # 5 seconds start only once Xvfb has written its display number
+      # (-displayfd), so a slow display start cannot use up Kern's time. Kern
+      # reaches it through the socket in /tmp/.X11-unix, which a network
+      # namespace does not hide. sudo clears the environment, so DISPLAY is
+      # passed through env. Estimate: under 20 seconds in all.
+      - name: Smoke run without network
+        timeout-minutes: 5
+        run: |
+          log="$RUNNER_TEMP/kern-smoke.strace"
+          display_file="$RUNNER_TEMP/xvfb-display"
+          : > "$display_file"
+          Xvfb -displayfd 9 -nolisten tcp -screen 0 1280x800x24 9>"$display_file" &
+          xvfb_pid=$!
+          trap 'kill "$xvfb_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 100); do
+            [ -s "$display_file" ] && break
+            sleep 0.1
+          done
+          if [ ! -s "$display_file" ]; then
+            echo "::error::Xvfb did not report a display within 10 seconds"
+            exit 1
+          fi
+          display=":$(tr -d '[:space:]' < "$display_file")"
+          echo "display $display"
+          status=0
+          scripts/trace-in-empty-netns.sh "$log" 5 env DISPLAY="$display" src-tauri/target/release/kern || status=$?
+          if [ "$status" -ne 124 ]; then
+            echo "::error::kern exited with status $status before the timeout"
+            exit 1
+          fi
+          found=0
+          python3 -I scripts/inet_calls.py --min-calls 1 "$log" || found=$?
+          if [ "$found" -ne 0 ]; then
+            echo "::error::kern used an inet address, or the trace is unusable (filter status $found)"
+            exit 1
+          fi
+
+      # The driver is part of the test harness and listens on localhost; the
+      # application it drives opens no socket. The version is pinned. Measured
+      # on the runner: 0.2 minutes.
+      - name: tauri-driver
+        timeout-minutes: 5
+        run: cargo install tauri-driver --locked --version 2.1.0
+
+      # The same build as the deb above, in the debug profile, whose
+      # dependencies the Rust tests have built. Measured on the runner: 0.4
+      # minutes.
+      - name: Debug build for the driver suite
+        timeout-minutes: 10
+        run: npx tauri build --debug --no-bundle
+
+      # Each spec file runs under its own session bus and home directory
+      # (e2e-app/run.sh). The runner forbids unprivileged user namespaces,
+      # which the WebKitGTK sandbox needs, so the sandbox is off for this step
+      # and this step only. run.sh stops a spec file after 300 seconds, so the
+      # three files take at most 15 minutes, and the limit is that plus 5
+      # for starting the displays. Measured on the runner: 0.5 minutes for
+      # all three.
+      - name: Driver suite
+        timeout-minutes: 20
+        env:
+          KERN_E2E_NO_BUILD: "1"
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1"
+        run: e2e-app/run.sh

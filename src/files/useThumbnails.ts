@@ -1,0 +1,164 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { useEffect, useReducer, useRef } from "react";
+import {
+  EVENT_THUMB,
+  assetUrl,
+  on,
+  pathKey,
+  thumbCancel,
+  thumbRequest,
+  toWireError,
+  type ThumbSize,
+  type WireEntry,
+  type WireError,
+} from "../ipc";
+import { isFolder } from "./file-type";
+
+// Thumbnails for the grid. The backend keeps one queue per key;
+// this asks it only for the images on screen, and when the screen moves on it
+// cancels what is still queued and asks again for what is visible, so the
+// queue never holds more than a screenful.
+
+export type ThumbState =
+  | { state: "ready"; url: string }
+  /** The file has no thumbnail (not decodable, or a cached failure). */
+  | { state: "none" }
+  | { state: "error"; error: WireError };
+
+/** The width of the card's picture area in CSS pixels (grid-layout.ts CARD). */
+const PICTURE_CSS_PX = 128;
+
+/**
+ * The cache sizes are 128 and 256 px (Thumbnail Managing Standard 0.9.0). The
+ * picture area is 128 CSS px wide, which is 128 x the screen's pixel ratio x
+ * the interface zoom in device pixels; "normal" is enough when that is no more
+ * than 128, and "large" keeps a denser or zoomed-in view from being scaled up.
+ */
+export function thumbSizeFor(devicePixelRatio: number, zoom = 1): ThumbSize {
+  return PICTURE_CSS_PX * devicePixelRatio * zoom > 128 ? "large" : "normal";
+}
+
+// A thumbnail is only as current as the file it was made from, so what has
+// been asked for and answered is remembered with the file's stamp (modified
+// time and length): a rewritten or half-written image gets asked for again.
+interface Book {
+  /** Asked for, no answer yet: path key to stamp. */
+  pending: Map<string, string>;
+  /** Answered, one way or the other: path key to the stamp asked about. */
+  settled: Map<string, string>;
+  /** The stamp last asked about, per path key. */
+  asked: Map<string, string>;
+  states: Map<string, ThumbState>;
+}
+
+const newBook = (): Book => ({
+  pending: new Map(),
+  settled: new Map(),
+  asked: new Map(),
+  states: new Map(),
+});
+
+const stampOf = (e: WireEntry) => `${e.modified_ms ?? ""}|${e.len}`;
+
+/**
+ * The thumbnail state per path key of the images in `visible`. `key` names the
+ * view to the backend; a new key or size starts afresh and cancels the old.
+ * The returned map is updated in place, and the hook re-renders its caller.
+ */
+export function useThumbnails(
+  key: string,
+  visible: readonly WireEntry[],
+  size: ThumbSize
+): ReadonlyMap<string, ThumbState> {
+  const [, bump] = useReducer((n: number) => n + 1, 0);
+  const book = useRef<Book>(newBook());
+
+  useEffect(() => {
+    let alive = true;
+    let unlisten: (() => void) | undefined;
+    const mine = (book.current = newBook());
+    bump();
+    on(EVENT_THUMB, (ev) => {
+      if (!alive || ev.key !== key) return;
+      const k = pathKey(ev.path);
+      mine.pending.delete(k);
+      mine.settled.set(k, mine.asked.get(k) ?? "");
+      if (ev.error) mine.states.set(k, { state: "error", error: ev.error });
+      else if (ev.file) {
+        try {
+          mine.states.set(k, { state: "ready", url: assetUrl(ev.file) });
+        } catch (e) {
+          mine.states.set(k, { state: "error", error: toWireError(e) });
+        }
+      } else mine.states.set(k, { state: "none" });
+      bump();
+    }).then(
+      (u) => (alive ? (unlisten = u) : u()),
+      (e: unknown) => {
+        // Without the event nothing can arrive: every image waits would be silent.
+        if (!alive) return;
+        for (const k of mine.pending.keys()) {
+          mine.states.set(k, { state: "error", error: toWireError(e) });
+        }
+        mine.pending.clear();
+        bump();
+      }
+    );
+    return () => {
+      alive = false;
+      unlisten?.();
+      thumbCancel(key).catch((e: unknown) => console.error("thumb_cancel failed", e));
+    };
+  }, [key, size]);
+
+  useEffect(() => {
+    const mine = book.current;
+    const want = visible
+      .filter((e) => !isFolder(e) && e.mime.startsWith("image/"))
+      .map((e) => ({ k: pathKey(e.path), path: e.path, stamp: stampOf(e) }))
+      .filter((w) => mine.settled.get(w.k) !== w.stamp);
+    const wanted = new Map(want.map((w) => [w.k, w.stamp]));
+    const stale = [...mine.pending].some(([k, stamp]) => wanted.get(k) !== stamp);
+    let toAsk = want.filter((w) => mine.pending.get(w.k) !== w.stamp);
+    if (!stale && toAsk.length === 0) return;
+
+    (async () => {
+      if (stale) {
+        mine.pending.clear();
+        await thumbCancel(key);
+        toAsk = want;
+      }
+      if (book.current !== mine || toAsk.length === 0) return;
+      toAsk.forEach((w) => {
+        mine.pending.set(w.k, w.stamp);
+        mine.asked.set(w.k, w.stamp);
+      });
+      try {
+        await thumbRequest(
+          key,
+          toAsk.map((w) => w.path),
+          size
+        );
+      } catch (e) {
+        if (book.current !== mine) throw e;
+        for (const w of toAsk) {
+          mine.pending.delete(w.k);
+          mine.settled.set(w.k, w.stamp);
+          mine.states.set(w.k, { state: "error", error: toWireError(e) });
+        }
+        bump();
+      }
+    })().catch((e: unknown) => {
+      if (book.current !== mine) return;
+      for (const w of want) {
+        mine.pending.delete(w.k);
+        mine.settled.set(w.k, w.stamp);
+        mine.states.set(w.k, { state: "error", error: toWireError(e) });
+      }
+      bump();
+    });
+  }, [key, size, visible]);
+
+  return book.current.states;
+}

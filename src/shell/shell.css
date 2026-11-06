@@ -1,0 +1,750 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (c) 2026 Sricharan Suresh (github.com/verycareful) */
+
+/*
+ * Main window frame. Look: design_handoff_kern_ui
+ * README (tokens, 6px soft radius, mono section labels, 2px line icons).
+ */
+.kern-window {
+  /*
+   * Sizes of this frame. Icon buttons are 36px: the handoff's 42px is a touch
+   * target (README, Shape & spacing), reduced for a pointer window. The stub
+   * column is one button plus its padding and its 1px border.
+   */
+  --shell-button: 36px;
+  --shell-stub-pad: 6px;
+  --shell-stub-width: calc(var(--shell-button) + 2 * var(--shell-stub-pad) + 1px);
+  /* Wide enough for "Documents" in the UI face plus padding; the places strip is not resizable yet. */
+  --shell-places-width: 180px;
+  /* A tab title is ellipsised beyond this; about 24 characters of UI text. */
+  --shell-tab-max: 220px;
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  background: var(--kern-bg);
+  color: var(--kern-text);
+}
+
+/*
+ * A folder tab: the places strip and the side panel run
+ * from the window top down to the status bar; the tab row sits over the folder
+ * area only, between the strip and Pinned and Recent, whose width is
+ * --shell-right-width (set on this element from the stored layout). A
+ * document tab: the tab row spans both columns.
+ */
+.kern-main {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.kern-main[data-layout="folder"] {
+  grid-template-columns:
+    var(--shell-places-width)
+    minmax(0, 1fr)
+    var(--shell-right-width);
+}
+
+.kern-main > .kern-tabbar {
+  grid-row: 1;
+  grid-column: 1 / -1;
+}
+
+.kern-main[data-layout="folder"] > .kern-tabbar {
+  grid-column: 2;
+}
+
+.kern-main[data-layout="folder"] > .kern-places {
+  grid-row: 1 / span 2;
+  grid-column: 1;
+}
+
+.kern-main[data-layout="folder"] > .kern-folder-area {
+  grid-row: 2;
+  grid-column: 2;
+}
+
+.kern-main[data-layout="folder"] > .kern-panel-right {
+  grid-row: 1 / span 2;
+  grid-column: 3;
+  border-left: 1px solid var(--kern-border);
+}
+
+.kern-main > .kern-empty,
+.kern-main > .kern-body-doc {
+  grid-row: 2;
+  grid-column: 1 / -1;
+}
+
+.kern-tabbar {
+  display: flex;
+  align-items: center;
+  gap: var(--kern-density-gap);
+  padding: 6px var(--kern-density-gap) 0;
+  background: var(--kern-sunken);
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-tabs {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  gap: 2px;
+  overflow-x: auto;
+}
+
+.kern-tab {
+  display: flex;
+  min-width: 0;
+  max-width: var(--shell-tab-max);
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 0 0;
+  color: var(--kern-text-dim);
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--kern-radius-small) var(--kern-radius-small) 0 0;
+  cursor: pointer;
+  transition:
+    background 0.13s,
+    color 0.13s;
+}
+
+.kern-tab:hover {
+  color: var(--kern-text);
+}
+
+.kern-tab-active {
+  color: var(--kern-text);
+  background: var(--kern-bg);
+  border-color: var(--kern-border);
+  margin-bottom: -1px;
+  font-weight: 600;
+}
+
+.kern-tab-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px 8px 12px;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+/* The keyboard ring of a tab goes round the whole tab, its close button included. Drawn on the
+   tab's border, inside the tab row, which scrolls and so clips what lies outside it. */
+.kern-tab-main:focus-visible {
+  outline: none;
+}
+
+.kern-tab:has(> .kern-tab-main:focus-visible) {
+  outline: 2px solid var(--kern-accent);
+  outline-offset: -1px;
+}
+
+.kern-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kern-dirty {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  background: var(--kern-accent);
+  border-radius: 50%;
+}
+
+.kern-tab-close,
+.kern-icon-button,
+.kern-stub button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  transition:
+    background 0.13s,
+    color 0.13s;
+}
+
+.kern-tab-close {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-tab-close:hover,
+.kern-icon-button:hover:not(:disabled),
+.kern-stub button:hover {
+  background: var(--kern-accent-soft);
+  color: var(--kern-accent);
+}
+
+.kern-nav {
+  display: flex;
+  gap: 2px;
+  padding-bottom: 4px;
+}
+
+/* Puts Settings and the main menu at the right end, the new tab buttons after the last tab. */
+.kern-nav-fill {
+  flex: 1;
+}
+
+.kern-icon-button {
+  width: var(--shell-button);
+  height: var(--shell-button);
+  color: var(--kern-text);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-icon-button:disabled {
+  color: var(--kern-text-dim);
+  cursor: default;
+}
+
+/* A stub column on each edge around the document. */
+.kern-body-doc {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  grid-template-columns: auto 1fr auto;
+}
+
+.kern-body-doc[hidden] {
+  display: none;
+}
+
+.kern-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  background: var(--kern-surface);
+}
+
+.kern-panel-left {
+  border-right: 1px solid var(--kern-border);
+}
+
+.kern-panel-right {
+  position: relative;
+  flex-direction: column;
+}
+
+/*
+ * The divider on the left edge of Pinned and Recent, over its border. Half of
+ * it lies over the folder area, so it sits above the folder list's sticky
+ * header row (files.css .kern-list-head, z-index 2).
+ */
+.kern-edge-splitter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 3;
+  background: transparent;
+}
+
+.kern-places {
+  box-sizing: border-box;
+  display: flex;
+  width: var(--shell-places-width);
+  flex: none;
+  flex-direction: column;
+  gap: var(--kern-density-gap);
+  padding: 0 var(--kern-density-gap) var(--kern-density-gap);
+  overflow-y: auto;
+  background: var(--kern-sunken);
+  border-right: 1px solid var(--kern-border);
+}
+
+/* Level with the tab row, kept free. */
+.kern-places-slot {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  height: calc(var(--shell-button) + 6px);
+}
+
+/* The handoff's header row: mark 26 px, wordmark Quicksand 21/700 (README, Header row). */
+.kern-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  background: none;
+  border: 0;
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-logo:focus-visible {
+  outline: 2px solid var(--kern-accent);
+}
+
+.kern-logo-mark {
+  width: calc(26px * 950 / 1182);
+  height: 26px;
+}
+
+.kern-logo-word {
+  font-family: var(--kern-font-wordmark);
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.kern-places-heading {
+  padding: 0 6px 4px;
+}
+
+.kern-places-list {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+}
+
+.kern-place {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--kern-text);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-place:hover {
+  background: var(--kern-accent-soft);
+}
+
+.kern-place[aria-current="page"] {
+  font-weight: 600;
+  color: var(--kern-accent);
+  background: var(--kern-accent-soft);
+}
+
+.kern-place[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+.kern-place-unmounted {
+  cursor: default;
+  color: var(--kern-text-dim);
+}
+
+.kern-place-unmounted:hover {
+  background: none;
+}
+
+.kern-place-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kern-mount {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.kern-place-busy,
+.kern-place-note,
+.kern-places-none {
+  margin: 0;
+  padding: 2px 6px;
+  font-size: 12px;
+  color: var(--kern-text-dim);
+}
+
+.kern-places-error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  background: var(--kern-accent-soft);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-folder-area {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  background: var(--kern-surface);
+}
+
+.kern-side-section {
+  min-height: 0;
+  flex: 1;
+  padding: var(--kern-density-gap) var(--kern-density-pad);
+  overflow: auto;
+}
+
+.kern-side-section + .kern-side-section {
+  border-top: 1px solid var(--kern-border);
+}
+
+.kern-side-section > .kern-label {
+  margin-bottom: var(--kern-density-gap);
+}
+
+.kern-side-notices {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--kern-density-gap) var(--kern-density-pad) 0;
+}
+
+/* The parent folder of a pin, or when a recent file was opened. */
+.kern-entry-note {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--kern-text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A press on a pin may become a drag: no text is selected meanwhile. */
+.kern-pins {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* A pin being dragged, and the line where it will land. */
+.kern-entry-dragged {
+  opacity: 0.5;
+  cursor: grabbing;
+  user-select: none;
+}
+
+.kern-insert-before {
+  box-shadow: inset 0 2px 0 var(--kern-accent);
+}
+
+.kern-insert-after {
+  box-shadow: inset 0 -2px 0 var(--kern-accent);
+}
+
+/* Section label: mono, uppercase, dim (handoff README, Typography). */
+.kern-label {
+  margin: 0;
+  font-family: var(--kern-font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kern-text-dim);
+}
+
+.kern-stub {
+  display: flex;
+  align-items: flex-start;
+  padding: var(--kern-density-gap) var(--shell-stub-pad);
+  background: var(--kern-sunken);
+}
+
+.kern-stub-left {
+  border-right: 1px solid var(--kern-border);
+}
+
+.kern-stub-right {
+  border-left: 1px solid var(--kern-border);
+}
+
+.kern-stub button {
+  width: var(--shell-button);
+  height: var(--shell-button);
+  color: var(--kern-text);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-stub button[aria-expanded="true"] {
+  background: var(--kern-accent-soft);
+  color: var(--kern-accent);
+}
+
+.kern-doc-area {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* A panel slid over the document, beside the stub that opened it. */
+.kern-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 10;
+  /* Slid in together, the file manager takes what Pinned and Recent leave between the stubs, so the two meet. */
+  width: calc(100% - var(--shell-right-width) - 2 * var(--shell-stub-width));
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--kern-text) 12%, transparent);
+}
+
+.kern-panel-left.kern-overlay {
+  left: var(--shell-stub-width);
+  animation: kern-slide-left 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.kern-panel-right.kern-overlay {
+  right: var(--shell-stub-width);
+  width: var(--shell-right-width);
+  animation: kern-slide-right 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes kern-slide-left {
+  from {
+    transform: translateX(-24px);
+    opacity: 0;
+  }
+}
+
+@keyframes kern-slide-right {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kern-overlay {
+    animation: none !important;
+  }
+}
+
+.kern-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  color: var(--kern-text-dim);
+}
+
+.kern-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kern-density-gap);
+  padding: 4px var(--kern-density-gap);
+  font-family: var(--kern-font-mono);
+  font-size: 11.5px;
+  color: var(--kern-text-dim);
+  background: var(--kern-sunken);
+  border-top: 1px solid var(--kern-border);
+}
+
+.kern-status-doc {
+  display: flex;
+  gap: calc(var(--kern-density-gap) * 1.5);
+}
+
+.kern-status-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A document window, Home at the top left, the document below, the status bar last. */
+.kern-doc-window > .kern-doc-area {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.kern-doc-window-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--shell-stub-pad);
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-doc-window-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kern-doc-window-wait {
+  padding: 16px;
+}
+
+/*
+ * The editor layout: a left column (the places strip over the folder tree) docked
+ * beside the centre, whatever tab is shown. The column's width is --editor-left-width, set from
+ * the layout store; the divider is a 6px strip that can be dragged or moved with the arrow keys.
+ */
+.kern-main[data-layout="editor"] {
+  position: relative;
+  display: flex;
+}
+
+.kern-editor-left {
+  display: flex;
+  box-sizing: border-box;
+  width: var(--editor-left-width);
+  min-width: 0;
+  flex: none;
+  flex-direction: column;
+  background: var(--kern-sunken);
+}
+
+.kern-places.kern-places-column {
+  width: auto;
+  max-height: 45%;
+  flex: none;
+  border-right: 0;
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-editor-tree {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+/* The tree, kept in the page (hidden) while the name search takes the column. */
+.kern-editor-tree-body {
+  min-height: 0;
+  flex: 1;
+}
+
+.kern-editor-tree-body[hidden] {
+  display: none;
+}
+
+.kern-splitter {
+  width: 6px;
+  flex: none;
+  cursor: col-resize;
+  background: var(--kern-border);
+  touch-action: none;
+}
+
+.kern-splitter:hover,
+.kern-splitter:focus-visible {
+  background: var(--kern-accent);
+}
+
+.kern-editor-centre {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.kern-editor-centre > .kern-folder-area {
+  flex: 1;
+}
+
+.kern-editor-docs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.kern-editor-docs[hidden] {
+  display: none;
+}
+
+.kern-main[data-layout="editor"] > .kern-stub-right {
+  flex: none;
+}
+
+.kern-welcome {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  text-align: center;
+  color: var(--kern-text-dim);
+}
+
+.kern-welcome-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--kern-text);
+}
+
+.kern-welcome p {
+  margin: 0;
+}
+
+.kern-welcome-card {
+  display: flex;
+  max-width: 480px;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.kern-welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.kern-welcome kbd {
+  padding: 1px 6px;
+  font-family: var(--kern-font-mono);
+  font-size: 12px;
+  color: var(--kern-text);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+}
+
+/* The windows of the last run, offered at the top of the main window (RestoreBar.tsx). */
+.kern-restore-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kern-density-gap);
+  padding: 8px var(--kern-density-gap);
+  font-size: 13px;
+  background: var(--kern-accent-soft);
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-restore-bar-actions {
+  display: flex;
+  gap: var(--kern-density-gap);
+}

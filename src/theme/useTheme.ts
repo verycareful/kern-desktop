@@ -1,0 +1,138 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { useEffect, useState } from "react";
+import {
+  EVENT_THEME_CHANGED,
+  on,
+  settingsGet,
+  THEME_DENSITY,
+  themeGet,
+  toWireError,
+  type Follow,
+  type UnlistenFn,
+  type UserChoice,
+  type WireError,
+  type WireTheme,
+} from "../ipc";
+import { useThemeState } from "./theme-state";
+
+// Applies the system theme: kernkraft-theme
+// resolves it, the backend sends it as CSS custom properties, and this hook
+// keeps them in one <style id="kern-tokens"> element, replaced in place on
+// every update and on every kernkraft://theme-changed event.
+//
+// Until the first payload arrives, and for good if theme_get fails, the page
+// shows the tokens Kern ships in base.css (Kern's own neutrals and Slate
+// accent from the design handoff). That fallback is visible, never silent:
+// the failure is returned as `error` for the caller to show.
+
+export interface ThemePrefs {
+  follow: Follow;
+  user: UserChoice;
+}
+
+export interface ThemeState {
+  /** The last theme applied, or null before the first one. */
+  theme: WireTheme | null;
+  /** Why no theme was applied (or its updates stopped), or null. */
+  error: WireError | null;
+  /**
+   * Every problem any payload has reported, each once, in arrival order. The
+   * backend reports a watcher or session bus failure in one payload only, so
+   * they are kept here instead of following the latest theme.
+   */
+  problems: WireError[];
+}
+
+const STYLE_ID = "kern-tokens";
+
+function writeTokens(css: string): void {
+  let el = document.head.querySelector<HTMLStyleElement>(`style#${STYLE_ID}`);
+  if (!el) {
+    el = document.createElement("style");
+    el.id = STYLE_ID;
+    document.head.appendChild(el);
+  }
+  el.textContent = css;
+}
+
+/**
+ * With `prefs`, the theme is resolved with them. Without, with the stored
+ * settings, which is what the app wants at startup: theme_get makes its
+ * arguments the preferences later events are resolved with, so the defaults
+ * must never stand in for the user's choice.
+ *
+ * theme_get sets the backend's preferences without sending an event, so a
+ * preference change (Settings) goes through themeSetPrefs, which does send
+ * one; changing \`prefs\` here only asks again.
+ */
+export function useTheme(prefs?: ThemePrefs): ThemeState {
+  const [state, setState] = useState<ThemeState>({ theme: null, error: null, problems: [] });
+  const key = prefs ? JSON.stringify(prefs) : "";
+
+  useEffect(() => {
+    let alive = true;
+    let unlisten: UnlistenFn | undefined;
+    // Events seen so far. A theme_get reply computed before a watcher change
+    // can arrive after that change's event; it is stale then, so its theme is
+    // dropped (its problems are still kept).
+    let events = 0;
+
+    const addProblems = (found: WireError[], s: ThemeState): WireError[] => {
+      const known = new Set(s.problems.map((p) => JSON.stringify(p)));
+      const fresh = found.filter((p) => !known.has(JSON.stringify(p)));
+      return fresh.length === 0 ? s.problems : [...s.problems, ...fresh];
+    };
+    const apply = (theme: WireTheme, current: boolean) => {
+      if (!alive) return;
+      if (current) writeTokens(theme.css);
+      setState((s) => ({
+        theme: current ? theme : s.theme,
+        error: current ? null : s.error,
+        problems: addProblems(theme.problems, s),
+      }));
+    };
+    const fail = (e: unknown) => {
+      if (alive) setState((s) => ({ ...s, error: toWireError(e) }));
+    };
+
+    void (async () => {
+      try {
+        // Subscribed before the first request, so a change between the two
+        // is not lost.
+        const off = await on(EVENT_THEME_CHANGED, (theme) => {
+          events += 1;
+          apply(theme, true);
+        });
+        if (alive) unlisten = off;
+        else off();
+
+        let resolved: ThemePrefs;
+        if (key) {
+          resolved = JSON.parse(key) as ThemePrefs;
+        } else {
+          const s = await settingsGet();
+          resolved = {
+            follow: s.follow,
+            user: { mode: s.theme_mode, accent: s.accent, density: THEME_DENSITY },
+          };
+        }
+        const seen = events;
+        const theme = await themeGet(resolved.follow, resolved.user);
+        apply(theme, events === seen);
+      } catch (e) {
+        fail(e);
+      }
+    })();
+
+    return () => {
+      alive = false;
+      unlisten?.();
+    };
+  }, [key]);
+
+  // Settings shows what was applied; this window's theme is the one it shows.
+  useEffect(() => useThemeState.setState(state), [state]);
+
+  return state;
+}

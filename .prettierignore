@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+
+dist
+node_modules
+src-tauri/target
+src-tauri/gen
+package-lock.json
+test-results
+playwright-report
+local
+tools
+# Prettier reflows the badge block into several blocks (house README format).
+README.md

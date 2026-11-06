@@ -1,0 +1,330 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { act } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { VolumesChanged } from "../ipc";
+import { device, diskOf, known, mount, problem, volumes } from "./test-volumes";
+
+const ipc = vi.hoisted(() => ({
+  on: vi.fn(),
+  volumesList: vi.fn(),
+  volumesProblemsTake: vi.fn(),
+  volumeMount: vi.fn(),
+  volumeUnmount: vi.fn(),
+  volumeEject: vi.fn(),
+}));
+vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
+
+import { deviceKey, mountedKey, useVolumes } from "./volumes-store";
+
+// Kernkraft-tauri's volumes_cmds.rs gives the list; here it follows
+// kernkraft://volumes-changed, the listener is in place before the first
+// listing, problems that are reported once stay until dismissed, and a volume
+// is told apart by its identity.
+
+let handler: ((payload: VolumesChanged) => void) | undefined;
+const fire = (problems: VolumesChanged["problems"] = []) =>
+  act(async () => {
+    handler!({ problems });
+    await Promise.resolve();
+  });
+
+beforeEach(() => {
+  useVolumes.getState().reset();
+  handler = undefined;
+  ipc.on.mockImplementation((name: string, h: (payload: VolumesChanged) => void) => {
+    if (name === "kernkraft://volumes-changed") handler = h;
+    return Promise.resolve(() => undefined);
+  });
+  ipc.volumesList.mockResolvedValue(volumes({}));
+  ipc.volumesProblemsTake.mockResolvedValue([]);
+});
+afterEach(() => vi.clearAllMocks());
+
+test("the_listener_is_in_place_before_the_first_listing", async () => {
+  let subscribed!: () => void;
+  ipc.on.mockImplementation(
+    () =>
+      new Promise((r) => {
+        subscribed = () => r(() => undefined);
+      })
+  );
+  const following = useVolumes.getState().follow();
+  await Promise.resolve();
+  // The subscription has not been confirmed: nothing may have been listed.
+  expect(ipc.on).toHaveBeenCalledWith("kernkraft://volumes-changed", expect.any(Function));
+  expect(ipc.volumesList).not.toHaveBeenCalled();
+  subscribed();
+  await following;
+  expect(ipc.volumesList).toHaveBeenCalledTimes(1);
+  expect(ipc.on.mock.invocationCallOrder[0]).toBeLessThan(
+    ipc.volumesList.mock.invocationCallOrder[0]!
+  );
+});
+
+test("the_problems_kernkraft_held_are_taken_on_load_after_subscribing_and_before_listing", async () => {
+  ipc.volumesProblemsTake.mockResolvedValue([problem("UdisksAbsent")]);
+  await useVolumes.getState().follow();
+  expect(ipc.volumesProblemsTake).toHaveBeenCalledTimes(1);
+  const order = (m: { mock: { invocationCallOrder: number[] } }) => m.mock.invocationCallOrder[0]!;
+  expect(order(ipc.on)).toBeLessThan(order(ipc.volumesProblemsTake));
+  expect(order(ipc.volumesProblemsTake)).toBeLessThan(order(ipc.volumesList));
+  expect(useVolumes.getState().kept.map((k) => k.error.kind)).toEqual(["UdisksAbsent"]);
+});
+
+test("a_problem_found_by_the_take_and_by_the_first_listing_is_kept_once", async () => {
+  ipc.volumesProblemsTake.mockResolvedValue([problem("UdisksAbsent", "no udisks")]);
+  ipc.volumesList.mockResolvedValueOnce(
+    volumes({ problems: [problem("UdisksAbsent", "no udisks"), problem("Labels", "other")] })
+  );
+  await useVolumes.getState().follow();
+  expect(useVolumes.getState().kept.map((k) => k.error.kind)).toEqual(["UdisksAbsent", "Labels"]);
+});
+
+test("problems_are_the_same_only_when_kind_message_and_path_all_agree", async () => {
+  const at = (v: string) => ({ ...problem("Io", "denied"), path: { k: "Utf8" as const, v } });
+  ipc.volumesProblemsTake.mockResolvedValue([
+    at("/a"),
+    at("/b"),
+    at("/a"),
+    problem("Io", "denied"),
+  ]);
+  await useVolumes.getState().follow();
+  expect(useVolumes.getState().kept.map((k) => k.error.path?.v ?? null)).toEqual([
+    "/a",
+    "/b",
+    null,
+  ]);
+});
+
+test("a_take_that_fails_is_kept_as_a_problem_and_the_volumes_are_still_listed", async () => {
+  ipc.volumesProblemsTake.mockRejectedValue(problem("Ipc", "take refused"));
+  ipc.volumesList.mockResolvedValue(volumes({ mounted: [mount("STICK")] }));
+  await useVolumes.getState().follow();
+  expect(useVolumes.getState().kept.map((k) => k.error.message)).toEqual(["take refused"]);
+  expect(useVolumes.getState().mounted).toHaveLength(1);
+});
+
+test("each_strip_that_starts_following_takes_what_was_held_while_nobody_listened", async () => {
+  await useVolumes.getState().follow();
+  ipc.volumesProblemsTake.mockResolvedValue([problem("CallbackPanic", "boom")]);
+  await useVolumes.getState().follow();
+  expect(ipc.volumesProblemsTake).toHaveBeenCalledTimes(2);
+  expect(useVolumes.getState().kept.map((k) => k.error.kind)).toEqual(["CallbackPanic"]);
+});
+
+test("each_event_lists_the_volumes_again", async () => {
+  await useVolumes.getState().follow();
+  ipc.volumesList.mockResolvedValue(volumes({ mounted: [mount("STICK")] }));
+  await fire();
+  expect(ipc.volumesList).toHaveBeenCalledTimes(2);
+  expect(useVolumes.getState().mounted.map((m) => m.label)).toEqual(["STICK"]);
+  ipc.volumesList.mockResolvedValue(volumes({}));
+  await fire();
+  expect(useVolumes.getState().mounted).toEqual([]);
+});
+
+test("an_event_bumps_the_epoch_so_the_trash_lists_again", async () => {
+  await useVolumes.getState().follow();
+  const before = useVolumes.getState().epoch;
+  await fire();
+  await vi.waitFor(() => expect(useVolumes.getState().epoch).toBeGreaterThan(before));
+});
+
+test("stopping_follows_no_more_events", async () => {
+  const off = vi.fn();
+  ipc.on.mockResolvedValue(off);
+  const stop = await useVolumes.getState().follow();
+  stop();
+  expect(off).toHaveBeenCalledTimes(1);
+});
+
+test("problems_reported_once_stay_until_dismissed", async () => {
+  ipc.volumesList.mockResolvedValueOnce(volumes({ problems: [problem("UdisksAbsent")] }));
+  await useVolumes.getState().follow();
+  expect(useVolumes.getState().kept.map((k) => k.error.kind)).toEqual(["UdisksAbsent"]);
+  // The next listing does not carry it again, and does not clear it.
+  await useVolumes.getState().refresh();
+  await fire();
+  expect(useVolumes.getState().kept.map((k) => k.error.kind)).toEqual(["UdisksAbsent"]);
+  const [first] = useVolumes.getState().kept;
+  act(() => useVolumes.getState().dismiss(first!.id));
+  expect(useVolumes.getState().kept).toEqual([]);
+});
+
+test("watch_problems_in_an_event_stay_until_dismissed", async () => {
+  await useVolumes.getState().follow();
+  await fire([problem("CallbackPanic", "boom")]);
+  await fire();
+  await fire([problem("CallbackPanic", "boom")]);
+  // The same problem twice is one notice.
+  expect(useVolumes.getState().kept.map((k) => k.error.kind)).toEqual(["CallbackPanic"]);
+});
+
+test("only_the_first_listing_is_kept_not_every_listing_problem", async () => {
+  ipc.volumesList.mockResolvedValueOnce(volumes({}));
+  await useVolumes.getState().follow();
+  // A later listing's own problems describe the present: shown while they apply, then gone.
+  ipc.volumesList.mockResolvedValueOnce(volumes({ problems: [problem("Labels")] }));
+  await useVolumes.getState().refresh();
+  expect(useVolumes.getState().problems.map((e) => e.kind)).toEqual(["Labels"]);
+  expect(useVolumes.getState().kept).toEqual([]);
+  ipc.volumesList.mockResolvedValueOnce(volumes({}));
+  await useVolumes.getState().refresh();
+  expect(useVolumes.getState().problems).toEqual([]);
+});
+
+test("a_failed_subscription_is_shown_and_the_volumes_are_still_listed", async () => {
+  ipc.on.mockRejectedValue(problem("Ipc", "no event system"));
+  ipc.volumesList.mockResolvedValue(volumes({ mounted: [mount("STICK")] }));
+  await useVolumes.getState().follow();
+  expect(useVolumes.getState().watchError?.message).toBe("no event system");
+  expect(useVolumes.getState().mounted).toHaveLength(1);
+});
+
+test("a_volume_key_is_its_identity_and_mount_point_not_the_node_or_list_order", () => {
+  const a = mount("X", { device: "/dev/sdb1" });
+  // Same disk at the same mount point, seen under another device node: the same volume.
+  expect(mountedKey({ ...a, device: "/dev/sdc1" })).toBe(mountedKey(a));
+  // The same disk mounted somewhere else is another volume (verify_mount passes for either).
+  expect(mountedKey({ ...a, mount_point: { k: "Utf8", v: "/mnt/x" } })).not.toBe(mountedKey(a));
+  // Another disk at the same node and path (unplugged and replugged): another volume.
+  const replugged = {
+    ...a,
+    identity: { ...known("X"), diskseq: 99999 },
+  } as typeof a;
+  expect(mountedKey(replugged)).not.toBe(mountedKey(a));
+  expect(deviceKey(device("X"))).not.toBe(mountedKey(a));
+});
+
+test("volumes_with_an_unknown_identity_are_told_apart_by_their_device_node", () => {
+  const unknown = { state: "unknown", reason: "no diskseq" } as const;
+  const a = mount("A", { identity: unknown, device: "/dev/sdb1" });
+  const b = mount("B", { identity: unknown, device: "/dev/sdc1" });
+  expect(mountedKey(a)).not.toBe(mountedKey(b));
+  expect(deviceKey(device("A", { identity: unknown }))).not.toBe(
+    deviceKey(device("B", { identity: unknown }))
+  );
+});
+
+test("two_mounts_of_one_disk_get_two_keys", async () => {
+  ipc.volumesList.mockResolvedValue(
+    volumes({
+      mounted: [
+        mount("DATA", { mount_point: { k: "Utf8", v: "/mnt/a" } }),
+        mount("DATA", { mount_point: { k: "Utf8", v: "/mnt/b" } }),
+      ],
+    })
+  );
+  await useVolumes.getState().refresh();
+  const keys = useVolumes
+    .getState()
+    .volumes()
+    .map((v) => v.key);
+  expect(new Set(keys).size).toBe(2);
+});
+
+test("unmount_and_eject_send_the_identity_as_listed", async () => {
+  const m = mount("STICK");
+  ipc.volumeUnmount.mockResolvedValue(undefined);
+  ipc.volumeEject.mockResolvedValue(undefined);
+  ipc.volumesList.mockResolvedValue(volumes({ mounted: [m] }));
+  await useVolumes.getState().refresh();
+  const v = useVolumes.getState().volumes()[0]!;
+  await useVolumes.getState().run(v, "unmount");
+  expect(ipc.volumeUnmount).toHaveBeenCalledWith(m.mount_point, diskOf("STICK"));
+  await useVolumes.getState().run(v, "eject");
+  expect(ipc.volumeEject).toHaveBeenCalledWith(m.mount_point, diskOf("STICK"));
+});
+
+test("mount_sends_the_whole_device_as_listed", async () => {
+  const d = device("BACKUP");
+  ipc.volumeMount.mockResolvedValue({ k: "Utf8", v: "/run/media/t/BACKUP" });
+  ipc.volumesList.mockResolvedValue(volumes({ unmounted: [d] }));
+  await useVolumes.getState().refresh();
+  await useVolumes.getState().run(useVolumes.getState().volumes()[0]!, "mount");
+  expect(ipc.volumeMount).toHaveBeenCalledWith(d);
+});
+
+test("an_action_on_a_volume_with_no_identity_is_refused_without_calling_kernkraft", async () => {
+  const unknown = { state: "unknown", reason: "kernel older than 5.15" } as const;
+  ipc.volumesList.mockResolvedValue(
+    volumes({
+      mounted: [mount("OLD", { identity: unknown })],
+      unmounted: [device("RAW", { identity: unknown })],
+    })
+  );
+  await useVolumes.getState().refresh();
+  for (const v of useVolumes.getState().volumes()) {
+    for (const action of ["unmount", "eject", "mount"] as const) {
+      await useVolumes.getState().run(v, action);
+    }
+    expect(useVolumes.getState().errors[v.key]?.kind).toBe("IdentityUnknown");
+    expect(useVolumes.getState().errors[v.key]?.message).toContain("kernel older than 5.15");
+  }
+  expect(ipc.volumeUnmount).not.toHaveBeenCalled();
+  expect(ipc.volumeEject).not.toHaveBeenCalled();
+  expect(ipc.volumeMount).not.toHaveBeenCalled();
+});
+
+test("after_a_relist_error_busy_and_the_menu_target_stay_on_the_same_mount_of_a_disk", async () => {
+  const at = (v: string) => mount("DATA", { mount_point: { k: "Utf8", v } });
+  const [a, b] = [at("/mnt/a"), at("/mnt/b")];
+  const onB = () =>
+    useVolumes
+      .getState()
+      .volumes()
+      .find((v) => v.kind === "mounted" && v.mount.mount_point.v === "/mnt/b")!;
+  const relist = async (mounted: (typeof a)[]) => {
+    ipc.volumesList.mockResolvedValue(volumes({ mounted }));
+    await useVolumes.getState().refresh();
+  };
+  await relist([a, b]);
+  const keyB = onB().key;
+  // An error on /b and a menu opened on /b; then /a goes away and the list is read again.
+  ipc.volumeUnmount.mockRejectedValueOnce(problem("Busy", "held"));
+  await useVolumes.getState().run(onB(), "unmount");
+  useVolumes.getState().setCurrent(keyB);
+  await relist([b]);
+  expect(onB().key).toBe(keyB);
+  expect(useVolumes.getState().errors[keyB]?.kind).toBe("Busy");
+  const current = useVolumes.getState().currentVolume();
+  expect(current?.kind === "mounted" && current.mount.mount_point).toEqual(b.mount_point);
+  // A run in flight on /b is still busy on /b after /a comes back and the order changes.
+  let finish!: () => void;
+  ipc.volumeEject.mockReturnValue(new Promise<void>((r) => (finish = r)));
+  const running = useVolumes.getState().run(onB(), "eject");
+  await relist([a, b]);
+  expect(onB().key).toBe(keyB);
+  expect(useVolumes.getState().busy[keyB]).toBeTruthy();
+  const first = useVolumes.getState().volumes()[0]!;
+  expect(useVolumes.getState().busy[first.key]).toBeUndefined();
+  finish();
+  await running;
+});
+
+test("the_number_of_strips_following_is_counted_for_the_refresh_action", async () => {
+  expect(useVolumes.getState().followers).toBe(0);
+  const stop = await useVolumes.getState().follow();
+  expect(useVolumes.getState().followers).toBe(1);
+  stop();
+  expect(useVolumes.getState().followers).toBe(0);
+});
+
+test("overlapping_listings_run_one_at_a_time_and_the_first_ones_problems_are_kept", async () => {
+  // kernkraft hands its once-only problems to the first listing it starts. A second request
+  // while that is in flight must wait its turn, and must not make the first answer be dropped.
+  let first!: (v: ReturnType<typeof volumes>) => void;
+  ipc.volumesList
+    .mockReturnValueOnce(new Promise((r) => (first = r)))
+    .mockResolvedValue(volumes({ mounted: [mount("STICK")] }));
+  const one = useVolumes.getState().refresh();
+  const two = useVolumes.getState().refresh();
+  await Promise.resolve();
+  expect(ipc.volumesList).toHaveBeenCalledTimes(1);
+  first(volumes({ problems: [problem("UdisksAbsent")] }));
+  await Promise.all([one, two]);
+  expect(ipc.volumesList).toHaveBeenCalledTimes(2);
+  expect(useVolumes.getState().kept.map((k) => k.error.kind)).toEqual(["UdisksAbsent"]);
+  expect(useVolumes.getState().mounted).toHaveLength(1);
+});

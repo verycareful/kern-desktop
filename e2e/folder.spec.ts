@@ -1,0 +1,405 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import type { Page } from "@playwright/test";
+import {
+  test,
+  expect,
+  EMPTY_PINNED_RECENT,
+  emitTauriEvent,
+  getInvokeCalls,
+} from "./support/mockInvoke";
+
+// The mocks are serialised into the page, so each is self-contained.
+const SETTINGS = {
+  follow: { colours: true, accent: true, fonts: true, radius: true },
+  theme_mode: "system",
+  accent: "slate",
+  density: "cozy",
+  show_hidden: false,
+  view_mode: "list",
+  default_layout: "file_manager",
+  new_tab_folder: null,
+  new_tab_default: "folder",
+  interface_size: 90,
+};
+const COMMON = {
+  open_pending_take: [],
+  settings_get: SETTINGS,
+  settings_set: (args: Record<string, unknown>) => ({
+    follow: { colours: true, accent: true, fonts: true, radius: true },
+    theme_mode: "system",
+    accent: "slate",
+    density: "cozy",
+    show_hidden: false,
+    view_mode: "list",
+    default_layout: "file_manager",
+    new_tab_folder: null,
+    new_tab_default: "folder",
+    interface_size: 90,
+    ...(args.patch as object),
+  }),
+  "plugin:kernkraft-tauri|volumes_list": { mounted: [], unmounted: [], problems: [] },
+  "plugin:kernkraft-tauri|volumes_problems_take": [],
+  ...EMPTY_PINNED_RECENT,
+  "plugin:kernkraft-tauri|user_dirs": { home: { k: "Utf8", v: "/home/tester/docs" }, dirs: [] },
+  "plugin:kernkraft-tauri|theme_get": { css: ":root{}", tokens: {}, fallbacks: [], problems: [] },
+  "plugin:kernkraft-tauri|watch_dir": null,
+  "plugin:kernkraft-tauri|unwatch_dir": null,
+  // The window reads the undo history once.
+  "plugin:kernkraft-tauri|undo_state": { undo: null, redo: null },
+};
+
+const rows = (page: Page) => page.getByTestId("file-row");
+
+test("navigates_breadcrumb_and_back", async ({ page, mockTauri }) => {
+  await mockTauri({
+    ...COMMON,
+    "plugin:kernkraft-tauri|list_dir": (args: Record<string, unknown>) => {
+      const file = (dir: string, name: string) => ({
+        path: { k: "Utf8", v: `${dir}/${name}` },
+        name,
+        kind: "file",
+        target_is_dir: false,
+        len: 1500,
+        modified_ms: null,
+        hidden: false,
+        mime: "application/pdf",
+      });
+      const path = (args.path as { v: string }).v;
+      if (path === "/home/tester/docs") {
+        return [
+          {
+            path: { k: "Utf8", v: "/home/tester/docs/reports" },
+            name: "reports",
+            kind: "dir",
+            target_is_dir: true,
+            len: 0,
+            modified_ms: null,
+            hidden: false,
+            mime: "inode/directory",
+          },
+          file(path, "a.pdf"),
+        ];
+      }
+      if (path === "/home/tester/docs/reports") return [file(path, "r.pdf")];
+      return [];
+    },
+  });
+  await page.goto("/");
+  await expect(rows(page)).toHaveCount(2);
+  await expect(page.getByTestId("status-count")).toHaveText("2 items");
+
+  await rows(page).filter({ hasText: "reports" }).dblclick();
+  await expect(rows(page)).toHaveCount(1);
+  await expect(rows(page).first()).toHaveAttribute("data-name", "r.pdf");
+  const crumbs = page.getByRole("navigation", { name: "Path" });
+  await expect(crumbs.getByRole("button", { name: "reports" })).toHaveAttribute(
+    "aria-current",
+    "location"
+  );
+
+  // A breadcrumb segment goes up; Back returns to where we were.
+  await crumbs.getByRole("button", { name: "tester" }).click();
+  await expect(rows(page)).toHaveCount(0);
+  await expect(page.getByTestId("folder-empty")).toBeVisible();
+  await page.keyboard.press("Alt+ArrowLeft");
+  await expect(rows(page).first()).toHaveAttribute("data-name", "r.pdf");
+});
+
+test("scrolls_100k_rows", async ({ page, mockTauri }) => {
+  await mockTauri({
+    ...COMMON,
+    "plugin:kernkraft-tauri|list_dir": () =>
+      Array.from({ length: 100_000 }, (_, i) => ({
+        path: { k: "Utf8", v: `/home/tester/docs/file${i}.txt` },
+        name: `file${i}.txt`,
+        kind: "file",
+        target_is_dir: false,
+        len: i,
+        modified_ms: null,
+        hidden: false,
+        mime: "text/plain",
+      })),
+  });
+  await page.goto("/");
+  await expect(page.getByTestId("status-count")).toHaveText("100,000 items");
+  const drawn = await rows(page).count();
+  expect(drawn).toBeGreaterThan(0);
+  expect(drawn).toBeLessThanOrEqual(200);
+
+  // Natural order puts file99999 last: scroll to the bottom and it is drawn,
+  // still with at most 200 rows in the DOM.
+  await page.getByTestId("folder-scroll").evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await expect(rows(page).last()).toHaveAttribute("data-name", "file99999.txt");
+  expect(await rows(page).count()).toBeLessThanOrEqual(200);
+});
+
+test("hidden_toggle_ctrl_h", async ({ page, mockTauri }) => {
+  await mockTauri({
+    ...COMMON,
+    "plugin:kernkraft-tauri|list_dir": (args: Record<string, unknown>) => {
+      const e = (name: string) => ({
+        path: { k: "Utf8", v: `/home/tester/docs/${name}` },
+        name,
+        kind: "file",
+        target_is_dir: false,
+        len: 1,
+        modified_ms: null,
+        hidden: name.startsWith("."),
+        mime: "text/plain",
+      });
+      return args.hidden ? [e(".secret"), e("a.txt")] : [e("a.txt")];
+    },
+  });
+  await page.goto("/");
+  await expect(rows(page)).toHaveCount(1);
+  await page.keyboard.press("Control+h");
+  await expect(rows(page)).toHaveCount(2);
+  await expect(rows(page).first()).toHaveAttribute("data-name", ".secret");
+  await page.keyboard.press("Control+h");
+  await expect(rows(page)).toHaveCount(1);
+});
+
+test.describe("non-ASCII names", () => {
+  test.use({ locale: "en-US" });
+  // The frame-gap measurement shares the machine with nothing else of this suite.
+  test.describe.configure({ mode: "serial" });
+
+  // The names the mock below makes, rebuilt here to know the right order.
+  const PREFIXES = ["é", "e", "z", "ä", "a", "日", "ß"];
+  const nameAt = (i: number) => `${PREFIXES[i % 7]}file${(i * 7919) % 100000}-${i}.txt`;
+
+  test("sorts_100k_non_ascii_names_without_holding_up_a_frame", async ({ page, mockTauri }) => {
+    await mockTauri({
+      ...COMMON,
+      "plugin:kernkraft-tauri|list_dir": () => {
+        const prefixes = ["é", "e", "z", "ä", "a", "日", "ß"];
+        return Array.from({ length: 100_000 }, (_, i) => {
+          const name = `${prefixes[i % 7]}file${(i * 7919) % 100000}-${i}.txt`;
+          return {
+            path: { k: "Utf8", v: `/home/tester/docs/${name}` },
+            name,
+            kind: "file",
+            target_is_dir: false,
+            len: i,
+            modified_ms: null,
+            hidden: false,
+            mime: "text/plain",
+          };
+        });
+      },
+    });
+    // What the page's collator orders: the smallest and the largest name.
+    const collator = new Intl.Collator("en-US", { numeric: true });
+    let min = nameAt(0);
+    let max = nameAt(0);
+    for (let i = 1; i < 100_000; i++) {
+      const n = nameAt(i);
+      if (collator.compare(n, min) < 0) min = n;
+      if (collator.compare(n, max) > 0) max = n;
+    }
+
+    await page.goto("/");
+    await expect(page.getByTestId("status-count")).toHaveText("100,000 items");
+    await expect(rows(page).first()).toHaveAttribute("data-name", min);
+
+    // Watch the frames while the list is sorted the other way round: a
+    // requestAnimationFrame callback that comes late means the page was busy.
+    await page.evaluate(() => {
+      const w = window as unknown as { __gaps: number[]; __run: boolean };
+      w.__gaps = [];
+      w.__run = true;
+      let last = performance.now();
+      const tick = (now: number) => {
+        w.__gaps.push(now - last);
+        last = now;
+        if (w.__run) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await page.getByRole("columnheader", { name: "Name" }).getByRole("button").click();
+    await expect(rows(page).first()).toHaveAttribute("data-name", max);
+    const gaps = await page.evaluate(() => {
+      const w = window as unknown as { __gaps: number[]; __run: boolean };
+      w.__run = false;
+      return w.__gaps;
+    });
+    expect(gaps.length).toBeGreaterThan(0);
+    const worst = Math.max(...gaps);
+    test.info().annotations.push({ type: "longest frame gap (ms)", description: String(worst) });
+    expect(worst).toBeLessThan(200);
+
+    // And the other end of the list is the smallest name.
+    await page.getByTestId("folder-scroll").evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect(rows(page).last()).toHaveAttribute("data-name", min);
+  });
+});
+
+test("keyboard_focus_outlines_the_current_item_not_the_list", async ({ page, mockTauri }) => {
+  const file = (name: string) => ({
+    path: { k: "Utf8", v: `/home/tester/docs/${name}` },
+    name,
+    kind: "file",
+    target_is_dir: false,
+    len: 10,
+    modified_ms: null,
+    hidden: false,
+    mime: "application/pdf",
+  });
+  await mockTauri({
+    ...COMMON,
+    "plugin:kernkraft-tauri|list_dir": [file("a.pdf"), file("b.pdf")],
+  });
+  await page.goto("/");
+  await expect(rows(page)).toHaveCount(2);
+  const list = page.getByTestId("folder-list");
+  const outline = (loc: ReturnType<Page["getByTestId"]>) =>
+    loc.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return { style: s.outlineStyle, width: s.outlineWidth };
+    });
+
+  await list.focus();
+  // Focused with no current item: no frame round the list, the first row outlined.
+  expect((await outline(list)).style).toBe("none");
+  await expect(rows(page).first()).toHaveClass(/kern-cursor/);
+  expect((await outline(rows(page).first())).style).toBe("solid");
+  await expect(rows(page).first()).toHaveAttribute("aria-selected", "false");
+
+  // The arrow key moves on from the outlined first row: the second is selected and outlined.
+  await page.keyboard.press("ArrowDown");
+  await expect(rows(page).nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(rows(page).nth(1)).toHaveClass(/kern-cursor/);
+  await expect(rows(page).first()).toHaveAttribute("aria-selected", "false");
+  await page.getByRole("button", { name: /grid view/i }).focus();
+  // Focus elsewhere: no outline on any row.
+  for (const row of await rows(page).all()) {
+    expect((await outline(row)).style).toBe("none");
+  }
+});
+
+test("the_keyboard_ring_of_a_tab_goes_round_its_close_button", async ({ page, mockTauri }) => {
+  await mockTauri({ ...COMMON, "plugin:kernkraft-tauri|list_dir": [] });
+  await page.goto("/");
+  const tab = page.getByTestId("tab").first();
+  await expect(tab).toBeVisible();
+  // Tab from the page start reaches the tab with the keyboard, which is what shows the ring.
+  await tab.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(tab).toBeFocused();
+  const ring = await tab.evaluate((el) => {
+    const whole = el.parentElement!;
+    const close = whole.querySelector(".kern-tab-close")!.getBoundingClientRect();
+    const box = whole.getBoundingClientRect();
+    return {
+      main: getComputedStyle(el).outlineStyle,
+      whole: getComputedStyle(whole).outlineStyle,
+      closeInside: close.left >= box.left && close.right <= box.right,
+    };
+  });
+  expect(ring).toEqual({ main: "none", whole: "solid", closeInside: true });
+});
+
+test("the_first_row_is_spaced_from_the_path_bar", async ({ page, mockTauri }) => {
+  await mockTauri({
+    ...COMMON,
+    "plugin:kernkraft-tauri|list_dir": [
+      {
+        path: { k: "Utf8", v: "/home/tester/docs/a.pdf" },
+        name: "a.pdf",
+        kind: "file",
+        target_is_dir: false,
+        len: 10,
+        modified_ms: null,
+        hidden: false,
+        mime: "application/pdf",
+      },
+    ],
+  });
+  await page.goto("/");
+  await expect(rows(page)).toHaveCount(1);
+  const gap = async (below: string) => {
+    const bar = await page.locator(".kern-files-bar").boundingBox();
+    const next = await page.locator(below).first().boundingBox();
+    return next!.y - (bar!.y + bar!.height);
+  };
+  // The column header is the first thing under the bar in the list.
+  expect(await gap(".kern-list-head")).toBeGreaterThanOrEqual(12);
+  await page.getByRole("button", { name: /grid view/i }).click();
+  await expect(page.getByTestId("file-card")).toHaveCount(1);
+  expect(await gap('[data-testid="file-card"]')).toBeGreaterThanOrEqual(12);
+});
+
+// What the window does with a walk that streams and then ends, as one over a symlink loop does
+// (the walk itself ending on a loop is kernkraft's, tested there): three batches, then op-done,
+// then a stray batch that must not be shown, and nothing left to cancel.
+test("search_shows_streamed_hits_and_ignores_a_late_batch", async ({ page, mockTauri }) => {
+  await mockTauri({
+    ...COMMON,
+    "plugin:kernkraft-tauri|list_dir": [
+      {
+        path: { k: "Utf8", v: "/home/tester/docs/loop" },
+        name: "loop",
+        kind: "symlink",
+        target_is_dir: true,
+        len: 0,
+        modified_ms: null,
+        hidden: false,
+        mime: "inode/directory",
+        mode: 0o777,
+      },
+    ],
+    "plugin:kernkraft-tauri|search": 41,
+    "plugin:kernkraft-tauri|cancel_op": null,
+  });
+  await page.goto("/");
+  await expect(rows(page)).toHaveCount(1);
+  await rows(page).first().click();
+  await page.keyboard.press("Control+f");
+  await page.getByRole("searchbox").fill("loop");
+  await expect
+    .poll(async () => (await getInvokeCalls(page)).some((c) => c.cmd.endsWith("|search")))
+    .toBe(true);
+  const call = (await getInvokeCalls(page)).find((c) => c.cmd.endsWith("|search"))!;
+  const key = call.args.key as string;
+  expect(call.args.query).toBe("loop");
+  const hit = (v: string) => ({
+    path: { k: "Utf8", v },
+    name: "loop",
+    kind: "symlink",
+    target_is_dir: true,
+    len: 0,
+    modified_ms: null,
+    hidden: false,
+    mime: "inode/directory",
+    mode: 0o777,
+  });
+  for (const v of [
+    "/home/tester/docs/loop",
+    "/home/tester/docs/loop/loop",
+    "/home/tester/docs/loop/loop/loop",
+  ]) {
+    await emitTauriEvent(page, "kernkraft://search-hit", { key, op: 41, entries: [hit(v)] });
+  }
+  await expect(page.getByTestId("scan-hit")).toHaveCount(3);
+  await emitTauriEvent(page, "kernkraft://op-done", {
+    op: 41,
+    report: null,
+    properties: null,
+    error: null,
+    scan: { found: 3, unreadable: [], cancelled: false },
+  });
+  await expect(page.getByRole("status").filter({ hasText: "3 items found" })).toBeVisible();
+  await expect(page.getByText(/Searching/)).toHaveCount(0);
+  await emitTauriEvent(page, "kernkraft://search-hit", {
+    key,
+    op: 41,
+    entries: [hit("/home/tester/docs/stray")],
+  });
+  await expect(page.getByTestId("scan-hit")).toHaveCount(3);
+  // Escape ends the search and gives the folder back; nothing was left to cancel.
+  await page.getByRole("searchbox").press("Escape");
+  await expect(rows(page)).toHaveCount(1);
+  expect((await getInvokeCalls(page)).some((c) => c.cmd.endsWith("|cancel_op"))).toBe(false);
+});

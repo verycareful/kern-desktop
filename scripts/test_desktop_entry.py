@@ -1,0 +1,192 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+"""Tests for the desktop entry, the AppStream metainfo and their bundling.
+
+Run: python3 -I scripts/test_desktop_entry.py
+
+Needs desktop-file-validate (desktop-file-utils), appstreamcli (appstream)
+and cargo. The MimeType list is the output of the desktop_mime_types example
+run against this machine's MIME database. Where CI is set the database is
+the runner's, which lists a different set of types, so there the test checks
+only the types that database knows: each must be one the generator emits.
+"""
+
+import json
+import os
+import re
+import struct
+import subprocess
+import unittest
+import xml.etree.ElementTree as ET
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(HERE)
+TAURI = os.path.join(REPO, "src-tauri")
+APP_ID = "io.github.verycareful.kern"
+DESKTOP = os.path.join(TAURI, "linux", f"{APP_ID}.desktop")
+METAINFO = os.path.join(TAURI, "linux", f"{APP_ID}.metainfo.xml")
+CONF = os.path.join(TAURI, "tauri.conf.json")
+SYSTEM_TYPES = "/usr/share/mime/types"
+METAINFO_DEST = f"/usr/share/metainfo/{APP_ID}.metainfo.xml"
+SCALABLE_DEST = "/usr/share/icons/hicolor/scalable/apps/kern.svg"
+# Debian Policy 12.5: the licence goes to /usr/share/doc/<package>/copyright;
+# the package name is the bundler's, productName with dots as hyphens.
+COPYRIGHT_DEST = "/usr/share/doc/io-github-verycareful-kern/copyright"
+BINARY = "kern"
+INSTANCE = os.path.join(TAURI, "src", "instance.rs")
+# Types Kern must claim on every system: the plan's list by canonical name.
+# The database's aliases file maps application/x-shellscript,
+# application/x-yaml and text/x-c to the names used here, and names Rust
+# source text/rust.
+ANCHORS = (
+    "text/plain",
+    "text/markdown",
+    "application/json",
+    "text/x-shellscript",
+    "application/toml",
+    "application/yaml",
+    "text/x-csrc",
+    "text/x-c++src",
+    "text/x-python",
+    "text/rust",
+)
+# desktop-file-validate warns on every type under message/: it expects mail
+# programs to claim them. Kern opens them as text, so these warnings are the
+# accepted ones; any other warning or error fails.
+ACCEPTED_WARNING = re.compile(r'contains value "message/[^"]+" which is a MIME type that should probably not be used')
+
+
+def entry() -> dict:
+    keys = {}
+    with open(DESKTOP, encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if line.startswith("#") or not line or line.startswith("["):
+                continue
+            key, _, value = line.partition("=")
+            keys[key] = value
+    return keys
+
+
+def mime_list(value: str) -> list:
+    return [t for t in value.split(";") if t]
+
+
+def generated() -> list:
+    out = subprocess.run(
+        ["cargo", "run", "-q", "--manifest-path", os.path.join(TAURI, "Cargo.toml"), "--example", "desktop_mime_types"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert out.startswith("MimeType="), out[:80]
+    return mime_list(out[len("MimeType=") :])
+
+
+class DesktopEntry(unittest.TestCase):
+    def test_validates(self) -> None:
+        r = subprocess.run(["desktop-file-validate", DESKTOP], capture_output=True, text=True, check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        problems = [
+            line
+            for line in (r.stdout + r.stderr).splitlines()
+            if (": warning: " in line or ": error: " in line) and not ACCEPTED_WARNING.search(line)
+        ]
+        self.assertEqual(problems, [])
+
+    def test_launch_keys(self) -> None:
+        e = entry()
+        self.assertEqual(e["Exec"], f"{BINARY} %F")
+        self.assertEqual(e["Icon"], BINARY)
+        self.assertEqual(e["StartupWMClass"], APP_ID)
+        # The class comes from the GLib program name, which Kern sets to its
+        # bus name at start-up.
+        with open(INSTANCE, encoding="utf-8") as f:
+            bus = re.search(r'pub const BUS_NAME: &str = "([^"]+)";', f.read())
+        self.assertIsNotNone(bus)
+        self.assertEqual(bus.group(1), APP_ID)
+        self.assertEqual(e["Name"], "Kern")
+
+    def test_mime_types_are_the_generators(self) -> None:
+        listed = mime_list(entry()["MimeType"])
+        self.assertEqual(listed[0], "inode/directory")
+        self.assertEqual(len(listed), len(set(listed)), "a type is listed twice")
+        missing = [t for t in ANCHORS if t not in listed]
+        self.assertEqual(missing, [], "types every database knows are not claimed")
+        made = generated()
+        if os.environ.get("CI"):
+            with open(SYSTEM_TYPES, encoding="utf-8") as f:
+                known = {line.strip() for line in f if line.strip()}
+            checked = [t for t in listed[1:] if t in known]
+            self.assertGreaterEqual(len(checked), len(ANCHORS), "the runner's database knows almost none of the list")
+            stray = [t for t in checked if t not in made]
+            self.assertEqual(stray, [], "listed types this database does not call text")
+            print(f"note: CI is set; checked {len(checked)} of {len(listed) - 1} types")
+        else:
+            self.assertEqual(listed, made)
+
+
+class Metainfo(unittest.TestCase):
+    def test_validates(self) -> None:
+        r = subprocess.run(
+            ["appstreamcli", "validate", "--no-net", METAINFO], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_identity(self) -> None:
+        root = ET.parse(METAINFO).getroot()
+        self.assertEqual(root.findtext("id"), APP_ID)
+        self.assertEqual(root.findtext("project_license"), "AGPL-3.0-or-later")
+        self.assertEqual(root.findtext("launchable[@type='desktop-id']"), f"{APP_ID}.desktop")
+
+    def test_newest_release_is_this_version(self) -> None:
+        with open(os.path.join(REPO, "VERSION"), encoding="utf-8") as f:
+            label = f.read().strip()
+        release = ".".join(label.split(".")[:4])
+        root = ET.parse(METAINFO).getroot()
+        self.assertEqual(root.find("releases/release").get("version"), release)
+
+
+class Bundle(unittest.TestCase):
+    def setUp(self) -> None:
+        with open(CONF, encoding="utf-8") as f:
+            self.conf = json.load(f)
+
+    def test_desktop_file_is_named_after_the_app_id(self) -> None:
+        # The bundler names the installed entry after productName.
+        self.assertEqual(self.conf["productName"], APP_ID)
+        self.assertEqual(self.conf["identifier"], APP_ID)
+        self.assertEqual(self.conf["mainBinaryName"], BINARY)
+
+    def test_window_icon_is_the_largest(self) -> None:
+        # Tauri takes the first PNG of bundle.icon as every window's icon.
+        def width(rel: str) -> int:
+            with open(os.path.join(TAURI, rel), "rb") as f:
+                head = f.read(24)
+            self.assertEqual(head[:8], b"\x89PNG\r\n\x1a\n", rel)
+            return struct.unpack(">I", head[16:20])[0]
+
+        pngs = [i for i in self.conf["bundle"]["icon"] if i.endswith(".png")]
+        self.assertEqual(width(pngs[0]), max(width(i) for i in pngs))
+
+    def test_scalable_icon_is_recognised_by_its_content(self) -> None:
+        # Launchers such as rofi decode icons through gdk-pixbuf, which picks
+        # the format from the file's bytes, not its name. shared-mime-info
+        # (freedesktop.org.xml, image/svg+xml) matches "<svg" at offset 0 at
+        # priority 80, and within bytes 1 to 256 only at priority 45; a file
+        # matching neither does not load, and the launcher shows no icon.
+        with open(os.path.join(TAURI, "icons", "kern.svg"), "rb") as f:
+            self.assertTrue(f.read().startswith(b"<svg"))
+
+    def test_deb_and_appimage_carry_the_entry_and_metainfo(self) -> None:
+        linux = self.conf["bundle"]["linux"]
+        self.assertEqual(linux["deb"]["desktopTemplate"], f"linux/{APP_ID}.desktop")
+        for target in ("deb", "appimage"):
+            files = linux[target]["files"]
+            self.assertEqual(files.get(METAINFO_DEST), f"linux/{APP_ID}.metainfo.xml", target)
+            self.assertEqual(files.get(SCALABLE_DEST), "icons/kern.svg", target)
+            self.assertEqual(files.get(COPYRIGHT_DEST), "../LICENSE", target)
+
+
+if __name__ == "__main__":
+    unittest.main()
