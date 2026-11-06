@@ -41,9 +41,12 @@ Icon=kern
 """
 
 # The fake Kern: --apply-settings copies the patch to applied.json (and
-# fails when the world says so); any other launch is logged.
+# fails when the world says so); any other launch is logged. Like the AppRun
+# linuxdeploy generates, it locates its bundle through the directory of $0
+# and exits when the bundle is not there.
 FAKE_KERN = """#!/bin/bash
 w="__WORLD__"
+[[ -d "$(readlink -f "$(dirname "$0")")/usr/share" ]] || { echo "kern: no bundle beside $0" >&2; exit 8; }
 if [[ "$1" == --apply-settings ]]; then
     [[ -e "$w/apply-fails" ]] && { echo "kern: refused" >&2; exit 1; }
     mkdir -p "$w/home/.config/kern"
@@ -312,7 +315,9 @@ class Layout(unittest.TestCase):
         self.assertTrue((lib / VERSION / "AppRun").is_file())
         self.assertEqual(os.readlink(lib / "current"), VERSION)
         launcher = self.w.home / ".local" / "bin" / "kern"
-        self.assertEqual(os.readlink(launcher), str(lib / "current" / "AppRun"))
+        self.assertFalse(launcher.is_symlink())
+        self.assertTrue(os.access(launcher, os.X_OK))
+        self.assertIn(str(lib / "current" / "AppRun"), launcher.read_text())
         entry = (self.w.share / "applications" / f"{APP_ID}.desktop").read_text()
         self.assertIn(f"Exec={launcher} %F", entry)
         self.assertNotIn("Exec=kern", entry)
@@ -356,6 +361,23 @@ class Layout(unittest.TestCase):
         self.assertEqual(self.install().returncode, 0)
         r = self.w.bash('installed_kern; echo "$FOUND|$KERN_VERSION"')
         self.assertEqual(r.stdout.strip(), f"record-user|{VERSION}")
+
+    def test_launcher_starts_kern_with_its_arguments(self) -> None:
+        self.assertEqual(self.install().returncode, 0)
+        launcher = self.w.home / ".local" / "bin" / "kern"
+        r = subprocess.run([str(launcher), "a b", "c"], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("launch a b c", (self.w.root / "calls.log").read_text())
+
+    def test_reinstall_replaces_a_symlinked_launcher(self) -> None:
+        self.assertEqual(self.install().returncode, 0)
+        launcher = self.w.home / ".local" / "bin" / "kern"
+        launcher.unlink()
+        os.symlink(self.w.lib / "current" / "AppRun", launcher)
+        self.assertEqual(self.install().returncode, 0)
+        self.assertFalse(launcher.is_symlink())
+        r = subprocess.run([str(launcher)], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_foreign_launcher_is_reported_not_replaced(self) -> None:
         bin_dir = self.w.home / ".local" / "bin"
@@ -671,7 +693,7 @@ class Flows(unittest.TestCase):
         self.assertEqual(s.finish(), 1)
         self.assertTrue((self.w.lib / VERSION / "AppRun").is_file())
         self.assertEqual((self.w.lib / "install.env").read_bytes(), record)
-        self.assertTrue((self.w.home / ".local" / "bin" / "kern").is_symlink())
+        self.assertTrue(os.access(self.w.home / ".local" / "bin" / "kern", os.X_OK))
         for p, b in files.items():
             self.assertEqual(p.read_bytes(), b)
 

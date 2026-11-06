@@ -527,8 +527,12 @@ layout_install() {
                 "$L_SHARE/metainfo/$KERN_APP_ID.metainfo.xml"
             placed+=("$L_SHARE/metainfo/$KERN_APP_ID.metainfo.xml")
         fi
-        as_scope mkdir -p "$(dirname "$L_BIN")"
-        as_scope ln -sfn "$L_LIB/current/AppRun" "$L_BIN"
+        # The launcher is a script, not a symlink: AppRun finds its hooks
+        # through the directory of $0, which for a symlink is the link's own
+        # directory, so launching through a symlink fails.
+        printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$L_LIB/current/AppRun" >"$work/kern.launcher"
+        as_scope rm -f "$L_BIN"
+        as_scope install -D -m 0755 "$work/kern.launcher" "$L_BIN"
         placed+=("$L_BIN")
         printf '%s\n' "${placed[@]}" | as_scope tee "$L_LIB/installed-files" >/dev/null
 
@@ -971,7 +975,7 @@ summary() {
     local b
     scope_paths "$1"
     ui_say "  Program:   $L_LIB"
-    [[ -L $L_BIN ]] && ui_say "  Command:   $L_BIN"
+    [[ -f $L_BIN ]] && ui_say "  Command:   $L_BIN"
     for b in "${BACKUPS[@]}"; do
         ui_say "  Moved aside: $b"
     done

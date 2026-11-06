@@ -224,7 +224,7 @@ summary() {
     local b
     scope_paths "$1"
     ui_say "  Program:   $L_LIB"
-    [[ -L $L_BIN ]] && ui_say "  Command:   $L_BIN"
+    [[ -f $L_BIN ]] && ui_say "  Command:   $L_BIN"
     for b in "${BACKUPS[@]}"; do
         ui_say "  Moved aside: $b"
     done
