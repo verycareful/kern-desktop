@@ -79,8 +79,9 @@ test("folder_tab_shows_three_regions", () => {
   expect(within(side).getByTestId("pinned")).toBeInTheDocument();
   expect(within(side).getByTestId("recent")).toBeInTheDocument();
   expect(screen.getByTestId("status-bar")).toHaveTextContent("/home/a");
-  expect(screen.queryByTestId("stub-left")).toBeNull();
-  expect(screen.queryByTestId("stub-right")).toBeNull();
+  // A folder tab docks both panels, so the tab row has no button for either.
+  expect(screen.queryByTestId("panel-toggle-left")).toBeNull();
+  expect(screen.queryByTestId("panel-toggle-right")).toBeNull();
 });
 
 test("tab_row_sits_over_the_folder_area_only", () => {
@@ -123,14 +124,15 @@ test("the_main_window_strip_offers_the_library_and_its_tab_is_titled_so", () => 
   expect(screen.queryByRole("tab", { name: "All documents" })).toBeNull();
 });
 
-test("doc_tab_shows_two_stubs", () => {
+test("doc_tab_puts_both_panel_buttons_on_the_tab_row", () => {
   useTabs.getState().openFolder(p("/home/a"), false);
   useTabs.getState().openDoc(p("/home/a/n.md"));
   render(<MainWindow />);
   expect(screen.getByTestId("main-grid")).toHaveAttribute("data-layout", "doc");
   expect(screen.getByTestId("doc-area")).toBeInTheDocument();
-  expect(screen.getByTestId("stub-left")).toBeInTheDocument();
-  expect(screen.getByTestId("stub-right")).toBeInTheDocument();
+  const row = screen.getByTestId("tab-bar");
+  expect(within(row).getByTestId("panel-toggle-left")).toBeInTheDocument();
+  expect(within(row).getByTestId("panel-toggle-right")).toBeInTheDocument();
   expect(screen.queryByTestId("places-panel")).toBeNull();
   expect(screen.queryByTestId("side-panel")).toBeNull();
 
@@ -139,10 +141,29 @@ test("doc_tab_shows_two_stubs", () => {
   fireEvent.click(screen.getByRole("button", { name: "Pinned and Recent panel" }));
   expect(screen.getByTestId("side-panel")).toBeInTheDocument();
 
-  // Returning to the folder tab shows both as docked panels, no stubs.
+  // Returning to the folder tab shows both as docked panels, and their buttons go.
   fireEvent.click(screen.getAllByRole("tab")[0]!);
-  expect(screen.queryByTestId("stub-left")).toBeNull();
+  expect(screen.queryByTestId("panel-toggle-left")).toBeNull();
   expect(screen.getByTestId("side-panel")).toBeInTheDocument();
+});
+
+test("ctrl_b_and_ctrl_alt_b_slide_the_panels_beside_a_document", () => {
+  useTabs.getState().openFolder(p("/home/a"), false);
+  useTabs.getState().openDoc(p("/home/a/n.md"));
+  render(<MainWindow />);
+  const left = screen.getByTestId("panel-toggle-left");
+  const right = screen.getByTestId("panel-toggle-right");
+  expect(left).toHaveAttribute("title", "Show or hide the left panel (Ctrl+B)");
+  expect(right).toHaveAttribute("title", "Show or hide Pinned and Recent (Ctrl+Alt+B)");
+  fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+  expect(screen.getByTestId("places-panel")).toBeInTheDocument();
+  expect(left).toHaveAttribute("aria-expanded", "true");
+  fireEvent.keyDown(window, { key: "b", ctrlKey: true, altKey: true });
+  expect(screen.getByTestId("side-panel")).toBeInTheDocument();
+  expect(right).toHaveAttribute("aria-expanded", "true");
+  fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+  expect(screen.queryByTestId("places-panel")).toBeNull();
+  expect(left).toHaveAttribute("aria-expanded", "false");
 });
 
 test("a_window_showing_only_a_document_follows_pinned_and_recent", async () => {
@@ -176,7 +197,7 @@ test("each_document_tab_keeps_its_editor_and_unsaved_text_while_another_tab_is_s
   fireEvent.click(screen.getAllByRole("tab")[0]!);
   expect(screen.getByTestId("main-grid")).toHaveAttribute("data-layout", "folder");
   expect(screen.getByTestId("text-editor")).not.toBeVisible();
-  expect(screen.queryByTestId("stub-left")).toBeNull();
+  expect(screen.queryByTestId("panel-toggle-left")).toBeNull();
   expect(useTabs.getState().tabs[1]).toMatchObject({ dirty: true });
 
   fireEvent.click(screen.getAllByRole("tab")[1]!);

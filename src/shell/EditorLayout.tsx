@@ -23,7 +23,6 @@ import { LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, useLayout } from "../store/layout";
 import { usePanels } from "../store/panels";
 import type { DocTab, Tab } from "../store/tabs";
 import { FolderArea, PlacesStrip } from "./PlacesPanel";
-import { PanelStub } from "./PanelStub";
 import { PinnedRecentPanel } from "./PinnedRecentPanel";
 import { Splitter } from "./Splitter";
 import { TabBar } from "./TabBar";
@@ -32,8 +31,9 @@ import { ensureTreeRoot } from "./layout-switch";
 
 // The editor layout a resizable left column, a places strip
 // over a folder tree rooted at the window's folder, that stays docked whatever tab is shown; the tab
-// row and the tab take the centre; Pinned and Recent are folded to the right stub, as beside a
-// document in the file manager layout. Ctrl+B shows or hides the column. The main window shows it
+// row and the tab take the centre; Pinned and Recent are folded away and slid in from the right, as
+// beside a document in the file manager layout. The tab row's folder button and Ctrl+B show or
+// hide the column; its three-line button and Ctrl+Alt+B, Pinned and Recent. The main window shows it
 // when its layout is the editor; an editor window (`editor-<n>`) always does.
 
 /** The divider between the column and the centre. */
@@ -283,10 +283,12 @@ export function EditorLayout(props: {
         {...(isEditorWindow() ? { [DROP_DOCS_ATTR]: "" } : {})}
       >
         <TabBar allow={props.allow} />
-        {props.children}
+        {/* Pinned and Recent slide in over what is under the tab row, so the row's buttons stay. */}
+        <div className="kern-editor-body">
+          {props.children}
+          {rightOpen && <PinnedRecentPanel overlay />}
+        </div>
       </div>
-      <PanelStub side="right" expanded={rightOpen} />
-      {rightOpen && <PinnedRecentPanel overlay />}
     </div>
   );
 }

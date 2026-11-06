@@ -14,7 +14,6 @@ import { TextEditor } from "../editor/TextEditor";
 import { RestoreBar } from "./RestoreBar";
 import { activeTab, isPlaceTab, useTabs, type DocTab } from "../store/tabs";
 import { ClosePrompt } from "./ClosePrompt";
-import { PanelStub } from "./PanelStub";
 import { PlacesPanel } from "./PlacesPanel";
 import { PinnedRecentPanel } from "./PinnedRecentPanel";
 import { usePinnedRecent } from "./pinned-recent-store";
@@ -26,8 +25,8 @@ import "./shell.css";
 // The places strip and Pinned and Recent run the full
 // height of the window (the strip on the left, Pinned and Recent on the right,
 // as wide as the user dragged it); the tab row sits over the folder area between them. In a document tab
-// the tab row spans the window and both panels are folded to stubs that
-// slide them over the document. The status bar spans the bottom.
+// the tab row spans the window and both panels are folded away, each slid over the document from
+// its edge by its button on the tab row. The status bar spans the bottom.
 export default function MainWindow(props: { openingHome?: boolean; starting?: boolean }) {
   useShortcuts();
   // Hidden files, the view, the interface size and what a new tab opens.
@@ -93,11 +92,10 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
 
   // Every document tab keeps its editor mounted, the ones not shown hidden: the
   // unsaved text, the undo history and the watch on the file belong to the tab,
-  // not to which tab is on show. The panels folded to stubs belong to the
-  // document layout only.
+  // not to which tab is on show. The panels slid over the document belong to
+  // the document layout only.
   const docBody = docs.length > 0 && (
     <div className="kern-body-doc" hidden={layout !== "doc"} data-testid="doc-body">
-      {layout === "doc" && <PanelStub side="left" expanded={leftOpen} />}
       <main className="kern-doc-area" data-testid="doc-area">
         {docs.map((d) => (
           <TextEditor
@@ -110,7 +108,6 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
           />
         ))}
       </main>
-      {layout === "doc" && <PanelStub side="right" expanded={rightOpen} />}
       {layout === "doc" && leftOpen && <PlacesPanel overlay />}
       {layout === "doc" && rightOpen && <PinnedRecentPanel overlay />}
     </div>

@@ -24,6 +24,7 @@ import {
 import { useViewSettings } from "../files/view-settings";
 import { useLayout } from "../store/layout";
 import { ActionButton } from "./ActionButton";
+import { PanelToggle } from "./PanelToggle";
 import { FILE_KEYS_ATTR } from "../keys/file-keys";
 import { activeTab, tabTitle, useTabs } from "../store/tabs";
 
@@ -40,7 +41,8 @@ function allowed(sections: MenuSection[], allow?: (a: Action) => boolean): MenuS
 type OpenMenu =
   { kind: "tab"; x: number; y: number; targetId: string } | { kind: "app"; x: number; y: number };
 
-// The tab row: the tabs, New tab and New tab here, then Settings and the main menu. A folder
+// The tab row: the left panel's button where the panels fold, the tabs, New tab and New tab here,
+// then Pinned and Recent's button, Settings and the main menu. A folder
 // tab's own buttons (navigation, create, the view) are the folder view's toolbar, under this row.
 // A window that does not answer an action (`allow`) has no button for it.
 export function TabBar(props: { allow?: (a: Action) => boolean }) {
@@ -53,6 +55,8 @@ export function TabBar(props: { allow?: (a: Action) => boolean }) {
   const has = (id: string) => !allow || allow(getAction(id));
   // The editor layout holds no folder tabs, so it has no new tab buttons.
   const editorLayout = useLayout((s) => s.layout === "editor");
+  // The side panels fold away beside a document and in the editor layout; a folder tab shows them.
+  const folding = editorLayout || active?.kind === "doc";
   // The new tab buttons show their keys, which Settings can swap, and New tab waits for the settings.
   useViewSettings((s) => s.newTabDefault);
   useViewSettings((s) => s.loaded);
@@ -74,6 +78,11 @@ export function TabBar(props: { allow?: (a: Action) => boolean }) {
 
   return (
     <header className="kern-tabbar" data-testid="tab-bar" {...{ [FILE_KEYS_ATTR]: "" }}>
+      {folding && has("panel.left.toggle") && (
+        <div className="kern-nav" role="toolbar" aria-label="Left panel">
+          <PanelToggle side="left" />
+        </div>
+      )}
       <div
         ref={list}
         role="tablist"
@@ -134,6 +143,7 @@ export function TabBar(props: { allow?: (a: Action) => boolean }) {
       </div>
       <div className="kern-nav-fill" />
       <div className="kern-nav" role="toolbar" aria-label="Window">
+        {folding && has("panel.right.toggle") && <PanelToggle side="right" />}
         {has("place.settings") && <ActionButton id="place.settings" icon={Settings} />}
         <button
           type="button"

@@ -173,3 +173,42 @@ test("the_focus_ring_shows_on_all_four_edges_of_the_editor", async ({ page, mock
   }, shot);
   expect(edges).toEqual({ left: true, right: true, top: true, bottom: true });
 });
+
+test("the_panel_buttons_share_the_tab_row_with_settings_and_the_menu", async ({
+  page,
+  mockTauri,
+}) => {
+  await mockTauri({ ...COMMON, "plugin:kernkraft-tauri|text_open": OPENED("one") });
+  await page.goto("/");
+  await expect(page.locator(".cm-content")).toContainText("one");
+  const boxes = await Promise.all(
+    [
+      page.getByTestId("panel-toggle-left"),
+      page.getByTestId("panel-toggle-right"),
+      page.getByRole("button", { name: "Open Settings" }),
+      page.getByRole("button", { name: "Main menu" }),
+    ].map(async (b) => (await b.boundingBox())!)
+  );
+  // One row, one size: the same top, the same width and height as the main menu's button.
+  const [first] = boxes;
+  for (const b of boxes) {
+    expect(Math.abs(b.y - first!.y)).toBeLessThan(0.5);
+    expect(Math.abs(b.width - first!.width)).toBeLessThan(0.5);
+    expect(Math.abs(b.height - first!.height)).toBeLessThan(0.5);
+  }
+  // The folder button starts the row, the three-line one stands just before Settings.
+  const [left, right, settings] = boxes;
+  expect(left!.x).toBeLessThan((await page.getByTestId("tab").first().boundingBox())!.x);
+  expect(right!.x).toBeLessThan(settings!.x);
+  // Open, Pinned and Recent leave the tab row clear: the same button closes them again.
+  const toggle = page.getByTestId("panel-toggle-right");
+  await toggle.click();
+  await expect(page.getByTestId("side-panel")).toBeVisible();
+  const onTop = await toggle.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+  });
+  expect(onTop).toBe(true);
+  await toggle.click();
+  await expect(page.getByTestId("side-panel")).toHaveCount(0);
+});

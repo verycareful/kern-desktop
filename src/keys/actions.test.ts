@@ -425,12 +425,13 @@ test("open_as_editor_is_a_folder_action_of_the_open_group_that_asks_the_folder_v
   }
 });
 
-test("no_action_switches_the_layout_and_the_column_toggle_is_the_editor_layouts", () => {
+test("no_action_switches_the_layout_and_the_left_toggle_needs_a_document_or_the_editor_layout", () => {
   useLayout.getState().reset();
   expect(actions.some((a) => a.id === "layout.editor" || a.id === "layout.fileManager")).toBe(
     false
   );
-  const toggle = () => isEnabled(getAction("layout.left.toggle"), currentContext());
+  // No document is open in the file manager layout: no panel is folded away.
+  const toggle = () => isEnabled(getAction("panel.left.toggle"), currentContext());
   expect(toggle()).toBe(false);
   useLayout.getState().setLayout("editor");
   expect(toggle()).toBe(true);

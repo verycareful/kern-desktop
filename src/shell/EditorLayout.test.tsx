@@ -156,9 +156,16 @@ test("editor_layout_keeps_tree_docked_in_doc_tab", async () => {
   expect(within(left).getByTestId("folder-tree")).toBeInTheDocument();
   expect(await within(left).findByRole("treeitem", { name: /^work/ })).toBeInTheDocument();
   expect(screen.getByTestId("doc-area")).not.toHaveAttribute("hidden");
-  // No stubs for the left side; Pinned and Recent are folded to the right stub.
-  expect(screen.queryByTestId("stub-left")).toBeNull();
-  expect(screen.getByTestId("stub-right")).toBeInTheDocument();
+  // The column's button and Pinned and Recent's button are on the tab row; no edge columns.
+  const row = screen.getByTestId("tab-bar");
+  expect(within(row).getByRole("button", { name: "Folder column" })).toHaveAttribute(
+    "aria-expanded",
+    "true"
+  );
+  expect(within(row).getByRole("button", { name: "Pinned and Recent panel" })).toHaveAttribute(
+    "aria-expanded",
+    "false"
+  );
   expect(screen.queryByTestId("side-panel")).toBeNull();
   // The folder tab is closed: the editor layout holds documents, the tree the folders.
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(1));
@@ -180,12 +187,12 @@ test("the_editor_layout_has_no_new_tab_buttons_and_its_keys_say_why", async () =
   expect(useTabs.getState().tabs).toHaveLength(1);
 });
 
-test("the_file_manager_layout_has_no_tree_and_folds_the_left_panel_to_a_stub_beside_a_document", async () => {
+test("the_file_manager_layout_has_no_tree_and_folds_the_left_panel_away_beside_a_document", async () => {
   ipc.settingsGet.mockResolvedValue(SETTINGS);
   useTabs.getState().openFolder(HOME, false);
   useTabs.getState().openDoc(p("/home/a/notes.md"));
   render(<MainWindow />);
-  await screen.findByTestId("stub-left");
+  await screen.findByRole("button", { name: "File manager panel" });
   expect(screen.queryByTestId("folder-tree")).toBeNull();
   expect(screen.getByTestId("main-grid")).toHaveAttribute("data-layout", "doc");
 });
@@ -225,25 +232,28 @@ test("ctrl_b_toggles_left_column", async () => {
   expect(screen.queryByTestId("editor-left")).toBeNull();
 });
 
-test("the_toggle_action_is_the_columns_in_the_editor_layout_and_greyed_in_the_other", async () => {
+test("the_left_toggle_is_the_column_in_the_editor_layout_and_the_slid_panel_beside_a_document", async () => {
   useTabs.getState().openDoc(p("/home/a/notes.md"));
   await editorWindow();
-  const toggle = getAction("layout.left.toggle");
+  const toggle = getAction("panel.left.toggle");
   expect(isEnabled(toggle, currentContext())).toBe(true);
-  // The menu entry that folds the left panel is the same column in this layout.
-  act(() => void runAction(getAction("panel.left.toggle"), currentContext()));
+  // In this layout it shows and hides the docked column, and slides nothing.
+  act(() => void runAction(toggle, currentContext()));
   expect(screen.queryByTestId("editor-left")).toBeNull();
   expect(usePanelsStore.getState().leftSlid).toBe(false);
+  // Beside a document in the file manager layout it slides the file manager panel.
   useLayout.getState().setLayout("file_manager");
-  expect(isEnabled(toggle, currentContext())).toBe(false);
+  expect(isEnabled(toggle, currentContext())).toBe(true);
+  act(() => void runAction(toggle, currentContext()));
+  expect(usePanelsStore.getState().leftSlid).toBe(true);
 });
 
-test("pinned_and_recent_fold_to_the_right_stub_for_every_tab", async () => {
+test("pinned_and_recent_fold_away_behind_their_tab_row_button_for_every_tab", async () => {
   useTabs.getState().openFolder(HOME, false);
   await editorWindow();
-  const stub = screen.getByRole("button", { name: "Pinned and Recent panel" });
-  expect(stub).toHaveAttribute("aria-expanded", "false");
-  fireEvent.click(stub);
+  const button = screen.getByRole("button", { name: "Pinned and Recent panel" });
+  expect(button).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(button);
   expect(await screen.findByTestId("side-panel")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Pinned and Recent panel" })).toHaveAttribute(
     "aria-expanded",
@@ -547,15 +557,15 @@ test("a_gone_root_moves_the_tree_to_the_nearest_folder_and_says_so", async () =>
   );
 });
 
-test("the_main_menu_offers_the_column_toggle_and_no_layout_switch", async () => {
+test("the_main_menu_has_no_panel_toggles_and_no_layout_switch", async () => {
   useTabs.getState().openDoc(p("/home/a/notes.md"));
   await editorWindow();
   fireEvent.click(screen.getByRole("button", { name: "Main menu" }));
   const menu = screen.getByTestId("action-menu");
-  expect(menu.querySelector(`[data-action-id="layout.left.toggle"]`)).not.toBeNull();
-  expect(actions.filter((a) => a.area === "Layout").map((a) => a.id)).toEqual([
-    "layout.left.toggle",
-  ]);
+  // The panels have their buttons on the tab row and their keys, so the menu leaves them out.
+  expect(menu.querySelector(`[data-action-id="panel.left.toggle"]`)).toBeNull();
+  expect(menu.querySelector(`[data-action-id="panel.right.toggle"]`)).toBeNull();
+  expect(actions.filter((a) => a.area === "Layout")).toEqual([]);
 });
 
 const tools = () => within(screen.getByRole("toolbar", { name: "Folder tree" }));

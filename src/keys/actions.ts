@@ -41,7 +41,7 @@ import { useUserDirs } from "../shell/user-dirs-store";
 // The single table of user-visible actions. Shortcuts (useShortcuts), the
 // main menu and the tab context menu (ActionMenu) all read it, so keyboard and
 // right-click cannot drift apart: the main menu lists every action that
-// applies to the active tab, and the tab buttons and stubs run actions from
+// applies to the active tab, and the tab row's buttons run actions from
 // here. An action is added here together with the feature it runs.
 //
 // Key strings: [Ctrl+][Alt+][Shift+][Meta+]Key, modifiers in that order, Key
@@ -302,24 +302,31 @@ export const actions: Action[] = [
     enabled: (c) => c.active?.kind === "folder" && parent(c.active.path) !== null,
     run: (c) => c.tabs.up(),
   },
-  // A document tab folds both panels to stubs. No shortcut is bound,
-  // so these are reachable from the menus and the stubs.
+  // The side panels fold away for a document tab, and in the editor layout for every tab. Each has
+  // a button on the tab row (TabBar) and a shortcut, so neither is in the main menu. The left one
+  // is the file manager panel beside a document and the folder column of the editor layout.
+  // CodeMirror's keymaps bind neither key on Linux (editor/editor-keys.ts KEYS; its test checks),
+  // so both work inside the editor too. The main window's layout is a setting, so no action
+  // switches it.
   {
     id: "panel.left.toggle",
-    label: "Show or hide the file manager panel",
+    label: "Show or hide the left panel",
+    menu: false,
     area: "Panels",
-    keys: [],
-    when: "doc",
+    keys: ["Ctrl+B"],
+    when: "any",
+    inEditable: true,
+    enabled: (c) => c.target?.kind === "doc" || isEditorLayout(),
     run: (c) => c.togglePanel("left"),
   },
-  // Pinned and Recent are folded to the right stub for a document tab, and in the editor layout
-  // for every tab.
   {
     id: "panel.right.toggle",
     label: "Show or hide Pinned and Recent",
+    menu: false,
     area: "Panels",
-    keys: [],
+    keys: ["Ctrl+Alt+B"],
     when: "any",
+    inEditable: true,
     enabled: (c) => c.target?.kind === "doc" || isEditorLayout(),
     run: (c) => c.togglePanel("right"),
   },
@@ -643,25 +650,6 @@ const folderActions: Action[] = [
 ];
 
 actions.push(...folderActions);
-
-// ---- the layout of the window ----
-// The main window's layout is a setting (Settings, Files), so no action switches it. Ctrl+B is not
-// bound by CodeMirror's keymaps on Linux (editor/editor-keys.ts
-// KEYS; its test checks), so it works inside the editor too.
-
-const layoutActions: Action[] = [
-  {
-    id: "layout.left.toggle",
-    label: "Show or hide the folder column",
-    area: "Layout",
-    keys: ["Ctrl+B"],
-    when: "any",
-    inEditable: true,
-    enabled: () => isEditorLayout(),
-    run: () => useLayout.getState().toggleLeft(),
-  },
-];
-actions.push(...layoutActions);
 
 // ---- the folder tree's menu ----
 // Aimed at what the menu was opened on (files/tree-menu-store.ts): an entry, or the empty part,

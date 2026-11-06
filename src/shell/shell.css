@@ -8,12 +8,10 @@
 .kern-window {
   /*
    * Sizes of this frame. Icon buttons are 36px: the handoff's 42px is a touch
-   * target (README, Shape & spacing), reduced for a pointer window. The stub
-   * column is one button plus its padding and its 1px border.
+   * target (README, Shape & spacing), reduced for a pointer window.
    */
   --shell-button: 36px;
-  --shell-stub-pad: 6px;
-  --shell-stub-width: calc(var(--shell-button) + 2 * var(--shell-stub-pad) + 1px);
+  --shell-bar-pad: 6px;
   /* Wide enough for "Documents" in the UI face plus padding; the places strip is not resizable yet. */
   --shell-places-width: 180px;
   /* A tab title is ellipsised beyond this; about 24 characters of UI text. */
@@ -167,8 +165,7 @@
 }
 
 .kern-tab-close,
-.kern-icon-button,
-.kern-stub button {
+.kern-icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -189,8 +186,7 @@
 }
 
 .kern-tab-close:hover,
-.kern-icon-button:hover:not(:disabled),
-.kern-stub button:hover {
+.kern-icon-button:hover:not(:disabled) {
   background: var(--kern-accent-soft);
   color: var(--kern-accent);
 }
@@ -218,12 +214,12 @@
   cursor: default;
 }
 
-/* A stub column on each edge around the document. */
+/* The document, with the side panels slid over it from the window's edges. */
 .kern-body-doc {
   position: relative;
   display: grid;
   min-height: 0;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr;
 }
 
 .kern-body-doc[hidden] {
@@ -471,29 +467,8 @@
   color: var(--kern-text-dim);
 }
 
-.kern-stub {
-  display: flex;
-  align-items: flex-start;
-  padding: var(--kern-density-gap) var(--shell-stub-pad);
-  background: var(--kern-sunken);
-}
-
-.kern-stub-left {
-  border-right: 1px solid var(--kern-border);
-}
-
-.kern-stub-right {
-  border-left: 1px solid var(--kern-border);
-}
-
-.kern-stub button {
-  width: var(--shell-button);
-  height: var(--shell-button);
-  color: var(--kern-text);
-  border-radius: var(--kern-radius-small);
-}
-
-.kern-stub button[aria-expanded="true"] {
+/* A side panel's button on the tab row is lit while its panel is open. */
+.kern-panel-toggle[aria-expanded="true"] {
   background: var(--kern-accent-soft);
   color: var(--kern-accent);
 }
@@ -504,24 +479,24 @@
   overflow: hidden;
 }
 
-/* A panel slid over the document, beside the stub that opened it. */
+/* A panel slid over the document from its edge of the window. */
 .kern-overlay {
   position: absolute;
   top: 0;
   bottom: 0;
   z-index: 10;
-  /* Slid in together, the file manager takes what Pinned and Recent leave between the stubs, so the two meet. */
-  width: calc(100% - var(--shell-right-width) - 2 * var(--shell-stub-width));
+  /* Slid in together, the file manager takes what Pinned and Recent leave, so the two meet. */
+  width: calc(100% - var(--shell-right-width));
   box-shadow: 0 10px 30px color-mix(in srgb, var(--kern-text) 12%, transparent);
 }
 
 .kern-panel-left.kern-overlay {
-  left: var(--shell-stub-width);
+  left: 0;
   animation: kern-slide-left 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .kern-panel-right.kern-overlay {
-  right: var(--shell-stub-width);
+  right: 0;
   width: var(--shell-right-width);
   animation: kern-slide-right 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -589,7 +564,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: var(--shell-stub-pad);
+  padding: var(--shell-bar-pad);
   border-bottom: 1px solid var(--kern-border);
 }
 
@@ -669,7 +644,15 @@
   flex-direction: column;
 }
 
-.kern-editor-centre > .kern-folder-area {
+.kern-editor-body {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.kern-editor-body > .kern-folder-area {
   flex: 1;
 }
 
@@ -681,10 +664,6 @@
 
 .kern-editor-docs[hidden] {
   display: none;
-}
-
-.kern-main[data-layout="editor"] > .kern-stub-right {
-  flex: none;
 }
 
 .kern-welcome {

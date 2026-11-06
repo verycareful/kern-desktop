@@ -36,9 +36,12 @@ test("tips_come_from_actions_table", () => {
     expect(a!.keys, t.id).toContain(t.key);
     expect(t.label).toBe(a!.label);
   }
-  // Save and the layout toggle are in the table, so they are tips, with the keys the table gives.
+  // Save and the panel toggles are in the table, so they are tips, with the keys the table gives.
   expect(tips).toContainEqual({ id: "doc.save", label: "Save", key: "Ctrl+S" });
-  expect(tips).toContainEqual(expect.objectContaining({ id: "layout.left.toggle", key: "Ctrl+B" }));
+  expect(tips).toContainEqual(expect.objectContaining({ id: "panel.left.toggle", key: "Ctrl+B" }));
+  expect(tips).toContainEqual(
+    expect.objectContaining({ id: "panel.right.toggle", key: "Ctrl+Alt+B" })
+  );
   // Nothing is listed that the table does not hold: a new action brings a tip, a key that moves moves.
   const added = fake({ id: "x.new", label: "Do the new thing", keys: ["Ctrl+Alt+9"] });
   expect(tipsFromActions([...actions, added])).toContainEqual({

@@ -5,10 +5,10 @@ import { useLayout } from "./layout";
 import { activeTab, useTabs, type Tab } from "./tabs";
 
 // A folder tab shows both side panels. A document tab
-// folds both to stubs; a stub slides its panel over the document, and the
+// folds both away; a panel's button on the tab row slides it over the document, and the
 // choice is forgotten when the active tab changes. In the editor layout the left
 // column is docked whatever tab is shown (shown or hidden by the user, not slid),
-// and Pinned and Recent are folded to the right stub for every tab.
+// and Pinned and Recent are folded away for every tab.
 interface PanelsState {
   /** Slid in over the active document tab. Meaningless for a folder tab. */
   leftSlid: boolean;

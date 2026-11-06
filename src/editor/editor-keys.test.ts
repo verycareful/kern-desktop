@@ -17,10 +17,10 @@ test("ctrl_b_is_not_bound_by_the_editors_keymaps_on_linux", () => {
   expect(KEYS.some((k) => k.mac === "Ctrl-b" && k.key === undefined)).toBe(true);
 });
 
-test("ctrl_b_is_bound_once_in_the_action_table", () => {
-  expect(actions.filter((a) => a.keys.includes("Ctrl+B")).map((a) => a.id)).toEqual([
-    "layout.left.toggle",
-  ]);
+test("the_panel_keys_are_bound_once_in_the_action_table", () => {
+  const bound = (key: string) => actions.filter((a) => a.keys.includes(key)).map((a) => a.id);
+  expect(bound("Ctrl+B")).toEqual(["panel.left.toggle"]);
+  expect(bound("Ctrl+Alt+B")).toEqual(["panel.right.toggle"]);
   expect(findDuplicateBindings()).toEqual([]);
 });
 

@@ -175,3 +175,64 @@ test("tree_scrolls_100k_rows", async ({ page, mockTauri }) => {
   await expect(items.last()).toHaveAttribute("data-name", "file099999.txt");
   expect(await items.count()).toBeLessThanOrEqual(200);
 });
+
+test("the_panel_buttons_share_the_tab_row_with_settings_and_the_menu", async ({
+  page,
+  mockTauri,
+}) => {
+  await mockTauri({
+    ...COMMON,
+    open_pending_take: [
+      {
+        event: "kern://open",
+        payload: { kind: "doc_tab", path: { k: "Utf8", v: "/home/tester/readme.md" } },
+      },
+    ],
+    "plugin:kernkraft-tauri|list_dir": SMALL_TREE,
+    "plugin:kernkraft-tauri|text_open": {
+      path: { k: "Utf8", v: "/home/tester/readme.md" },
+      text: "one",
+      ending: "lf",
+      bom: false,
+      read_only: null,
+      stamp: "s1:3:0:1:1:0",
+    },
+    "plugin:kernkraft-tauri|text_check": "same",
+    doc_opened: null,
+    doc_closed: null,
+    recent_touch: { entries: [] },
+  });
+  await page.goto("/");
+  await expect(page.getByTestId("editor-left")).toBeVisible();
+  await expect(page.getByTestId("tab")).toHaveCount(1);
+  const boxes = await Promise.all(
+    [
+      page.getByTestId("panel-toggle-left"),
+      page.getByTestId("panel-toggle-right"),
+      page.getByRole("button", { name: "Open Settings" }),
+      page.getByRole("button", { name: "Main menu" }),
+    ].map(async (b) => (await b.boundingBox())!)
+  );
+  // One row, one size: the same top, the same width and height as the main menu's button.
+  const [first] = boxes;
+  for (const b of boxes) {
+    expect(Math.abs(b.y - first!.y)).toBeLessThan(0.5);
+    expect(Math.abs(b.width - first!.width)).toBeLessThan(0.5);
+    expect(Math.abs(b.height - first!.height)).toBeLessThan(0.5);
+  }
+  // The folder button starts the row, the three-line one stands just before Settings.
+  const [left, right, settings] = boxes;
+  expect(left!.x).toBeLessThan((await page.getByTestId("tab").first().boundingBox())!.x);
+  expect(right!.x).toBeLessThan(settings!.x);
+  // Open, Pinned and Recent leave the tab row clear: the same button closes them again.
+  const toggle = page.getByTestId("panel-toggle-right");
+  await toggle.click();
+  await expect(page.getByTestId("side-panel")).toBeVisible();
+  const onTop = await toggle.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+  });
+  expect(onTop).toBe(true);
+  await toggle.click();
+  await expect(page.getByTestId("side-panel")).toHaveCount(0);
+});

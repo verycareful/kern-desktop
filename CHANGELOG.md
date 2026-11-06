@@ -4,6 +4,27 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.0.7] - 2026-11-06 21:40 (IST)
+
+### Changed
+
+- **Side panel buttons on the tab row**: beside a document, and in the editor layout, the buttons that show and hide the side panels are on the tab row with Settings and the main menu, the same size and on the same line. The folder button starts the row: it shows the file manager panel beside a document and the folder column in the editor layout. The three-line button for Pinned and Recent stands just before Settings. Each is highlighted while its panel is open. The columns at the window's edges that held them are gone, and the panels slide in from the edges of the window.
+- **Shortcuts**: Ctrl+B shows or hides the left panel beside a document as well as the folder column of the editor layout, and Ctrl+Alt+B shows or hides Pinned and Recent. Both work inside the text of a document. The buttons' tooltips name them.
+- **Main menu**: the entries that showed and hid the side panels are gone, since the buttons and the shortcuts do it.
+
+### Fixed
+
+- **Side panel buttons out of line**: beside a document, the Pinned and Recent button sat a row below Settings and the main menu, and in the editor layout it sat lower than them in a column of its own.
+
+### Tests
+
+- Browser tests, beside a document and in the editor layout, check that the folder button, the Pinned and Recent button, Settings and the main menu share one row at one size, and that Pinned and Recent open below the tab row, so their button still closes them.
+- Unit tests check the buttons beside a document and in the editor layout, that a folder tab has neither, Ctrl+B and Ctrl+Alt+B with the buttons' tooltips, that the left toggle slides the file manager panel beside a document and hides the folder column in the editor layout, that the main menu lists neither toggle, and that each key is bound once.
+
+### Results
+
+- 1215 tests across 111 suites (every unit test, and the editor, editor layout, folder, places and smoke browser tests), all passed (68.3s, CachyOS x86-64, Chromium through Playwright).
+
 ## [0.1.0.6] - 2026-11-06 20:30 (IST)
 
 ### Fixed
