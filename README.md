@@ -1,75 +1,100 @@
 # Kern Desktop
-<!-- Shell and language -->
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/)
 [![Rust](https://img.shields.io/badge/Rust-2021%20edition-000000?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-<!-- Frontend (swap the Zustand, TanStack Virtual and CodeMirror badges for logo badges if shields.io adds them) -->
+[![kernkraft](https://img.shields.io/badge/kernkraft-0.1.1.0-5A4FCF?style=flat-square)](https://github.com/verycareful/kernkraft)
+[![GTK](https://img.shields.io/badge/GTK-3-7FE719?style=flat-square&logo=gtk&logoColor=white)](https://www.gtk.org/)
+[![zbus](https://img.shields.io/badge/zbus-5-4A86CF?style=flat-square)](https://github.com/dbus2/zbus)
 [![React](https://img.shields.io/badge/React-19.1-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-8-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vite.dev/)
 [![Zustand](https://img.shields.io/badge/Zustand-5-453F39?style=flat-square)](https://zustand.docs.pmnd.rs/)
 [![TanStack Virtual](https://img.shields.io/badge/TanStack%20Virtual-3.14-FF4154?style=flat-square)](https://tanstack.com/virtual)
 [![Lucide](https://img.shields.io/badge/Lucide-1.61-F56565?style=flat-square&logo=lucide&logoColor=white)](https://lucide.dev/)
 [![CodeMirror](https://img.shields.io/badge/CodeMirror-6-D30707?style=flat-square)](https://codemirror.net/)
-<!-- Fonts (bundled; swap each for a logo badge if shields.io adds one) -->
 [![Outfit](https://img.shields.io/badge/Outfit-5.3-lightgrey?style=flat-square)](https://fontsource.org/fonts/outfit)
 [![Quicksand](https://img.shields.io/badge/Quicksand-5.3-lightgrey?style=flat-square)](https://fontsource.org/fonts/quicksand)
 [![IBM Plex Mono](https://img.shields.io/badge/IBM%20Plex%20Mono-5.3-lightgrey?style=flat-square)](https://fontsource.org/fonts/ibm-plex-mono)
 [![Sora](https://img.shields.io/badge/Sora-5.3-lightgrey?style=flat-square)](https://fontsource.org/fonts/sora)
-<!-- Tests -->
 [![Vitest](https://img.shields.io/badge/Vitest-3-6E9F18?style=flat-square&logo=vitest&logoColor=white)](https://vitest.dev/)
 [![Playwright](https://img.shields.io/badge/Playwright-1.49-2EAD33?style=flat-square&logo=playwright&logoColor=white)](https://playwright.dev/)
 [![WebdriverIO](https://img.shields.io/badge/WebdriverIO-10.1-EA5906?style=flat-square&logo=webdriverio&logoColor=white)](https://webdriver.io/)
-<!-- Release -->
-[![Version](https://img.shields.io/badge/Version-0.1.0.0.101-informational?style=flat-square)](VERSION)
-<!-- Licence and status -->
+[![ESLint](https://img.shields.io/badge/ESLint-9-4B32C3?style=flat-square&logo=eslint&logoColor=white)](https://eslint.org/)
+[![Prettier](https://img.shields.io/badge/Prettier-3-F7B93E?style=flat-square&logo=prettier&logoColor=black)](https://prettier.io/)
+[![Python](https://img.shields.io/badge/Python-3-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![deb](https://img.shields.io/badge/deb-package-A81D33?style=flat-square&logo=debian&logoColor=white)](https://github.com/verycareful/kern-desktop/releases)
+[![AppImage](https://img.shields.io/badge/AppImage-package-4A86CF?style=flat-square)](https://github.com/verycareful/kern-desktop/releases)
+[![Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Frepos%2Fverycareful%2Fkern-desktop%2Freleases%2Flatest&query=%24.tag_name&label=Version&color=informational&style=flat-square)](https://github.com/verycareful/kern-desktop/releases)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue?style=flat-square)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Early%20Development-orange?style=flat-square)](#)
 
-Kern Desktop is Kern for Linux: a file manager and document app built on
-Tauri 2, with a React and TypeScript interface and a Rust backend. It reads
-and writes files in place, never touches the network, and follows the system
-theme.
+<!-- Plain badges, no shields.io logo yet: kernkraft, zbus, Zustand, TanStack Virtual, CodeMirror,
+Outfit, Quicksand, IBM Plex Mono, Sora, AppImage. Swap each for a logo badge if one appears.
+The Version badge reads the tag of the latest release, as written (no prefix). -->
 
-Kern Desktop is in alpha: version 0.1.0.0 is a file manager and a text
-editor. What it does today:
+Kern Desktop is Kern for Linux: a file manager and a text editor in one app.
+It runs on Tauri 2, with a React and TypeScript interface over a Rust backend,
+and keeps its file and format logic in [kernkraft](https://github.com/verycareful/kernkraft),
+the core it shares with Kern for Android. Kern edits your files where they
+are, opens no network connection and takes its look from your desktop theme.
 
-- **Folders.** List and grid views, sorting, selection, a breadcrumb and an
-  editable location bar, hidden files on demand, and live refresh when
-  something changes on disk. Back, forward and up, tabs, and "Move to new
-  window".
-- **File operations.** Create, rename in place, cut, copy and paste through
-  the system clipboard (other file managers can take part), move to the Trash,
-  and delete for good after a question. Copies and moves run in the background
-  with progress, cancel, a name-conflict prompt and a report of anything
-  skipped or failed; the last operations can be undone and redone. A drag moves
-  files that are on the same disk as the folder and copies the others (Ctrl
-  copies, Shift moves), and a drop from another application shows what it will
-  do before it lands.
-- **Places.** Home and your user folders, Volumes (mount, unmount, eject), the
-  Trash (restore, delete permanently, empty), and the Library, which gathers
-  your documents from the folders you choose in Settings. Pinned folders and
-  recent files sit in their own panel.
-- **Finding and inspecting.** Name search under a folder, Properties (size and
-  item counts, permissions), Copy path, Open with any installed application,
-  and Open terminal here.
+Kern Desktop is in alpha.
+
+## What it does
+
+- **Folders.** You get list and grid views, sorting, multi-select, a breadcrumb
+  and an editable location bar, and hidden files when you ask for them. The
+  view refreshes when something changes on disk. A toolbar over the folder
+  holds Back, Forward and Up, New folder, Search, Open terminal here, the view
+  switches and Open as editor. Folders open in tabs, and you can move a tab to
+  a window of its own.
+- **File operations.** Create, rename in place, cut, copy and paste through the
+  system clipboard, so other file managers can take part. Trash files, or
+  delete them for good after a question. Copies and moves run in the
+  background with progress, a Cancel button, a prompt for name conflicts and a
+  report of anything skipped or failed. Undo and redo cover the last
+  operations. A drag moves files that sit on the same disk as the target folder
+  and copies the rest; hold Ctrl to copy or Shift to move. When you drop files
+  from another application, the pointer shows what Kern will do before you let
+  go.
+- **Places, pins and recents.** The strip on the left lists Home, your user
+  folders, Volumes (mount, unmount, eject), the Trash (restore, delete
+  permanently, empty) and the Library, which gathers your documents from the
+  folders you choose in Settings. A double-click opens an entry, and so do
+  Enter and Space. Pinned folders and files and your recent files sit in a
+  panel on the right that you can resize. Pin a folder as an editor and it
+  opens in an editor window.
+- **Finding and inspecting.** Search by name under a folder, open Properties
+  (size, item counts, permissions), copy a path, open a file with any installed
+  application, or open a terminal in the folder.
 - **Text editor.** A text file opens in a tab with line numbers, find and
-  replace and undo. Saving keeps its line endings and byte order mark, asks
-  before it writes over a file another program changed or deleted, and a file
-  that mixes line endings, is not UTF-8 or is too large opens read-only. A file
-  opened from outside Kern gets a window of its own; Home moves it into the main
-  window.
-- **Editor windows.** "Open as editor" opens a folder in a window of its own,
-  with a folder tree beside the documents and the file operations in the
-  tree's menu. The main window is always a file manager. A file open in one
-  window is focused, never opened twice.
-- **Desktop integration.** Kern follows the system theme (colours, accent,
+  replace, and undo. Saving keeps the file's line endings and byte order mark.
+  If another program changed or deleted the file, Kern asks before it writes.
+  A file with mixed line endings, a file that is not UTF-8 and a very large
+  file open read-only. A file you open from outside Kern gets a window of its
+  own, and its Home button moves it into the main window.
+- **Editor windows.** Open as editor gives a folder its own window, with a
+  folder tree beside your documents. The tree's menu carries the file
+  operations, and its heading holds search, the terminal, hidden files and
+  collapse or expand all. Each folder has one editor window:
+  open the folder again and that window comes forward. A file opened from
+  inside an editor window moves into it, from whichever window held it. A file
+  opened any other way (from a folder, the command line or another app) brings
+  forward the window that already has it, so Kern never opens a file twice.
+  The main window is always a file manager.
+- **Windows from last time.** Kern starts with a fresh main window at your New
+  tab folder (Home unless you choose another in Settings). When the last
+  session left windows worth reopening, a bar at the top offers to restore
+  them.
+- **Settings.** Settings opens in a window of its own, with a search field.
+  Changes wait for Save, and Revert drops them.
+- **Desktop integration.** Kern follows the system theme: colours, accent,
   fonts and corner radius from Hyprland, the desktop portal, GTK and
-  fontconfig), each part with its own switch in Settings. It installs a desktop
-  entry for folders and every text type the system knows, can be set as the
-  default file manager (other programs' "Show in folder" opens in Kern), and a
-  second launch hands its files to the running window.
+  fontconfig, each with its own switch in Settings. It installs a desktop
+  entry for folders and every text type the system knows. You can make it the
+  default file manager, so other programs' "Show in folder" opens in Kern. A
+  second launch hands its files to the running instance over D-Bus.
 - **No network.** Kern opens no network connection, in its code, its
-  dependencies or its packaging.
+  dependencies or its packaging. CI checks the release binary for it.
 
 The other document formats of Kern for Android (spreadsheets, Word and
 PowerPoint files, PDF, EPUB) come in later versions.
@@ -82,9 +107,12 @@ npx tauri dev                       # run in development
 npx tauri build --bundles deb       # build a package
 ```
 
-Building needs the WebKitGTK 4.1 development files, GTK 3 and
-librsvg (on Debian and Ubuntu: `libwebkit2gtk-4.1-dev libgtk-3-dev
-libayatana-appindicator3-dev librsvg2-dev`).
+You need Rust, Node.js 22 and the system libraries Tauri builds against:
+
+- Debian and Ubuntu: `libwebkit2gtk-4.1-dev libgtk-3-dev
+  libayatana-appindicator3-dev librsvg2-dev`
+- Arch and its derivatives: `webkit2gtk-4.1 gtk3 libayatana-appindicator
+  librsvg`
 
 ## Testing
 
@@ -96,18 +124,37 @@ e2e-app/run.sh
 ```
 
 `e2e-app/run.sh` builds the debug binary and drives it through `tauri-driver`
-and WebKitWebDriver (`cargo install tauri-driver --locked`; WebKitWebDriver is
-in `webkit2gtk-driver` on Debian and Ubuntu and in `webkitgtk-6.0` on Arch),
-with `xvfb-run` and `dbus-run-session`. Each spec file runs on a session bus
-and in a home directory of its own, so it never touches the running session.
-The worlds and logs go to `src-tauri/target/e2e-app-runs/`, or to the directory
-in `KERN_E2E_RUNS`.
+and WebKitWebDriver, under `xvfb-run` and `dbus-run-session`. Install
+`tauri-driver` with `cargo install tauri-driver --locked`; WebKitWebDriver
+comes in `webkit2gtk-driver` on Debian and Ubuntu and in `webkitgtk-6.0` on
+Arch. Each spec file gets its own session bus and home directory, so a run
+leaves your session alone. Worlds and logs go to `src-tauri/target/e2e-app-runs/`,
+or to the directory you set in `KERN_E2E_RUNS`.
 
-The no-network check is `scripts/trace-in-empty-netns.sh`, which runs a command
+The checks CI runs as gates:
+
+```bash
+cargo fmt --manifest-path src-tauri/Cargo.toml --all --check
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+npx tsc --noEmit
+npx tsc -p tsconfig.node.json
+npx tsc -p e2e-app
+npx eslint . --max-warnings 0
+npx prettier --check .
+```
+
+For the no-network check, `scripts/trace-in-empty-netns.sh` runs a command
 under `strace` in a network namespace with no interfaces, and
-`scripts/inet_calls.py`, which fails on any `connect`, `sendto`, `sendmsg` or
-`sendmmsg` to an IPv4 or IPv6 address. CI runs it on the release binary after
-a control that must trip it.
+`scripts/inet_calls.py` fails on any `connect`, `sendto`, `sendmsg` or
+`sendmmsg` to an IPv4 or IPv6 address. CI runs both on the release binary,
+after a control run that must trip them.
+
+## Versioning
+
+Kern Desktop numbers its versions `A.B.C.D`. Each release has a git tag with
+the bare number (`0.1.0.0`, no `v`), and the Version badge above shows the tag
+of the latest release. The [releases page](https://github.com/verycareful/kern-desktop/releases)
+carries the deb and the AppImage for each one.
 
 ## License
 
