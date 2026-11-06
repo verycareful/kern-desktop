@@ -65,7 +65,7 @@ const answer = (choice: "save" | "discard" | "cancel") =>
   act(() => useCloseGuard.getState().answer(choice));
 
 test("a_clean_document_whose_file_was_deleted_asks_before_it_closes", async () => {
-  // Its text is the only copy left (maintainer, 2026-11-02).
+  // Its text is the only copy left, so closing it unasked would lose it.
   registerDoc("a", doc({ closeRisk: () => deleted }));
   render(<ClosePrompt />);
   act(() => closeTab("a"));

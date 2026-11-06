@@ -58,10 +58,10 @@ pub const ZOOM_MIN: f32 = 0.25;
 pub const ZOOM_MAX: f32 = 5.0;
 
 /// The interface sizes, in percent of the webview's normal size: the choices
-/// Settings offers under Appearance (maintainer, 2026-10-28). The frontend's
-/// `INTERFACE_SIZES` lists the same values.
+/// Settings offers under Appearance. The frontend's `INTERFACE_SIZES` lists
+/// the same values.
 pub const INTERFACE_SIZES: [u32; 5] = [80, 90, 100, 110, 125];
-/// A little smaller than the webview's normal size (maintainer, 2026-10-28).
+/// The size before the user picks one: a step below the webview's normal size.
 pub const DEFAULT_INTERFACE_SIZE: u32 = 90;
 
 /// The row density handed to the theme. Kern has one row height, the cozy
@@ -104,7 +104,7 @@ pub const LEFT_WIDTH_DEFAULT: u32 = 280;
 pub const RIGHT_WIDTH_MIN: u32 = LEFT_WIDTH_MIN;
 pub const RIGHT_WIDTH_MAX: u32 = LEFT_WIDTH_MAX;
 /// The panel's width before the user drags it: the left column's default,
-/// since a third of the window was too wide (maintainer, 2026-11-05).
+/// which leaves most of the window to the folder area.
 pub const RIGHT_WIDTH_DEFAULT: u32 = LEFT_WIDTH_DEFAULT;
 
 /// The two layouts of a window (the file manager and the editor layout).

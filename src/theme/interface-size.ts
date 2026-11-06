@@ -8,7 +8,7 @@
 
 /** The sizes offered, in percent, ascending. */
 export const INTERFACE_SIZES = [80, 90, 100, 110, 125] as const;
-/** Slightly smaller than the browser default (maintainer, 2026-10-28). */
+/** The size before the user picks one: a step below the browser default. */
 export const DEFAULT_INTERFACE_SIZE = 90;
 
 /** The webview zoom factor for a size in percent. */

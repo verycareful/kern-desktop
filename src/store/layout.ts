@@ -24,9 +24,9 @@ export const clampWidth = (w: number): number =>
 
 /**
  * The Pinned and Recent panel's width limits in pixels: the left column's, since a pin's row is a
- * name and its folder as a place's row is a name. Its default is the left column's too: a third of
- * the window was too wide (maintainer, 2026-11-05). store.rs RIGHT_WIDTH_MIN and RIGHT_WIDTH_MAX
- * are the same.
+ * name and its folder as a place's row is a name. Its default is the left column's too, which
+ * leaves most of the window to the folder area. store.rs RIGHT_WIDTH_MIN and RIGHT_WIDTH_MAX are
+ * the same.
  */
 export const RIGHT_WIDTH_MIN = LEFT_WIDTH_MIN;
 export const RIGHT_WIDTH_MAX = LEFT_WIDTH_MAX;
