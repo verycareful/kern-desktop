@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { test as base, expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import type { WindowLayout } from "../../src/ipc/app";
 
 /**
  * Command name to canned response. A value may be a literal or a function of
@@ -25,7 +26,12 @@ export const EMPTY_PINNED_RECENT: MockResponses = {
 };
 
 /** The window layout of a user who never chose one, as layout_get answers. */
-export const NO_LAYOUT = { left_width: 280, left_open: true, tree_root: null };
+export const NO_LAYOUT: WindowLayout = {
+  left_width: 280,
+  left_open: true,
+  right_width: 280,
+  tree_root: null,
+};
 
 export type InvokeCall = { cmd: string; args: Record<string, unknown> };
 

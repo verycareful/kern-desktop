@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, Folder, Link2 } from "lucide-react";
 import { pathKey, type WireEntry } from "../ipc";
@@ -95,7 +95,7 @@ export function FileList(
 
   // A keyboard move brings the cursor into view; a click or a relist does not.
   const cursor = useRef(sel.cursor);
-  useEffect(() => {
+  useLayoutEffect(() => {
     cursor.current = sel.cursor;
   });
   const { revealTick } = props;

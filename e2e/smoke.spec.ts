@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { test, expect, EMPTY_PINNED_RECENT } from "./support/mockInvoke";
+import { test, expect, EMPTY_PINNED_RECENT, NO_LAYOUT } from "./support/mockInvoke";
 
 test("boots_with_mocked_ipc", async ({ page, mockTauri }) => {
   // The theme the shell asks for at startup.
@@ -46,8 +46,9 @@ test("boots_with_mocked_ipc", async ({ page, mockTauri }) => {
 
   // Layout: the places strip runs from the window top down to the status
   // bar, the tab row sits over the folder area (its left edge is the folder
-  // area's) and ends at the right third, which runs from the window top; the
-  // status bar spans the bottom.
+  // area's) and ends at the Pinned and Recent panel, which runs from the window
+  // top and is as wide as the stored layout says; the status bar spans the
+  // bottom.
   const tabBar = (await page.getByTestId("tab-bar").boundingBox())!;
   const places = (await page.getByTestId("places-strip").boundingBox())!;
   const area = (await page.getByTestId("folder-area").boundingBox())!;
@@ -62,7 +63,7 @@ test("boots_with_mocked_ipc", async ({ page, mockTauri }) => {
   expect(tabBar.y + tabBar.height).toBeCloseTo(area.y, 0);
   expect(side.y).toBe(0);
   expect(side.y + side.height).toBeCloseTo(status.y, 0);
-  expect(Math.abs(side.width / (side.x + side.width) - 1 / 3)).toBeLessThan(0.02);
+  expect(side.width).toBeCloseTo(NO_LAYOUT.right_width, 0);
   expect(status.x).toBe(0);
   expect(status.width).toBeGreaterThanOrEqual(side.x + side.width - 1);
 

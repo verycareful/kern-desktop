@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import type { WireEntry, WirePath } from "../ipc";
 import {
   ITEM_DRAG_THRESHOLD,
@@ -40,7 +40,7 @@ export function useItemDrag(args: {
   onLeave(sources: WirePath[]): void;
 }) {
   const latest = useRef(args);
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = args;
   });
   const ghost = useRef<HTMLDivElement>(null);

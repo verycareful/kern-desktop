@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   EVENT_DIR_CHANGED,
   EVENT_DIR_GONE,
@@ -144,7 +144,7 @@ export function useTree(opts: TreeOptions): TreeApi {
   const ctl = useRef<Controller>(NONE);
   const hidden = useRef(opts.hidden);
   const onRootGone = useRef(opts.onRootGone);
-  useEffect(() => {
+  useLayoutEffect(() => {
     onRootGone.current = opts.onRootGone;
   });
   const rootKey = pathKey(opts.root);

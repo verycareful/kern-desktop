@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   clipText,
   displayPath,
@@ -113,7 +113,7 @@ export function useFolderTools(args: {
   selected(): WireEntry[];
 }): FolderTools {
   const latest = useRef(args);
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = args;
   });
   const alive = useRef(true);

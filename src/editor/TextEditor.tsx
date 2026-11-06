@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, lineNumbers, type ViewUpdate } from "@codemirror/view";
 import { history } from "@codemirror/commands";
@@ -65,7 +65,7 @@ export function TextEditor(props: {
   const { tabId, path, active } = props;
   const settled = useRef(false);
   const onSettled = useRef(props.onSettled);
-  useEffect(() => {
+  useLayoutEffect(() => {
     onSettled.current = props.onSettled;
   });
   const settle = (result: { ok: true } | { ok: false; reason: string }) => {
@@ -109,7 +109,7 @@ export function TextEditor(props: {
   // A document moving to another window takes no edits: one made after its state was taken would be lost.
   const isReadOnly = doc.readOnly !== null || doc.moving;
   const latest = useRef({ edited: doc.edited, readOnly: isReadOnly, wordWrap, zoom });
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = { edited: doc.edited, readOnly: isReadOnly, wordWrap, zoom };
   });
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   clipGet,
   clipSet,
@@ -123,7 +123,7 @@ export function selectedRange(name: string, stem: boolean): [number, number] {
 
 export function useFileOps(args: FileOpsArgs) {
   const latest = useRef(args);
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = args;
   });
   const alive = useRef(true);
@@ -137,7 +137,7 @@ export function useFileOps(args: FileOpsArgs) {
   const [naming, setNaming] = useState<"folder" | "file" | null>(null);
   const [renaming, setRenaming] = useState<RenameState | null>(null);
   const renamingNow = useRef<RenameState | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     renamingNow.current = renaming;
   });
   const [asking, setAsking] = useState<Question | null>(null);

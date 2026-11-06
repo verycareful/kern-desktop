@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from "react";
 import { openModal } from "./modal-stack";
 import "./ops.css";
 
@@ -26,7 +32,7 @@ export function Modal(props: {
 }) {
   const root = useRef<HTMLDivElement>(null);
   const onEscape = useRef(props.onEscape);
-  useEffect(() => {
+  useLayoutEffect(() => {
     onEscape.current = props.onEscape;
   });
   const initial = props.initialFocus;

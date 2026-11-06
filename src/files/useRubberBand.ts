@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { bandIndices, type Layout, type Rect } from "./band";
 import type { Sel } from "./selection";
 
@@ -24,7 +24,7 @@ export function useRubberBand(props: {
 }): { onPointerDown(e: React.PointerEvent): void; band: Rect | null } {
   const [band, setBand] = useState<Rect | null>(null);
   const latest = useRef(props);
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = props;
   });
   const stop = useRef<(() => void) | null>(null);

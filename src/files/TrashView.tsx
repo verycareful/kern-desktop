@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArchiveRestore, Folder, Trash2 } from "lucide-react";
 import {
@@ -138,7 +138,7 @@ export function TrashView(props: { tab: TrashTab }) {
 
   // The controller and the handlers read the latest state without being re-registered.
   const latest = useRef({ items, sel, working });
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = { items, sel, working };
   });
 
@@ -346,7 +346,7 @@ export function TrashView(props: { tab: TrashTab }) {
     dispatch((s, n) => seedCursor(s, n))
   );
   const cursor = useRef(sel.cursor);
-  useEffect(() => {
+  useLayoutEffect(() => {
     cursor.current = sel.cursor;
   });
   useEffect(() => {

@@ -86,11 +86,11 @@ test("the_strip_lists_places_volumes_and_trash_and_the_trash_opens_in_a_tab", as
   await expect(strip.getByRole("button", { name: "STICK" })).toBeVisible();
   await expect(strip.getByRole("button", { name: "Mount BACKUP" })).toBeVisible();
 
-  await strip.getByRole("button", { name: "Documents", exact: true }).click();
+  await strip.getByRole("button", { name: "Documents", exact: true }).dblclick();
   await expect(page.getByTestId("status-bar")).toContainText("/home/tester/Documents");
   await expect(page.getByRole("tab")).toHaveCount(1);
 
-  await strip.getByRole("button", { name: "Trash" }).click();
+  await strip.getByRole("button", { name: "Trash" }).dblclick();
   await expect(page.getByRole("tab", { name: "Trash" })).toBeVisible();
   const row = page.getByTestId("trash-row");
   await expect(row).toHaveCount(1);
@@ -101,8 +101,8 @@ test("the_strip_lists_places_volumes_and_trash_and_the_trash_opens_in_a_tab", as
     "page"
   );
 
-  // A place from the Trash brings the folder tab back.
-  await strip.getByRole("button", { name: "Home" }).click();
+  // A place from the Trash brings the folder tab back. Strip entries open on a double-click.
+  await strip.getByRole("button", { name: "Home" }).dblclick();
   await expect(page.getByTestId("folder-view")).toBeVisible();
   await expect(page.getByTestId("status-bar")).toContainText("/home/tester");
 });
@@ -110,7 +110,7 @@ test("the_strip_lists_places_volumes_and_trash_and_the_trash_opens_in_a_tab", as
 test("empty_trash_asks_before_it_runs", async ({ page, mockTauri }) => {
   await mockTauri(COMMON);
   await page.goto("/");
-  await page.getByTestId("places-strip").getByRole("button", { name: "Trash" }).click();
+  await page.getByTestId("places-strip").getByRole("button", { name: "Trash" }).dblclick();
   await page.getByRole("button", { name: "Empty Trash" }).click();
   await expect(page.getByRole("alertdialog")).toContainText("cannot be undone");
   await page.getByRole("button", { name: "Cancel" }).click();

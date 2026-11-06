@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Text } from "@codemirror/state";
 import {
   EVENT_DIR_CHANGED,
@@ -261,7 +261,7 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
   // The path the caller registered already, until this hook's first registration would repeat it.
   const preRegistered = useRef(opts.registered ? key : null);
   const latestOpts = useRef(opts);
-  useEffect(() => {
+  useLayoutEffect(() => {
     latestOpts.current = opts;
   });
   const location = opts.location ?? null;
@@ -406,7 +406,7 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
       }),
     [patch, run]
   );
-  useEffect(() => {
+  useLayoutEffect(() => {
     checkRef.current = check;
   });
 
@@ -593,7 +593,7 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
   // A tab that closes without its registration effect ever running (its file did not open) lets
   // go of the path the backend held for it when the file was routed here.
   const latestPlace = useRef({ path, here });
-  useEffect(() => {
+  useLayoutEffect(() => {
     latestPlace.current = { path, here };
   });
   useEffect(

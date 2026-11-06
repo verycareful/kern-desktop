@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -221,9 +221,11 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     [tab.id]
   );
 
-  // The controller reads the latest view state without being re-registered.
+  // The controller reads the latest view state without being re-registered. It is stored in a
+  // layout effect, which runs before the browser can deliver another event: a drag or key that
+  // lands right after the commit that removed a row must not still find that row.
   const latest = useRef({ entries, sel, viewMode, columns, phase: folder.phase, searching });
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = { entries, sel, viewMode, columns, phase: folder.phase, searching };
   });
   // What the file operations act on: the selection, in list order, and nothing else. An item
@@ -261,7 +263,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     scrollTop.current = 0;
   }, [key]);
   const ending = useRef({ phase: folder.phase, key });
-  useEffect(() => {
+  useLayoutEffect(() => {
     ending.current = { phase: folder.phase, key };
   });
   useEffect(
@@ -358,7 +360,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
   // entry under it, or on the body of the view. A place that takes nothing, or a point that
   // cannot be resolved, is not this view's to act on; the window says why (ops/DropHover.tsx).
   const dropState = useRef({ isActive });
-  useEffect(() => {
+  useLayoutEffect(() => {
     dropState.current = { isActive };
   });
   useEffect(() => {
