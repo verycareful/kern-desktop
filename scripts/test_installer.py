@@ -209,6 +209,24 @@ class Release(unittest.TestCase):
         self.assertEqual(lines[2], f"{APP_ID}_{CARGO_VERSION}_amd64.deb")
         self.assertEqual(lines[3], "uninstall.sh")
 
+    def test_fetch_takes_assets_named_after_the_tag(self) -> None:
+        # The release workflow publishes the bundles under the tag, not the
+        # Cargo version.
+        self.w.make_release(VERSION)
+        r = self.w.bash(
+            f'd=$(mktemp -d -p "$W"); release_fetch "{self.w.release}" "$d"; '
+            'echo "v=$REL_VERSION"; basename "$REL_APPIMAGE"; basename "$REL_DEB"'
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(
+            r.stdout.split(),
+            [
+                f"v={VERSION}",
+                f"{APP_ID}_{VERSION}_amd64.AppImage",
+                f"{APP_ID}_{VERSION}_amd64.deb",
+            ],
+        )
+
     def test_corrupted_asset_aborts_before_any_install_file(self) -> None:
         app = next(self.w.release.glob("*.AppImage"))
         data = bytearray(app.read_bytes())
@@ -250,8 +268,10 @@ class Release(unittest.TestCase):
             self.assertEqual(r.returncode, want, f"version_gt {a} {b}")
 
     def test_cargo_to_label(self) -> None:
-        r = self.w.bash("cargo_to_label 0.1.0+0.103; cargo_to_label 0.1.0+0")
-        self.assertEqual(r.stdout.split(), ["0.1.0.0.103", "0.1.0.0"])
+        r = self.w.bash(
+            "cargo_to_label 0.1.0+0.103; cargo_to_label 0.1.0+0; cargo_to_label 0.1.0.0"
+        )
+        self.assertEqual(r.stdout.split(), ["0.1.0.0.103", "0.1.0.0", "0.1.0.0"])
 
 
 class Layout(unittest.TestCase):

@@ -91,20 +91,15 @@ jobs:
       - name: Build the deb and the AppImage
         run: npx tauri build --bundles deb,appimage
 
-      # gh ships on the runner, so no third-party action is needed.
-      - name: Publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.value }}
-        run: |
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --notes-file release-notes.md \
-            --verify-tag
-
       # One deb and one AppImage, or the checksums would name a file the
-      # installer cannot choose between.
+      # installer cannot choose between. The bundler names them after the
+      # Cargo version (0.1.0+0); GitHub rewrites special characters in asset
+      # names, so they are published under the tag instead
+      # (io.github.verycareful.kern_0.1.0.0_amd64.deb), and SHA256SUMS names
+      # exactly the files that are uploaded.
       - name: Collect the assets and their checksums
+        env:
+          TAG: ${{ steps.tag.outputs.value }}
         run: |
           mkdir assets
           shopt -s nullglob
@@ -114,12 +109,23 @@ jobs:
             echo "::error::expected one deb and one AppImage, found ${#debs[@]} and ${#images[@]}"
             exit 1
           fi
-          cp "${debs[0]}" "${images[0]}" uninstall.sh assets/
+          app_id=$(jq -r .identifier src-tauri/tauri.conf.json)
+          cp "${debs[0]}" "assets/${app_id}_${TAG}_amd64.deb"
+          cp "${images[0]}" "assets/${app_id}_${TAG}_amd64.AppImage"
+          cp uninstall.sh assets/
           (cd assets && sha256sum -- *.deb *.AppImage uninstall.sh > SHA256SUMS)
           cat assets/SHA256SUMS
 
-      - name: Attach the packages
+      # The release is created with every asset in one call, so the latest
+      # release never lacks the SHA256SUMS the installer reads first. gh ships
+      # on the runner, so no third-party action is needed.
+      - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.tag.outputs.value }}
-        run: gh release upload "$TAG" assets/*
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file release-notes.md \
+            --verify-tag \
+            assets/*
