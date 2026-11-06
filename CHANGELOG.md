@@ -4,6 +4,48 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.0.4] - 2026-11-06 18:05 (IST)
+
+### Fixed
+
+- **Tab close button**: a thin scrollbar appeared beside the close button of the last tab. It took part of the button's click area and scrolled the tab row by a pixel. The tab row scrolls sideways, which makes it scrollable up and down as well, and the selected tab stood one pixel taller than the row. The row now never scrolls up and down, and the selected tab fits it.
+
+### Tests
+
+- A browser test checks that the tab row cannot scroll up and down, even after a mouse wheel over the close button, that it shows no scrollbar, and that all four edges of the close button belong to the button.
+
+### Results
+
+- 4 tests across 2 suites (the tab row browser tests and the tab bar unit tests), all passed (2.3s, CachyOS x86-64, Chromium through Playwright).
+
+## [0.1.0.3] - 2026-11-06 17:40 (IST)
+
+### Fixed
+
+- **Installing for everyone on the computer**: Kern installed under `/opt/kern` could be started only by root. The AppImage's own extraction gives every folder mode 0700, whatever the image stores, so the installed folders were closed to every other user. The install script now gives each extracted folder its stored mode, 0755, before moving it into place, and stops with nothing changed if it cannot. Installing for one user was not affected.
+
+### Tests
+
+- The installer tests' stand-in AppImage extracts its folders 0700, as the real one does. The user install and the install through sudo both check that every installed folder is 0755.
+
+### Results
+
+- 54 tests across 2 suites (the installer suites), all passed (11.5s, CachyOS x86-64, Python 3.14.9).
+
+## [0.1.0.2] - 2026-11-06 17:35 (IST)
+
+### Fixed
+
+- **Kern would not start after installing**: an installed Kern did not open from the application menu, a launcher such as rofi, or `kern` in a terminal. The install script made `~/.local/bin/kern` (or `/usr/local/bin/kern`) a symbolic link to the bundle's `AppRun`, which finds the rest of the bundle through the folder it was started from, so started through the link it looked in the wrong folder and exited. The command is now a small script that starts `AppRun` in place, and an update replaces the link left by an earlier install.
+
+### Tests
+
+- The installer tests' stand-in `AppRun` finds its bundle the way the real one does. New tests start Kern through the installed command, with arguments, and reinstall over a linked command.
+
+### Results
+
+- 41 tests across 1 suite (the installer suite), all passed (10.0s, CachyOS x86-64, Python 3.14.9).
+
 ## [0.1.0.1] - 2026-11-06 14:13 (IST)
 
 ### Fixed

@@ -301,6 +301,42 @@ test("the_keyboard_ring_of_a_tab_goes_round_its_close_button", async ({ page, mo
   expect(ring).toEqual({ main: "none", whole: "solid", closeInside: true });
 });
 
+test("the_tab_row_has_no_vertical_scroll_and_the_close_button_owns_its_box", async ({
+  page,
+  mockTauri,
+}) => {
+  await mockTauri({ ...COMMON, "plugin:kernkraft-tauri|list_dir": [] });
+  await page.goto("/");
+  const tab = page.getByTestId("tab").first();
+  await expect(tab).toBeVisible();
+  const row = page.locator(".kern-tabs");
+  const close = page.locator(".kern-tab-close").first();
+  await close.hover();
+  await page.mouse.wheel(0, 100);
+  const state = await row.evaluate((el) => {
+    const button = el.querySelector(".kern-tab-close")!;
+    const box = button.getBoundingClientRect();
+    const hit = (x: number, y: number) => button.contains(document.elementFromPoint(x, y));
+    return {
+      overflowY: getComputedStyle(el).overflowY,
+      scrollTop: el.scrollTop,
+      gutter: el.offsetWidth - el.clientWidth,
+      edges: [
+        hit(box.left + 1, box.top + box.height / 2),
+        hit(box.right - 1, box.top + box.height / 2),
+        hit(box.left + box.width / 2, box.top + 1),
+        hit(box.left + box.width / 2, box.bottom - 1),
+      ],
+    };
+  });
+  expect(state).toEqual({
+    overflowY: "hidden",
+    scrollTop: 0,
+    gutter: 0,
+    edges: [true, true, true, true],
+  });
+});
+
 test("the_first_row_is_spaced_from_the_path_bar", async ({ page, mockTauri }) => {
   await mockTauri({
     ...COMMON,

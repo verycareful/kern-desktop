@@ -92,7 +92,10 @@
   min-width: 0;
   flex: 0 1 auto;
   gap: 2px;
+  /* Scrolling on x makes a visible y compute to auto (CSS Overflow 3, section 3.1), and a tab one
+     pixel taller than the row then gets a scrollbar beside the last close button. */
   overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .kern-tab {
@@ -121,7 +124,6 @@
   color: var(--kern-text);
   background: var(--kern-bg);
   border-color: var(--kern-border);
-  margin-bottom: -1px;
   font-weight: 600;
 }
 
