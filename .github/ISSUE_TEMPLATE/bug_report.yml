@@ -1,0 +1,121 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+
+name: Bug report
+description: Something in Kern does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please fill in every required field: a report without the version, system and steps usually needs a round of questions before anyone can look at it.
+        Security problems go through [SECURITY.md](https://github.com/verycareful/kern-desktop/blob/main/SECURITY.md), not here.
+  - type: input
+    id: version
+    attributes:
+      label: Kern version
+      description: Settings > About > Version.
+      placeholder: 0.1.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you installed Kern
+      options:
+        - Install script
+        - deb package
+        - AppImage
+        - Built from source
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution and version
+      placeholder: Arch Linux, rolling
+    validations:
+      required: true
+  - type: input
+    id: desktop
+    attributes:
+      label: Desktop or compositor
+      description: Kern takes its look from the desktop, so this matters for theme problems.
+      placeholder: Hyprland 0.50, GNOME 49, KDE Plasma 6
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Folders and tabs
+        - File operations (copy, move, rename, delete, undo)
+        - Trash
+        - Volumes and drives
+        - Search
+        - Text editor
+        - Theme
+        - Opening from other apps, or as the default app
+        - Settings, pins and recents
+        - Install and packaging
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: location
+    attributes:
+      label: Where the files live
+      options:
+        - Local disk
+        - Removable drive
+        - Another mounted filesystem
+        - Not about files
+    validations:
+      required: true
+  - type: dropdown
+    id: data_loss
+    attributes:
+      label: Was a file lost or changed unexpectedly?
+      description: Losing or altering a file is the most serious kind of bug, so these reports are looked at first.
+      options:
+        - "No"
+        - Yes, a file was lost or overwritten
+        - Yes, a file changed when it should not have
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Start from a fresh launch of Kern.
+      placeholder: |
+        1. Open a folder on a USB drive
+        2. Move a file to the Trash
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Include the exact text of any error message.
+    validations:
+      required: true
+  - type: textarea
+    id: terminal
+    attributes:
+      label: Terminal output
+      description: Kern writes its diagnostics to the terminal and keeps no log file. Launch `kern` from a terminal, repeat the steps, and paste the lines that start with `kern:`.
+      render: shell
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Screenshots or files
+      description: Drag files here. If a file is private, describe it instead (size, how it was made, what it contains).

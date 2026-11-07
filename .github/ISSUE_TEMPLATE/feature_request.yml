@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+
+name: Feature request
+description: Something Kern should do that it does not.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Start from the problem, not the solution. "Trash: dark mode" cannot be acted on; "Trash: I cannot tell which deleted file came from which folder" can.
+        Kern never opens a network connection. A request that needs one (sync, update checks, cloud storage, telemetry) is out of scope and will be closed.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Folders and tabs
+        - File operations (copy, move, rename, delete, undo)
+        - Trash
+        - Volumes and drives
+        - Search
+        - Text editor
+        - Theme
+        - Opening from other apps, or as the default app
+        - Settings, pins and recents
+        - Install and packaging
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you were trying to do, and where Kern stopped you.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: Optional. How you picture it working.
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today
+      description: Optional. The workaround you use now, in Kern or in another app.
+  - type: input
+    id: version
+    attributes:
+      label: Kern version
+      description: Settings > About > Version.
+      placeholder: 0.1.1.0
