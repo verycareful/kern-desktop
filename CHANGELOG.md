@@ -4,6 +4,22 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.1.4] - 2026-11-07 20:59 (IST)
+
+### Changed
+
+- **Real-app test driver**: WebdriverIO and its `@wdio/*` packages move from 10.1.0 to 10.2.0.
+- **Linting**: `typescript-eslint` moves from 8.71.2 to 8.72.1.
+- **Glob matching in development tools**: `package.json` forces `minimatch` 11.0.5 for `@typescript-eslint/typescript-estree`, `mocha` and `readdir-glob`, and `glob` 14.0.4 for `mocha`. Each of those packages is at its newest release and still declares `minimatch` 10, so the override goes past what they ask for. It stays until they accept version 11, and then it is removed.
+
+### Security
+
+- **Development dependencies**: `minimatch` 10.2.6 has a denial of service through glob pattern amplification and `glob` 13.0.6 has a cancellation bypass that allows filesystem traversal after a timeout. Both reached the tree only through the linter, the test runner and the real-app test driver, with patterns taken from this project's own configuration, and neither is part of the shipped application. After this change no vulnerable copy of either remains and `npm audit` reports no vulnerabilities.
+
+### Results
+
+- 1704 tests across 141 suites (the Rust tests, every unit test, the browser tests, the real-app driver tests and the packaging and script suites), all passed (239s, CachyOS x86-64, rustc 1.99.1, Python 3.14.9, Chromium through Playwright).
+
 ## [0.1.1.3] - 2026-11-07 19:34 (IST)
 
 ### Changed
