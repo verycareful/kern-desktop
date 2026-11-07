@@ -22,6 +22,7 @@ import {
   type WirePath,
 } from "../ipc";
 import { openFiles } from "../files/open-entries";
+import { logError } from "../ops/error-log";
 import { errorText } from "../ops/error-text";
 import { baseName, namesText } from "../ops/labels";
 import { corruptText, useStoreErrors } from "../store/store-errors";
@@ -163,7 +164,11 @@ const initial = {
 };
 
 export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
-  const fail = (what: string, e: unknown) => get().notify(`${what}: ${errorText(toWireError(e))}`);
+  const fail = (what: string, e: unknown) => {
+    const text = `${what}: ${errorText(toWireError(e))}`;
+    logError("pinned", text);
+    get().notify(text);
+  };
 
   /** Applies the pins an answer gave, if no pins event arrived since `seen`. */
   const answerPins = (value: Pins, seen: number) => {
@@ -390,7 +395,9 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
       const errors = await openFiles([path], false);
       if (errors.length === 0) return;
       for (const e of errors) {
-        get().notify(`${baseName(path)} could not be opened: ${errorText(e)}`);
+        const text = `${baseName(path)} could not be opened: ${errorText(e)}`;
+        logError("open", text);
+        get().notify(text);
       }
       // An entry whose open failed is pruned, if its target is gone. A prune that
       // began before the failure may have found it still there, so this one starts after it.

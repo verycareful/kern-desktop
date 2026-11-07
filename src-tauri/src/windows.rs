@@ -2102,6 +2102,7 @@ pub fn ask_to_close<R: Runtime>(window: &Window<R>) {
 pub fn on_page_load<R: Runtime>(webview: &Webview<R>, payload: &PageLoadPayload<'_>) {
     if payload.event() == PageLoadEvent::Started {
         page_reloading(webview.app_handle(), webview.label());
+        crate::error_log::watch_web_process(webview);
     }
 }
 
@@ -2123,6 +2124,7 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
         WindowEvent::Destroyed => {
             let app = window.app_handle();
             crate::zoom::forget(app, window.label());
+            crate::error_log::forget_webview(window.label());
             crate::session::window_gone(app, window.label());
             if let Some(st) = app.try_state::<WindowState>() {
                 // Its own document and its tabs; other windows' tabs stay.

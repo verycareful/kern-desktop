@@ -44,6 +44,7 @@ fn env(label: &str) -> Env {
             kern_lib::store_cmds::settings_set,
             kern_lib::store_cmds::layout_get,
             kern_lib::store_cmds::layout_set,
+            kern_lib::error_log::log_error,
             kern_lib::windows::open_pending_take,
             kern_lib::identity::file_identity,
             kern_lib::identity::link_target,
@@ -112,6 +113,33 @@ fn a_kernkraft_command_is_allowed_by_the_main_capability() {
 fn a_kern_command_is_allowed_by_the_main_capability() {
     let e = env("main");
     invoke(&e, "settings_get", json!({})).unwrap();
+}
+
+#[test]
+fn every_window_kind_may_write_the_error_log_and_the_line_is_kept() {
+    // The log is one per process, so this test starts it and the windows below share it.
+    let log_dir = tempfile::tempdir().unwrap();
+    assert!(kern_lib::error_log::init_at(log_dir.path().to_path_buf()));
+    for (n, label) in ["main", "doc-1", "editor-1", "settings"]
+        .into_iter()
+        .enumerate()
+    {
+        let e = env(label);
+        invoke(
+            &e,
+            "log_error",
+            json!({"source": "open", "message": format!("window {n} said this")}),
+        )
+        .unwrap();
+    }
+    let text = fs::read_to_string(log_dir.path().join("kern.log")).unwrap();
+    assert_eq!(text.lines().count(), 4);
+    for n in 0..4 {
+        assert!(
+            text.contains(&format!("[open] window {n} said this")),
+            "window {n}"
+        );
+    }
 }
 
 #[test]

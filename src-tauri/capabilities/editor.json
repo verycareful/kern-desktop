@@ -46,6 +46,7 @@
     "allow-refuse-adoption",
     "allow-prune",
     "allow-store-errors-take",
+    "allow-log-error",
     "allow-file-identity",
     "allow-link-target",
     "allow-open-paths",

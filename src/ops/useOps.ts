@@ -19,6 +19,8 @@ import {
   type WirePath,
   type WireReport,
 } from "../ipc";
+import { logError } from "./error-log";
+import { errorText } from "./error-text";
 import { opLabels } from "./labels";
 import { needsAttention, type Outcome } from "./outcome";
 import { runOp, type RunningOp } from "./run-op";
@@ -271,6 +273,10 @@ export const useOps = create<OpsState>()((set, get) => ({
   },
 
   report(outcome) {
+    logError(
+      "operation",
+      `${outcome.title}: ${outcome.error ? errorText(outcome.error) : "some items failed, were skipped or were not reached"}`
+    );
     set((s) => ({ reports: [...s.reports, { id: nextReport++, outcome }] }));
   },
 

@@ -40,6 +40,9 @@ import {
   modsOf,
   type DragModifiers,
 } from "../ops/dnd";
+import { logError } from "../ops/error-log";
+import { errorText } from "../ops/error-text";
+import { ErrorBanner } from "../ops/ErrorBanner";
 import { useTabs, type FolderTab, type FolderViewState } from "../store/tabs";
 import { Breadcrumb } from "./Breadcrumb";
 import { OpenWithDialog } from "./OpenWithDialog";
@@ -178,14 +181,11 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         !showHidden && displayPath(p).split("/").pop()!.startsWith(".");
       const describe = (p: WirePath) =>
         `${displayPath(p)} (${hidden(p) ? "hidden, Ctrl+H shows hidden files" : "not in this folder"})`;
+      const message = `Not selected: ${missing.map(describe).join(", ")}`;
+      logError("select", message);
       setSelectNotes((notes) => [
         ...notes,
-        {
-          kind: "NotFound",
-          message: `Not selected: ${missing.map(describe).join(", ")}`,
-          path: null,
-          details: null,
-        },
+        { kind: "NotFound", message, path: null, details: null },
       ]);
     }
   }, [selectRequest, folder.phase, entries, selectKeys, tab.id, showHidden, searching]);
@@ -294,9 +294,24 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         toWireError(e),
       ]);
       if (alive.current) setOpenErrors(errors);
+      errors.forEach((e) => logError("open", errorText(e)));
     },
     [tab.id]
   );
+
+  // What the banners below say is also written to the error log, once for each time it appears.
+  useEffect(() => {
+    if (folder.sortError)
+      logError("folder", `The list could not be sorted: ${errorText(folder.sortError)}`);
+  }, [folder.sortError]);
+  useEffect(() => {
+    if (folder.watchError) {
+      logError(
+        "folder",
+        `Changes to this folder will not appear by themselves: ${errorText(folder.watchError)}`
+      );
+    }
+  }, [folder.watchError]);
   const openOrAsk = useCallback(
     (list: typeof entries, newWindow: boolean) => {
       if (list.length > OPEN_CONFIRM_ABOVE) setAsking({ list, newWindow });
@@ -716,7 +731,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         </div>
       )}
       {selectNotes.length > 0 && (
-        <div role="alert" className="kern-banner">
+        <ErrorBanner onDismiss={() => setSelectNotes([])}>
           <ul>
             {selectNotes.map((e, i) => (
               <li key={i}>
@@ -724,18 +739,10 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
               </li>
             ))}
           </ul>
-          <button
-            type="button"
-            className="kern-icon-button"
-            aria-label="Dismiss"
-            onClick={() => setSelectNotes([])}
-          >
-            <X size={16} strokeWidth={2} aria-hidden />
-          </button>
-        </div>
+        </ErrorBanner>
       )}
       {openErrors.length > 0 && (
-        <div role="alert" className="kern-banner">
+        <ErrorBanner onDismiss={() => setOpenErrors([])}>
           <ul>
             {openErrors.map((e, i) => (
               <li key={i}>
@@ -743,15 +750,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
               </li>
             ))}
           </ul>
-          <button
-            type="button"
-            className="kern-icon-button"
-            aria-label="Dismiss"
-            onClick={() => setOpenErrors([])}
-          >
-            <X size={16} strokeWidth={2} aria-hidden />
-          </button>
-        </div>
+        </ErrorBanner>
       )}
       {asking && (
         <ConfirmBanner

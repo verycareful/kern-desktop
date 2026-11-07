@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DirEvent, WireEntry, WireError, WirePath } from "../ipc";
+import { useOpenError } from "../ops/open-error-store";
 import { entry } from "./test-entries";
 import { stubLayout } from "./test-layout";
 
@@ -75,6 +76,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   cleanup();
+  useOpenError.getState().dismiss();
   await Promise.resolve();
   restoreLayout();
   vi.clearAllMocks();
@@ -341,7 +343,13 @@ test("a_file_opens_as_the_folder_view_opens_it_and_a_failure_is_said", async () 
     { path: p("/r/z.txt"), action: "failed", location: null, error: wireError("NotFound", "gone") },
   ]);
   fireEvent.click(row("z.txt"));
-  expect(await screen.findByText(/z\.txt: .*gone/)).toBeInTheDocument();
+  // Said in the editor area (OpenError.tsx), not among the tree's own notes.
+  await waitFor(() =>
+    expect(useOpenError.getState().lines).toEqual([
+      expect.stringMatching(/^z\.txt was not opened: .*gone/),
+    ])
+  );
+  expect(screen.queryByRole("status")).toBeNull();
 });
 
 test("a_name_that_is_not_utf8_is_listed_and_opened_by_its_real_path", async () => {
@@ -475,7 +483,11 @@ test("a_note_can_be_dismissed", async () => {
   delete disk["/r/src"];
   await emit("kernkraft://dir-changed", { key: "tree:t:Utf8:/r/src" });
   const notes = await screen.findByRole("status");
-  fireEvent.click(within(notes).getByRole("button", { name: "Dismiss" }));
+  // The class carries the fixed square size (shell.css); without it the button takes the toolbar
+  // button's 36px height and is squeezed narrow by the note's text.
+  const dismiss = within(notes).getByRole("button", { name: "Dismiss" });
+  expect(dismiss).toHaveClass("kern-dismiss");
+  fireEvent.click(dismiss);
   expect(screen.queryByRole("status")).toBeNull();
 });
 

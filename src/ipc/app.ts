@@ -121,6 +121,9 @@ export const recentTouch = (path: WirePath, asEditor = false) =>
 export const recentRemove = (path: WirePath) => invoke<Recents>("recent_remove", { path });
 export const prune = () => invoke<PruneReport>("prune");
 export const storeErrorsTake = () => invoke<CorruptReport[]>("store_errors_take");
+/** Adds a line to the error log (error_log.rs): `source` is a short name for where it came from. */
+export const errorLogAppend = (source: string, message: string) =>
+  invoke<void>("log_error", { source, message });
 
 // ---- which file a path leads to (identity.rs) ----
 

@@ -214,6 +214,21 @@
   cursor: default;
 }
 
+/*
+ * A dismiss button is a fixed square that never shrinks: a message wrapping in a narrow column
+ * would otherwise squeeze its width below its height. The hover fill is stronger than the
+ * background of a banner or note, which is the accent's own soft tint.
+ */
+.kern-icon-button.kern-dismiss {
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+
+.kern-icon-button.kern-dismiss:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--kern-accent) 22%, transparent);
+}
+
 /* The document, with the side panels slid over it from the window's edges. */
 .kern-body-doc {
   position: relative;
@@ -654,6 +669,29 @@
 
 .kern-editor-body > .kern-folder-area {
   flex: 1;
+}
+
+/*
+ * The message about a file that could not be opened: centred across the editor area, at its top,
+ * above whatever is open. The banner's own tint is translucent, so it is laid over the surface
+ * colour to keep the text readable on top of a document.
+ */
+.kern-open-error {
+  position: absolute;
+  z-index: 20;
+  top: var(--kern-density-gap);
+  left: 50%;
+  width: max-content;
+  max-width: min(560px, calc(100% - 2 * var(--kern-density-gap)));
+  transform: translateX(-50%);
+}
+
+.kern-open-error .kern-banner {
+  background:
+    linear-gradient(var(--kern-accent-soft), var(--kern-accent-soft)), var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--kern-text) 12%, transparent);
 }
 
 .kern-editor-docs {

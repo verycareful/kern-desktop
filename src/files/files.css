@@ -163,6 +163,19 @@
   padding-left: 16px;
 }
 
+/*
+ * A banner with a dismiss button in its top right corner: the same 8px above the button as to its
+ * right, and the text lined up with the button's top.
+ */
+.kern-banner-dismissible {
+  align-items: flex-start;
+  padding: 8px 8px 8px var(--kern-density-gap);
+}
+
+.kern-banner-dismissible > :first-child {
+  padding-block: 2px;
+}
+
 .kern-button {
   flex: none;
   padding: 6px 12px;
@@ -581,6 +594,30 @@
   flex: 1;
 }
 
+/*
+ * In the editor's folder column the one row of label, input and close button leaves the input a
+ * few characters wide. There the label and the close button share the first row and the input
+ * takes the full width of the second.
+ */
+.kern-editor-tree .kern-search-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 8px;
+}
+
+.kern-editor-tree .kern-search-bar .kern-label {
+  grid-area: 1 / 1;
+  overflow-wrap: anywhere;
+}
+
+.kern-editor-tree .kern-search-bar .kern-icon-button {
+  grid-area: 1 / 2;
+}
+
+.kern-editor-tree .kern-search-bar .kern-search-input {
+  grid-area: 2 / 1 / 3 / 3;
+}
+
 .kern-search-results {
   display: flex;
   min-height: 0;
@@ -690,6 +727,11 @@
   justify-content: space-between;
   gap: 4px;
   overflow-wrap: anywhere;
+}
+
+/* The negative block margin keeps a one-line note as tall as its text. */
+.kern-tree-notes .kern-dismiss {
+  margin-block: -3px;
 }
 
 .kern-tree {

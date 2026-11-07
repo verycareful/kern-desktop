@@ -12,6 +12,7 @@
     "allow-settings-get",
     "allow-settings-set",
     "allow-store-errors-take",
+    "allow-log-error",
     "allow-open-pending-take",
     "allow-confirm-close",
     "allow-restart-request",

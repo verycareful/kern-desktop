@@ -20,6 +20,7 @@ const COMMANDS: &[&str] = &[
     "show_in_folder",
     "prune",
     "store_errors_take",
+    "log_error",
     "file_identity",
     "link_target",
     "open_paths",

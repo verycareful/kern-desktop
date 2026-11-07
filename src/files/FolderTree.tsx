@@ -13,8 +13,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Repeat, X } from "lucide-react";
 import { displayPath, pathKey, toWireError, type WireEntry, type WirePath } from "../ipc";
 import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
-import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
+import { showOpenErrors } from "../ops/open-error-store";
 import { openFiles } from "./open-entries";
 import {
   INDENT,
@@ -141,15 +141,12 @@ export function FolderTree(props: {
     scroller.current?.focus();
   }, [revealing, at, virtual]);
 
-  const openFile = useCallback(
-    (entry: WireEntry) => {
-      openFiles([entry.path], false).then(
-        (errors) => errors.forEach((e) => tree.notify(`${baseName(entry.path)}: ${errorText(e)}`)),
-        (e: unknown) => tree.notify(`${baseName(entry.path)}: ${errorText(toWireError(e))}`)
-      );
-    },
-    [tree]
-  );
+  const openFile = useCallback((entry: WireEntry) => {
+    openFiles([entry.path], false).then(
+      (errors) => showOpenErrors(baseName(entry.path), errors),
+      (e: unknown) => showOpenErrors(baseName(entry.path), [toWireError(e)])
+    );
+  }, []);
 
   const toggle = useCallback(
     (row: EntryRow) => {
@@ -243,7 +240,7 @@ export function FolderTree(props: {
               <span>{n.text}</span>
               <button
                 type="button"
-                className="kern-icon-button"
+                className="kern-icon-button kern-dismiss"
                 aria-label="Dismiss"
                 onClick={() => tree.dismissNote(n.id)}
               >

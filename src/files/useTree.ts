@@ -18,6 +18,7 @@ import {
   type WireEntry,
   type WirePath,
 } from "../ipc";
+import { logError } from "../ops/error-log";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { isFolder } from "./file-type";
@@ -150,6 +151,7 @@ export function useTree(opts: TreeOptions): TreeApi {
   const rootKey = pathKey(opts.root);
 
   const notify = useCallback((text: string) => {
+    logError("tree", text);
     setNotes((n) =>
       n.some((x) => x.text === text) ? n : [...n, { id: nextNote.current++, text }]
     );

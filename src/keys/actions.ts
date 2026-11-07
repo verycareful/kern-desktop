@@ -15,6 +15,7 @@ import {
 import { copyPaths, copyProblem, openTerminalIn } from "../files/use-folder-tools";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
+import { showOpenErrors } from "../ops/open-error-store";
 import { activeTab, tabTitle, useTabs, type Tab, type TabsState } from "../store/tabs";
 import { usePanelsStore } from "../store/panels";
 import { folderController, type MoveTo } from "../files/folder-controller";
@@ -710,9 +711,7 @@ const treeActions: Action[] = [
     run: () => {
       const e = treeEntry();
       if (!e) return;
-      void openFiles([e.path], false).then((errors) =>
-        errors.forEach((err) => treeNote(`${e.name} was not opened: ${errorText(err)}`))
-      );
+      void openFiles([e.path], false).then((errors) => showOpenErrors(e.name, errors));
     },
   },
   // In a folder tab of the main window: the folder it was opened on, the folder of the file it

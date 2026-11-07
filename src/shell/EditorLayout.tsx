@@ -18,7 +18,6 @@ import { openFiles } from "../files/open-entries";
 import { SearchView } from "../files/SearchView";
 import { openTerminalIn } from "../files/use-folder-tools";
 import { toggleHidden } from "../files/view-settings";
-import { errorText } from "../ops/error-text";
 import { treeMenu } from "../files/tree-menu";
 import { TreeOps } from "../files/TreeOps";
 import { useTreeMenu } from "../files/tree-menu-store";
@@ -26,11 +25,13 @@ import { useViewSettings } from "../files/view-settings";
 import { ActionMenu } from "../keys/ActionMenu";
 import { currentContext, getAction, runAction, type Action } from "../keys/actions";
 import { DROP_DOCS_ATTR } from "../ops/dnd";
+import { showOpenErrors } from "../ops/open-error-store";
 import { useOps } from "../ops/useOps";
 import { LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, useLayout } from "../store/layout";
 import { usePanels } from "../store/panels";
 import type { DocTab, Tab } from "../store/tabs";
 import { FolderArea, PlacesStrip } from "./PlacesPanel";
+import { OpenError } from "./OpenError";
 import { PinnedRecentPanel } from "./PinnedRecentPanel";
 import { Splitter } from "./Splitter";
 import { TabBar } from "./TabBar";
@@ -138,9 +139,7 @@ function LeftColumn() {
       tree.current?.reveal(entry.path);
       return;
     }
-    void openFiles([entry.path], newWindow).then((errors) =>
-      errors.forEach((e) => treeNote(`${entry.name} was not opened: ${errorText(e)}`))
-    );
+    void openFiles([entry.path], newWindow).then((errors) => showOpenErrors(entry.name, errors));
   }, []);
 
   // The empty part below the rows stands for the root.
@@ -298,6 +297,7 @@ export function EditorLayout(props: {
         {/* Pinned and Recent slide in over what is under the tab row, so the row's buttons stay. */}
         <div className="kern-editor-body">
           {props.children}
+          <OpenError />
           {rightOpen && <PinnedRecentPanel overlay />}
         </div>
       </div>

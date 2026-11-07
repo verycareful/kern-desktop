@@ -3,7 +3,7 @@
 
 [package]
 name = "kern"
-version = "0.1.1+0"
+version = "0.1.1+0.0"
 description = "Kern for Linux: a file manager and document viewer"
 license = "AGPL-3.0-or-later"
 publish = false
@@ -31,6 +31,9 @@ tauri-plugin-window-state = "2"
 zbus = "5"
 # Must be the gtk that tauri-runtime-wry uses: one GTK binding per process.
 gtk = "=0.18.2"
+# Must be the webkit2gtk that wry uses. `v2_20` is the `web-process-terminated` signal, which the
+# error log listens to (error_log.rs).
+webkit2gtk = { version = "=2.0.2", features = ["v2_20"] }
 
 [dev-dependencies]
 tempfile = "3"

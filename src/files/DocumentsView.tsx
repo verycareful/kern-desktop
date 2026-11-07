@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { X } from "lucide-react";
 import {
   displayPath,
   documents,
@@ -11,7 +10,9 @@ import {
   type WirePath,
 } from "../ipc";
 import { NO_FILE_KEYS_ATTR } from "../keys/file-keys";
+import { logError } from "../ops/error-log";
 import { errorText } from "../ops/error-text";
+import { ErrorBanner } from "../ops/ErrorBanner";
 import { plural } from "../ops/labels";
 import { homeRelative } from "../shell/home-relative";
 import { useUserDirs } from "../shell/user-dirs-store";
@@ -80,6 +81,7 @@ export function DocumentsView() {
   const onOpen = useCallback((entry: WireEntry, newWindow: boolean) => {
     void openFiles([entry.path], newWindow).then((errors) => {
       if (errors.length > 0) setOpenErrors(errors);
+      errors.forEach((e) => logError("open", errorText(e)));
     });
   }, []);
 
@@ -158,21 +160,13 @@ export function DocumentsView() {
           </div>
         )}
         {openErrors.length > 0 && (
-          <div role="alert" className="kern-banner">
+          <ErrorBanner onDismiss={() => setOpenErrors([])}>
             <ul>
               {openErrors.map((e, i) => (
                 <li key={i}>{errorText(e)}</li>
               ))}
             </ul>
-            <button
-              type="button"
-              className="kern-icon-button"
-              aria-label="Dismiss"
-              onClick={() => setOpenErrors([])}
-            >
-              <X size={16} strokeWidth={2} aria-hidden />
-            </button>
-          </div>
+          </ErrorBanner>
         )}
         {ready && plan.roots.length === 0 ? (
           <p className="kern-note-body">

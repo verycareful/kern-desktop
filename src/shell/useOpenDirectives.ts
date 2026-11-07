@@ -31,6 +31,7 @@ import {
 } from "../ipc";
 import { parseHanded } from "../editor/handed-doc";
 import { handTo } from "./move-doc";
+import { logError } from "../ops/error-log";
 import { errorText } from "../ops/error-text";
 import { isEditorLayout, useLayout } from "../store/layout";
 import { useTabs } from "../store/tabs";
@@ -134,11 +135,14 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
   // One take for the life of the window, also across the double effect of StrictMode.
   const taken = useRef<Promise<Queued[]> | null>(null);
 
-  const addError = useCallback((e: WireError) => setErrors((list) => [...list, e]), []);
-  const notice = useCallback(
-    (text: string) => setNotices((list) => [...list, { id: nextId.current++, text }]),
-    []
-  );
+  const addError = useCallback((e: WireError) => {
+    logError("directive", errorText(e));
+    setErrors((list) => [...list, e]);
+  }, []);
+  const notice = useCallback((text: string) => {
+    logError("directive", text);
+    setNotices((list) => [...list, { id: nextId.current++, text }]);
+  }, []);
 
   useEffect(() => {
     let alive = true;

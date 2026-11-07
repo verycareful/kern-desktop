@@ -78,7 +78,7 @@ const DROPPED_SETTINGS: [&str; 1] = ["density"];
 const DROPPED_LAYOUT: [&str; 1] = ["layout"];
 
 /// Directory name under the XDG config and state homes.
-const APP_DIR: &str = "kern";
+pub(crate) const APP_DIR: &str = "kern";
 
 /// Where removable volumes are mounted, as (base directory, number of path
 /// components below it that name the mount directory). UDisks mounts at
