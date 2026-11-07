@@ -4,6 +4,16 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.1.1] - 2026-11-07 18:42 (IST)
+
+### Fixed
+
+- **Release history in the app metadata**: the AppStream metainfo listed 0.1.0.1 as the newest release, so software centres showed an out-of-date release history and the check that the newest release matches the current version failed on every push from 0.1.0.2 onward. Releases 0.1.0.2 to 0.1.1.0 and 0.1.1.1 are now listed with their dates.
+
+### Results
+
+- 1691 tests across 141 suites (the Rust tests, every unit test, the browser tests, the real-app driver tests and the packaging and script suites), all passed (650.4s, CachyOS x86-64, rustc 1.99.1, Python 3.14.9, Chromium through Playwright).
+
 ## [0.1.1.0] - 2026-11-06 23:10 (IST)
 
 ### Added
