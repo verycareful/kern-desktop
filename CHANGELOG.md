@@ -4,6 +4,21 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.1.3] - 2026-11-07 19:34 (IST)
+
+### Changed
+
+- **Test runner**: Vitest moves from 3.2.7 to 4.1.12, which also moves `@vitest/mocker` and the other `@vitest/*` packages to 4.1.12 and drops `tinypool`, `vite-node` and a second copy of Vite. The unit tests pass unchanged.
+- **Type checking**: `tsconfig.json` lists `node` among its `types`. The tests that read CSS files use Node's `process`, `Buffer` and `node:fs`, and had type-checked only because Vitest 3's declarations pulled Node's types in; Vitest 4's do not.
+
+### Security
+
+- **Development dependencies**: the Vitest move closes the open advisories on `vitest` and `@vitest/mocker` (path traversal and arbitrary file read through the redirect mock, and code injection through manual mock registration) and the two critical advisories on `tinypool` (prototype pollution leading to remote code execution through worker options). All of these were in packages used only to run the tests and are not part of the shipped application.
+
+### Results
+
+- 1704 tests across 141 suites (the Rust tests, every unit test, the browser tests, the real-app driver tests and the packaging and script suites), all passed (261s, CachyOS x86-64, rustc 1.99.1, Python 3.14.9, Chromium through Playwright).
+
 ## [0.1.1.2] - 2026-11-07 18:54 (IST)
 
 ### Changed
