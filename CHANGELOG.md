@@ -4,6 +4,22 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.1.2] - 2026-11-07 18:54 (IST)
+
+### Changed
+
+- **Release publishing**: when several version tags are pushed together, only the newest publishes a release; the runs for the older tags stop with a notice. A tag that is not a four-part version, whether pushed or given to the manual run, is refused.
+- **Release notes**: a release's notes are now every CHANGELOG section newer than the previous published release, up to the release's own version, so a series of patches published as one release lists all of its changes. With no earlier release the notes are the version's own section. The release still fails when its own section is missing or empty.
+- **Changelog section tool**: `scripts/changelog_section.py` takes `--since <older version>` to print that range. Versions compare number by number, so 0.1.10.0 is newer than 0.1.9.0, and `[Unreleased]` is left out.
+
+### Tests
+
+- Thirteen tests for the range: numeric ordering, the older bound left out, versions newer than the release left out, a single section printed without a header, a bound with no section of its own, a missing or empty section for the release, a bound that is not older, a bound that is not a version, and the output without the option unchanged.
+
+### Results
+
+- 1704 tests across 141 suites (the Rust tests, every unit test, the browser tests, the real-app driver tests and the packaging and script suites), all passed (302s, CachyOS x86-64, rustc 1.99.1, Python 3.14.9, Chromium through Playwright).
+
 ## [0.1.1.1] - 2026-11-07 18:42 (IST)
 
 ### Fixed
