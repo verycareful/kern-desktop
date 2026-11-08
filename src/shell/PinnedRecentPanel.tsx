@@ -7,6 +7,7 @@ import { ActionMenu } from "../keys/ActionMenu";
 import { ITEM_DRAG_THRESHOLD } from "../ops/dnd";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
+import { FlashSpan, RepeatFlash } from "../ops/repeat-flash";
 import { RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN, useLayout } from "../store/layout";
 import { entryMenu } from "./entry-menu";
 import { Splitter } from "./Splitter";
@@ -206,6 +207,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
           {s.loadError && (
             <div role="alert" className="kern-places-error">
               <span>Pinned and Recent could not be read: {errorText(s.loadError)}</span>
+              <RepeatFlash watch={s.loadError} />
               <button
                 type="button"
                 className="kern-button"
@@ -218,6 +220,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
           {s.notices.map((n) => (
             <div key={n.id} role="alert" className="kern-places-error">
               <span>{n.text}</span>
+              <FlashSpan count={n.repeats} />
               <button
                 type="button"
                 className="kern-icon-button"

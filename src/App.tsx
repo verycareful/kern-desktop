@@ -17,6 +17,7 @@ import { useOpenDirectives } from "./shell/useOpenDirectives";
 import { useSessionSync } from "./shell/use-session-sync";
 import { useUserDirs } from "./shell/user-dirs-store";
 import { useViewSettings } from "./files/view-settings";
+import { RepeatFlash } from "./ops/repeat-flash";
 import { useLayout } from "./store/layout";
 import { useTabs } from "./store/tabs";
 import { useTheme } from "./theme/useTheme";
@@ -101,7 +102,8 @@ export default function App() {
         </p>
       )}
       {homeError && (
-        <p role="alert">
+        <p role="alert" className="kern-flash-host">
+          <RepeatFlash watch={homeError} />
           The Home folder could not be located: {homeError.kind}: {homeError.message}{" "}
           <button type="button" onClick={() => setHomeError(null)}>
             Retry
@@ -118,7 +120,8 @@ export default function App() {
         </p>
       )}
       {session.error && (
-        <p role="alert">
+        <p role="alert" className="kern-flash-host">
+          <RepeatFlash watch={session.error} />
           The open tabs could not be kept for the next launch: {session.error.kind}:{" "}
           {session.error.message}{" "}
           <button type="button" onClick={session.dismiss}>

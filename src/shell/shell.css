@@ -416,6 +416,56 @@
   align-self: center;
 }
 
+/*
+ * A message that is raised again while it is on show flashes (repeat-flash.tsx): an accent ring
+ * and tint over the message's own edge that fade out. The overlay is a decoration over a positioned
+ * container; it takes no clicks and is hidden from screen readers. Only opacity moves, so nothing
+ * travels for a user who asked for less motion.
+ */
+.kern-banner,
+.kern-places-error,
+.kern-flash-host {
+  position: relative;
+}
+
+.kern-repeat-flash {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--kern-accent) 20%, transparent);
+  box-shadow: inset 0 0 0 2px var(--kern-accent);
+  animation: kern-repeat-flash 0.9s ease-out forwards;
+}
+
+@keyframes kern-repeat-flash {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+/* The status bar's own message, replaced by the same words. */
+.kern-notice-again {
+  border-radius: var(--kern-radius-small);
+  animation: kern-notice-again 0.9s ease-out;
+}
+
+@keyframes kern-notice-again {
+  from {
+    background: color-mix(in srgb, var(--kern-accent) 35%, transparent);
+    box-shadow: 0 0 0 2px var(--kern-accent);
+  }
+
+  to {
+    background: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+
 .kern-folder-area {
   min-width: 0;
   min-height: 0;

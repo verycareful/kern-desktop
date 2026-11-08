@@ -62,7 +62,7 @@ export function StatusBar() {
       {notice && (
         <span role="status" data-testid="status-notice">
           {noticesShown({ notice, earlier }).map((n, i) => (
-            <span key={n.id}>
+            <span key={n.id} className={n.again ? "kern-notice-again" : undefined}>
               {i > 0 && " "}
               {n.text}
             </span>

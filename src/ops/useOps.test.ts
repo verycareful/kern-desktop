@@ -573,3 +573,20 @@ test("a_report_is_dismissed_by_its_id", async () => {
   useOps.getState().dismissReport(a!.id);
   expect(useOps.getState().reports.map((r) => r.id)).toEqual([b!.id]);
 });
+
+test("the_same_words_raised_again_replace_the_one_shown_and_are_marked_as_a_repeat", async () => {
+  vi.useFakeTimers();
+  const { notify } = useOps.getState();
+  notify("The path could not be copied");
+  expect(useOps.getState().notice?.again).toBe(false);
+  notify("The path could not be copied");
+  expect(useOps.getState().notice?.again).toBe(true);
+  expect(noticesShown(useOps.getState())).toHaveLength(1);
+  // Other words are new, even beside the repeated ones.
+  notify("Something else");
+  expect(useOps.getState().notice?.again).toBe(false);
+  // The same words after their notice ran out are new as well.
+  vi.advanceTimersByTime(NOTICE_MS);
+  notify("The path could not be copied");
+  expect(useOps.getState().notice?.again).toBe(false);
+});

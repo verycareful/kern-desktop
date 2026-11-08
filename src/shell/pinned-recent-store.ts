@@ -58,6 +58,8 @@ export type EntryList = "pinned" | "recent";
 export interface Notice {
   id: number;
   text: string;
+  /** How many times the same words were raised again while this one was on show. */
+  repeats: number;
 }
 
 export interface PinnedRecentState {
@@ -413,8 +415,12 @@ export const usePinnedRecent = create<PinnedRecentState>()((set, get) => {
     notify(text) {
       set((s) =>
         s.notices.some((n) => n.text === text)
-          ? s
-          : { notices: [...s.notices, { id: nextNotice++, text }] }
+          ? {
+              notices: s.notices.map((n) =>
+                n.text === text ? { ...n, repeats: n.repeats + 1 } : n
+              ),
+            }
+          : { notices: [...s.notices, { id: nextNotice++, text, repeats: 0 }] }
       );
     },
     dismiss(id) {

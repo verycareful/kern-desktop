@@ -538,3 +538,22 @@ test("a_reset_while_subscribing_leaves_nothing_subscribed", async () => {
   await usePinnedRecent.getState().follow({ prune: false });
   expect(usePinnedRecent.getState().pins).toEqual([p("/home/t/Work")]);
 });
+
+test("the_same_notice_raised_again_stays_one_notice_and_flashes", async () => {
+  await shown([]);
+  const notices = () => document.querySelectorAll(".kern-side-notices .kern-places-error");
+  const flashes = () => document.querySelectorAll(".kern-side-notices .kern-repeat-flash");
+  act(() => usePinnedRecent.getState().notify("Pinned and Recent could not be checked: no way"));
+  expect(notices()).toHaveLength(1);
+  expect(flashes()).toHaveLength(0);
+  act(() => usePinnedRecent.getState().notify("Pinned and Recent could not be checked: no way"));
+  expect(notices()).toHaveLength(1);
+  expect(flashes()).toHaveLength(1);
+  const first = flashes()[0];
+  act(() => usePinnedRecent.getState().notify("Pinned and Recent could not be checked: no way"));
+  expect(notices()).toHaveLength(1);
+  expect(flashes()[0]).not.toBe(first);
+  // Other words are a second notice, not a repeat of the first.
+  act(() => usePinnedRecent.getState().notify("Something else"));
+  expect(notices()).toHaveLength(2);
+});

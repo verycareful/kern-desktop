@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { WirePath } from "../ipc";
 import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
+import { RepeatFlash } from "../ops/repeat-flash";
 import { showFolder } from "./place-nav";
 import { openOnDoubleClick } from "./double-click";
 import { placeKey, useCurrentPlace } from "./use-current-place";
@@ -92,6 +93,7 @@ export function PlacesList() {
           <span>
             The places could not be {dirs ? "read again" : "listed"}: {error.kind}: {error.message}
           </span>{" "}
+          <RepeatFlash watch={error} />
           <button
             type="button"
             className="kern-button"

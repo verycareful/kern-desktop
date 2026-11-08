@@ -66,3 +66,22 @@ test("the_dismiss_button_is_the_square_one_and_ends_the_message", () => {
   fireEvent.click(dismiss);
   expect(screen.queryByRole("alert")).toBeNull();
 });
+
+test("the_same_failure_again_flashes_the_message_and_a_different_one_does_not", () => {
+  render(<OpenError />);
+  const flash = () => document.querySelectorAll(".kern-repeat-flash");
+  act(() => showOpenErrors("a.xyz", [noApp]));
+  expect(flash()).toHaveLength(0);
+  act(() => showOpenErrors("a.xyz", [noApp]));
+  expect(flash()).toHaveLength(1);
+  const first = flash()[0];
+  act(() => showOpenErrors("a.xyz", [noApp]));
+  // Drawn anew each time, so the animation plays again.
+  expect(flash()[0]).not.toBe(first);
+  act(() => showOpenErrors("b.xyz", [gone]));
+  expect(flash()).toHaveLength(1);
+  // Cleared and raised again: a new message, not a repeat.
+  act(() => useOpenError.getState().dismiss());
+  act(() => showOpenErrors("b.xyz", [gone]));
+  expect(flash()).toHaveLength(0);
+});

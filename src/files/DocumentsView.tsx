@@ -21,6 +21,7 @@ import { openFiles } from "./open-entries";
 import { ScanResults } from "./ScanResults";
 import { useScan } from "./use-scan";
 import { setScanFolder, useViewSettings } from "./view-settings";
+import { RepeatFlash } from "../ops/repeat-flash";
 
 // The Library: every document under the Documents and
 // Downloads folders, each when its switch is on, and under the folders the
@@ -142,11 +143,13 @@ export function DocumentsView() {
         {settings.error && (
           <div role="alert" className="kern-banner">
             Settings: {errorText(settings.error)}
+            <RepeatFlash watch={settings.error} />
           </div>
         )}
         {dirsError && (
           <div role="alert" className="kern-banner">
             The user&apos;s folders could not be looked up: {errorText(dirsError)}
+            <RepeatFlash watch={dirsError} />
           </div>
         )}
         {plan.missing.length > 0 && (
@@ -157,10 +160,11 @@ export function DocumentsView() {
         {scan.phase === "failed" && scan.error && (
           <div role="alert" className="kern-banner">
             The documents could not be looked for: {errorText(scan.error)}
+            <RepeatFlash watch={scan.error} />
           </div>
         )}
         {openErrors.length > 0 && (
-          <ErrorBanner onDismiss={() => setOpenErrors([])}>
+          <ErrorBanner onDismiss={() => setOpenErrors([])} watch={openErrors}>
             <ul>
               {openErrors.map((e, i) => (
                 <li key={i}>{errorText(e)}</li>

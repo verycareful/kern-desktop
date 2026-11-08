@@ -58,6 +58,8 @@ export interface Notice {
   text: string;
   /** When it was raised (ms since the epoch). */
   at: number;
+  /** The same words were on show when this one replaced them: the status bar flashes it. */
+  again: boolean;
 }
 
 /**
@@ -289,13 +291,14 @@ export const useOps = create<OpsState>()((set, get) => ({
     set((s) => {
       // The same words are shown once, from the newest; the oldest gives way when full.
       const now = Date.now();
+      const again = noticesShown(s).some((n) => n.text === text);
       const shown = noticesShown(s).filter((n) => {
         if (n.text !== text && now - n.at < NOTICE_TOGETHER_MS) return true;
         stopNotice(n.id);
         return false;
       });
       while (shown.length >= MAX_NOTICES) stopNotice(shown.shift()!.id);
-      return { notice: { id, text, at: now }, earlier: shown };
+      return { notice: { id, text, at: now, again }, earlier: shown };
     });
     noticeTimers.set(
       id,

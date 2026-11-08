@@ -13,7 +13,7 @@ export function OpenError() {
   if (lines.length === 0) return null;
   return (
     <div className="kern-open-error" data-testid="open-error">
-      <ErrorBanner onDismiss={dismiss}>
+      <ErrorBanner onDismiss={dismiss} watch={lines}>
         <ul>
           {lines.map((line, i) => (
             <li key={i}>{line}</li>

@@ -76,6 +76,7 @@ import {
 import { isFolder } from "./file-type";
 import { loadViewSettings, useViewSettings, useViewSettingsSync } from "./view-settings";
 import { useFolder } from "./useFolder";
+import { RepeatFlash } from "../ops/repeat-flash";
 import "../ops/ops.css";
 import "./files.css";
 
@@ -712,6 +713,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
           <span>
             Settings: <ErrorText error={settingsError} />
           </span>
+          <RepeatFlash watch={settingsError} />
         </div>
       )}
       {folder.sortError && (
@@ -720,6 +722,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
             The list could not be sorted, so it is in the order the folder gave it. Choosing a sort
             tries again. <ErrorText error={folder.sortError} />
           </span>
+          <RepeatFlash watch={folder.sortError} />
         </div>
       )}
       {folder.watchError && (
@@ -728,10 +731,11 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
             Changes to this folder will not appear by themselves (press F5 to refresh):{" "}
             <ErrorText error={folder.watchError} />
           </span>
+          <RepeatFlash watch={folder.watchError} />
         </div>
       )}
       {selectNotes.length > 0 && (
-        <ErrorBanner onDismiss={() => setSelectNotes([])}>
+        <ErrorBanner onDismiss={() => setSelectNotes([])} watch={selectNotes}>
           <ul>
             {selectNotes.map((e, i) => (
               <li key={i}>
@@ -742,7 +746,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         </ErrorBanner>
       )}
       {openErrors.length > 0 && (
-        <ErrorBanner onDismiss={() => setOpenErrors([])}>
+        <ErrorBanner onDismiss={() => setOpenErrors([])} watch={openErrors}>
           <ul>
             {openErrors.map((e, i) => (
               <li key={i}>

@@ -11,6 +11,7 @@ import { VOLUME_MENU } from "./volume-menu";
 import { useCurrentPlace } from "./use-current-place";
 import { identityNote, volumeErrorText } from "./volume-text";
 import { useVolumes, type Volume } from "./volumes-store";
+import { RepeatFlash } from "../ops/repeat-flash";
 
 // The Volumes group of the strip. Mounted volumes first,
 // then the filesystems UDisks knows that are not mounted, each with a Mount
@@ -68,6 +69,7 @@ export function VolumesList() {
       {s.loadError && (
         <div role="alert" className="kern-places-error">
           <span>The volumes could not be listed: {errorText(s.loadError)}</span>{" "}
+          <RepeatFlash watch={s.loadError} />
           <button type="button" className="kern-button" onClick={() => void s.refresh()}>
             Retry
           </button>
@@ -76,11 +78,13 @@ export function VolumesList() {
       {s.watchError && (
         <div role="alert" className="kern-places-error">
           The volume list will not follow changes: {errorText(s.watchError)}
+          <RepeatFlash watch={s.watchError} />
         </div>
       )}
       {s.kept.map((k) => (
         <div key={k.id} role="alert" className="kern-places-error">
           <span>{errorText(k.error)}</span>
+          <RepeatFlash watch={k.error} />
           <button
             type="button"
             className="kern-icon-button"
@@ -167,6 +171,7 @@ export function VolumesList() {
               {error && (
                 <div role="alert" className="kern-places-error">
                   <span>{errorText(error)}</span>
+                  <RepeatFlash watch={error} />
                   <button
                     type="button"
                     className="kern-icon-button"
