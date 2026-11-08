@@ -408,6 +408,14 @@
   border-radius: var(--kern-radius-small);
 }
 
+/*
+ * The buttons (Retry, Dismiss) stay at the top right and set the row's height; a short message is
+ * centred against them, and a message taller than they are fills the row from its top.
+ */
+.kern-places-error > span {
+  align-self: center;
+}
+
 .kern-folder-area {
   min-width: 0;
   min-height: 0;
