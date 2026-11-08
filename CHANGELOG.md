@@ -4,6 +4,63 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.1.4] - 2026-11-07 20:59 (IST)
+
+### Changed
+
+- **Real-app test driver**: WebdriverIO and its `@wdio/*` packages move from 10.1.0 to 10.2.0.
+- **Linting**: `typescript-eslint` moves from 8.71.2 to 8.72.1.
+- **Glob matching in development tools**: `package.json` forces `minimatch` 11.0.5 for `@typescript-eslint/typescript-estree`, `mocha` and `readdir-glob`, and `glob` 14.0.4 for `mocha`. Each of those packages is at its newest release and still declares `minimatch` 10, so the override goes past what they ask for. It stays until they accept version 11, and then it is removed.
+
+### Security
+
+- **Development dependencies**: `minimatch` 10.2.6 has a denial of service through glob pattern amplification and `glob` 13.0.6 has a cancellation bypass that allows filesystem traversal after a timeout. Both reached the tree only through the linter, the test runner and the real-app test driver, with patterns taken from this project's own configuration, and neither is part of the shipped application. After this change no vulnerable copy of either remains and `npm audit` reports no vulnerabilities.
+
+### Results
+
+- 1704 tests across 141 suites (the Rust tests, every unit test, the browser tests, the real-app driver tests and the packaging and script suites), all passed (239s, CachyOS x86-64, rustc 1.99.1, Python 3.14.9, Chromium through Playwright).
+
+## [0.1.1.3] - 2026-11-07 19:34 (IST)
+
+### Changed
+
+- **Test runner**: Vitest moves from 3.2.7 to 4.1.12, which also moves `@vitest/mocker` and the other `@vitest/*` packages to 4.1.12 and drops `tinypool`, `vite-node` and a second copy of Vite. The unit tests pass unchanged.
+- **Type checking**: `tsconfig.json` lists `node` among its `types`. The tests that read CSS files use Node's `process`, `Buffer` and `node:fs`, and had type-checked only because Vitest 3's declarations pulled Node's types in; Vitest 4's do not.
+
+### Security
+
+- **Development dependencies**: the Vitest move closes the open advisories on `vitest` and `@vitest/mocker` (path traversal and arbitrary file read through the redirect mock, and code injection through manual mock registration) and the two critical advisories on `tinypool` (prototype pollution leading to remote code execution through worker options). All of these were in packages used only to run the tests and are not part of the shipped application.
+
+### Results
+
+- 1704 tests across 141 suites (the Rust tests, every unit test, the browser tests, the real-app driver tests and the packaging and script suites), all passed (261s, CachyOS x86-64, rustc 1.99.1, Python 3.14.9, Chromium through Playwright).
+
+## [0.1.1.2] - 2026-11-07 18:54 (IST)
+
+### Changed
+
+- **Release publishing**: when several version tags are pushed together, only the newest publishes a release; the runs for the older tags stop with a notice. A tag that is not a four-part version, whether pushed or given to the manual run, is refused.
+- **Release notes**: a release's notes are now every CHANGELOG section newer than the previous published release, up to the release's own version, so a series of patches published as one release lists all of its changes. With no earlier release the notes are the version's own section. The release still fails when its own section is missing or empty.
+- **Changelog section tool**: `scripts/changelog_section.py` takes `--since <older version>` to print that range. Versions compare number by number, so 0.1.10.0 is newer than 0.1.9.0, and `[Unreleased]` is left out.
+
+### Tests
+
+- Thirteen tests for the range: numeric ordering, the older bound left out, versions newer than the release left out, a single section printed without a header, a bound with no section of its own, a missing or empty section for the release, a bound that is not older, a bound that is not a version, and the output without the option unchanged.
+
+### Results
+
+- 1704 tests across 141 suites (the Rust tests, every unit test, the browser tests, the real-app driver tests and the packaging and script suites), all passed (302s, CachyOS x86-64, rustc 1.99.1, Python 3.14.9, Chromium through Playwright).
+
+## [0.1.1.1] - 2026-11-07 18:42 (IST)
+
+### Fixed
+
+- **Release history in the app metadata**: the AppStream metainfo listed 0.1.0.1 as the newest release, so software centres showed an out-of-date release history and the check that the newest release matches the current version failed on every push from 0.1.0.2 onward. Releases 0.1.0.2 to 0.1.1.0 and 0.1.1.1 are now listed with their dates.
+
+### Results
+
+- 1691 tests across 141 suites (the Rust tests, every unit test, the browser tests, the real-app driver tests and the packaging and script suites), all passed (650.4s, CachyOS x86-64, rustc 1.99.1, Python 3.14.9, Chromium through Playwright).
+
 ## [0.1.1.0] - 2026-11-06 23:10 (IST)
 
 ### Added

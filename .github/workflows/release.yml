@@ -8,7 +8,15 @@
 # names from SHA256SUMS and checks every download against it.
 #
 # Separate from ci.yml: it fires only when a version tag is pushed, or when it
-# is dispatched by hand to republish an existing tag.
+# is dispatched by hand to publish an existing tag.
+#
+# Only the newest version tag publishes. Several tags can arrive in one push
+# (a patch series tagged locally and pushed together), and each starts its own
+# run; the runs for older tags see a newer tag and stop. The release notes are
+# every CHANGELOG.md section newer than the previous published release, up to
+# the tag, so a series that publishes once still lists all of its changes.
+# GitHub starts no run at all when more than three tags arrive in one push; the
+# manual dispatch with the newest tag publishes that case.
 name: Release
 
 on:
@@ -29,29 +37,75 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: publish release
+  plan:
+    name: choose what to publish
     runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      publish: ${{ steps.plan.outputs.publish }}
+      since: ${{ steps.plan.outputs.since }}
     steps:
-      - name: Resolve the tag
-        id: tag
+      # since is the newest published release older than the tag, empty when
+      # there is none. A dispatched tag always publishes; a pushed tag
+      # publishes only when no newer version tag exists.
+      - name: Resolve the tag, whether it is the newest, and the previous release
+        id: plan
         env:
+          GH_TOKEN: ${{ github.token }}
           INPUT_TAG: ${{ inputs.tag }}
+          EVENT: ${{ github.event_name }}
         run: |
-          if [ -n "$INPUT_TAG" ]; then
-            echo "value=$INPUT_TAG" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          version='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
+          tag="${INPUT_TAG:-$GITHUB_REF_NAME}"
+          if ! [[ "$tag" =~ $version ]]; then
+            echo "::error::$tag is not a four-part version tag"
+            exit 1
           fi
 
+          publish=true
+          if [ "$EVENT" = push ]; then
+            newest=$(gh api "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags" \
+                       --paginate --jq '.[].ref' \
+                     | sed 's#^refs/tags/##' | grep -E "$version" \
+                     | sort -V | tail -n 1)
+            if [ "$newest" != "$tag" ]; then
+              publish=false
+              echo "::notice::$tag is not the newest version tag ($newest is), so it publishes nothing"
+            fi
+          fi
+
+          releases=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 \
+                       --exclude-drafts --json tagName --jq '.[].tagName' \
+                     | grep -E "$version" || true)
+          since=$(printf '%s\n%s\n' "$releases" "$tag" | grep -v '^$' | sort -Vu \
+                  | grep -x -B1 -- "$tag" | sed -n 1p)
+          if [ "$since" = "$tag" ]; then
+            since=
+          fi
+
+          {
+            echo "tag=$tag"
+            echo "publish=$publish"
+            echo "since=$since"
+          } >> "$GITHUB_OUTPUT"
+          echo "tag: $tag  publish: $publish  previous release: ${since:-none}"
+
+  release:
+    name: publish release
+    needs: plan
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      SINCE: ${{ needs.plan.outputs.since }}
+    steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ steps.tag.outputs.value }}
+          ref: ${{ env.TAG }}
 
       # The tag must name the tree it points at: VERSION holds the full label.
       - name: Check the tag matches the tree
-        env:
-          TAG: ${{ steps.tag.outputs.value }}
         run: |
           TREE=$(cat VERSION)
           echo "tag:  $TAG"
@@ -61,14 +115,18 @@ jobs:
             exit 1
           fi
 
-      # Fails when the section is missing or empty, so a release page is never
-      # published with nothing on it.
+      # Every section newer than the previous release, up to this tag. Fails
+      # when the tag's own section is missing or empty, so a release page is
+      # never published with nothing on it.
       - name: Extract release notes from CHANGELOG.md
-        env:
-          TAG: ${{ steps.tag.outputs.value }}
         run: |
-          python3 -I scripts/changelog_section.py "$TAG" CHANGELOG.md \
-            > release-notes.md
+          if [ -n "$SINCE" ]; then
+            python3 -I scripts/changelog_section.py --since "$SINCE" "$TAG" CHANGELOG.md \
+              > release-notes.md
+          else
+            python3 -I scripts/changelog_section.py "$TAG" CHANGELOG.md \
+              > release-notes.md
+          fi
           echo "notes that will be published:"
           cat release-notes.md
 
@@ -98,8 +156,6 @@ jobs:
       # (io.github.verycareful.kern_0.1.0.0_amd64.deb), and SHA256SUMS names
       # exactly the files that are uploaded.
       - name: Collect the assets and their checksums
-        env:
-          TAG: ${{ steps.tag.outputs.value }}
         run: |
           mkdir assets
           shopt -s nullglob
@@ -122,7 +178,6 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.value }}
         run: |
           gh release create "$TAG" \
             --title "$TAG" \
