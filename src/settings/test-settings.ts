@@ -23,6 +23,7 @@ export const SETTINGS: Settings = {
   editor_zoom: 1,
   view_mode: "list",
   show_hidden: false,
+  single_click: false,
   interface_size: 100,
   default_layout: "file_manager",
   new_tab_folder: null,

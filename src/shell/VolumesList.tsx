@@ -6,7 +6,8 @@ import { displayPath, isMainWindow, type Device, type Identity } from "../ipc";
 import { formatSize } from "../files/format";
 import { ActionMenu } from "../keys/ActionMenu";
 import { showFolder } from "./place-nav";
-import { openOnDoubleClick } from "./double-click";
+import { openOnClick } from "./open-on-click";
+import { useViewSettings } from "../files/view-settings";
 import { VOLUME_MENU } from "./volume-menu";
 import { useCurrentPlace } from "./use-current-place";
 import { identityNote, volumeErrorText } from "./volume-text";
@@ -33,6 +34,7 @@ const deviceText = (d: Device) =>
 
 export function VolumesList() {
   const s = useVolumes();
+  const single = useViewSettings((v) => v.singleClick);
   const currentKey = useCurrentPlace();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -119,7 +121,7 @@ export function VolumesList() {
                   aria-busy={busy ? true : undefined}
                   aria-current={currentKey === v.key ? "page" : undefined}
                   title={`${label(v)} (${displayPath(v.mount.mount_point)})`}
-                  {...openOnDoubleClick(() => showFolder(v.mount.mount_point))}
+                  {...openOnClick(() => showFolder(v.mount.mount_point), single)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     if (manage) openMenu(v, { x: e.clientX, y: e.clientY }, e.currentTarget);

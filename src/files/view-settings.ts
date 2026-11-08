@@ -25,6 +25,8 @@ import { DEFAULT_INTERFACE_SIZE } from "../theme/interface-size";
 interface ViewSettingsState {
   loaded: boolean;
   showHidden: boolean;
+  /** A single click opens an entry; off means a double-click does. */
+  singleClick: boolean;
   viewMode: ViewMode;
   /** The interface size in percent. */
   interfaceSize: number;
@@ -46,6 +48,7 @@ interface ViewSettingsState {
 export const useViewSettings = create<ViewSettingsState>()(() => ({
   loaded: false,
   showHidden: false,
+  singleClick: false,
   viewMode: "list",
   interfaceSize: DEFAULT_INTERFACE_SIZE,
   scanDocuments: true,
@@ -62,6 +65,7 @@ function apply(s: Settings): void {
   useViewSettings.setState({
     loaded: true,
     showHidden: s.show_hidden,
+    singleClick: s.single_click,
     viewMode: s.view_mode,
     interfaceSize: s.interface_size,
     scanDocuments: s.scan_documents,

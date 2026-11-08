@@ -34,7 +34,7 @@ vi.mock("../ipc", async (orig) => ({
 import { FolderView } from "./FolderView";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
-const SETTINGS = { show_hidden: false, view_mode: "list" } as Settings;
+const SETTINGS = { show_hidden: false, single_click: false, view_mode: "list" } as Settings;
 
 let handlers: Handlers;
 let restoreLayout: () => void;
@@ -89,7 +89,7 @@ beforeEach(() => {
   ipc.thumbRequest.mockResolvedValue(undefined);
   ipc.thumbCancel.mockResolvedValue(undefined);
   ipc.userDirs.mockResolvedValue({ home: p("/home/u"), dirs: [] });
-  useViewSettings.setState({ loaded: false, error: null });
+  useViewSettings.setState({ loaded: false, singleClick: false, error: null });
   useFolderUi.setState({ sort: {} });
   useFolderStatus.setState({ byTab: {} });
 });
@@ -226,6 +226,56 @@ test("ctrl_double_click_asks_for_a_new_window", async () => {
     expect(ipc.openPaths).toHaveBeenCalledWith([p("/d/n.txt")], "inside", "new_window")
   );
   expect(useTabs.getState().tabs.some((t) => t.kind === "doc")).toBe(false);
+});
+
+test("a_single_click_only_selects_while_the_setting_is_off", async () => {
+  await mount([dir("sub"), entry("n.txt")]);
+  fireEvent.click(screen.getAllByTestId("file-row")[0]!, { detail: 1 });
+  expect(screen.getAllByTestId("file-row")[0]).toHaveAttribute("aria-selected", "true");
+  expect((activeTab(useTabs.getState()) as FolderTab).path).toEqual(p("/d"));
+  expect(ipc.openPaths).not.toHaveBeenCalled();
+});
+
+test("a_single_click_opens_a_folder_when_the_setting_is_on", async () => {
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, single_click: true });
+  const { tab } = await mount([dir("sub"), entry("f.txt")]);
+  await waitFor(() => expect(useViewSettings.getState().singleClick).toBe(true));
+  fireEvent.click(screen.getAllByTestId("file-row")[0]!, { detail: 1 });
+  const now = activeTab(useTabs.getState()) as FolderTab;
+  expect(now.id).toBe(tab.id);
+  expect(now.path).toEqual(p("/d/sub"));
+  expect(ipc.openPaths).not.toHaveBeenCalled();
+});
+
+test("a_single_click_opens_a_file_through_the_backend_when_the_setting_is_on", async () => {
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, single_click: true });
+  await mount([entry("n.txt", { mime: "text/plain" })]);
+  await waitFor(() => expect(useViewSettings.getState().singleClick).toBe(true));
+  ipc.openPaths.mockResolvedValue([
+    { path: p("/d/n.txt"), action: "doc_tab", location: null, error: null },
+  ]);
+  fireEvent.click(screen.getAllByTestId("file-row")[0]!, { detail: 1 });
+  await waitFor(() =>
+    expect(ipc.openPaths).toHaveBeenCalledWith([p("/d/n.txt")], "inside", "default")
+  );
+});
+
+test("with_the_setting_on_a_double_click_opens_once_and_a_click_with_a_modifier_only_selects", async () => {
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, single_click: true });
+  await mount([entry("a.txt", { mime: "text/plain" }), entry("b.txt", { mime: "text/plain" })]);
+  await waitFor(() => expect(useViewSettings.getState().singleClick).toBe(true));
+  ipc.openPaths.mockResolvedValue([
+    { path: p("/d/a.txt"), action: "doc_tab", location: null, error: null },
+  ]);
+  const [a, b] = screen.getAllByTestId("file-row");
+  fireEvent.click(a!, { detail: 1 });
+  fireEvent.click(a!, { detail: 2 });
+  fireEvent.doubleClick(a!, { detail: 2 });
+  await waitFor(() => expect(ipc.openPaths).toHaveBeenCalledTimes(1));
+  fireEvent.click(b!, { detail: 1, ctrlKey: true });
+  fireEvent.click(b!, { detail: 1, shiftKey: true });
+  await act(async () => {});
+  expect(ipc.openPaths).toHaveBeenCalledTimes(1);
 });
 
 test("an_open_failure_is_shown", async () => {

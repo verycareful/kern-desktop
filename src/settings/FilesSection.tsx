@@ -298,6 +298,15 @@ export function FilesSection(props: { settings: Settings }) {
           />
         </Row>
       </Group>
+      <Group rows={["single_click"]}>
+        <Row id="single_click" note="Off: a double-click opens. Enter always opens.">
+          <Toggle
+            label="Open with a single click"
+            on={settings.single_click}
+            onChange={(single_click) => edit({ single_click })}
+          />
+        </Row>
+      </Group>
       <Group rows={["terminal", "default_fm"]}>
         <Terminal settings={settings} />
         <DefaultFileManager />

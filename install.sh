@@ -579,7 +579,7 @@ layout_remove() {
 # window offers one layout) has a question here; a Rust test compares this
 # list with the settings Kern defines; nothing in the scripts reads it.
 # shellcheck disable=SC2034
-SETTING_KEYS="theme_mode accent follow scan_roots scan_documents scan_downloads terminal word_wrap editor_zoom view_mode show_hidden interface_size new_tab_folder new_tab_default error_log"
+SETTING_KEYS="theme_mode accent follow scan_roots scan_documents scan_downloads terminal word_wrap editor_zoom view_mode show_hidden interface_size new_tab_folder new_tab_default single_click error_log"
 
 # The questions follow the Settings window: its sections, its order and its
 # labels. The answers become one JSON object, which `kern --apply-settings`
@@ -675,7 +675,7 @@ zoom_factor() {
 settings_walk() {
     local out=$1 pick text folder p
     local theme size accent f_colours f_accent f_fonts f_radius
-    local tab_folder tab_default view hidden terminal docs downloads wrap zoom error_log
+    local tab_folder tab_default view hidden single_click terminal docs downloads wrap zoom error_log
     local -a sizes=() zooms=() roots=()
     local roots_json="" root
 
@@ -711,6 +711,7 @@ settings_walk() {
     ui_menu pick 0 "View of new folder views" List Grid
     if ((pick == 0)); then view=list; else view=grid; fi
     ui_yesno hidden n "Show hidden items?"
+    ui_yesno single_click n "Open with a single click (n: a double-click opens)?"
     ui_text text "" "Terminal (one program; Enter lets Kern pick one)"
     if [[ -z $text ]]; then terminal=null; else terminal=$(json_str "$text"); fi
 
@@ -753,6 +754,7 @@ settings_walk() {
         printf '"new_tab_default":"%s",' "$tab_default"
         printf '"view_mode":"%s",' "$view"
         printf '"show_hidden":%s,' "$(json_bool "$hidden")"
+        printf '"single_click":%s,' "$(json_bool "$single_click")"
         printf '"terminal":%s,' "$terminal"
         printf '"scan_documents":%s,' "$(json_bool "$docs")"
         printf '"scan_downloads":%s,' "$(json_bool "$downloads")"

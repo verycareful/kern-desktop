@@ -16,6 +16,7 @@ import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 import { baseName } from "../ops/labels";
 import { showOpenErrors } from "../ops/open-error-store";
 import { openFiles } from "./open-entries";
+import { useViewSettings } from "./view-settings";
 import {
   INDENT,
   ROW_HEIGHT,
@@ -208,10 +209,17 @@ export function FolderTree(props: {
     }
   };
 
-  const onRowClick = (row: EntryRow) => {
+  // A folder row expands or collapses on a single click whatever the setting. A file row opens
+  // on a double-click, or on a single click when the setting is on; the second click of a
+  // double-click does not open it again in that mode.
+  const singleClick = useViewSettings((v) => v.singleClick);
+  const onRowClick = (row: EntryRow, e: React.MouseEvent) => {
     setActive(row.key);
     scroller.current?.focus();
-    activate(row);
+    if (row.folder || (singleClick && e.detail <= 1)) activate(row);
+  };
+  const onRowDoubleClick = (row: EntryRow) => {
+    if (!row.folder && !singleClick) openFile(row.entry);
   };
 
   const onContextMenu = (e: React.MouseEvent) => {
@@ -312,7 +320,8 @@ export function FolderTree(props: {
                 data-row-index={v.index}
                 data-active={isActive ? "true" : undefined}
                 title={displayPath(row.entry.path)}
-                onClick={() => onRowClick(row)}
+                onClick={(e) => onRowClick(row, e)}
+                onDoubleClick={() => onRowDoubleClick(row)}
               >
                 <span className="kern-tree-twist" aria-hidden>
                   {row.folder && !row.loop ? (

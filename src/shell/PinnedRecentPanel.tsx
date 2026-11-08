@@ -11,7 +11,8 @@ import { FlashSpan, RepeatFlash } from "../ops/repeat-flash";
 import { RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN, useLayout } from "../store/layout";
 import { entryMenu } from "./entry-menu";
 import { Splitter } from "./Splitter";
-import { openOnDoubleClick } from "./double-click";
+import { openOnClick } from "./open-on-click";
+import { useViewSettings } from "../files/view-settings";
 import { isEditorPin, moveItem, usePinnedRecent, type EntryList } from "./pinned-recent-store";
 import { homeRelative } from "./home-relative";
 import { RELATIVE_TIME_TICK_MS, relativeTime } from "./relative-time";
@@ -53,6 +54,7 @@ function useNow(tick: number): number {
 
 export function PinnedRecentPanel(props: { overlay?: boolean }) {
   const s = usePinnedRecent();
+  const single = useViewSettings((v) => v.singleClick);
   const home = useUserDirs((u) => u.dirs?.home ?? null);
   const now = useNow(RELATIVE_TIME_TICK_MS);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -256,7 +258,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
                   type="button"
                   className="kern-place"
                   title={title(p)}
-                  {...openOnDoubleClick(() => void s.openEntry("pinned", p))}
+                  {...openOnClick(() => void s.openEntry("pinned", p), single)}
                   onPointerDown={onPinPointerDown(key)}
                   {...menuHandlers("pinned", p)}
                 >
@@ -285,7 +287,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
                 type="button"
                 className="kern-place"
                 title={title(r.path)}
-                {...openOnDoubleClick(() => void s.openEntry("recent", r.path))}
+                {...openOnClick(() => void s.openEntry("recent", r.path), single)}
                 {...menuHandlers("recent", r.path)}
               >
                 {r.as_editor ? <SquarePen size={16} strokeWidth={2} aria-hidden /> : icon(r.path)}

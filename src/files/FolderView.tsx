@@ -126,7 +126,7 @@ export function FolderView(props: { tab: FolderTab }) {
 }
 
 function LoadedFolder({ tab }: { tab: FolderTab }) {
-  const { showHidden, viewMode, error: settingsError } = useViewSettings();
+  const { showHidden, viewMode, singleClick, error: settingsError } = useViewSettings();
   const sort = useFolderUi((s) => s.sort[tab.id] ?? DEFAULT_SORT);
   const key = pathKey(tab.path);
   const isActive = useTabs((s) => s.activeId === tab.id);
@@ -504,13 +504,20 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     setToolsDrawnFor(`${folder.phase}\n${searching}`);
   }, [folder.phase, searching]);
 
+  // With single-click opening, a plain click selects the item and opens it; a click with Ctrl,
+  // Meta or Shift only selects, so a selection can still be built with the mouse. The second
+  // click of a double-click (`detail` 2 or more) selects and does not open again.
   const onItemClick = useCallback(
     (i: number, e: React.MouseEvent) => {
       if (e.ctrlKey || e.metaKey) dispatch((s) => ctrlClick(s, i));
       else if (e.shiftKey) dispatch((s) => shiftClick(s, i));
-      else dispatch((s) => click(s, i));
+      else {
+        dispatch((s) => click(s, i));
+        const entry = latest.current.entries[i];
+        if (singleClick && e.detail <= 1 && entry) openOrAsk([entry], false);
+      }
     },
-    [dispatch]
+    [dispatch, openOrAsk, singleClick]
   );
   // The keyboard goes back to the list once it has been navigated or re-sorted.
   useEffect(() => {
@@ -521,12 +528,13 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
 
   const onItemDoubleClick = useCallback(
     (i: number, e: React.MouseEvent) => {
+      if (singleClick) return;
       const entry = latest.current.entries[i];
       if (!entry) return;
       dispatch((s) => click(s, i));
       openOrAsk([entry], e.ctrlKey || e.metaKey);
     },
-    [dispatch, openOrAsk]
+    [dispatch, openOrAsk, singleClick]
   );
   const onContextMenu = useCallback(
     (i: number | null, e: React.MouseEvent) => {

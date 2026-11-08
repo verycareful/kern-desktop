@@ -428,6 +428,7 @@ DEFAULTS = {
     "new_tab_default": "folder",
     "view_mode": "list",
     "show_hidden": False,
+    "single_click": False,
     "terminal": None,
     "scan_documents": True,
     "scan_downloads": True,
@@ -465,8 +466,8 @@ class Walk(unittest.TestCase):
     def test_enter_everywhere_writes_the_defaults(self) -> None:
         self.defaults_until_folder()
         for p in (b"New tab folder", b"Ctrl+T opens", b"View of new folder views",
-                  b"Show hidden items", b"Terminal", b"Walk Documents", b"Walk Downloads",
-                  b"Add a folder", b"Wrap long lines", b"Text size", b"Write an error log"):
+                  b"Show hidden items", b"Open with a single click", b"Terminal",
+                  b"Walk Documents", b"Walk Downloads", b"Add a folder", b"Wrap long lines", b"Text size", b"Write an error log"):
             self.answer(p)
         self.assertEqual(self.patch(), DEFAULTS)
 
@@ -482,6 +483,7 @@ class Walk(unittest.TestCase):
         self.answer(b"Ctrl+T opens", DOWN)
         self.answer(b"View of new folder views", DOWN)
         self.answer(b"Show hidden items", UP)
+        self.answer(b"Open with a single click", UP)  # Yes
         self.answer(b"Terminal", b"foot")
         self.answer(b"Walk Documents", DOWN)
         self.answer(b"Walk Downloads")
@@ -497,6 +499,7 @@ class Walk(unittest.TestCase):
         self.assertEqual(p["new_tab_default"], "current")
         self.assertEqual(p["view_mode"], "grid")
         self.assertTrue(p["show_hidden"])
+        self.assertTrue(p["single_click"])
         self.assertEqual(p["terminal"], "foot")
         self.assertFalse(p["scan_documents"])
         self.assertTrue(p["word_wrap"])
@@ -513,7 +516,8 @@ class Walk(unittest.TestCase):
         self.answer(b"Folder for new tabs", b"/does/not/exist")
         self.answer(b"Folder for new tabs", b"~/Projects")
         for p in (b"Ctrl+T opens", b"View of new folder views", b"Show hidden items",
-                  b"Terminal", b"Walk Documents", b"Walk Downloads"):
+                  b"Open with a single click", b"Terminal", b"Walk Documents",
+                  b"Walk Downloads"):
             self.answer(p)
         self.answer(b"Add a folder", str(odd).encode())
         self.answer(b"Add a folder", b"nope")
@@ -588,9 +592,10 @@ class Flows(unittest.TestCase):
         self.answer(s, b"Customise Kern now?")
         for p in (b"Theme", b"Interface size", b"colours?", b"accent colour?", b"fonts?",
                   b"corner radius?", b"New tab folder", b"Ctrl+T opens",
-                  b"View of new folder views", b"Show hidden items", b"Terminal",
-                  b"Walk Documents", b"Walk Downloads", b"Add a folder", b"Wrap long lines",
-                  b"Text size", b"Write an error log"):
+                  b"View of new folder views", b"Show hidden items",
+                  b"Open with a single click", b"Terminal", b"Walk Documents",
+                  b"Walk Downloads", b"Add a folder", b"Wrap long lines", b"Text size",
+                  b"Write an error log"):
             self.answer(s, p)
         self.answer(s, b"default file manager?", UP)
         self.answer(s, b"Launch Kern now?", DOWN)

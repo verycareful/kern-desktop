@@ -33,6 +33,8 @@ export interface Settings {
   editor_zoom: number;
   view_mode: ViewMode;
   show_hidden: boolean;
+  /** Whether a single click opens a file or folder; off means a double-click does (store.rs Settings::single_click). */
+  single_click: boolean;
   /** Interface size in percent: 80, 90, 100, 110 or 125 (store.rs INTERFACE_SIZES). */
   interface_size: number;
   /** The layout of a window that has none remembered yet. */

@@ -6,6 +6,7 @@ import type { DirEvent, WireEntry, WireError, WirePath } from "../ipc";
 import { useOpenError } from "../ops/open-error-store";
 import { entry } from "./test-entries";
 import { stubLayout } from "./test-layout";
+import { useViewSettings } from "./view-settings";
 
 const ipc = vi.hoisted(() => ({
   listDir: vi.fn(),
@@ -76,6 +77,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   cleanup();
+  useViewSettings.setState({ singleClick: false });
   useOpenError.getState().dismiss();
   await Promise.resolve();
   restoreLayout();
@@ -334,15 +336,16 @@ test("a_link_whose_identity_cannot_be_told_is_not_opened_and_says_why", async ()
 
 test("a_file_opens_as_the_folder_view_opens_it_and_a_failure_is_said", async () => {
   await mount();
-  fireEvent.click(row("readme.md"));
+  fireEvent.doubleClick(row("readme.md"));
   await waitFor(() =>
     expect(ipc.openPaths).toHaveBeenCalledExactlyOnceWith([p("/r/readme.md")], "inside", "default")
   );
+  fireEvent.click(row("readme.md"));
   expect(row("readme.md")).toHaveAttribute("aria-selected", "true");
   ipc.openPaths.mockResolvedValue([
     { path: p("/r/z.txt"), action: "failed", location: null, error: wireError("NotFound", "gone") },
   ]);
-  fireEvent.click(row("z.txt"));
+  fireEvent.doubleClick(row("z.txt"));
   // Said in the editor area (OpenError.tsx), not among the tree's own notes.
   await waitFor(() =>
     expect(useOpenError.getState().lines).toEqual([
@@ -350,6 +353,38 @@ test("a_file_opens_as_the_folder_view_opens_it_and_a_failure_is_said", async () 
     ])
   );
   expect(screen.queryByRole("status")).toBeNull();
+});
+
+test("a_single_click_on_a_file_only_marks_it_while_the_setting_is_off", async () => {
+  await mount();
+  fireEvent.click(row("readme.md"), { detail: 1 });
+  expect(row("readme.md")).toHaveAttribute("aria-selected", "true");
+  await act(async () => {});
+  expect(ipc.openPaths).not.toHaveBeenCalled();
+});
+
+test("with_the_setting_on_a_single_click_opens_a_file_and_a_double_click_opens_it_once", async () => {
+  useViewSettings.setState({ singleClick: true });
+  await mount();
+  const readme = row("readme.md");
+  fireEvent.click(readme, { detail: 1 });
+  fireEvent.click(readme, { detail: 2 });
+  fireEvent.doubleClick(readme);
+  await waitFor(() =>
+    expect(ipc.openPaths).toHaveBeenCalledExactlyOnceWith([p("/r/readme.md")], "inside", "default")
+  );
+});
+
+test("a_folder_row_expands_and_collapses_on_a_single_click_with_the_setting_on_or_off", async () => {
+  for (const singleClick of [false, true]) {
+    useViewSettings.setState({ singleClick });
+    const { unmount } = await mount();
+    fireEvent.click(row("docs"), { detail: 1 });
+    await waitFor(() => expect(names()).toContain("a.txt"));
+    fireEvent.click(row("docs"), { detail: 1 });
+    await waitFor(() => expect(names()).not.toContain("a.txt"));
+    unmount();
+  }
 });
 
 test("a_name_that_is_not_utf8_is_listed_and_opened_by_its_real_path", async () => {

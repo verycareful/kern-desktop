@@ -7,6 +7,7 @@ import { homeRelative } from "../shell/home-relative";
 import { FileBadge } from "./FileList";
 import { formatDate } from "./format";
 import { ROW_HEIGHT } from "./grid-layout";
+import { useViewSettings } from "./view-settings";
 
 // The hits of a search or of the Library, as they stream in: name and
 // folder per row, virtualized, since a walk may find many thousands. One row
@@ -25,6 +26,7 @@ export function ScanResults(props: {
   onOpen(entry: WireEntry, newWindow: boolean): void;
 }) {
   const { hits, count } = props;
+  const single = useViewSettings((v) => v.singleClick);
   const scroller = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
   const virtual = useVirtualizer({
@@ -90,8 +92,13 @@ export function ScanResults(props: {
               className={"kern-row kern-hit" + (v.index === at ? " kern-selected" : "")}
               title={displayPath(e.path)}
               style={{ height: ROW_HEIGHT, transform: `translateY(${v.start}px)` }}
-              onClick={() => setActive(v.index)}
-              onDoubleClick={(ev) => props.onOpen(e, ev.ctrlKey || ev.metaKey)}
+              onClick={(ev) => {
+                setActive(v.index);
+                if (single && ev.detail <= 1) props.onOpen(e, ev.ctrlKey || ev.metaKey);
+              }}
+              onDoubleClick={(ev) => {
+                if (!single) props.onOpen(e, ev.ctrlKey || ev.metaKey);
+              }}
             >
               <FileBadge entry={e} size={ROW_HEIGHT - 12} />
               <span className="kern-name">{e.name}</span>

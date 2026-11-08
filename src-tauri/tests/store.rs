@@ -1227,3 +1227,40 @@ fn an_error_log_switch_that_is_not_a_boolean_is_refused_and_changes_nothing() {
     assert_eq!(fs::read(e.config.join("settings.json")).unwrap(), before);
     assert!(s.settings_get().unwrap().value.error_log);
 }
+
+#[test]
+fn opening_takes_a_double_click_by_default_and_the_switch_is_stored() {
+    let e = env();
+    let s = store(&e);
+    assert!(!s.settings_get().unwrap().value.single_click);
+    let on = s
+        .settings_set(patch(json!({"single_click": true})))
+        .unwrap();
+    assert!(on.changed);
+    assert!(on.value.single_click);
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["single_click"],
+        json!(true)
+    );
+    assert!(store(&e).settings_get().unwrap().value.single_click);
+    let off = s
+        .settings_set(patch(json!({"single_click": false})))
+        .unwrap();
+    assert!(!off.value.single_click);
+}
+
+#[test]
+fn a_single_click_switch_that_is_not_a_boolean_is_refused_and_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    s.settings_set(patch(json!({"word_wrap": true}))).unwrap();
+    let before = fs::read(e.config.join("settings.json")).unwrap();
+    for bad in [json!("yes"), json!(1), json!(null)] {
+        let err = s
+            .settings_set(patch(json!({"single_click": bad.clone()})))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument", "{bad}");
+    }
+    assert_eq!(fs::read(e.config.join("settings.json")).unwrap(), before);
+    assert!(!s.settings_get().unwrap().value.single_click);
+}

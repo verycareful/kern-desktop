@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Pins, PruneReport, Recents, WirePath } from "../ipc";
 import { useTabs } from "../store/tabs";
+import { useViewSettings } from "../files/view-settings";
 
 const ipc = vi.hoisted(() => ({
   on: vi.fn(),
@@ -72,6 +73,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  useViewSettings.setState({ singleClick: false });
   vi.useRealTimers();
   vi.clearAllMocks();
 });
@@ -199,6 +201,24 @@ test("a_folder_open_as_an_editor_is_marked_and_reopens_as_an_editor", async () =
   // Opened as an editor, it is never shown in a folder tab.
   expect(ipc.openPaths).not.toHaveBeenCalled();
   expect(useTabs.getState().tabs).toHaveLength(0);
+});
+
+test("with_single_click_on_one_click_opens_a_recent_entry_once", async () => {
+  useViewSettings.setState({ singleClick: true });
+  ipc.openEditor.mockResolvedValue("editor-2");
+  ipc.prune.mockResolvedValue({
+    ...report([]),
+    recents: { entries: [{ path: p("/home/t/Work"), opened_ms: NOW, as_editor: true }] },
+  });
+  render(<PinnedRecentPanel />);
+  const recent = screen.getByTestId("recent");
+  const row = (await within(recent).findByText("Work")).closest("button")!;
+  fireEvent.click(row, { detail: 1 });
+  await waitFor(() => expect(ipc.openEditor).toHaveBeenCalledExactlyOnceWith(p("/home/t/Work")));
+  fireEvent.click(row, { detail: 2 });
+  fireEvent.doubleClick(row);
+  await act(async () => {});
+  expect(ipc.openEditor).toHaveBeenCalledTimes(1);
 });
 
 test("a_folder_pinned_as_an_editor_is_marked_and_opens_as_an_editor", async () => {

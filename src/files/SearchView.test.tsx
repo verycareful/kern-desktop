@@ -42,7 +42,7 @@ beforeEach(() => {
   });
   ipc.search.mockImplementation(() => Promise.resolve(nextOp++));
   ipc.cancelOp.mockResolvedValue(undefined);
-  useViewSettings.setState({ showHidden: false });
+  useViewSettings.setState({ showHidden: false, singleClick: false });
 });
 afterEach(() => {
   cleanup();
@@ -97,6 +97,30 @@ test("a_new_query_cancels_the_walk_before_it_and_drops_its_hits", async () => {
   emit("kernkraft://search-hit", { key: second, op: 2, entries: [entry("ab1")] });
   expect(await screen.findAllByTestId("scan-hit")).toHaveLength(1);
   expect(screen.queryByText("late")).toBeNull();
+});
+
+test("a_hit_opens_on_a_double_click_and_a_single_click_only_marks_it", async () => {
+  render(<SearchView root={p("/d")} onClose={onClose} onOpen={onOpen} />);
+  const key = await typed("n");
+  emit("kernkraft://search-hit", { key, op: 1, entries: [entry("n1"), entry("n2")] });
+  const hits = await screen.findAllByTestId("scan-hit");
+  fireEvent.click(hits[1]!, { detail: 1 });
+  expect(hits[1]).toHaveAttribute("aria-selected", "true");
+  expect(onOpen).not.toHaveBeenCalled();
+  fireEvent.doubleClick(hits[1]!, { ctrlKey: true });
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: "n2" }), true);
+});
+
+test("with_single_click_on_a_hit_opens_on_one_click_and_a_double_click_does_not_open_again", async () => {
+  useViewSettings.setState({ singleClick: true });
+  render(<SearchView root={p("/d")} onClose={onClose} onOpen={onOpen} />);
+  const key = await typed("n");
+  emit("kernkraft://search-hit", { key, op: 1, entries: [entry("n1"), entry("n2")] });
+  const hits = await screen.findAllByTestId("scan-hit");
+  fireEvent.click(hits[0]!, { detail: 1 });
+  fireEvent.click(hits[0]!, { detail: 2 });
+  fireEvent.doubleClick(hits[0]!);
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: "n1" }), false);
 });
 
 test("enter_opens_the_active_hit", async () => {

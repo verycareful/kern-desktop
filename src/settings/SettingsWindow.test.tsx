@@ -502,6 +502,24 @@ test("the_error_log_switch_is_on_by_default_says_where_the_file_is_and_is_saved_
   expect(stored.error_log).toBe(false);
 });
 
+test("the_single_click_switch_is_off_by_default_and_is_saved_at_save", async () => {
+  await mount();
+  nav("Files");
+  const toggle = screen.getByRole("switch", { name: "Open with a single click" });
+  expect(toggle).toHaveAttribute("aria-checked", "false");
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute("aria-checked", "true");
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ single_click: true }]);
+  expect(stored.single_click).toBe(true);
+});
+
+test("the_single_click_switch_is_found_by_searching_for_double_click", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "double click" } });
+  expect(screen.getByRole("switch", { name: "Open with a single click" })).toBeInTheDocument();
+});
+
 test("the_error_log_switch_is_found_by_searching_for_a_crash_log", async () => {
   await mount();
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "crash" } });

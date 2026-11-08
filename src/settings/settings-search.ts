@@ -101,6 +101,12 @@ export const ROWS = {
     label: "Show hidden items",
     words: "dotfiles hidden files",
   },
+  single_click: {
+    category: "files",
+    group: "Opening",
+    label: "Open with a single click",
+    words: "double click mouse open files folders pointer",
+  },
   terminal: {
     category: "files",
     group: "Programs",

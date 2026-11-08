@@ -15,7 +15,8 @@ import { activeTab, recentFolderTab, useTabs, type TabsState } from "../store/ta
 import { KernLogo } from "./KernLogo";
 import { PlacesList } from "./PlacesList";
 import { documentsShown, trashShown } from "./place-nav";
-import { openOnDoubleClick } from "./double-click";
+import { openOnClick } from "./open-on-click";
+import { useViewSettings } from "../files/view-settings";
 import { VolumesList } from "./VolumesList";
 
 /** A place of Kern's own in the strip (the Trash, the Library): one entry that opens its tab. */
@@ -26,6 +27,7 @@ function OwnPlace(props: {
   shown(s: TabsState): boolean;
 }) {
   const current = useTabs(props.shown);
+  const single = useViewSettings((v) => v.singleClick);
   const action = getAction(props.action);
   const { Icon } = props;
   return (
@@ -36,7 +38,7 @@ function OwnPlace(props: {
             type="button"
             className="kern-place"
             aria-current={current ? "page" : undefined}
-            {...openOnDoubleClick(() => runAction(action, currentContext()))}
+            {...openOnClick(() => runAction(action, currentContext()), single)}
           >
             <Icon size={16} strokeWidth={2} aria-hidden />
             <span className="kern-place-label">{props.label}</span>
