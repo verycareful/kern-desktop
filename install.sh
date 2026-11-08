@@ -579,7 +579,7 @@ layout_remove() {
 # window offers one layout) has a question here; a Rust test compares this
 # list with the settings Kern defines; nothing in the scripts reads it.
 # shellcheck disable=SC2034
-SETTING_KEYS="theme_mode accent follow scan_roots scan_documents scan_downloads terminal word_wrap editor_zoom view_mode show_hidden interface_size new_tab_folder new_tab_default"
+SETTING_KEYS="theme_mode accent follow scan_roots scan_documents scan_downloads terminal word_wrap editor_zoom view_mode show_hidden interface_size new_tab_folder new_tab_default error_log"
 
 # The questions follow the Settings window: its sections, its order and its
 # labels. The answers become one JSON object, which `kern --apply-settings`
@@ -675,7 +675,7 @@ zoom_factor() {
 settings_walk() {
     local out=$1 pick text folder p
     local theme size accent f_colours f_accent f_fonts f_radius
-    local tab_folder tab_default view hidden terminal docs downloads wrap zoom
+    local tab_folder tab_default view hidden terminal docs downloads wrap zoom error_log
     local -a sizes=() zooms=() roots=()
     local roots_json="" root
 
@@ -738,6 +738,10 @@ settings_walk() {
     ui_menu pick $(((SETTINGS_ZOOM_DEFAULT - SETTINGS_ZOOM_MIN) / SETTINGS_ZOOM_STEP)) "Text size" "${zooms[@]}"
     zoom=$(zoom_factor $((SETTINGS_ZOOM_MIN + pick * SETTINGS_ZOOM_STEP)))
 
+    ui_say ""
+    ui_say "About"
+    ui_yesno error_log y "Write an error log?"
+
     {
         printf '{'
         printf '"theme_mode":"%s",' "$theme"
@@ -754,6 +758,7 @@ settings_walk() {
         printf '"scan_downloads":%s,' "$(json_bool "$downloads")"
         printf '"scan_roots":[%s],' "$roots_json"
         printf '"word_wrap":%s,' "$(json_bool "$wrap")"
+        printf '"error_log":%s,' "$(json_bool "$error_log")"
         printf '"editor_zoom":%s' "$zoom"
         printf '}\n'
     } >"$out"

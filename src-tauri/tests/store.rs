@@ -1194,3 +1194,36 @@ fn a_session_file_that_is_not_a_session_is_moved_aside() {
     assert!(got.corrupt[0].moved_to.is_some());
     assert!(!e.state.join("session.json").exists());
 }
+
+#[test]
+fn the_error_log_is_on_by_default_and_the_switch_is_stored() {
+    let e = env();
+    let s = store(&e);
+    assert!(s.settings_get().unwrap().value.error_log);
+    let off = s.settings_set(patch(json!({"error_log": false}))).unwrap();
+    assert!(off.changed);
+    assert!(!off.value.error_log);
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["error_log"],
+        json!(false)
+    );
+    assert!(!store(&e).settings_get().unwrap().value.error_log);
+    let on = s.settings_set(patch(json!({"error_log": true}))).unwrap();
+    assert!(on.value.error_log);
+}
+
+#[test]
+fn an_error_log_switch_that_is_not_a_boolean_is_refused_and_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    s.settings_set(patch(json!({"word_wrap": true}))).unwrap();
+    let before = fs::read(e.config.join("settings.json")).unwrap();
+    for bad in [json!("no"), json!(0), json!(null)] {
+        let err = s
+            .settings_set(patch(json!({"error_log": bad.clone()})))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument", "{bad}");
+    }
+    assert_eq!(fs::read(e.config.join("settings.json")).unwrap(), before);
+    assert!(s.settings_get().unwrap().value.error_log);
+}

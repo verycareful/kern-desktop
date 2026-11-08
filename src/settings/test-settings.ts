@@ -27,4 +27,5 @@ export const SETTINGS: Settings = {
   default_layout: "file_manager",
   new_tab_folder: null,
   new_tab_default: "folder",
+  error_log: true,
 };

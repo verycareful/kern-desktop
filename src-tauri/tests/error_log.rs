@@ -2,7 +2,9 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
 //! The error log (`error_log.rs`): its time stamps, one line for each entry whatever the message
-//! holds, the cut of a long message, rotation at the size limit, and appends from many threads.
+//! holds, the cut of a long message, rotation at the size limit, appends from many threads, the
+//! switch that stops all writing, and the clearing of the files at the first launch after a
+//! reboot.
 
 use std::fs;
 use std::sync::Arc;
@@ -10,7 +12,8 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use kern_lib::error_log::{
-    entry, stamp, ErrorLog, LOG_FILE, MAX_LOG_BYTES, MAX_MESSAGE_CHARS, ROTATED_FILE,
+    clear_on_new_boot, entry, stamp, ErrorLog, BOOT_ID_FILE, LOG_FILE, MAX_LOG_BYTES,
+    MAX_MESSAGE_CHARS, ROTATED_FILE,
 };
 
 const DAY: u64 = 86_400;
@@ -188,4 +191,172 @@ fn appends_from_many_threads_are_all_whole_lines() {
     assert!(lines
         .iter()
         .all(|l| l.starts_with("1970-01-01T00:00:00Z [thread] t") && l.contains(" n")));
+}
+
+#[test]
+fn a_log_is_on_until_it_is_switched_off() {
+    let tmp = tempfile::tempdir().unwrap();
+    let log = ErrorLog::new(tmp.path().to_path_buf());
+    assert!(log.enabled());
+    log.set_enabled(false);
+    assert!(!log.enabled());
+    log.set_enabled(true);
+    assert!(log.enabled());
+}
+
+#[test]
+fn a_log_that_is_off_writes_nothing_and_leaves_the_file_as_it_is() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("kern");
+    let log = ErrorLog::new(dir.clone());
+    log.append_at(at(0), "open", "before").unwrap();
+    log.set_enabled(false);
+    // An append that is not kept is not a failure: the user asked for it.
+    log.append_at(at(DAY), "open", "while off").unwrap();
+    assert_eq!(
+        fs::read_to_string(dir.join(LOG_FILE)).unwrap(),
+        "1970-01-01T00:00:00Z [open] before\n"
+    );
+    log.set_enabled(true);
+    log.append_at(at(2 * DAY), "open", "after").unwrap();
+    assert_eq!(
+        fs::read_to_string(dir.join(LOG_FILE)).unwrap(),
+        "1970-01-01T00:00:00Z [open] before\n1970-01-03T00:00:00Z [open] after\n"
+    );
+}
+
+#[test]
+fn a_log_that_is_off_does_not_even_create_its_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("state").join("kern");
+    let log = ErrorLog::new(dir.clone());
+    log.set_enabled(false);
+    log.append_at(at(0), "open", "x").unwrap();
+    assert!(!dir.exists());
+}
+
+struct Boot {
+    _tmp: tempfile::TempDir,
+    dir: std::path::PathBuf,
+    kernel: std::path::PathBuf,
+}
+
+/// A log folder and a stand-in for the kernel's boot id file, holding `id`.
+fn boot(id: &str) -> Boot {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("kern");
+    fs::create_dir(&dir).unwrap();
+    let kernel = tmp.path().join("kernel_boot_id");
+    fs::write(&kernel, id).unwrap();
+    Boot {
+        _tmp: tmp,
+        dir,
+        kernel,
+    }
+}
+
+const BOOT_A: &str = "2d3a0c1e-5f6b-4c1d-9e0a-7b8c9d0e1f2a\n";
+const BOOT_B: &str = "9f8e7d6c-5b4a-4c3d-8e2f-1a0b9c8d7e6f\n";
+
+#[test]
+fn the_first_launch_ever_writes_the_boot_id_and_clears_nothing() {
+    let b = boot(BOOT_A);
+    fs::write(b.dir.join(LOG_FILE), "kept\n").unwrap();
+    assert!(!clear_on_new_boot(&b.dir, &b.kernel).unwrap());
+    assert_eq!(
+        fs::read_to_string(b.dir.join(BOOT_ID_FILE)).unwrap().trim(),
+        BOOT_A.trim()
+    );
+    assert_eq!(fs::read_to_string(b.dir.join(LOG_FILE)).unwrap(), "kept\n");
+}
+
+#[test]
+fn the_first_launch_ever_makes_the_folder_for_the_boot_id() {
+    let b = boot(BOOT_A);
+    let dir = b.dir.join("not").join("yet");
+    assert!(!clear_on_new_boot(&dir, &b.kernel).unwrap());
+    assert!(dir.join(BOOT_ID_FILE).is_file());
+}
+
+#[test]
+fn a_launch_in_the_same_boot_keeps_both_files() {
+    let b = boot(BOOT_A);
+    clear_on_new_boot(&b.dir, &b.kernel).unwrap();
+    fs::write(b.dir.join(LOG_FILE), "now\n").unwrap();
+    fs::write(b.dir.join(ROTATED_FILE), "older\n").unwrap();
+    assert!(!clear_on_new_boot(&b.dir, &b.kernel).unwrap());
+    assert_eq!(fs::read_to_string(b.dir.join(LOG_FILE)).unwrap(), "now\n");
+    assert_eq!(
+        fs::read_to_string(b.dir.join(ROTATED_FILE)).unwrap(),
+        "older\n"
+    );
+}
+
+#[test]
+fn the_first_launch_after_a_reboot_deletes_both_files_and_keeps_the_new_id() {
+    let b = boot(BOOT_A);
+    clear_on_new_boot(&b.dir, &b.kernel).unwrap();
+    fs::write(b.dir.join(LOG_FILE), "now\n").unwrap();
+    fs::write(b.dir.join(ROTATED_FILE), "older\n").unwrap();
+    fs::write(&b.kernel, BOOT_B).unwrap();
+    assert!(clear_on_new_boot(&b.dir, &b.kernel).unwrap());
+    assert!(!b.dir.join(LOG_FILE).exists());
+    assert!(!b.dir.join(ROTATED_FILE).exists());
+    assert_eq!(
+        fs::read_to_string(b.dir.join(BOOT_ID_FILE)).unwrap().trim(),
+        BOOT_B.trim()
+    );
+    // The launch after that, in the same boot, clears nothing more.
+    fs::write(b.dir.join(LOG_FILE), "fresh\n").unwrap();
+    assert!(!clear_on_new_boot(&b.dir, &b.kernel).unwrap());
+    assert_eq!(fs::read_to_string(b.dir.join(LOG_FILE)).unwrap(), "fresh\n");
+}
+
+#[test]
+fn a_reboot_with_only_one_of_the_files_present_clears_it() {
+    let b = boot(BOOT_A);
+    clear_on_new_boot(&b.dir, &b.kernel).unwrap();
+    fs::write(b.dir.join(LOG_FILE), "now\n").unwrap();
+    fs::write(&b.kernel, BOOT_B).unwrap();
+    assert!(clear_on_new_boot(&b.dir, &b.kernel).unwrap());
+    assert!(!b.dir.join(LOG_FILE).exists());
+}
+
+#[test]
+fn a_boot_id_that_cannot_be_read_deletes_nothing_and_says_why() {
+    let b = boot(BOOT_A);
+    clear_on_new_boot(&b.dir, &b.kernel).unwrap();
+    fs::write(b.dir.join(LOG_FILE), "now\n").unwrap();
+    fs::remove_file(&b.kernel).unwrap();
+    let why = clear_on_new_boot(&b.dir, &b.kernel).unwrap_err();
+    assert!(why.to_string().contains("boot id"), "{why}");
+    assert_eq!(fs::read_to_string(b.dir.join(LOG_FILE)).unwrap(), "now\n");
+    assert_eq!(
+        fs::read_to_string(b.dir.join(BOOT_ID_FILE)).unwrap().trim(),
+        BOOT_A.trim()
+    );
+}
+
+#[test]
+fn an_empty_boot_id_is_unreadable_not_a_new_boot() {
+    let b = boot(BOOT_A);
+    clear_on_new_boot(&b.dir, &b.kernel).unwrap();
+    fs::write(b.dir.join(LOG_FILE), "now\n").unwrap();
+    fs::write(&b.kernel, "  \n").unwrap();
+    assert!(clear_on_new_boot(&b.dir, &b.kernel).is_err());
+    assert_eq!(fs::read_to_string(b.dir.join(LOG_FILE)).unwrap(), "now\n");
+}
+
+#[test]
+fn a_file_that_cannot_be_deleted_keeps_the_old_id_so_the_next_launch_tries_again() {
+    let b = boot(BOOT_A);
+    clear_on_new_boot(&b.dir, &b.kernel).unwrap();
+    // A folder in the log's place cannot be removed as a file.
+    fs::create_dir(b.dir.join(LOG_FILE)).unwrap();
+    fs::write(&b.kernel, BOOT_B).unwrap();
+    assert!(clear_on_new_boot(&b.dir, &b.kernel).is_err());
+    assert_eq!(
+        fs::read_to_string(b.dir.join(BOOT_ID_FILE)).unwrap().trim(),
+        BOOT_A.trim()
+    );
 }

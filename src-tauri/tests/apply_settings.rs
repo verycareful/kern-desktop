@@ -175,7 +175,7 @@ fn installer_walk_output_is_accepted() {
     let e = env();
     let folder = e.root.join("my \"odd\" \\ dir");
     fs::create_dir(&folder).unwrap();
-    let defaults = r#"{"theme_mode":"system","interface_size":90,"follow":{"colours":true,"accent":true,"fonts":true,"radius":true},"accent":"slate","new_tab_folder":null,"new_tab_default":"folder","view_mode":"list","show_hidden":false,"terminal":null,"scan_documents":true,"scan_downloads":true,"scan_roots":[],"word_wrap":false,"editor_zoom":1}"#;
+    let defaults = r#"{"theme_mode":"system","interface_size":90,"follow":{"colours":true,"accent":true,"fonts":true,"radius":true},"accent":"slate","new_tab_folder":null,"new_tab_default":"folder","view_mode":"list","show_hidden":false,"terminal":null,"scan_documents":true,"scan_downloads":true,"scan_roots":[],"word_wrap":false,"error_log":true,"editor_zoom":1}"#;
     apply_settings(&e.store(), &e.patch(defaults)).unwrap();
     let chosen = json!({
         "theme_mode": "dark", "interface_size": 125,
@@ -185,12 +185,13 @@ fn installer_walk_output_is_accepted() {
         "new_tab_default": "current", "view_mode": "grid", "show_hidden": true,
         "terminal": "foot", "scan_documents": false, "scan_downloads": false,
         "scan_roots": [{"k": "Bytes", "v": "L3RtcC/m"}],
-        "word_wrap": true, "editor_zoom": 1.25
+        "word_wrap": true, "error_log": false, "editor_zoom": 1.25
     });
     apply_settings(&e.store(), &e.patch(&chosen.to_string())).unwrap();
     let v = read(&e.settings_file());
     assert_eq!(v["accent"], json!("graphite"));
     assert_eq!(v["editor_zoom"], json!(1.25));
+    assert_eq!(v["error_log"], json!(false));
     assert_eq!(v["new_tab_folder"]["v"], json!(folder.to_str().unwrap()));
     assert_eq!(v["scan_roots"][0]["k"], json!("Bytes"));
 }

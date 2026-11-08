@@ -135,6 +135,7 @@ pub fn load_startup_settings<R: Runtime>(app: &AppHandle<R>) -> Option<Settings>
         Ok(loaded) => {
             let settings = finish(app, loaded, EVENT_SETTINGS_CHANGED);
             crate::zoom::apply(app, settings.interface_size);
+            crate::error_log::set_enabled(settings.error_log);
             Some(settings)
         }
         Err(e) => {
@@ -184,6 +185,7 @@ pub async fn settings_set<R: Runtime>(
     let loaded = blocking(move || store.settings_set(patch)).await?;
     let settings = finish(&app, loaded, EVENT_SETTINGS_CHANGED);
     crate::zoom::apply(&app, settings.interface_size);
+    crate::error_log::set_enabled(settings.error_log);
     Ok(settings)
 }
 

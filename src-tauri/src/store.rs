@@ -171,6 +171,9 @@ pub struct Settings {
     pub new_tab_folder: Option<WirePath>,
     /// Which of the two new tabs Ctrl+T opens.
     pub new_tab_default: NewTabDefault,
+    /// Whether Kern writes the error log (`error_log.rs`). Off stops all writing and leaves a file
+    /// already there as it is.
+    pub error_log: bool,
     /// Keys inside `follow` this version does not define.
     #[serde(skip)]
     pub follow_extra: Map<String, Value>,
@@ -199,6 +202,7 @@ impl Default for Settings {
             default_layout: LayoutKind::default(),
             new_tab_folder: None,
             new_tab_default: NewTabDefault::default(),
+            error_log: true,
             follow_extra: Map::new(),
             extra: Map::new(),
         }
@@ -749,6 +753,14 @@ impl Stored for Settings {
             &mut obj,
             "new_tab_default",
             &mut s.new_tab_default,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "error_log",
+            &mut s.error_log,
             &mut keep,
             &mut problems,
             any_value,

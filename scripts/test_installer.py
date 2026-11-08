@@ -433,6 +433,7 @@ DEFAULTS = {
     "scan_downloads": True,
     "scan_roots": [],
     "word_wrap": False,
+    "error_log": True,
     "editor_zoom": 1,
 }
 
@@ -465,7 +466,7 @@ class Walk(unittest.TestCase):
         self.defaults_until_folder()
         for p in (b"New tab folder", b"Ctrl+T opens", b"View of new folder views",
                   b"Show hidden items", b"Terminal", b"Walk Documents", b"Walk Downloads",
-                  b"Add a folder", b"Wrap long lines", b"Text size"):
+                  b"Add a folder", b"Wrap long lines", b"Text size", b"Write an error log"):
             self.answer(p)
         self.assertEqual(self.patch(), DEFAULTS)
 
@@ -487,6 +488,7 @@ class Walk(unittest.TestCase):
         self.answer(b"Add a folder")
         self.answer(b"Wrap long lines", UP)
         self.answer(b"Text size", DOWN, DOWN)  # 150 %
+        self.answer(b"Write an error log", DOWN)  # No
         p = self.patch()
         self.assertEqual(p["theme_mode"], "dark")
         self.assertEqual(p["interface_size"], 110)
@@ -499,6 +501,7 @@ class Walk(unittest.TestCase):
         self.assertFalse(p["scan_documents"])
         self.assertTrue(p["word_wrap"])
         self.assertEqual(p["editor_zoom"], 1.5)
+        self.assertFalse(p["error_log"])
 
     def test_bad_folder_is_asked_again_and_odd_names_round_trip(self) -> None:
         odd = self.w.home / 'my "odd" \\ dir'
@@ -518,6 +521,7 @@ class Walk(unittest.TestCase):
         self.answer(b"Add a folder")
         self.answer(b"Wrap long lines")
         self.answer(b"Text size")
+        self.answer(b"Write an error log")
         p = self.patch()
         self.assertEqual(p["new_tab_folder"], {"k": "Utf8", "v": str(self.w.home / "Projects")})
         self.assertEqual(p["scan_roots"], [{"k": "Utf8", "v": str(odd)}])
@@ -586,7 +590,7 @@ class Flows(unittest.TestCase):
                   b"corner radius?", b"New tab folder", b"Ctrl+T opens",
                   b"View of new folder views", b"Show hidden items", b"Terminal",
                   b"Walk Documents", b"Walk Downloads", b"Add a folder", b"Wrap long lines",
-                  b"Text size"):
+                  b"Text size", b"Write an error log"):
             self.answer(s, p)
         self.answer(s, b"default file manager?", UP)
         self.answer(s, b"Launch Kern now?", DOWN)

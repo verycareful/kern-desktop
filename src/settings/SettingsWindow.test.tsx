@@ -489,6 +489,25 @@ test("about_shows_the_licence_in_a_dialog_and_each_link_opens_its_address", asyn
   expect(screen.queryByTestId("licence-dialog")).not.toBeInTheDocument();
 });
 
+test("the_error_log_switch_is_on_by_default_says_where_the_file_is_and_is_saved_at_save", async () => {
+  await mount();
+  nav("About");
+  const toggle = screen.getByRole("switch", { name: "Write an error log" });
+  expect(toggle).toHaveAttribute("aria-checked", "true");
+  expect(screen.getByText(/kern\.log in \$XDG_STATE_HOME\/kern/)).toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute("aria-checked", "false");
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ error_log: false }]);
+  expect(stored.error_log).toBe(false);
+});
+
+test("the_error_log_switch_is_found_by_searching_for_a_crash_log", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "crash" } });
+  expect(screen.getByRole("switch", { name: "Write an error log" })).toBeInTheDocument();
+});
+
 test("a_link_that_cannot_be_opened_says_why", async () => {
   await mount();
   nav("About");

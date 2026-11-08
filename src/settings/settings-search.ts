@@ -19,7 +19,8 @@ export const CATEGORIES: readonly { id: Category; label: string; blurb: string }
   {
     id: "about",
     label: "About",
-    blurb: "The version, what Kern does with your network, the licence and where the source lives.",
+    blurb:
+      "The version, the error log, what Kern does with your network, the licence and where the source lives.",
   },
 ];
 
@@ -162,6 +163,12 @@ export const ROWS = {
     group: "Kern",
     label: "Kern for Android",
     words: "github repository link phone app",
+  },
+  error_log: {
+    category: "about",
+    group: "Error log",
+    label: "Write an error log",
+    words: "errors crash panic diagnostics file kern.log troubleshooting report",
   },
 } as const satisfies Record<string, RowInfo>;
 

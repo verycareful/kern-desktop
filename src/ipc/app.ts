@@ -41,6 +41,8 @@ export interface Settings {
   new_tab_folder: WirePath | null;
   /** What Ctrl+T opens: the new tab folder, or the folder of the tab in front (store.rs NewTabDefault). */
   new_tab_default: NewTabDefault;
+  /** Whether Kern writes the error log (store.rs Settings::error_log). */
+  error_log: boolean;
 }
 
 /** The row density handed to the theme: Kern has one row height (store.rs THEME_DENSITY). */
