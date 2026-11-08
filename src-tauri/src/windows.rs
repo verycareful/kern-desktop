@@ -468,7 +468,39 @@ pub fn focus<R: Runtime>(app: &AppHandle<R>, label: &str, token: &str) -> Result
 }
 
 /// Makes sure `main` exists. True when it was created now.
+///
+/// Callers can arrive together: this process's own launch and a request that came in on the bus
+/// while it started both want `main`. Tauri refuses a second window of a label only once the
+/// first is registered, which happens after its native window exists, so two builds that overlap
+/// both pass that check and the label ends up registered to one webview while two pages use it;
+/// the page that lost it can call no command. The check and the build are therefore one task on
+/// the main thread, which runs tasks one after the other: the second caller finds `main` made.
 pub fn ensure_main<R: Runtime>(app: &AppHandle<R>) -> Result<bool, WireError> {
+    if app.get_webview_window(MAIN).is_some() {
+        return Ok(false);
+    }
+    let (answer, answered) = mpsc::channel();
+    let task_app = app.clone();
+    app.run_on_main_thread(move || {
+        // The receiver is waiting for this one answer.
+        let _ = answer.send(build_main_once(&task_app));
+    })
+    .map_err(window_error)?;
+    answered.recv().map_err(|_| {
+        wire_error(
+            "Internal",
+            "the main thread did not answer the request to create main",
+            None,
+        )
+    })?
+}
+
+/// Builds `main` unless it exists. Runs on the main thread, where tasks are already one at a
+/// time; the lock does the same where a task runs on its caller's thread (a runtime without an
+/// event loop of its own, as the tests use), and nothing waits on another thread while holding it.
+fn build_main_once<R: Runtime>(app: &AppHandle<R>) -> Result<bool, WireError> {
+    static BUILDING: Mutex<()> = Mutex::new(());
+    let _one_at_a_time = BUILDING.lock().unwrap_or_else(PoisonError::into_inner);
     if app.get_webview_window(MAIN).is_some() {
         return Ok(false);
     }
@@ -482,7 +514,11 @@ pub fn ensure_main<R: Runtime>(app: &AppHandle<R>) -> Result<bool, WireError> {
     crate::session::opening(app, MAIN);
     WebviewWindowBuilder::from_config(app, cfg)
         .and_then(|b| b.build())
-        .map_err(window_error)?;
+        .map_err(|e| {
+            // Written here as well: the window that would show the error does not exist.
+            crate::error_log::record("window", &format!("main could not be created: {e}"));
+            window_error(e)
+        })?;
     Ok(true)
 }
 
