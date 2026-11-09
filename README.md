@@ -67,7 +67,10 @@ Kern Desktop is in alpha.
   can resize. Pin a folder as an editor and it opens in an editor window.
 - **Finding and inspecting.** Search by name under a folder, open Properties
   (size, item counts, permissions), copy a path, open a file with any installed
-  application, or open a terminal in the folder.
+  application, or open a terminal in the folder. Search results and the Library
+  list each file with its type, size, time and the folder it is in, and once the
+  walk has finished a click on a column header sorts them. The Library has a
+  filter by name, a list or card view, and a switch for hidden items.
 - **Text editor.** A text file opens in a tab with line numbers, find and
   replace, and undo. Saving keeps the file's line endings and byte order mark.
   If another program changed or deleted the file, Kern asks before it writes.

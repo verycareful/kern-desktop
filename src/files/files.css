@@ -647,7 +647,7 @@
   overflow: auto;
 }
 
-.kern-hits:focus-visible {
+.kern-hits-body:focus-visible {
   outline: 2px solid var(--kern-accent);
   outline-offset: -2px;
 }
@@ -656,9 +656,29 @@
   gap: 8px;
 }
 
-.kern-hit .kern-name {
+/* In the narrow editor column a hit is the name, the folder and the time on one row. */
+.kern-hit > .kern-name {
   min-width: 0;
   flex: 1 1 40%;
+}
+
+/* In the centre it has the columns of a file manager row, and the folder it is in. */
+.kern-col-location {
+  flex: none;
+  width: 240px;
+  padding-left: 16px;
+  font-size: 11.5px;
+  color: var(--kern-text-dim);
+}
+
+.kern-hit .kern-col-name {
+  min-width: 0;
+}
+
+/* The column buttons wait for the end of the walk: a list still growing cannot be put in order. */
+.kern-list-head-busy button {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .kern-hit-where {
@@ -811,4 +831,12 @@
 .kern-tree-note span {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The Library as cards: the grid fills the area under the toolbar and takes the keyboard. */
+.kern-hits-grid {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
 }

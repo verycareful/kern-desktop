@@ -95,6 +95,8 @@ export type Action = {
   keys: string[];
   /** The tab kind the action applies to. */
   when: ActionContextKind | "any";
+  /** Other tab kinds it applies to as well (the Library has a view, hidden items and a name filter of its own). */
+  alsoWhen?: readonly ActionContextKind[];
   /**
    * False keeps the action out of the main menu: a button of the top bar and its shortcut reach
    * it, so the menu holds what has no button.
@@ -636,6 +638,7 @@ const folderActions: Action[] = [
     area: "View",
     keys: ["Ctrl+H"],
     when: "folder",
+    alsoWhen: ["documents"],
     run: () => void toggleHidden(),
   },
   // Ctrl+1 and Ctrl+2 are Dolphin's keys for its view modes.
@@ -646,6 +649,7 @@ const folderActions: Action[] = [
     area: "View",
     keys: ["Ctrl+1"],
     when: "folder",
+    alsoWhen: ["documents"],
     enabled: () => useViewSettings.getState().viewMode !== "list",
     run: () => void setViewMode("list"),
   },
@@ -656,6 +660,7 @@ const folderActions: Action[] = [
     area: "View",
     keys: ["Ctrl+2"],
     when: "folder",
+    alsoWhen: ["documents"],
     enabled: () => useViewSettings.getState().viewMode !== "grid",
     run: () => void setViewMode("grid"),
   },
@@ -982,6 +987,16 @@ const placeActions: Action[] = [
     run: (c) => c.tabs.openDocuments(),
   },
   // F5 refreshes a folder and the Trash; here it walks the folders again.
+  {
+    id: "documents.filter",
+    menu: false,
+    label: "Filter the Library by name",
+    area: "View",
+    keys: ["Ctrl+F"],
+    when: "documents",
+    enabled: () => documentsController() !== null,
+    run: () => documentsController()?.toggleFilter(),
+  },
   {
     id: "documents.refresh",
     label: "Look again",
@@ -1371,7 +1386,8 @@ export function appliesTo(a: Action, tab: Tab | null): boolean {
     a.when === "volume" ||
     a.when === "entry" ||
     a.when === "tree" ||
-    a.when === tab?.kind
+    a.when === tab?.kind ||
+    (tab !== null && (a.alsoWhen?.includes(tab.kind) ?? false))
   );
 }
 

@@ -92,7 +92,7 @@ export function FolderArea(props: { docked?: boolean }) {
       {active?.kind === "trash" ? (
         <TrashView key={active.id} tab={active} />
       ) : active?.kind === "documents" ? (
-        <DocumentsView key={active.id} />
+        <DocumentsView key={active.id} tabId={active.id} />
       ) : (
         tab && <FolderView key={tab.id} tab={tab} />
       )}

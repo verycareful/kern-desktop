@@ -480,5 +480,6 @@ export interface SearchHitEvent {
 export const search = (key: string, roots: WirePath[], query: string, hidden: boolean) =>
   invoke<OpId>(cmd("search"), { key, roots, query, hidden });
 
-export const documents = (key: string, roots: WirePath[]) =>
-  invoke<OpId>(cmd("documents"), { key, roots });
+/** Starts the Library walk of `roots`; dotfiles and dot-folders only with `hidden`. */
+export const documents = (key: string, roots: WirePath[], hidden: boolean) =>
+  invoke<OpId>(cmd("documents"), { key, roots, hidden });

@@ -185,3 +185,28 @@ test("the_hits_of_the_text_before_go_as_soon_as_it_changes", async () => {
   expect(screen.queryAllByTestId("scan-hit")).toHaveLength(0);
   expect(ipc.search).toHaveBeenCalledTimes(1);
 });
+
+test("the_column_headers_of_a_centre_search_wait_for_the_search_to_end", async () => {
+  render(<SearchView root={p("/d")} area="centre" onClose={onClose} onOpen={onOpen} />);
+  const key = await typed("a");
+  emit("kernkraft://search-hit", { key, op: 1, entries: [entry("b.txt"), entry("a.txt")] });
+  await screen.findAllByTestId("scan-hit");
+  expect(screen.getByRole("button", { name: "Name" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Location" })).toBeDisabled();
+  emit("kernkraft://op-done", scanDone(1, { found: 2 }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Name" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Name" }));
+  await waitFor(() =>
+    expect(
+      screen.getAllByTestId("scan-hit").map((r) => r.querySelector(".kern-name")?.textContent)
+    ).toEqual(["a.txt", "b.txt"])
+  );
+});
+
+test("a_search_in_the_editors_narrow_column_has_no_header", async () => {
+  render(<SearchView root={p("/d")} area="editor" onClose={onClose} onOpen={onOpen} />);
+  const key = await typed("a");
+  emit("kernkraft://search-hit", { key, op: 1, entries: [entry("a.txt")] });
+  await screen.findAllByTestId("scan-hit");
+  expect(screen.queryByRole("button", { name: "Name" })).toBeNull();
+});

@@ -156,6 +156,7 @@ export function SearchView(props: {
           home={home}
           label={`Found in ${where}`}
           area={props.area}
+          complete={scan.phase === "done"}
           onOpen={props.onOpen}
         />
       </div>

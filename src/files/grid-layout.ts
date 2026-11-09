@@ -12,3 +12,6 @@ export function columnsFor(width: number): number {
 
 /** Pixel height of a list row: the 28 px badge with 6 px above and below. */
 export const ROW_HEIGHT = 40;
+
+/** The height of the sticky column header over a list of rows. */
+export const LIST_HEADER_HEIGHT = 32;

@@ -8,6 +8,7 @@ import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 import type { Layout } from "./band";
 import { fileType, isFolder } from "./file-type";
 import { formatDate, formatSize } from "./format";
+import { LIST_HEADER_HEIGHT } from "./grid-layout";
 import type { Sel } from "./selection";
 import type { SortBy, SortDir } from "./sort";
 import { useRestoredScroll } from "./restore-scroll";
@@ -17,8 +18,6 @@ import { useCut } from "../ops/cut-store";
 import { useViewSettings } from "./view-settings";
 import { RenameInput, type RenameProps } from "./RenameInput";
 
-/** The column header's height. */
-const HEADER_HEIGHT = 32;
 /** Rows drawn beyond the visible ones on each side, so a fast scroll does not show blanks. */
 const OVERSCAN = 12;
 
@@ -90,7 +89,7 @@ export function FileList(
     getScrollElement: () => scroller.current,
     estimateSize: () => rowHeight,
     overscan: OVERSCAN,
-    scrollMargin: HEADER_HEIGHT,
+    scrollMargin: LIST_HEADER_HEIGHT,
     initialRect: { width: 600, height: 400 },
   });
   useRestoredScroll(scroller, props.initialScroll);
@@ -141,7 +140,7 @@ export function FileList(
           !(e.target as Element).closest("[data-item]") && props.onContextMenu(null, e)
         }
       >
-        <div role="row" className="kern-list-head" style={{ height: HEADER_HEIGHT }}>
+        <div role="row" className="kern-list-head" style={{ height: LIST_HEADER_HEIGHT }}>
           {COLUMNS.map((c) => {
             const active = !props.sortFailed && props.sortBy === c.by;
             const Arrow = props.sortDir === "asc" ? ArrowUp : ArrowDown;
@@ -191,7 +190,7 @@ export function FileList(
                 }
                 style={{
                   height: rowHeight,
-                  transform: `translateY(${v.start - HEADER_HEIGHT}px)`,
+                  transform: `translateY(${v.start - LIST_HEADER_HEIGHT}px)`,
                 }}
                 onClick={(ev) => props.onItemClick(v.index, ev)}
                 onDoubleClick={(ev) => props.onItemDoubleClick(v.index, ev)}
