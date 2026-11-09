@@ -86,7 +86,7 @@ export async function openTerminalIn(dir: WirePath, note: (text: string) => void
     const err = toWireError(e);
     note(
       err.kind === "NoTerminal"
-        ? `No terminal could be opened (${err.message}). Choose one under Terminal in the settings, or set $TERMINAL.`
+        ? `No terminal could be opened. Enter your terminal program under Terminal in the settings (for example kitty), or set $TERMINAL. (${err.message})`
         : `A terminal could not be opened in ${baseName(dir)}: ${errorText(err)}`
     );
   }

@@ -93,19 +93,23 @@ test("the_terminal_opens_in_the_one_selected_folder_else_the_folder_on_show", as
 test("terminal_error_lists_tried", async () => {
   ipc.settingsGet.mockResolvedValue({ terminal: null } as Settings);
   const message =
-    "no terminal found; tried xdg-terminal-exec (not found on PATH), $TERMINAL (not set), setting (not set)";
+    "no terminal found; tried setting (not set), terminal lists (no list names a terminal), $TERMINAL (not set), installed terminals (no terminal entry is installed)";
   ipc.openTerminal.mockRejectedValue({ kind: "NoTerminal", message, path: null, details: null });
   const { result } = tools();
   act(() => result.current.openTerminalHere());
   await waitFor(() => expect(result.current.notes).toHaveLength(1));
   expect(ipc.openTerminal).toHaveBeenCalledWith(p("/d"), undefined);
   for (const tried of [
-    "xdg-terminal-exec (not found on PATH)",
-    "$TERMINAL (not set)",
     "setting (not set)",
+    "terminal lists (no list names a terminal)",
+    "$TERMINAL (not set)",
+    "installed terminals (no terminal entry is installed)",
   ]) {
     expect(result.current.notes[0]).toContain(tried);
   }
+  expect(result.current.notes[0]).toMatch(
+    /^No terminal could be opened\. Enter your terminal program/
+  );
 });
 
 test("open_with_needs_exactly_one_file", () => {

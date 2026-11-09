@@ -187,7 +187,7 @@ function Terminal(props: { settings: Settings }) {
       id="terminal"
       htmlFor={`${id}-term`}
       wide
-      note="Kern opens a terminal with xdg-terminal-exec when it is installed, else with $TERMINAL, else with this program. It is one program, not a command line: Kern adds -e and the command when there is one to run."
+      note="Kern opens a terminal with this program when one is set, else with the first terminal your xdg-terminals.list files name, else with $TERMINAL, else with any installed terminal. It is one program, not a command line: Kern adds -e and the command when there is one to run."
     >
       <input
         id={`${id}-term`}
