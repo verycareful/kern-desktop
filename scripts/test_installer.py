@@ -432,6 +432,7 @@ DEFAULTS = {
     "single_click_right": False,
     "single_click_centre": False,
     "single_click_editor": False,
+    "time_format": "system",
     "terminal": None,
     "scan_documents": True,
     "scan_downloads": True,
@@ -470,7 +471,7 @@ class Walk(unittest.TestCase):
         self.defaults_until_folder()
         for p in (b"New tab folder", b"Ctrl+T opens", b"View of new folder views",
                   b"Show hidden items", b"Left panel opens with", b"Right panel opens with",
-                  b"File manager list and grid open with", b"Editor window file tree opens with", b"Terminal",
+                  b"File manager list and grid open with", b"Editor window file tree opens with", b"Time of day in dates", b"Terminal",
                   b"Walk Documents", b"Walk Downloads", b"Add a folder", b"Wrap long lines", b"Text size", b"Write an error log"):
             self.answer(p)
         self.assertEqual(self.patch(), DEFAULTS)
@@ -491,6 +492,7 @@ class Walk(unittest.TestCase):
         self.answer(b"Right panel opens with", DOWN)  # Single click
         self.answer(b"File manager list and grid open with", DOWN)
         self.answer(b"Editor window file tree opens with")
+        self.answer(b"Time of day in dates", DOWN, DOWN)  # 24-hour
         self.answer(b"Terminal", b"foot")
         self.answer(b"Walk Documents", DOWN)
         self.answer(b"Walk Downloads")
@@ -510,6 +512,7 @@ class Walk(unittest.TestCase):
         self.assertTrue(p["single_click_right"])
         self.assertTrue(p["single_click_centre"])
         self.assertFalse(p["single_click_editor"])
+        self.assertEqual(p["time_format"], "24")
         self.assertEqual(p["terminal"], "foot")
         self.assertFalse(p["scan_documents"])
         self.assertTrue(p["word_wrap"])
@@ -527,7 +530,7 @@ class Walk(unittest.TestCase):
         self.answer(b"Folder for new tabs", b"~/Projects")
         for p in (b"Ctrl+T opens", b"View of new folder views", b"Show hidden items",
                   b"Left panel opens with", b"Right panel opens with",
-                  b"File manager list and grid open with", b"Editor window file tree opens with", b"Terminal", b"Walk Documents",
+                  b"File manager list and grid open with", b"Editor window file tree opens with", b"Time of day in dates", b"Terminal", b"Walk Documents",
                   b"Walk Downloads"):
             self.answer(p)
         self.answer(b"Add a folder", str(odd).encode())
@@ -605,7 +608,7 @@ class Flows(unittest.TestCase):
                   b"corner radius?", b"New tab folder", b"Ctrl+T opens",
                   b"View of new folder views", b"Show hidden items",
                   b"Left panel opens with", b"Right panel opens with",
-                  b"File manager list and grid open with", b"Editor window file tree opens with", b"Terminal", b"Walk Documents",
+                  b"File manager list and grid open with", b"Editor window file tree opens with", b"Time of day in dates", b"Terminal", b"Walk Documents",
                   b"Walk Downloads", b"Add a folder", b"Wrap long lines", b"Text size",
                   b"Write an error log"):
             self.answer(s, p)

@@ -639,3 +639,12 @@ test("ctrl_t_opens_the_new_tab_folder_or_the_current_folder", async () => {
   await save();
   expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ new_tab_default: "current" }]);
 });
+
+test("the_time_of_day_in_dates_follows_the_system_or_is_set_to_12_or_24_hours", async () => {
+  await mount();
+  nav("Files");
+  expect(pressed("Time of day in dates", "System default")).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(pressed("Time of day in dates", "24-hour"));
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ time_format: "24" }]);
+});

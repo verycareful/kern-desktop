@@ -31,5 +31,6 @@ export const SETTINGS: Settings = {
   default_layout: "file_manager",
   new_tab_folder: null,
   new_tab_default: "folder",
+  time_format: "system",
   error_log: true,
 };

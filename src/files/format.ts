@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
+import type { TimeFormat } from "../ipc";
+
 const KB = 1024;
 const MB = KB * 1024;
 const GB = MB * 1024;
@@ -18,19 +20,46 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 // A calendar day number that is immune to daylight-saving shifts.
 const dayNumber = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000;
 
+// A 24-hour clock writes the hour with two digits (09:05), a 12-hour clock without (9:05 AM), and
+// the system choice leaves both to the locale. "h23" is midnight as 00, which "h24" is not.
+const CLOCK_OPTIONS: Record<TimeFormat, Intl.DateTimeFormatOptions> = {
+  system: { hour: "numeric", minute: "2-digit" },
+  "12": { hour: "numeric", minute: "2-digit", hourCycle: "h12" },
+  "24": { hour: "2-digit", minute: "2-digit", hourCycle: "h23" },
+};
+
+const clocks = new Map<TimeFormat, Intl.DateTimeFormat>();
+
+/** The time of day of `d`; the narrow no-break space ICU puts before AM or PM is a plain space. */
+function timeOfDay(d: Date, format: TimeFormat): string {
+  let clock = clocks.get(format);
+  if (!clock) {
+    clock = new Intl.DateTimeFormat(undefined, CLOCK_OPTIONS[format]);
+    clocks.set(format, clock);
+  }
+  return clock.format(d).replace(/[\u202f\u00a0]/g, " ");
+}
+
 /**
- * The handoff README's relative dates: Today, Yesterday, "N days ago" up to a
- * week, "Nw ago" under 30 days, else "Mon D" (with the year when it is not
- * this one). A date in the future is shown as a date. Local time.
+ * A date with its time: Today, Yesterday or "N days ago" within a week, else "Mon D" (with the
+ * year when it is not this one), then the time of day. A date in the future is shown as a date.
+ * Local time.
  */
-export function formatDate(ms: number | null, now: Date = new Date()): string {
+export function formatDate(
+  ms: number | null,
+  now: Date = new Date(),
+  format: TimeFormat = "system"
+): string {
   if (ms === null) return "";
   const d = new Date(ms);
   const days = dayNumber(now) - dayNumber(d);
-  if (days === 0) return "Today";
-  if (days === 1) return "Yesterday";
-  if (days >= 2 && days < 7) return `${days} days ago`;
-  if (days >= 7 && days < 30) return `${Math.floor(days / 7)}w ago`;
-  const md = `${MONTHS[d.getMonth()]} ${d.getDate()}`;
-  return d.getFullYear() === now.getFullYear() ? md : `${md}, ${d.getFullYear()}`;
+  let day: string;
+  if (days === 0) day = "Today";
+  else if (days === 1) day = "Yesterday";
+  else if (days >= 2 && days < 7) day = `${days} days ago`;
+  else {
+    const md = `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+    day = d.getFullYear() === now.getFullYear() ? md : `${md}, ${d.getFullYear()}`;
+  }
+  return `${day} ${timeOfDay(d, format)}`;
 }

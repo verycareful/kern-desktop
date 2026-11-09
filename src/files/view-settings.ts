@@ -11,6 +11,7 @@ import {
   type NewTabDefault,
   type Settings,
   type SettingsPatch,
+  type TimeFormat,
   type ViewMode,
   type WireError,
   type WirePath,
@@ -31,6 +32,8 @@ interface ViewSettingsState {
   singleClickCentre: boolean;
   singleClickEditor: boolean;
   viewMode: ViewMode;
+  /** The clock the time of day is shown in. */
+  timeFormat: TimeFormat;
   /** The interface size in percent. */
   interfaceSize: number;
   /** What the Library walks: the Documents and Downloads folders when on, and these. */
@@ -56,6 +59,7 @@ export const useViewSettings = create<ViewSettingsState>()(() => ({
   singleClickCentre: false,
   singleClickEditor: false,
   viewMode: "list",
+  timeFormat: "system",
   interfaceSize: DEFAULT_INTERFACE_SIZE,
   scanDocuments: true,
   scanDownloads: true,
@@ -76,6 +80,7 @@ function apply(s: Settings): void {
     singleClickCentre: s.single_click_centre,
     singleClickEditor: s.single_click_editor,
     viewMode: s.view_mode,
+    timeFormat: s.time_format,
     interfaceSize: s.interface_size,
     scanDocuments: s.scan_documents,
     scanDownloads: s.scan_downloads,

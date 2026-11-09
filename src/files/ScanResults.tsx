@@ -7,7 +7,7 @@ import { homeRelative } from "../shell/home-relative";
 import { FileBadge } from "./FileList";
 import { formatDate } from "./format";
 import { ROW_HEIGHT } from "./grid-layout";
-import { useSingleClick, type ClickArea } from "./view-settings";
+import { useSingleClick, useViewSettings, type ClickArea } from "./view-settings";
 
 // The hits of a search or of the Library, as they stream in: name and
 // folder per row, virtualized, since a walk may find many thousands. One row
@@ -29,6 +29,7 @@ export function ScanResults(props: {
 }) {
   const { hits, count } = props;
   const single = useSingleClick(props.area);
+  const timeFormat = useViewSettings((s) => s.timeFormat);
   const scroller = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
   const virtual = useVirtualizer({
@@ -105,7 +106,9 @@ export function ScanResults(props: {
               <FileBadge entry={e} size={ROW_HEIGHT - 12} />
               <span className="kern-name">{e.name}</span>
               <span className="kern-hit-where">{where ? homeRelative(where, props.home) : ""}</span>
-              <span className="kern-hit-when">{formatDate(e.modified_ms)}</span>
+              <span className="kern-hit-when">
+                {formatDate(e.modified_ms, undefined, timeFormat)}
+              </span>
             </div>
           );
         })}

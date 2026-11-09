@@ -175,7 +175,7 @@ fn installer_walk_output_is_accepted() {
     let e = env();
     let folder = e.root.join("my \"odd\" \\ dir");
     fs::create_dir(&folder).unwrap();
-    let defaults = r#"{"theme_mode":"system","interface_size":90,"follow":{"colours":true,"accent":true,"fonts":true,"radius":true},"accent":"slate","new_tab_folder":null,"new_tab_default":"folder","view_mode":"list","show_hidden":false,"terminal":null,"scan_documents":true,"scan_downloads":true,"scan_roots":[],"word_wrap":false,"error_log":true,"single_click_left":true,"single_click_right":false,"single_click_centre":false,"single_click_editor":false,"editor_zoom":1}"#;
+    let defaults = r#"{"theme_mode":"system","interface_size":90,"follow":{"colours":true,"accent":true,"fonts":true,"radius":true},"accent":"slate","new_tab_folder":null,"new_tab_default":"folder","view_mode":"list","show_hidden":false,"terminal":null,"scan_documents":true,"scan_downloads":true,"scan_roots":[],"word_wrap":false,"error_log":true,"time_format":"system","single_click_left":true,"single_click_right":false,"single_click_centre":false,"single_click_editor":false,"editor_zoom":1}"#;
     apply_settings(&e.store(), &e.patch(defaults)).unwrap();
     let chosen = json!({
         "theme_mode": "dark", "interface_size": 125,
@@ -185,7 +185,7 @@ fn installer_walk_output_is_accepted() {
         "new_tab_default": "current", "view_mode": "grid", "show_hidden": true,
         "terminal": "foot", "scan_documents": false, "scan_downloads": false,
         "scan_roots": [{"k": "Bytes", "v": "L3RtcC/m"}],
-        "word_wrap": true, "error_log": false, "single_click_left": false, "single_click_right": true,
+        "word_wrap": true, "error_log": false, "time_format": "24", "single_click_left": false, "single_click_right": true,
         "single_click_centre": true, "single_click_editor": true, "editor_zoom": 1.25
     });
     apply_settings(&e.store(), &e.patch(&chosen.to_string())).unwrap();
@@ -193,6 +193,7 @@ fn installer_walk_output_is_accepted() {
     assert_eq!(v["accent"], json!("graphite"));
     assert_eq!(v["editor_zoom"], json!(1.25));
     assert_eq!(v["error_log"], json!(false));
+    assert_eq!(v["time_format"], json!("24"));
     assert_eq!(v["single_click_left"], json!(false));
     assert_eq!(v["single_click_right"], json!(true));
     assert_eq!(v["single_click_centre"], json!(true));

@@ -136,6 +136,19 @@ pub enum NewTabDefault {
     Current,
 }
 
+/// How the time of day is written in the Modified column and beside dates: the locale's own way,
+/// or a 12-hour or 24-hour clock.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TimeFormat {
+    #[default]
+    #[serde(rename = "system")]
+    System,
+    #[serde(rename = "12")]
+    Hour12,
+    #[serde(rename = "24")]
+    Hour24,
+}
+
 /// The Files view mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -173,6 +186,8 @@ pub struct Settings {
     pub new_tab_folder: Option<WirePath>,
     /// Which of the two new tabs Ctrl+T opens.
     pub new_tab_default: NewTabDefault,
+    /// The clock the time of day is shown in (see [`TimeFormat`]).
+    pub time_format: TimeFormat,
     /// Whether Kern writes the error log (`error_log.rs`). Off stops all writing and leaves a file
     /// already there as it is.
     pub error_log: bool,
@@ -215,6 +230,7 @@ impl Default for Settings {
             default_layout: LayoutKind::default(),
             new_tab_folder: None,
             new_tab_default: NewTabDefault::default(),
+            time_format: TimeFormat::default(),
             error_log: true,
             single_click_left: true,
             single_click_right: false,
@@ -770,6 +786,14 @@ impl Stored for Settings {
             &mut obj,
             "new_tab_default",
             &mut s.new_tab_default,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "time_format",
+            &mut s.time_format,
             &mut keep,
             &mut problems,
             any_value,

@@ -5,7 +5,7 @@
 # window offers one layout) has a question here; a Rust test compares this
 # list with the settings Kern defines; nothing in the scripts reads it.
 # shellcheck disable=SC2034
-SETTING_KEYS="theme_mode accent follow scan_roots scan_documents scan_downloads terminal word_wrap editor_zoom view_mode show_hidden interface_size new_tab_folder new_tab_default single_click_left single_click_right single_click_centre single_click_editor error_log"
+SETTING_KEYS="theme_mode accent follow scan_roots scan_documents scan_downloads terminal word_wrap editor_zoom view_mode show_hidden interface_size new_tab_folder new_tab_default single_click_left single_click_right single_click_centre single_click_editor time_format error_log"
 
 # The questions follow the Settings window: its sections, its order and its
 # labels. The answers become one JSON object, which `kern --apply-settings`
@@ -106,7 +106,7 @@ click_answer() {
 settings_walk() {
     local out=$1 pick text folder p
     local theme size accent f_colours f_accent f_fonts f_radius
-    local tab_folder tab_default view hidden click_left click_right click_centre click_editor terminal docs downloads wrap zoom error_log
+    local tab_folder tab_default view hidden click_left click_right click_centre click_editor time_format terminal docs downloads wrap zoom error_log
     local -a sizes=() zooms=() roots=()
     local roots_json="" root
 
@@ -150,6 +150,12 @@ settings_walk() {
     click_centre=$pick
     ui_menu pick 0 "Editor window file tree opens with" "Double click" "Single click"
     click_editor=$pick
+    ui_menu pick 0 "Time of day in dates" "System default" "12-hour" "24-hour"
+    case $pick in
+    1) time_format=12 ;;
+    2) time_format=24 ;;
+    *) time_format=system ;;
+    esac
     ui_text text "" "Terminal (one program; Enter lets Kern pick one)"
     if [[ -z $text ]]; then terminal=null; else terminal=$(json_str "$text"); fi
 
@@ -196,6 +202,7 @@ settings_walk() {
         printf '"single_click_right":%s,' "$(json_bool "$(click_answer "$click_right")")"
         printf '"single_click_centre":%s,' "$(json_bool "$(click_answer "$click_centre")")"
         printf '"single_click_editor":%s,' "$(json_bool "$(click_answer "$click_editor")")"
+        printf '"time_format":"%s",' "$time_format"
         printf '"terminal":%s,' "$terminal"
         printf '"scan_documents":%s,' "$(json_bool "$docs")"
         printf '"scan_downloads":%s,' "$(json_bool "$downloads")"

@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use kern_lib::store::{
     move_aside, volume_online, LayoutKind, NewTabDefault, SessionTab, SessionWindow, Settings,
-    Store, ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES, LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX,
-    LEFT_WIDTH_MIN, MAIN_LAYOUTS, RECENTS_CAP, RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN,
+    Store, TimeFormat, ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES, LEFT_WIDTH_DEFAULT,
+    LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, MAIN_LAYOUTS, RECENTS_CAP, RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN,
 };
 use kernkraft_tauri::WirePath;
 use serde_json::{json, Map, Value};
@@ -1327,4 +1327,46 @@ fn a_stored_single_click_is_dropped_by_the_next_write_and_refused_in_a_patch() {
         .settings_set(patch(json!({"single_click": true})))
         .unwrap_err();
     assert_eq!(err.kind, "InvalidArgument");
+}
+
+#[test]
+fn the_time_format_defaults_to_the_system_and_is_stored_as_system_12_or_24() {
+    let e = env();
+    let s = store(&e);
+    assert_eq!(
+        s.settings_get().unwrap().value.time_format,
+        TimeFormat::System
+    );
+    for (text, want) in [
+        ("12", TimeFormat::Hour12),
+        ("24", TimeFormat::Hour24),
+        ("system", TimeFormat::System),
+    ] {
+        let out = s
+            .settings_set(patch(json!({ "time_format": text })))
+            .unwrap();
+        assert_eq!(out.value.time_format, want);
+        assert_eq!(
+            read_json(&e.config.join("settings.json"))["time_format"],
+            json!(text)
+        );
+        assert_eq!(store(&e).settings_get().unwrap().value.time_format, want);
+    }
+}
+
+#[test]
+fn an_unknown_time_format_is_refused_and_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    s.settings_set(patch(json!({"time_format": "24"}))).unwrap();
+    for bad in [json!("13"), json!(24), json!("AM"), json!(null)] {
+        let err = s
+            .settings_set(patch(json!({ "time_format": bad })))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument");
+    }
+    assert_eq!(
+        s.settings_get().unwrap().value.time_format,
+        TimeFormat::Hour24
+    );
 }

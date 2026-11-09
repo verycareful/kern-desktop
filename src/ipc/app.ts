@@ -16,6 +16,9 @@ export type ViewMode = "list" | "grid";
 /** Which of the two new tabs Ctrl+T opens; the other is on Ctrl+Shift+T. */
 export type NewTabDefault = "folder" | "current";
 
+/** How the time of day is written in dates (store.rs TimeFormat): the system's way, 12-hour or 24-hour. */
+export type TimeFormat = "system" | "12" | "24";
+
 /** The two layouts of a window (store.rs LayoutKind). */
 export type LayoutKind = "file_manager" | "editor";
 
@@ -49,6 +52,8 @@ export interface Settings {
   new_tab_folder: WirePath | null;
   /** What Ctrl+T opens: the new tab folder, or the folder of the tab in front (store.rs NewTabDefault). */
   new_tab_default: NewTabDefault;
+  /** The clock the time of day is shown in (store.rs Settings::time_format). */
+  time_format: TimeFormat;
   /** Whether Kern writes the error log (store.rs Settings::error_log). */
   error_log: boolean;
 }

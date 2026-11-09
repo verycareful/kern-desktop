@@ -97,6 +97,7 @@ export function FileGrid(
   const mount = useRef(0);
   if (mount.current === 0) mount.current = ++mounts;
   const zoom = zoomFactor(useViewSettings((s) => s.interfaceSize));
+  const timeFormat = useViewSettings((s) => s.timeFormat);
   const thumbs = useThumbnails(
     `${props.thumbKey}:${mount.current}`,
     visible,
@@ -189,7 +190,10 @@ export function FileGrid(
                         </div>
                       )}
                       <div className="kern-card-meta">
-                        {[isFolder(e) ? null : formatSize(e.len), formatDate(e.modified_ms)]
+                        {[
+                          isFolder(e) ? null : formatSize(e.len),
+                          formatDate(e.modified_ms, undefined, timeFormat),
+                        ]
                           .filter(Boolean)
                           .join(" · ")}
                       </div>

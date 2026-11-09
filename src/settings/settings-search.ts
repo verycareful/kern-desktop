@@ -128,6 +128,12 @@ export const ROWS = {
     words:
       "double click single click mouse open files folders pointer editor window tree files search",
   },
+  time_format: {
+    category: "files",
+    group: "Time",
+    label: "Time of day in dates",
+    words: "clock 12 hour 24 hour am pm modified date time format locale",
+  },
   terminal: {
     category: "files",
     group: "Programs",

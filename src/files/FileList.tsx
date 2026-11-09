@@ -13,6 +13,7 @@ import type { SortBy, SortDir } from "./sort";
 import { useRestoredScroll } from "./restore-scroll";
 import { useRubberBand } from "./useRubberBand";
 import { useCurrentItem } from "./use-current-item";
+import { useViewSettings } from "./view-settings";
 import { RenameInput, type RenameProps } from "./RenameInput";
 
 /** The column header's height. */
@@ -104,6 +105,7 @@ export function FileList(
   }, [revealTick, virtual]);
 
   const item = useCurrentItem(entries.length, sel.cursor, props.onSeedCursor);
+  const timeFormat = useViewSettings((s) => s.timeFormat);
 
   const layout: Layout = { kind: "list", rowHeight, count: entries.length };
   const { onPointerDown, band } = useRubberBand({
@@ -209,7 +211,7 @@ export function FileList(
                   {isFolder(e) ? "" : formatSize(e.len)}
                 </div>
                 <div role="gridcell" className="kern-col kern-col-modified">
-                  {formatDate(e.modified_ms)}
+                  {formatDate(e.modified_ms, undefined, timeFormat)}
                 </div>
               </div>
             );

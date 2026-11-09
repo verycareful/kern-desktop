@@ -11,6 +11,7 @@ import {
   type Fm1Status,
   type LayoutKind,
   type NewTabDefault,
+  type TimeFormat,
   type Settings,
   type ViewMode,
   type WireError,
@@ -42,6 +43,12 @@ const LAYOUTS: readonly { value: LayoutKind; label: string; disabled?: boolean }
 const NEW_TAB_DEFAULTS: readonly { value: NewTabDefault; label: string }[] = [
   { value: "folder", label: "New tab folder" },
   { value: "current", label: "Current folder" },
+];
+
+const TIME_FORMATS: readonly { value: TimeFormat; label: string }[] = [
+  { value: "system", label: "System default" },
+  { value: "12", label: "12-hour" },
+  { value: "24", label: "24-hour" },
 ];
 
 type Click = "double" | "single";
@@ -344,6 +351,19 @@ export function FilesSection(props: { settings: Settings }) {
             />
           </Row>
         ))}
+      </Group>
+      <Group rows={["time_format"]}>
+        <Row
+          id="time_format"
+          note="The time beside the date in the Modified column. System default follows the locale."
+        >
+          <Choices
+            label="Time of day in dates"
+            value={settings.time_format}
+            options={TIME_FORMATS}
+            onChange={(time_format) => edit({ time_format })}
+          />
+        </Row>
       </Group>
       <Group rows={["terminal", "default_fm"]}>
         <Terminal settings={settings} />
