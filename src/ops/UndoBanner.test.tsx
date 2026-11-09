@@ -86,3 +86,22 @@ test("a_retry_that_fails_again_keeps_the_banner_with_the_new_reason", async () =
     expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
   });
 });
+
+test("the_same_failure_again_flashes_the_banner_that_is_already_showing", async () => {
+  // The backend answers with a new error each time, never the same object.
+  ipc.undoState.mockImplementation(() => Promise.reject(err("journal poisoned")));
+  render(<UndoBanner />);
+  const flash = () => screen.getByTestId("undo-error").querySelector(".kern-repeat-flash");
+  await act(() => useOps.getState().refreshUndo());
+  expect(flash()).toBeNull();
+  await act(() => useOps.getState().refreshUndo());
+  const first = flash();
+  expect(first).not.toBeNull();
+  // Other words are a new message: the flash that played is left as it was, and the next
+  // repeat of the new words draws a new one.
+  ipc.undoState.mockImplementation(() => Promise.reject(err("journal missing")));
+  await act(() => useOps.getState().refreshUndo());
+  expect(flash()).toBe(first);
+  await act(() => useOps.getState().refreshUndo());
+  expect(flash()).not.toBe(first);
+});

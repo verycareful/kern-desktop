@@ -157,3 +157,18 @@ test("an_editor_window_that_cannot_be_opened_is_said_in_the_status_bar", async (
     )
   );
 });
+
+test("the_same_note_again_is_listed_once_and_counted", () => {
+  selection = [entry("a.txt"), entry("two\nlines.txt")];
+  const { result } = tools();
+  act(() => result.current.copyPath());
+  expect(result.current.notes).toHaveLength(1);
+  expect(result.current.noteRepeats).toBe(0);
+  act(() => result.current.copyPath());
+  act(() => result.current.copyPath());
+  expect(result.current.notes).toHaveLength(1);
+  expect(result.current.noteRepeats).toBe(2);
+  act(() => result.current.dismissNotes());
+  expect(result.current.notes).toEqual([]);
+  expect(result.current.noteRepeats).toBe(0);
+});

@@ -696,3 +696,27 @@ test("a_tree_row_the_clipboard_holds_as_a_cut_is_marked_until_the_cut_is_gone", 
   act(() => clearCut());
   expect(rows().some((r) => r.classList.contains("kern-cut"))).toBe(false);
 });
+
+test("the_same_note_raised_again_is_listed_once_and_flashes", async () => {
+  ipc.unwatchDir.mockRejectedValue(wireError("Io", "inotify busy"));
+  await mount();
+  const toggle = async () => {
+    fireEvent.click(row("docs"));
+    await waitFor(() => expect(row("docs")).toHaveAttribute("aria-expanded", "true"));
+    fireEvent.click(row("docs"));
+    await waitFor(() => expect(row("docs")).toHaveAttribute("aria-expanded", "false"));
+  };
+  await toggle();
+  const note = await screen.findByText(/did not end: Io: inotify busy/);
+  expect(note.closest("li")!.querySelector(".kern-repeat-flash")).toBeNull();
+  await toggle();
+  await waitFor(() =>
+    expect(
+      screen
+        .getByText(/did not end: Io: inotify busy/)
+        .closest("li")!
+        .querySelector(".kern-repeat-flash")
+    ).not.toBeNull()
+  );
+  expect(screen.getAllByText(/did not end: Io: inotify busy/)).toHaveLength(1);
+});

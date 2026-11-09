@@ -23,6 +23,7 @@ import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
 import { actions, currentContext, getAction, runAction } from "../keys/actions";
 import { needsAttention, type Outcome } from "../ops/outcome";
 import { ReportPanel } from "../ops/ReportPanel";
+import { RepeatFlash } from "../ops/repeat-flash";
 import { runOp, type RunningOp } from "../ops/run-op";
 import { useOps } from "../ops/useOps";
 import { useTabs, type TrashTab } from "../store/tabs";
@@ -385,6 +386,7 @@ export function TrashView(props: { tab: TrashTab }) {
         <span>
           The Trash could not be read: {loadError?.kind}: {loadError?.message}
         </span>
+        <RepeatFlash watch={loadError} />
         <button type="button" className="kern-button" onClick={() => void refresh()}>
           Retry
         </button>

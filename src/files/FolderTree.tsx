@@ -15,6 +15,7 @@ import { displayPath, pathKey, toWireError, type WireEntry, type WirePath } from
 import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 import { useCut } from "../ops/cut-store";
 import { baseName } from "../ops/labels";
+import { FlashSpan } from "../ops/repeat-flash";
 import { showOpenErrors } from "../ops/open-error-store";
 import { openFiles } from "./open-entries";
 import { useSingleClick } from "./view-settings";
@@ -248,6 +249,7 @@ export function FolderTree(props: {
           {tree.notes.map((n) => (
             <li key={n.id}>
               <span>{n.text}</span>
+              <FlashSpan count={n.repeats} />
               <button
                 type="button"
                 className="kern-icon-button kern-dismiss"

@@ -567,6 +567,20 @@ test("settings_that_cannot_be_read_are_shown_with_a_retry", async () => {
   await screen.findByTestId("folder-list");
 });
 
+test("a_retry_of_the_settings_that_fails_the_same_way_flashes_the_banner_that_is_showing", async () => {
+  const failure = () =>
+    Promise.reject({ kind: "Io", message: "settings broken", path: null, details: null });
+  ipc.settingsGet.mockImplementation(failure);
+  const tab = openTab();
+  render(<Host tab={tab} />);
+  const alert = await screen.findByRole("alert");
+  expect(alert.querySelector(".kern-repeat-flash")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+  await waitFor(() =>
+    expect(screen.getByRole("alert").querySelector(".kern-repeat-flash")).not.toBeNull()
+  );
+});
+
 test("unmount_stops_the_watch_and_the_thumbnails", async () => {
   ipc.settingsGet.mockResolvedValue({ ...SETTINGS, view_mode: "grid" });
   ipc.listDir.mockResolvedValue([entry("a.png", { mime: "image/png" })]);

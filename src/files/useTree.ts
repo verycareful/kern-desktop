@@ -55,6 +55,8 @@ export const EXPAND_ALL_MAX = 256;
 export interface TreeNote {
   id: number;
   text: string;
+  /** How many times the same words were raised again while this note was listed. */
+  repeats: number;
 }
 
 export interface TreeApi {
@@ -153,7 +155,9 @@ export function useTree(opts: TreeOptions): TreeApi {
   const notify = useCallback((text: string) => {
     logError("tree", text);
     setNotes((n) =>
-      n.some((x) => x.text === text) ? n : [...n, { id: nextNote.current++, text }]
+      n.some((x) => x.text === text)
+        ? n.map((x) => (x.text === text ? { ...x, repeats: x.repeats + 1 } : x))
+        : [...n, { id: nextNote.current++, text, repeats: 0 }]
     );
   }, []);
 

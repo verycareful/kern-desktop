@@ -81,7 +81,7 @@ import {
   useViewSettingsSync,
 } from "./view-settings";
 import { useFolder } from "./useFolder";
-import { RepeatFlash } from "../ops/repeat-flash";
+import { FlashSpan, RepeatFlash } from "../ops/repeat-flash";
 import "../ops/ops.css";
 import "./files.css";
 
@@ -115,6 +115,7 @@ export function FolderView(props: { tab: FolderTab }) {
             <span>
               Settings could not be read: <ErrorText error={error} />
             </span>
+            <RepeatFlash watch={error} />
             <button type="button" className="kern-button" onClick={() => void loadViewSettings()}>
               Retry
             </button>
@@ -792,6 +793,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
               <li key={n}>{n}</li>
             ))}
           </ul>
+          <FlashSpan count={tools.noteRepeats} />
           <button
             type="button"
             className="kern-icon-button"

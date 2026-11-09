@@ -5,6 +5,7 @@ import { restartRequest, toWireError, type Settings } from "../ipc";
 import { NO_FILE_KEYS_ATTR } from "../keys/file-keys";
 import { errorText } from "../ops/error-text";
 import { Modal } from "../ops/Modal";
+import { RepeatFlash } from "../ops/repeat-flash";
 import { noticesShown, useOps } from "../ops/useOps";
 import { KernLogo } from "../shell/KernLogo";
 import { setCloseCheck } from "../shell/useCloseGuard";
@@ -316,11 +317,13 @@ export function SettingsWindow() {
           {reportsError && (
             <div role="alert" className="kern-banner">
               The reports of unreadable settings files could not be read: {errorText(reportsError)}
+              <RepeatFlash watch={reportsError} />
             </div>
           )}
           {listenError && (
             <div role="alert" className="kern-banner">
               Settings changed in another window will not show here: {errorText(listenError)}
+              <RepeatFlash watch={listenError} />
             </div>
           )}
           {unknown && (
@@ -331,7 +334,8 @@ export function SettingsWindow() {
           )}
           {loadError && (
             <div role="alert" className="kern-banner">
-              The settings could not be read: {errorText(loadError)}{" "}
+              The settings could not be read: {errorText(loadError)}
+              <RepeatFlash watch={loadError} />{" "}
               <button
                 type="button"
                 className="kern-button"

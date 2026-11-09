@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { rename as renameItem, type WireEntry } from "../ipc";
 import { NameDialog } from "../ops/NameDialog";
 import { nameIsText } from "../ops/names";
+import { NO_NOTES, raiseNote, type NoteList } from "../ops/note-list";
+import { FlashSpan } from "../ops/repeat-flash";
 import { useOps } from "../ops/useOps";
 import { isFolder } from "./file-type";
 import { FileOpsUi } from "./FileOpsUi";
@@ -31,7 +33,7 @@ export function TreeOps(props: {
   useTreeMenu((s) => s.root);
   const folder = treeMenuFolder();
   const [renaming, setRenaming] = useState<WireEntry | null>(null);
-  const [notes, setNotes] = useState<string[]>([]);
+  const [notes, setNotes] = useState<NoteList>(NO_NOTES);
 
   const ops = useFileOps({
     // Unused while `ready` says false: nothing is created or pasted without a folder.
@@ -58,7 +60,7 @@ export function TreeOps(props: {
       paste: controller.paste,
       trash: controller.trash,
       askDelete: controller.askDelete,
-      note: (text) => setNotes((n) => (n.includes(text) ? n : [...n, text])),
+      note: (text) => setNotes((n) => raiseNote(n, text)),
     }),
     [controller]
   );
@@ -76,14 +78,15 @@ export function TreeOps(props: {
 
   return (
     <>
-      {notes.length > 0 && (
+      {notes.texts.length > 0 && (
         <div role="alert" className="kern-banner" data-testid="tree-notes">
           <ul>
-            {notes.map((n) => (
+            {notes.texts.map((n) => (
               <li key={n}>{n}</li>
             ))}
           </ul>
-          <button type="button" className="kern-button" onClick={() => setNotes([])}>
+          <FlashSpan count={notes.repeats} />
+          <button type="button" className="kern-button" onClick={() => setNotes(NO_NOTES)}>
             Dismiss
           </button>
         </div>
