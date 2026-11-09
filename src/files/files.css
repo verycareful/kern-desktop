@@ -226,9 +226,11 @@
 }
 
 /*
- * The space between the path bar and the first row or card is the theme's
- * gap for the density in use (--kern-density-gap, theme base.css), the same
- * space the bar and the rows keep from the sides.
+ * The space between the path bar and the first card is the theme's gap for
+ * the density in use (--kern-density-gap, theme base.css), the same space the
+ * bar and the cards keep from the sides. A list has no such space: its column
+ * header is sticky and sits flush under the bar, so rows that scroll up pass
+ * under the header and never show above it.
  */
 .kern-list,
 .kern-grid {
@@ -236,6 +238,9 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
+}
+
+.kern-grid {
   padding-top: var(--kern-density-gap);
 }
 
