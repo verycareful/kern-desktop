@@ -13,6 +13,7 @@ import {
   type WirePath,
 } from "../ipc";
 import { copyPaths, copyProblem, openTerminalIn } from "../files/use-folder-tools";
+import { clearCut } from "../ops/cut-store";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { showOpenErrors } from "../ops/open-error-store";
@@ -1058,7 +1059,10 @@ function copyEntryPath(path: WirePath): void {
     return;
   }
   clipText(displayPath(path)).then(
-    () => useOps.getState().notify(`Copied the path of ${baseName(path)}`),
+    () => {
+      clearCut();
+      useOps.getState().notify(`Copied the path of ${baseName(path)}`);
+    },
     (e: unknown) => say(`The path could not be copied: ${errorText(toWireError(e))}`)
   );
 }

@@ -6,6 +6,7 @@ import { FileList } from "./FileList";
 import { empty } from "./selection";
 import { entry } from "./test-entries";
 import { stubLayout } from "./test-layout";
+import { clearCut, setCut } from "../ops/cut-store";
 import { useViewSettings } from "./view-settings";
 
 let restore: () => void;
@@ -74,4 +75,12 @@ test("the_modified_column_shows_the_time_in_the_chosen_clock", () => {
   expect(row("24")).toBe("Mar 4, 2020 14:05");
   expect(row("12").toLowerCase()).toBe("mar 4, 2020 2:05 pm");
   useViewSettings.setState({ timeFormat: "system" });
+});
+
+test("a_row_the_clipboard_holds_as_a_cut_is_marked_and_the_others_are_not", () => {
+  setCut([entry("b").path]);
+  list(false);
+  const rows = screen.getAllByTestId("file-row");
+  expect(rows.map((r) => r.classList.contains("kern-cut"))).toEqual([false, true]);
+  clearCut();
 });

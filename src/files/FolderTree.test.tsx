@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DirEvent, WireEntry, WireError, WirePath } from "../ipc";
+import { clearCut, setCut } from "../ops/cut-store";
 import { useOpenError } from "../ops/open-error-store";
 import { entry } from "./test-entries";
 import { stubLayout } from "./test-layout";
@@ -686,4 +687,12 @@ test("reveal_opens_the_folders_down_to_a_path_and_makes_it_the_current_row", asy
     shown = h.current!.reveal(p("/elsewhere/x"));
   });
   expect(shown).toBe(false);
+});
+
+test("a_tree_row_the_clipboard_holds_as_a_cut_is_marked_until_the_cut_is_gone", async () => {
+  await mount();
+  act(() => setCut([p("/r/readme.md")]));
+  expect(rows().map((r) => r.classList.contains("kern-cut"))).toEqual([false, false, true, false]);
+  act(() => clearCut());
+  expect(rows().some((r) => r.classList.contains("kern-cut"))).toBe(false);
 });

@@ -13,6 +13,7 @@ import type { SortBy, SortDir } from "./sort";
 import { useRestoredScroll } from "./restore-scroll";
 import { useRubberBand } from "./useRubberBand";
 import { useCurrentItem } from "./use-current-item";
+import { useCut } from "../ops/cut-store";
 import { useViewSettings } from "./view-settings";
 import { RenameInput, type RenameProps } from "./RenameInput";
 
@@ -106,6 +107,7 @@ export function FileList(
 
   const item = useCurrentItem(entries.length, sel.cursor, props.onSeedCursor);
   const timeFormat = useViewSettings((s) => s.timeFormat);
+  const cut = useCut((s) => s.keys);
 
   const layout: Layout = { kind: "list", rowHeight, count: entries.length };
   const { onPointerDown, band } = useRubberBand({
@@ -184,6 +186,7 @@ export function FileList(
                 className={
                   "kern-row" +
                   (selected ? " kern-selected" : "") +
+                  (cut.has(pathKey(e.path)) ? " kern-cut" : "") +
                   (item.outlined === v.index ? " kern-cursor" : "")
                 }
                 style={{

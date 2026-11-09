@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect } from "react";
 import { useViewSettingsSync } from "../files/view-settings";
+import { useCutSync } from "../ops/cut-store";
 import { useShortcuts } from "../keys/useShortcuts";
 import type { Action } from "../keys/actions";
 import { activeTab, useTabs, type DocTab } from "../store/tabs";
@@ -40,6 +41,7 @@ export const EDITOR_WINDOW_KEYS = (a: Action): boolean =>
 export function EditorWindow(props: { starting: boolean }) {
   useShortcuts(EDITOR_WINDOW_KEYS);
   useViewSettingsSync();
+  useCutSync();
   // Starts with the column width the main window ended with.
   useLayoutSync(false);
   useEditorDrop();

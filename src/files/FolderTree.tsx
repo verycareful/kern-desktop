@@ -13,6 +13,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Repeat, X } from "lucide-react";
 import { displayPath, pathKey, toWireError, type WireEntry, type WirePath } from "../ipc";
 import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
+import { useCut } from "../ops/cut-store";
 import { baseName } from "../ops/labels";
 import { showOpenErrors } from "../ops/open-error-store";
 import { openFiles } from "./open-entries";
@@ -85,6 +86,7 @@ export function FolderTree(props: {
   const at = useMemo(() => indexByKey(rows), [rows]);
   const [active, setActive] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
+  const cut = useCut((s) => s.keys);
   const scroller = useRef<HTMLDivElement>(null);
   const typed = useRef({ text: "", at: 0 });
   const activeIndex = active !== null ? (at.get(active) ?? -1) : -1;
@@ -304,6 +306,7 @@ export function FolderTree(props: {
                 className={
                   "kern-tree-row" +
                   (isActive ? " kern-selected" : "") +
+                  (cut.has(pathKey(row.entry.path)) ? " kern-cut" : "") +
                   (isActive && focused ? " kern-cursor" : "")
                 }
                 style={style}

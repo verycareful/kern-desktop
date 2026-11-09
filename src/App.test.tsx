@@ -47,6 +47,8 @@ vi.mock("./ipc", async () => ({
   EVENT_DRAG_LEAVE: "kern://drag-leave",
   // The file operations host reads the undo history once.
   undoState: () => Promise.resolve({ undo: null, redo: null }),
+  // The clipboard holds no files, so nothing is greyed as cut.
+  clipGet: () => Promise.resolve(null),
   // The folder view of the Home tab: an empty folder.
   listDir: () => Promise.resolve([]),
   watchDir: () => Promise.resolve(),

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, type CSSProperties } from "react";
 import { useViewSettingsSync } from "../files/view-settings";
+import { useCutSync } from "../ops/cut-store";
 import { useShortcuts } from "../keys/useShortcuts";
 import { useLayout } from "../store/layout";
 import { EditorCentre, EditorLayout } from "./EditorLayout";
@@ -31,6 +32,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
   useShortcuts();
   // Hidden files, the view, the interface size and what a new tab opens.
   useViewSettingsSync();
+  useCutSync();
   useSettingsReportNotice();
   // The layout is the setting; the columns and the tree are remembered (layout.json).
   useLayoutSync(true);

@@ -431,6 +431,16 @@
   border-color: var(--kern-accent);
 }
 
+/*
+ * An item the clipboard holds as a cut is dimmed until it is pasted or the cut is cancelled. The
+ * row or card keeps its own background, so a cut item that is selected is still seen as selected.
+ */
+.kern-row.kern-cut > *,
+.kern-card.kern-cut > *,
+.kern-tree-row.kern-cut > * {
+  opacity: 0.5;
+}
+
 .kern-card-pic {
   display: flex;
   height: 96px;

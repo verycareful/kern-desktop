@@ -10,6 +10,7 @@ import {
   type WireEntry,
   type WirePath,
 } from "../ipc";
+import { clearCut } from "../ops/cut-store";
 import { errorText } from "../ops/error-text";
 import { baseName, itemsText } from "../ops/labels";
 import { useOps } from "../ops/useOps";
@@ -55,7 +56,10 @@ export function copyPaths(paths: readonly WirePath[], note: (text: string) => vo
     return;
   }
   clipText(paths.map(displayPath).join("\n")).then(
-    () => useOps.getState().notify(`Copied the path of ${itemsText(paths)}`),
+    () => {
+      clearCut();
+      useOps.getState().notify(`Copied the path of ${itemsText(paths)}`);
+    },
     (e: unknown) => note(`The path could not be copied: ${errorText(toWireError(e))}`)
   );
 }

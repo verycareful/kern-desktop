@@ -19,6 +19,7 @@ import { dropItems } from "../ops/drop-items";
 import { editErrorText } from "../ops/edit-error";
 import { baseName, itemsText, namesText } from "../ops/labels";
 import { nameIsText, nameProblem } from "../ops/names";
+import { clearCut, setCut } from "../ops/cut-store";
 import { clearSpentCut } from "../ops/spent-cut";
 import { useOps } from "../ops/useOps";
 import type { FolderController } from "./folder-controller";
@@ -206,6 +207,9 @@ export function useFileOps(args: FileOpsArgs) {
           op,
           list.map((e) => e.path)
         );
+        // The clipboard now holds this cut, or this copy in place of a cut.
+        if (op === "cut") setCut(list.map((e) => e.path));
+        else clearCut();
         useOps
           .getState()
           .notify(
@@ -237,7 +241,10 @@ export function useFileOps(args: FileOpsArgs) {
           // cut, as soon as the window has the focus. One that left anything behind (a failure, a
           // skip, a cancel) stays, so it can be pasted again; what already moved is then
           // reported as not found.
-          if (clip.op === "cut" && movedEverything(end)) void clearSpentCut(clip.paths);
+          if (clip.op === "cut" && movedEverything(end)) {
+            clearCut();
+            void clearSpentCut(clip.paths);
+          }
         },
       });
     } catch (e) {

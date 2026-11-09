@@ -12,9 +12,11 @@ import type {
   WireReport,
   WireSame,
 } from "../ipc";
+import { pathKey } from "../ipc";
 import { currentContext, getAction, isEnabled, runAction } from "../keys/actions";
 import { useShortcuts } from "../keys/useShortcuts";
 import { OpsHost } from "../ops/OpsHost";
+import { clearCut, useCut } from "../ops/cut-store";
 import { forgetSpentCuts } from "../ops/spent-cut";
 import { useOps } from "../ops/useOps";
 import { activeTab, useTabs, type FolderTab } from "../store/tabs";
@@ -172,6 +174,7 @@ beforeEach(() => {
     Promise.resolve(sources.map((): WireSame => ({ state: "checked", same: true })))
   );
   forgetSpentCuts();
+  clearCut();
   useViewSettings.setState({ loaded: false, error: null });
   useFolderUi.setState({ sort: {} });
   useFolderStatus.setState({ byTab: {} });
@@ -1553,4 +1556,76 @@ test("a_search_closes_a_question_about_the_selection_and_rename_stays_off", asyn
   expect(screen.queryByRole("textbox", { name: /rename/i })).toBeNull();
   expect(ipc.startOp).not.toHaveBeenCalled();
   expect(useFolderStatus.getState().byTab[tab.id]?.selected).toBe(0);
+});
+
+// ---- a cut item is greyed until it is pasted or the clipboard holds something else ----
+
+test("a_cut_greys_the_cut_items_and_a_copy_after_it_greys_nothing", async () => {
+  await mount([entry("a"), entry("b"), entry("c")]);
+  select("a", "b");
+  key("x", { ctrlKey: true });
+  await waitFor(() =>
+    expect([...useCut.getState().keys].sort()).toEqual([pathKey(p("/d/a")), pathKey(p("/d/b"))])
+  );
+  expect(
+    screen.getAllByTestId("file-row").map((r) => [r.dataset.name, r.classList.contains("kern-cut")])
+  ).toEqual([
+    ["a", true],
+    ["b", true],
+    ["c", false],
+  ]);
+  key("c", { ctrlKey: true });
+  await waitFor(() => expect(useCut.getState().keys.size).toBe(0));
+  expect(document.querySelector(".kern-cut")).toBeNull();
+});
+
+test("a_cut_that_failed_to_reach_the_clipboard_greys_nothing", async () => {
+  await mount([entry("a")]);
+  select("a");
+  ipc.clipSet.mockRejectedValue(err("NoFocus", "Kern's window does not have focus"));
+  key("x", { ctrlKey: true });
+  await screen.findByRole("alert");
+  expect(useCut.getState().keys.size).toBe(0);
+});
+
+test("pasting_a_cut_that_moved_everything_ungreys_it_at_once", async () => {
+  const paths = [p("/d/a")];
+  await mount([entry("a")]);
+  select("a");
+  key("x", { ctrlKey: true });
+  await waitFor(() => expect(useCut.getState().keys.size).toBe(1));
+  ipc.clipGet.mockResolvedValue({ op: "cut", paths });
+  key("v", { ctrlKey: true });
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalled());
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  act(() =>
+    handlers["kernkraft://op-done"]!(done(1, { done: [{ source: paths[0]!, dest: p("/d/b") }] }))
+  );
+  await waitFor(() => expect(useCut.getState().keys.size).toBe(0));
+});
+
+test("a_cut_that_left_an_item_behind_stays_greyed", async () => {
+  const paths = [p("/d/a"), p("/d/c")];
+  await mount([entry("a"), entry("c")]);
+  select("a", "c");
+  key("x", { ctrlKey: true });
+  await waitFor(() => expect(useCut.getState().keys.size).toBe(2));
+  ipc.clipGet.mockResolvedValue({ op: "cut", paths });
+  key("v", { ctrlKey: true });
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalled());
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  act(() =>
+    handlers["kernkraft://op-done"]!(
+      done(1, {
+        done: [{ source: paths[0]!, dest: p("/e/a") }],
+        failed: [{ path: paths[1]!, error: err("Io", "no") }],
+      })
+    )
+  );
+  await act(async () => {});
+  expect(useCut.getState().keys.size).toBe(2);
 });
