@@ -70,8 +70,10 @@ pub const THEME_DENSITY: Density = Density::Cozy;
 
 /// Keys of `settings.json` Kern does not keep: dropped when the file is
 /// read, so the next write leaves them out. `density` is fixed at
-/// [`THEME_DENSITY`].
-const DROPPED_SETTINGS: [&str; 1] = ["density"];
+/// [`THEME_DENSITY`]. `single_click` is not a setting: the click mode is kept
+/// per area (`single_click_left` and the three after it), and a stray copy
+/// would otherwise be carried in `extra` and written back for good.
+const DROPPED_SETTINGS: [&str; 2] = ["density", "single_click"];
 
 /// Keys of `layout.json` Kern does not keep, dropped the same way. `layout`:
 /// the main window's layout is [`Settings::default_layout`] alone.
@@ -174,8 +176,17 @@ pub struct Settings {
     /// Whether Kern writes the error log (`error_log.rs`). Off stops all writing and leaves a file
     /// already there as it is.
     pub error_log: bool,
-    /// Whether a single click opens a file or folder; off means a double-click does.
-    pub single_click: bool,
+    /// Left panel (places, volumes, Trash, Library, and the strip of the other layout): whether a
+    /// single click opens an entry; off means a double-click does.
+    pub single_click_left: bool,
+    /// Right panel (pinned and recent): whether a single click opens an entry.
+    pub single_click_right: bool,
+    /// Centre of the file manager (list and grid, and search hits shown there): whether a single
+    /// click opens an item.
+    pub single_click_centre: bool,
+    /// Editor window (file rows of the tree, and search hits shown there): whether a single click
+    /// opens a file. Folder rows always expand on one click.
+    pub single_click_editor: bool,
     /// Keys inside `follow` this version does not define.
     #[serde(skip)]
     pub follow_extra: Map<String, Value>,
@@ -205,7 +216,10 @@ impl Default for Settings {
             new_tab_folder: None,
             new_tab_default: NewTabDefault::default(),
             error_log: true,
-            single_click: false,
+            single_click_left: true,
+            single_click_right: false,
+            single_click_centre: false,
+            single_click_editor: false,
             follow_extra: Map::new(),
             extra: Map::new(),
         }
@@ -770,8 +784,32 @@ impl Stored for Settings {
         );
         take(
             &mut obj,
-            "single_click",
-            &mut s.single_click,
+            "single_click_left",
+            &mut s.single_click_left,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "single_click_right",
+            &mut s.single_click_right,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "single_click_centre",
+            &mut s.single_click_centre,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "single_click_editor",
+            &mut s.single_click_editor,
             &mut keep,
             &mut problems,
             any_value,

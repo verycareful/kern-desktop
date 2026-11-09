@@ -197,6 +197,7 @@ export function DocumentsView() {
             count={scan.count}
             home={home}
             label="Library"
+            area="centre"
             onOpen={onOpen}
           />
         </div>

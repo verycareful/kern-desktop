@@ -16,7 +16,7 @@ import { KernLogo } from "./KernLogo";
 import { PlacesList } from "./PlacesList";
 import { documentsShown, trashShown } from "./place-nav";
 import { openOnClick } from "./open-on-click";
-import { useViewSettings } from "../files/view-settings";
+import { useSingleClick } from "../files/view-settings";
 import { VolumesList } from "./VolumesList";
 
 /** A place of Kern's own in the strip (the Trash, the Library): one entry that opens its tab. */
@@ -27,7 +27,7 @@ function OwnPlace(props: {
   shown(s: TabsState): boolean;
 }) {
   const current = useTabs(props.shown);
-  const single = useViewSettings((v) => v.singleClick);
+  const single = useSingleClick("left");
   const action = getAction(props.action);
   const { Icon } = props;
   return (

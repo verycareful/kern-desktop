@@ -42,7 +42,11 @@ beforeEach(() => {
   });
   ipc.search.mockImplementation(() => Promise.resolve(nextOp++));
   ipc.cancelOp.mockResolvedValue(undefined);
-  useViewSettings.setState({ showHidden: false, singleClick: false });
+  useViewSettings.setState({
+    showHidden: false,
+    singleClickCentre: false,
+    singleClickEditor: false,
+  });
 });
 afterEach(() => {
   cleanup();
@@ -61,7 +65,7 @@ async function typed(q: string) {
 }
 
 test("hits_stream_in_and_the_end_is_counted", async () => {
-  render(<SearchView root={p("/d")} onClose={onClose} onOpen={onOpen} />);
+  render(<SearchView root={p("/d")} area="centre" onClose={onClose} onOpen={onOpen} />);
   const key = await typed("not");
   emit("kernkraft://search-hit", { key, op: 1, entries: [entry("notes.md"), dir("notebooks")] });
   expect(await screen.findAllByTestId("scan-hit")).toHaveLength(2);
@@ -76,7 +80,9 @@ test("hits_stream_in_and_the_end_is_counted", async () => {
 });
 
 test("search_cancels_on_close", async () => {
-  const { unmount } = render(<SearchView root={p("/d")} onClose={onClose} onOpen={onOpen} />);
+  const { unmount } = render(
+    <SearchView root={p("/d")} area="centre" onClose={onClose} onOpen={onOpen} />
+  );
   await typed("a");
   fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" });
   expect(onClose).toHaveBeenCalled();
@@ -85,7 +91,7 @@ test("search_cancels_on_close", async () => {
 });
 
 test("a_new_query_cancels_the_walk_before_it_and_drops_its_hits", async () => {
-  render(<SearchView root={p("/d")} onClose={onClose} onOpen={onOpen} />);
+  render(<SearchView root={p("/d")} area="centre" onClose={onClose} onOpen={onOpen} />);
   const first = await typed("a");
   emit("kernkraft://search-hit", { key: first, op: 1, entries: [entry("a1")] });
   await screen.findAllByTestId("scan-hit");
@@ -100,7 +106,7 @@ test("a_new_query_cancels_the_walk_before_it_and_drops_its_hits", async () => {
 });
 
 test("a_hit_opens_on_a_double_click_and_a_single_click_only_marks_it", async () => {
-  render(<SearchView root={p("/d")} onClose={onClose} onOpen={onOpen} />);
+  render(<SearchView root={p("/d")} area="centre" onClose={onClose} onOpen={onOpen} />);
   const key = await typed("n");
   emit("kernkraft://search-hit", { key, op: 1, entries: [entry("n1"), entry("n2")] });
   const hits = await screen.findAllByTestId("scan-hit");
@@ -112,8 +118,8 @@ test("a_hit_opens_on_a_double_click_and_a_single_click_only_marks_it", async () 
 });
 
 test("with_single_click_on_a_hit_opens_on_one_click_and_a_double_click_does_not_open_again", async () => {
-  useViewSettings.setState({ singleClick: true });
-  render(<SearchView root={p("/d")} onClose={onClose} onOpen={onOpen} />);
+  useViewSettings.setState({ singleClickCentre: true });
+  render(<SearchView root={p("/d")} area="centre" onClose={onClose} onOpen={onOpen} />);
   const key = await typed("n");
   emit("kernkraft://search-hit", { key, op: 1, entries: [entry("n1"), entry("n2")] });
   const hits = await screen.findAllByTestId("scan-hit");
@@ -123,8 +129,27 @@ test("with_single_click_on_a_hit_opens_on_one_click_and_a_double_click_does_not_
   expect(onOpen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: "n1" }), false);
 });
 
+async function clickFirstEditorHit() {
+  render(<SearchView root={p("/d")} area="editor" onClose={onClose} onOpen={onOpen} />);
+  const key = await typed("n");
+  emit("kernkraft://search-hit", { key, op: 1, entries: [entry("n1")] });
+  fireEvent.click((await screen.findAllByTestId("scan-hit"))[0]!, { detail: 1 });
+}
+
+test("a_hit_in_the_editor_is_not_opened_by_a_single_click_when_only_the_centre_setting_is_on", async () => {
+  useViewSettings.setState({ singleClickCentre: true, singleClickEditor: false });
+  await clickFirstEditorHit();
+  expect(onOpen).not.toHaveBeenCalled();
+});
+
+test("a_hit_in_the_editor_is_opened_by_a_single_click_when_the_editor_setting_is_on", async () => {
+  useViewSettings.setState({ singleClickCentre: false, singleClickEditor: true });
+  await clickFirstEditorHit();
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: "n1" }), false);
+});
+
 test("enter_opens_the_active_hit", async () => {
-  render(<SearchView root={p("/d")} onClose={onClose} onOpen={onOpen} />);
+  render(<SearchView root={p("/d")} area="centre" onClose={onClose} onOpen={onOpen} />);
   const key = await typed("n");
   emit("kernkraft://search-hit", { key, op: 1, entries: [entry("n1"), entry("n2")] });
   await screen.findAllByTestId("scan-hit");
@@ -143,7 +168,7 @@ test("a_search_that_cannot_start_says_why", async () => {
     path: null,
     details: null,
   });
-  render(<SearchView root={p("/d")} onClose={onClose} onOpen={onOpen} />);
+  render(<SearchView root={p("/d")} area="centre" onClose={onClose} onOpen={onOpen} />);
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "q" } });
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "The search could not run: NotFound: no such folder"
@@ -151,7 +176,7 @@ test("a_search_that_cannot_start_says_why", async () => {
 });
 
 test("the_hits_of_the_text_before_go_as_soon_as_it_changes", async () => {
-  render(<SearchView root={p("/d")} onClose={onClose} onOpen={onOpen} />);
+  render(<SearchView root={p("/d")} area="centre" onClose={onClose} onOpen={onOpen} />);
   const key = await typed("a");
   emit("kernkraft://search-hit", { key, op: 1, entries: [entry("a1")] });
   await screen.findAllByTestId("scan-hit");

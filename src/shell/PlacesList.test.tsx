@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { WirePath, WireUserDirs } from "../ipc";
 import { useTabs, type FolderTab } from "../store/tabs";
 import { useUserDirs } from "./user-dirs-store";
+import { useViewSettings } from "../files/view-settings";
 
 const ipc = vi.hoisted(() => ({ userDirs: vi.fn() }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
@@ -28,6 +29,47 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  useViewSettings.setState({
+    singleClickLeft: true,
+    singleClickRight: false,
+    singleClickCentre: false,
+    singleClickEditor: false,
+  });
+});
+
+async function placesWithATab() {
+  ipc.userDirs.mockResolvedValue(dirs(["documents"]));
+  useTabs.getState().openFolder(p("/home/t"), false);
+  render(<PlacesList />);
+  return screen.findByRole("button", { name: "Documents" });
+}
+const shownPath = () => (useTabs.getState().tabs[0] as FolderTab).path;
+
+test("one_mouse_click_opens_a_place_while_the_left_setting_is_on", async () => {
+  useViewSettings.setState({ singleClickLeft: true });
+  fireEvent.click(await placesWithATab(), { detail: 1 });
+  expect(shownPath()).toEqual(p("/home/t/documents"));
+});
+
+test("with_the_left_setting_off_one_mouse_click_does_not_open_a_place_and_a_double_click_does", async () => {
+  useViewSettings.setState({ singleClickLeft: false });
+  const documents = await placesWithATab();
+  fireEvent.click(documents, { detail: 1 });
+  expect(shownPath()).toEqual(p("/home/t"));
+  fireEvent.click(documents, { detail: 2 });
+  fireEvent.doubleClick(documents);
+  expect(shownPath()).toEqual(p("/home/t/documents"));
+});
+
+test("the_settings_of_the_other_areas_do_not_make_one_click_open_a_place", async () => {
+  useViewSettings.setState({
+    singleClickLeft: false,
+    singleClickRight: true,
+    singleClickCentre: true,
+    singleClickEditor: true,
+  });
+  fireEvent.click(await placesWithATab(), { detail: 1 });
+  expect(shownPath()).toEqual(p("/home/t"));
 });
 
 test("places_hides_missing_user_dirs", async () => {

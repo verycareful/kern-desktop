@@ -7,7 +7,7 @@ import { homeRelative } from "../shell/home-relative";
 import { FileBadge } from "./FileList";
 import { formatDate } from "./format";
 import { ROW_HEIGHT } from "./grid-layout";
-import { useViewSettings } from "./view-settings";
+import { useSingleClick, type ClickArea } from "./view-settings";
 
 // The hits of a search or of the Library, as they stream in: name and
 // folder per row, virtualized, since a walk may find many thousands. One row
@@ -23,10 +23,12 @@ export function ScanResults(props: {
   /** Folders are shown from here down as `~` would show home; null shows them whole. */
   home: WirePath | null;
   label: string;
+  /** The part of the window the hits are shown in; its click setting decides how a hit opens. */
+  area: ClickArea;
   onOpen(entry: WireEntry, newWindow: boolean): void;
 }) {
   const { hits, count } = props;
-  const single = useViewSettings((v) => v.singleClick);
+  const single = useSingleClick(props.area);
   const scroller = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
   const virtual = useVirtualizer({

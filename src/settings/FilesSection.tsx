@@ -44,6 +44,41 @@ const NEW_TAB_DEFAULTS: readonly { value: NewTabDefault; label: string }[] = [
   { value: "current", label: "Current folder" },
 ];
 
+type Click = "double" | "single";
+
+const CLICKS: readonly { value: Click; label: string }[] = [
+  { value: "double", label: "Double click" },
+  { value: "single", label: "Single click" },
+];
+
+type ClickKey =
+  "single_click_left" | "single_click_right" | "single_click_centre" | "single_click_editor";
+
+// One row per area. Enter and Space open in every area whatever the choice; the top bar buttons
+// always open on one click, and a folder row of the editor tree always expands on one click.
+const CLICK_ROWS: readonly { key: ClickKey; label: string; note: string }[] = [
+  {
+    key: "single_click_left",
+    label: "Left panel opens with",
+    note: "Places, volumes, Trash and Library, and the strip of the other layout. Enter always opens.",
+  },
+  {
+    key: "single_click_right",
+    label: "Right panel opens with",
+    note: "Pinned and recent entries.",
+  },
+  {
+    key: "single_click_centre",
+    label: "File manager opens with",
+    note: "List and grid, and search hits shown there. Ctrl, Shift or Meta with a click only selects.",
+  },
+  {
+    key: "single_click_editor",
+    label: "Editor window opens with",
+    note: "File rows of the tree, and search hits shown there. A folder row always opens on one click.",
+  },
+];
+
 type NewTabPlace = "home" | "other";
 
 const NEW_TAB_PLACES: readonly { value: NewTabPlace; label: string }[] = [
@@ -298,14 +333,17 @@ export function FilesSection(props: { settings: Settings }) {
           />
         </Row>
       </Group>
-      <Group rows={["single_click"]}>
-        <Row id="single_click" note="Off: a double-click opens. Enter always opens.">
-          <Toggle
-            label="Open with a single click"
-            on={settings.single_click}
-            onChange={(single_click) => edit({ single_click })}
-          />
-        </Row>
+      <Group rows={CLICK_ROWS.map((r) => r.key)}>
+        {CLICK_ROWS.map((r) => (
+          <Row key={r.key} id={r.key} note={r.note}>
+            <Choices
+              label={r.label}
+              value={settings[r.key] ? "single" : "double"}
+              options={CLICKS}
+              onChange={(click) => edit({ [r.key]: click === "single" })}
+            />
+          </Row>
+        ))}
       </Group>
       <Group rows={["terminal", "default_fm"]}>
         <Terminal settings={settings} />

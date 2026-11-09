@@ -59,8 +59,10 @@ Kern Desktop is in alpha.
 - **Places, pins and recents.** The strip on the left lists Home, your user
   folders, Volumes (mount, unmount, eject), the Trash (restore, delete
   permanently, empty) and the Library, which gathers your documents from the
-  folders you choose in Settings. A double-click opens an entry (a single
-  click, if you turn that on in Settings), and so do Enter and Space. Pinned
+  folders you choose in Settings. A single click opens an entry in the strip;
+  in the right panel, the folder view and the editor's file tree it takes a
+  double-click. Settings > Files sets single or double click for each of the
+  four, and Enter and Space open in all of them. Pinned
   folders and files and your recent files sit in a panel on the right that you
   can resize. Pin a folder as an editor and it opens in an editor window.
 - **Finding and inspecting.** Search by name under a folder, open Properties

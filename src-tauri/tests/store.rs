@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use kern_lib::store::{
-    move_aside, volume_online, LayoutKind, NewTabDefault, SessionTab, SessionWindow, Store,
-    ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES, LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX,
+    move_aside, volume_online, LayoutKind, NewTabDefault, SessionTab, SessionWindow, Settings,
+    Store, ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES, LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX,
     LEFT_WIDTH_MIN, MAIN_LAYOUTS, RECENTS_CAP, RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN,
 };
 use kernkraft_tauri::WirePath;
@@ -1228,39 +1228,103 @@ fn an_error_log_switch_that_is_not_a_boolean_is_refused_and_changes_nothing() {
     assert!(s.settings_get().unwrap().value.error_log);
 }
 
-#[test]
-fn opening_takes_a_double_click_by_default_and_the_switch_is_stored() {
-    let e = env();
-    let s = store(&e);
-    assert!(!s.settings_get().unwrap().value.single_click);
-    let on = s
-        .settings_set(patch(json!({"single_click": true})))
-        .unwrap();
-    assert!(on.changed);
-    assert!(on.value.single_click);
-    assert_eq!(
-        read_json(&e.config.join("settings.json"))["single_click"],
-        json!(true)
-    );
-    assert!(store(&e).settings_get().unwrap().value.single_click);
-    let off = s
-        .settings_set(patch(json!({"single_click": false})))
-        .unwrap();
-    assert!(!off.value.single_click);
+/// The four click settings, in the order of the fields of `Settings`.
+const CLICK_KEYS: [&str; 4] = [
+    "single_click_left",
+    "single_click_right",
+    "single_click_centre",
+    "single_click_editor",
+];
+
+fn click_values(v: &Settings) -> [bool; 4] {
+    [
+        v.single_click_left,
+        v.single_click_right,
+        v.single_click_centre,
+        v.single_click_editor,
+    ]
 }
 
 #[test]
-fn a_single_click_switch_that_is_not_a_boolean_is_refused_and_changes_nothing() {
+fn the_left_panel_opens_on_a_single_click_by_default_and_the_other_areas_on_a_double_click() {
+    let e = env();
+    let s = store(&e);
+    assert_eq!(
+        click_values(&s.settings_get().unwrap().value),
+        [true, false, false, false]
+    );
+}
+
+#[test]
+fn each_click_setting_is_stored_on_its_own() {
+    let e = env();
+    let s = store(&e);
+    for (i, key) in CLICK_KEYS.iter().enumerate() {
+        let before = click_values(&s.settings_get().unwrap().value);
+        let flipped = !before[i];
+        let r = s.settings_set(patch(json!({ *key: flipped }))).unwrap();
+        assert!(r.changed, "{key}");
+        let mut want = before;
+        want[i] = flipped;
+        assert_eq!(click_values(&r.value), want, "{key}");
+        assert_eq!(
+            read_json(&e.config.join("settings.json"))[*key],
+            json!(flipped),
+            "{key}"
+        );
+        assert_eq!(click_values(&store(&e).settings_get().unwrap().value), want);
+        let back = s.settings_set(patch(json!({ *key: before[i] }))).unwrap();
+        assert_eq!(click_values(&back.value), before, "{key}");
+    }
+}
+
+#[test]
+fn a_click_setting_that_is_not_a_boolean_is_refused_and_changes_nothing() {
     let e = env();
     let s = store(&e);
     s.settings_set(patch(json!({"word_wrap": true}))).unwrap();
     let before = fs::read(e.config.join("settings.json")).unwrap();
-    for bad in [json!("yes"), json!(1), json!(null)] {
-        let err = s
-            .settings_set(patch(json!({"single_click": bad.clone()})))
-            .unwrap_err();
-        assert_eq!(err.kind, "InvalidArgument", "{bad}");
+    for key in CLICK_KEYS {
+        for bad in [json!("yes"), json!(1), json!(null)] {
+            let err = s
+                .settings_set(patch(json!({ key: bad.clone() })))
+                .unwrap_err();
+            assert_eq!(err.kind, "InvalidArgument", "{key} {bad}");
+        }
     }
     assert_eq!(fs::read(e.config.join("settings.json")).unwrap(), before);
-    assert!(!s.settings_get().unwrap().value.single_click);
+    assert_eq!(
+        click_values(&s.settings_get().unwrap().value),
+        [true, false, false, false]
+    );
+}
+
+#[test]
+fn a_stored_single_click_is_dropped_by_the_next_write_and_refused_in_a_patch() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    fs::write(
+        e.config.join("settings.json"),
+        r#"{"single_click":true,"word_wrap":true}"#,
+    )
+    .unwrap();
+    let s = store(&e);
+    let read = s.settings_get().unwrap();
+    assert!(read.corrupt.is_empty());
+    assert!(read.value.word_wrap);
+    assert_eq!(
+        click_values(&read.value),
+        [true, false, false, false],
+        "the old key sets no area"
+    );
+
+    s.settings_set(patch(json!({"show_hidden": true}))).unwrap();
+    let v = read_json(&e.config.join("settings.json"));
+    assert!(v.get("single_click").is_none(), "{v}");
+    assert_eq!(v["word_wrap"], json!(true));
+
+    let err = s
+        .settings_set(patch(json!({"single_click": true})))
+        .unwrap_err();
+    assert_eq!(err.kind, "InvalidArgument");
 }

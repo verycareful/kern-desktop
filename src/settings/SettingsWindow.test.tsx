@@ -502,22 +502,80 @@ test("the_error_log_switch_is_on_by_default_says_where_the_file_is_and_is_saved_
   expect(stored.error_log).toBe(false);
 });
 
-test("the_single_click_switch_is_off_by_default_and_is_saved_at_save", async () => {
+const CLICK_GROUPS = [
+  { name: "Left panel opens with", key: "single_click_left", single: true },
+  { name: "Right panel opens with", key: "single_click_right", single: false },
+  { name: "File manager opens with", key: "single_click_centre", single: false },
+  { name: "Editor window opens with", key: "single_click_editor", single: false },
+] as const;
+
+test("the_left_panel_opens_on_a_single_click_by_default_and_the_other_areas_on_a_double_click", async () => {
   await mount();
   nav("Files");
-  const toggle = screen.getByRole("switch", { name: "Open with a single click" });
-  expect(toggle).toHaveAttribute("aria-checked", "false");
-  fireEvent.click(toggle);
-  expect(toggle).toHaveAttribute("aria-checked", "true");
-  await save();
-  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ single_click: true }]);
-  expect(stored.single_click).toBe(true);
+  for (const g of CLICK_GROUPS) {
+    const group = within(screen.getByRole("group", { name: g.name }));
+    expect(group.getByRole("button", { name: "Single click" })).toHaveAttribute(
+      "aria-pressed",
+      String(g.single)
+    );
+    expect(group.getByRole("button", { name: "Double click" })).toHaveAttribute(
+      "aria-pressed",
+      String(!g.single)
+    );
+  }
 });
 
-test("the_single_click_switch_is_found_by_searching_for_double_click", async () => {
+test("each_click_choice_is_saved_at_save_on_its_own_key", async () => {
+  await mount();
+  nav("Files");
+  const pick = (group: string, label: string) =>
+    fireEvent.click(
+      within(screen.getByRole("group", { name: group })).getByRole("button", { name: label })
+    );
+  pick("Left panel opens with", "Double click");
+  pick("Right panel opens with", "Single click");
+  pick("File manager opens with", "Single click");
+  pick("Editor window opens with", "Single click");
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([
+    {
+      single_click_left: false,
+      single_click_right: true,
+      single_click_centre: true,
+      single_click_editor: true,
+    },
+  ]);
+  expect(stored.single_click_left).toBe(false);
+  expect(stored.single_click_right).toBe(true);
+  expect(stored.single_click_centre).toBe(true);
+  expect(stored.single_click_editor).toBe(true);
+});
+
+test("a_click_choice_changed_in_one_area_leaves_the_other_three_as_they_were", async () => {
+  await mount();
+  nav("Files");
+  fireEvent.click(
+    within(screen.getByRole("group", { name: "Editor window opens with" })).getByRole("button", {
+      name: "Single click",
+    })
+  );
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ single_click_editor: true }]);
+});
+
+test("the_click_choices_are_found_by_searching_for_double_click", async () => {
   await mount();
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "double click" } });
-  expect(screen.getByRole("switch", { name: "Open with a single click" })).toBeInTheDocument();
+  for (const g of CLICK_GROUPS) {
+    expect(screen.getByRole("group", { name: g.name })).toBeInTheDocument();
+  }
+});
+
+test("a_search_for_the_editor_window_finds_only_its_click_choice", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "editor window" } });
+  expect(screen.getByRole("group", { name: "Editor window opens with" })).toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "Right panel opens with" })).toBeNull();
 });
 
 test("the_error_log_switch_is_found_by_searching_for_a_crash_log", async () => {

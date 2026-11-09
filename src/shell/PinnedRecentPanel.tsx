@@ -12,7 +12,7 @@ import { RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN, useLayout } from "../store/layout";
 import { entryMenu } from "./entry-menu";
 import { Splitter } from "./Splitter";
 import { openOnClick } from "./open-on-click";
-import { useViewSettings } from "../files/view-settings";
+import { useSingleClick } from "../files/view-settings";
 import { isEditorPin, moveItem, usePinnedRecent, type EntryList } from "./pinned-recent-store";
 import { homeRelative } from "./home-relative";
 import { RELATIVE_TIME_TICK_MS, relativeTime } from "./relative-time";
@@ -54,7 +54,7 @@ function useNow(tick: number): number {
 
 export function PinnedRecentPanel(props: { overlay?: boolean }) {
   const s = usePinnedRecent();
-  const single = useViewSettings((v) => v.singleClick);
+  const single = useSingleClick("right");
   const home = useUserDirs((u) => u.dirs?.home ?? null);
   const now = useNow(RELATIVE_TIME_TICK_MS);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);

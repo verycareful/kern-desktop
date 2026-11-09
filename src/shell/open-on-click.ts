@@ -5,7 +5,7 @@ import type { MouseEvent } from "react";
 // The entries of the side strips (places, volumes, Trash, the Library, pins
 // and recents) open on a double-click, as a file does in the list, so a
 // stray click does not leave the folder or open a file. With the single-click
-// setting on, one click opens. A button pressed from the keyboard (Enter,
+// setting of their area on, one click opens. A button pressed from the keyboard (Enter,
 // Space) fires `click` with `detail` 0, and that opens in both modes: the
 // keyboard has no double press.
 

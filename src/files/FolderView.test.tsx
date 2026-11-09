@@ -34,7 +34,14 @@ vi.mock("../ipc", async (orig) => ({
 import { FolderView } from "./FolderView";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
-const SETTINGS = { show_hidden: false, single_click: false, view_mode: "list" } as Settings;
+const SETTINGS = {
+  show_hidden: false,
+  single_click_left: true,
+  single_click_right: false,
+  single_click_centre: false,
+  single_click_editor: false,
+  view_mode: "list",
+} as Settings;
 
 let handlers: Handlers;
 let restoreLayout: () => void;
@@ -89,7 +96,7 @@ beforeEach(() => {
   ipc.thumbRequest.mockResolvedValue(undefined);
   ipc.thumbCancel.mockResolvedValue(undefined);
   ipc.userDirs.mockResolvedValue({ home: p("/home/u"), dirs: [] });
-  useViewSettings.setState({ loaded: false, singleClick: false, error: null });
+  useViewSettings.setState({ loaded: false, singleClickCentre: false, error: null });
   useFolderUi.setState({ sort: {} });
   useFolderStatus.setState({ byTab: {} });
 });
@@ -228,7 +235,22 @@ test("ctrl_double_click_asks_for_a_new_window", async () => {
   expect(useTabs.getState().tabs.some((t) => t.kind === "doc")).toBe(false);
 });
 
-test("a_single_click_only_selects_while_the_setting_is_off", async () => {
+test("the_settings_of_the_other_areas_leave_a_click_in_the_centre_selecting_only", async () => {
+  ipc.settingsGet.mockResolvedValue({
+    ...SETTINGS,
+    single_click_left: true,
+    single_click_right: true,
+    single_click_editor: true,
+    single_click_centre: false,
+  });
+  await mount([dir("sub"), entry("n.txt")]);
+  await waitFor(() => expect(useViewSettings.getState().singleClickRight).toBe(true));
+  fireEvent.click(screen.getAllByTestId("file-row")[0]!, { detail: 1 });
+  expect((activeTab(useTabs.getState()) as FolderTab).path).toEqual(p("/d"));
+  expect(ipc.openPaths).not.toHaveBeenCalled();
+});
+
+test("a_single_click_only_selects_while_the_centre_setting_is_off", async () => {
   await mount([dir("sub"), entry("n.txt")]);
   fireEvent.click(screen.getAllByTestId("file-row")[0]!, { detail: 1 });
   expect(screen.getAllByTestId("file-row")[0]).toHaveAttribute("aria-selected", "true");
@@ -236,10 +258,10 @@ test("a_single_click_only_selects_while_the_setting_is_off", async () => {
   expect(ipc.openPaths).not.toHaveBeenCalled();
 });
 
-test("a_single_click_opens_a_folder_when_the_setting_is_on", async () => {
-  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, single_click: true });
+test("a_single_click_opens_a_folder_when_the_centre_setting_is_on", async () => {
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, single_click_centre: true });
   const { tab } = await mount([dir("sub"), entry("f.txt")]);
-  await waitFor(() => expect(useViewSettings.getState().singleClick).toBe(true));
+  await waitFor(() => expect(useViewSettings.getState().singleClickCentre).toBe(true));
   fireEvent.click(screen.getAllByTestId("file-row")[0]!, { detail: 1 });
   const now = activeTab(useTabs.getState()) as FolderTab;
   expect(now.id).toBe(tab.id);
@@ -247,10 +269,10 @@ test("a_single_click_opens_a_folder_when_the_setting_is_on", async () => {
   expect(ipc.openPaths).not.toHaveBeenCalled();
 });
 
-test("a_single_click_opens_a_file_through_the_backend_when_the_setting_is_on", async () => {
-  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, single_click: true });
+test("a_single_click_opens_a_file_through_the_backend_when_the_centre_setting_is_on", async () => {
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, single_click_centre: true });
   await mount([entry("n.txt", { mime: "text/plain" })]);
-  await waitFor(() => expect(useViewSettings.getState().singleClick).toBe(true));
+  await waitFor(() => expect(useViewSettings.getState().singleClickCentre).toBe(true));
   ipc.openPaths.mockResolvedValue([
     { path: p("/d/n.txt"), action: "doc_tab", location: null, error: null },
   ]);
@@ -260,10 +282,10 @@ test("a_single_click_opens_a_file_through_the_backend_when_the_setting_is_on", a
   );
 });
 
-test("with_the_setting_on_a_double_click_opens_once_and_a_click_with_a_modifier_only_selects", async () => {
-  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, single_click: true });
+test("with_the_centre_setting_on_a_double_click_opens_once_and_a_click_with_a_modifier_only_selects", async () => {
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, single_click_centre: true });
   await mount([entry("a.txt", { mime: "text/plain" }), entry("b.txt", { mime: "text/plain" })]);
-  await waitFor(() => expect(useViewSettings.getState().singleClick).toBe(true));
+  await waitFor(() => expect(useViewSettings.getState().singleClickCentre).toBe(true));
   ipc.openPaths.mockResolvedValue([
     { path: p("/d/a.txt"), action: "doc_tab", location: null, error: null },
   ]);

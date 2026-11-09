@@ -101,11 +101,32 @@ export const ROWS = {
     label: "Show hidden items",
     words: "dotfiles hidden files",
   },
-  single_click: {
+  single_click_left: {
     category: "files",
     group: "Opening",
-    label: "Open with a single click",
-    words: "double click mouse open files folders pointer",
+    label: "Left panel opens with",
+    words:
+      "double click single click mouse open files folders pointer left panel places volumes trash library sidebar",
+  },
+  single_click_right: {
+    category: "files",
+    group: "Opening",
+    label: "Right panel opens with",
+    words: "double click single click mouse open files folders pointer right panel pinned recent",
+  },
+  single_click_centre: {
+    category: "files",
+    group: "Opening",
+    label: "File manager opens with",
+    words:
+      "double click single click mouse open files folders pointer file manager centre list grid search",
+  },
+  single_click_editor: {
+    category: "files",
+    group: "Opening",
+    label: "Editor window opens with",
+    words:
+      "double click single click mouse open files folders pointer editor window tree files search",
   },
   terminal: {
     category: "files",

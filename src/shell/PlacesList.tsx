@@ -17,7 +17,7 @@ import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 import { RepeatFlash } from "../ops/repeat-flash";
 import { showFolder } from "./place-nav";
 import { openOnClick } from "./open-on-click";
-import { useViewSettings } from "../files/view-settings";
+import { useSingleClick } from "../files/view-settings";
 import { placeKey, useCurrentPlace } from "./use-current-place";
 import { useUserDirs } from "./user-dirs-store";
 
@@ -64,7 +64,7 @@ function order(home: WirePath, dirs: { name: string; path: WirePath }[]): Place[
 }
 
 export function PlacesList() {
-  const single = useViewSettings((v) => v.singleClick);
+  const single = useSingleClick("left");
   const dirs = useUserDirs((s) => s.dirs);
   const error = useUserDirs((s) => s.error);
   const current = useCurrentPlace();

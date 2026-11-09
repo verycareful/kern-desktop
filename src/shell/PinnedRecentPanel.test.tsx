@@ -73,7 +73,12 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
-  useViewSettings.setState({ singleClick: false });
+  useViewSettings.setState({
+    singleClickLeft: true,
+    singleClickRight: false,
+    singleClickCentre: false,
+    singleClickEditor: false,
+  });
   vi.useRealTimers();
   vi.clearAllMocks();
 });
@@ -203,8 +208,26 @@ test("a_folder_open_as_an_editor_is_marked_and_reopens_as_an_editor", async () =
   expect(useTabs.getState().tabs).toHaveLength(0);
 });
 
+test("the_settings_of_the_other_areas_do_not_make_one_click_open_a_recent_entry", async () => {
+  useViewSettings.setState({
+    singleClickLeft: true,
+    singleClickRight: false,
+    singleClickCentre: true,
+    singleClickEditor: true,
+  });
+  ipc.prune.mockResolvedValue({
+    ...report([]),
+    recents: { entries: [{ path: p("/home/t/Work"), opened_ms: NOW, as_editor: true }] },
+  });
+  render(<PinnedRecentPanel />);
+  const row = (await within(screen.getByTestId("recent")).findByText("Work")).closest("button")!;
+  fireEvent.click(row, { detail: 1 });
+  await act(async () => {});
+  expect(ipc.openEditor).not.toHaveBeenCalled();
+});
+
 test("with_single_click_on_one_click_opens_a_recent_entry_once", async () => {
-  useViewSettings.setState({ singleClick: true });
+  useViewSettings.setState({ singleClickRight: true });
   ipc.openEditor.mockResolvedValue("editor-2");
   ipc.prune.mockResolvedValue({
     ...report([]),

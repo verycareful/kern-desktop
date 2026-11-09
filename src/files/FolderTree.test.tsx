@@ -77,7 +77,12 @@ beforeEach(() => {
 });
 afterEach(async () => {
   cleanup();
-  useViewSettings.setState({ singleClick: false });
+  useViewSettings.setState({
+    singleClickLeft: true,
+    singleClickRight: false,
+    singleClickCentre: false,
+    singleClickEditor: false,
+  });
   useOpenError.getState().dismiss();
   await Promise.resolve();
   restoreLayout();
@@ -355,7 +360,7 @@ test("a_file_opens_as_the_folder_view_opens_it_and_a_failure_is_said", async () 
   expect(screen.queryByRole("status")).toBeNull();
 });
 
-test("a_single_click_on_a_file_only_marks_it_while_the_setting_is_off", async () => {
+test("a_single_click_on_a_file_only_marks_it_while_the_editor_setting_is_off", async () => {
   await mount();
   fireEvent.click(row("readme.md"), { detail: 1 });
   expect(row("readme.md")).toHaveAttribute("aria-selected", "true");
@@ -363,8 +368,8 @@ test("a_single_click_on_a_file_only_marks_it_while_the_setting_is_off", async ()
   expect(ipc.openPaths).not.toHaveBeenCalled();
 });
 
-test("with_the_setting_on_a_single_click_opens_a_file_and_a_double_click_opens_it_once", async () => {
-  useViewSettings.setState({ singleClick: true });
+test("with_the_editor_setting_on_a_single_click_opens_a_file_and_a_double_click_opens_it_once", async () => {
+  useViewSettings.setState({ singleClickEditor: true });
   await mount();
   const readme = row("readme.md");
   fireEvent.click(readme, { detail: 1 });
@@ -375,9 +380,22 @@ test("with_the_setting_on_a_single_click_opens_a_file_and_a_double_click_opens_i
   );
 });
 
+test("the_settings_of_the_other_areas_do_not_open_a_file_on_a_single_click", async () => {
+  useViewSettings.setState({
+    singleClickLeft: true,
+    singleClickRight: true,
+    singleClickCentre: true,
+    singleClickEditor: false,
+  });
+  await mount();
+  fireEvent.click(row("readme.md"), { detail: 1 });
+  await act(async () => {});
+  expect(ipc.openPaths).not.toHaveBeenCalled();
+});
+
 test("a_folder_row_expands_and_collapses_on_a_single_click_with_the_setting_on_or_off", async () => {
-  for (const singleClick of [false, true]) {
-    useViewSettings.setState({ singleClick });
+  for (const singleClickEditor of [false, true]) {
+    useViewSettings.setState({ singleClickEditor });
     const { unmount } = await mount();
     fireEvent.click(row("docs"), { detail: 1 });
     await waitFor(() => expect(names()).toContain("a.txt"));

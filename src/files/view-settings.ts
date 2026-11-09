@@ -25,8 +25,11 @@ import { DEFAULT_INTERFACE_SIZE } from "../theme/interface-size";
 interface ViewSettingsState {
   loaded: boolean;
   showHidden: boolean;
-  /** A single click opens an entry; off means a double-click does. */
-  singleClick: boolean;
+  /** Per area, a single click opens an entry; off means a double-click does. */
+  singleClickLeft: boolean;
+  singleClickRight: boolean;
+  singleClickCentre: boolean;
+  singleClickEditor: boolean;
   viewMode: ViewMode;
   /** The interface size in percent. */
   interfaceSize: number;
@@ -48,7 +51,10 @@ interface ViewSettingsState {
 export const useViewSettings = create<ViewSettingsState>()(() => ({
   loaded: false,
   showHidden: false,
-  singleClick: false,
+  singleClickLeft: true,
+  singleClickRight: false,
+  singleClickCentre: false,
+  singleClickEditor: false,
   viewMode: "list",
   interfaceSize: DEFAULT_INTERFACE_SIZE,
   scanDocuments: true,
@@ -65,7 +71,10 @@ function apply(s: Settings): void {
   useViewSettings.setState({
     loaded: true,
     showHidden: s.show_hidden,
-    singleClick: s.single_click,
+    singleClickLeft: s.single_click_left,
+    singleClickRight: s.single_click_right,
+    singleClickCentre: s.single_click_centre,
+    singleClickEditor: s.single_click_editor,
     viewMode: s.view_mode,
     interfaceSize: s.interface_size,
     scanDocuments: s.scan_documents,
@@ -116,4 +125,23 @@ export function useViewSettingsSync(): void {
       unlisten?.();
     };
   }, []);
+}
+
+/** The parts of a window that each have their own click setting. */
+export type ClickArea = "left" | "right" | "centre" | "editor";
+
+/** Whether a single click opens an entry in `area`; off means a double-click does. */
+export function useSingleClick(area: ClickArea): boolean {
+  return useViewSettings((v) => {
+    switch (area) {
+      case "left":
+        return v.singleClickLeft;
+      case "right":
+        return v.singleClickRight;
+      case "centre":
+        return v.singleClickCentre;
+      case "editor":
+        return v.singleClickEditor;
+    }
+  });
 }

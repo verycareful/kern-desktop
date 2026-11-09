@@ -74,7 +74,12 @@ import {
   type Sel,
 } from "./selection";
 import { isFolder } from "./file-type";
-import { loadViewSettings, useViewSettings, useViewSettingsSync } from "./view-settings";
+import {
+  loadViewSettings,
+  useSingleClick,
+  useViewSettings,
+  useViewSettingsSync,
+} from "./view-settings";
 import { useFolder } from "./useFolder";
 import { RepeatFlash } from "../ops/repeat-flash";
 import "../ops/ops.css";
@@ -126,7 +131,8 @@ export function FolderView(props: { tab: FolderTab }) {
 }
 
 function LoadedFolder({ tab }: { tab: FolderTab }) {
-  const { showHidden, viewMode, singleClick, error: settingsError } = useViewSettings();
+  const { showHidden, viewMode, error: settingsError } = useViewSettings();
+  const singleClick = useSingleClick("centre");
   const sort = useFolderUi((s) => s.sort[tab.id] ?? DEFAULT_SORT);
   const key = pathKey(tab.path);
   const isActive = useTabs((s) => s.activeId === tab.id);
@@ -806,6 +812,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       {searching ? (
         <SearchView
           root={tab.path}
+          area="centre"
           onClose={() => {
             focusSoon.current = true;
             setSearching(false);

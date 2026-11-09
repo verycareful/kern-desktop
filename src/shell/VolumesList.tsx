@@ -7,7 +7,7 @@ import { formatSize } from "../files/format";
 import { ActionMenu } from "../keys/ActionMenu";
 import { showFolder } from "./place-nav";
 import { openOnClick } from "./open-on-click";
-import { useViewSettings } from "../files/view-settings";
+import { useSingleClick } from "../files/view-settings";
 import { VOLUME_MENU } from "./volume-menu";
 import { useCurrentPlace } from "./use-current-place";
 import { identityNote, volumeErrorText } from "./volume-text";
@@ -34,7 +34,7 @@ const deviceText = (d: Device) =>
 
 export function VolumesList() {
   const s = useVolumes();
-  const single = useViewSettings((v) => v.singleClick);
+  const single = useSingleClick("left");
   const currentKey = useCurrentPlace();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 

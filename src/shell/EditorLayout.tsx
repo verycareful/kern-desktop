@@ -179,7 +179,9 @@ function LeftColumn() {
       <div className="kern-editor-tree">
         {root ? (
           <>
-            {searching && <SearchView root={root} onClose={closeSearch} onOpen={onFound} />}
+            {searching && (
+              <SearchView root={root} area="editor" onClose={closeSearch} onOpen={onFound} />
+            )}
             {/* Kept while the search is on show, so the folders open in it stay open. */}
             <div className="kern-editor-tree-body" hidden={searching}>
               <FolderTree

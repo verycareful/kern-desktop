@@ -16,7 +16,7 @@ import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 import { baseName } from "../ops/labels";
 import { showOpenErrors } from "../ops/open-error-store";
 import { openFiles } from "./open-entries";
-import { useViewSettings } from "./view-settings";
+import { useSingleClick } from "./view-settings";
 import {
   INDENT,
   ROW_HEIGHT,
@@ -212,7 +212,7 @@ export function FolderTree(props: {
   // A folder row expands or collapses on a single click whatever the setting. A file row opens
   // on a double-click, or on a single click when the setting is on; the second click of a
   // double-click does not open it again in that mode.
-  const singleClick = useViewSettings((v) => v.singleClick);
+  const singleClick = useSingleClick("editor");
   const onRowClick = (row: EntryRow, e: React.MouseEvent) => {
     setActive(row.key);
     scroller.current?.focus();
