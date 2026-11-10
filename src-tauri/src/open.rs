@@ -174,6 +174,22 @@ struct Entry {
     reserved: bool,
 }
 
+/// An open document the registry moved to a new path, at the place that holds it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Moved {
+    pub from: PathBuf,
+    pub to: PathBuf,
+    pub location: Location,
+}
+
+/// What [`OpenRegistry::retarget`] did.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Retargeted {
+    pub moved: Vec<Moved>,
+    /// The documents not moved because their new path is already open.
+    pub kept: Vec<PathBuf>,
+}
+
 #[derive(Default)]
 struct Book {
     map: HashMap<PathBuf, Entry>,
@@ -309,6 +325,55 @@ impl OpenRegistry {
         }
         drop(book);
         self.announce(changed);
+    }
+
+    /// Re-keys every document open at `from`, or under it when `from` is a
+    /// folder, to the same place under `to`: the documents of a rename or a
+    /// move done inside Kern. A document whose new path is registered already
+    /// stays where it was and is named in [`Retargeted::kept`], so neither
+    /// registration is lost. A Save As hold and a path routed to a tab that
+    /// has not registered are left alone; they are not documents yet.
+    pub fn retarget(&self, from: &Path, to: &Path) -> Retargeted {
+        let mut book = self.lock();
+        let mut found: Vec<(PathBuf, PathBuf)> = book
+            .map
+            .iter()
+            .filter(|(_, e)| {
+                !e.reserved && matches!(e.location, Location::Tab { .. } | Location::Window { .. })
+            })
+            .filter_map(|(p, _)| {
+                let rest = p.strip_prefix(from).ok()?;
+                let new = if rest.as_os_str().is_empty() {
+                    to.to_path_buf()
+                } else {
+                    to.join(rest)
+                };
+                Some((p.clone(), new))
+            })
+            .collect();
+        found.sort();
+        let mut out = Retargeted::default();
+        for (old, new) in found {
+            if book.map.contains_key(&new) {
+                out.kept.push(old);
+                continue;
+            }
+            if let Some(entry) = book.map.remove(&old) {
+                out.moved.push(Moved {
+                    from: old,
+                    to: new.clone(),
+                    location: entry.location.clone(),
+                });
+                book.map.insert(new, entry);
+            }
+        }
+        let changed = !out.moved.is_empty();
+        if changed {
+            book.generation += 1;
+        }
+        drop(book);
+        self.announce(changed);
+        out
     }
 
     /// The path open in window `label`, not counting a Save As target held

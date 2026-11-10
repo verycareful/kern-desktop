@@ -27,6 +27,7 @@
     "allow-open-paths",
     "allow-doc-opened",
     "allow-doc-closed",
+    "allow-doc-moved",
     "allow-open-pending-take",
     "allow-doc-open-elsewhere",
     "allow-detach-doc",

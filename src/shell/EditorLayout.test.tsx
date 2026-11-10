@@ -34,6 +34,7 @@ const ipc = vi.hoisted(() => ({
   createFile: vi.fn(),
   createDir: vi.fn(),
   rename: vi.fn(),
+  docMoved: vi.fn(),
   clipSet: vi.fn(),
   clipGet: vi.fn(),
   clipText: vi.fn(),
@@ -78,6 +79,7 @@ const folder = (parent: string, name: string): WireEntry =>
 
 beforeEach(() => {
   restoreLayout = stubLayout();
+  ipc.docMoved.mockResolvedValue({ kept: [] });
   useUserDirs.getState().reset();
   usePinnedRecent.getState().reset();
   useCloseGuard.getState().reset();
@@ -442,6 +444,10 @@ test("rename_in_the_tree_asks_for_the_name_with_the_stem_selected", async () => 
     expect(ipc.rename).toHaveBeenCalledExactlyOnceWith(p("/home/a/notes.md"), "ideas.md")
   );
   await waitFor(() => expect(screen.queryByTestId("name-dialog")).toBeNull());
+  // A tab open on the file follows it.
+  expect(ipc.docMoved).toHaveBeenCalledExactlyOnceWith([
+    { from: p("/home/a/notes.md"), to: p("/home/a/ideas.md") },
+  ]);
 });
 
 test("a_refused_rename_is_said_in_the_dialog_which_stays_open", async () => {

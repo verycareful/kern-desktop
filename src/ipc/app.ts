@@ -267,6 +267,21 @@ export const docOpened = (path: WirePath, location: Location, adoptingFrom?: str
 export const docClosed = (path: WirePath, location: Location, tabClosed?: boolean) =>
   invoke<void>("doc_closed", { path, location, tabClosed: tabClosed ?? null });
 
+/** A file renamed or moved inside Kern: the path it had and the path it has. */
+export interface MovedPair {
+  from: WirePath;
+  to: WirePath;
+}
+
+/**
+ * Tells the backend that files were renamed or moved inside Kern. Every open document at a `from`,
+ * or under it for a folder, is registered under its new path and its window is told
+ * (`EVENT_DOC_MOVED`). `kept` lists the documents not moved because their new path is open
+ * already; their tabs still show the old file.
+ */
+export const docMoved = (pairs: MovedPair[]) =>
+  invoke<{ kept: WirePath[] }>("doc_moved", { pairs });
+
 /**
  * Whether `path`, by any name, is open in a place other than `own`; Save As asks before it writes.
  * With `reserve`, a path found free is held for `own` in the same step; let it go with `docClosed`

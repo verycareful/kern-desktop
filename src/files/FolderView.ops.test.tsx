@@ -51,6 +51,7 @@ const ipc = vi.hoisted(() => ({
   createDir: vi.fn(),
   createFile: vi.fn(),
   rename: vi.fn(),
+  docMoved: vi.fn(),
   clipSet: vi.fn(),
   clipGet: vi.fn(),
   dragOut: vi.fn(),
@@ -169,6 +170,7 @@ beforeEach(() => {
   ipc.clipClearIf.mockResolvedValue(true);
   ipc.answerConflict.mockResolvedValue(undefined);
   ipc.cancelOp.mockResolvedValue(undefined);
+  ipc.docMoved.mockResolvedValue({ kept: [] });
   // Everything on one filesystem unless a test says otherwise.
   ipc.sameFilesystem.mockImplementation((sources: WirePath[]) =>
     Promise.resolve(sources.map((): WireSame => ({ state: "checked", same: true })))
@@ -404,6 +406,10 @@ test("f2_edits_the_name_in_place_and_renames_the_item_by_its_path", async () => 
   );
   await waitFor(() => expect(screen.queryByRole("textbox", { name: /rename/i })).toBeNull());
   await waitFor(() => expect(rowNamed("todo.md")).toHaveAttribute("aria-selected", "true"));
+  // A tab open on the file follows it.
+  expect(ipc.docMoved).toHaveBeenCalledExactlyOnceWith([
+    { from: p("/d/notes.md"), to: p("/d/todo.md") },
+  ]);
 });
 
 test("a_rename_refused_as_busy_names_the_operation_that_runs_here", async () => {

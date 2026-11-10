@@ -4,7 +4,13 @@ import { StrictMode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { Text } from "@codemirror/state";
 import { beforeEach, expect, test, vi } from "vitest";
-import type { WireEntry, WireError, WirePath, WireText } from "../ipc";
+import {
+  EVENT_DOC_MOVED,
+  type WireEntry,
+  type WireError,
+  type WirePath,
+  type WireText,
+} from "../ipc";
 
 const ipc = vi.hoisted(() => ({
   textOpen: vi.fn(),
@@ -1405,4 +1411,99 @@ test("a_save_as_that_moves_the_document_releases_the_old_path_and_not_the_tab", 
   // The tab lives on at the new path: what is held at it must not go with the old one.
   for (const call of ipc.docClosed.mock.calls) expect(call[2]).toBeUndefined();
   hook.unmount();
+});
+
+// ---- the file is renamed or moved inside Kern ----
+
+const RENAMED = p("/home/b/renamed.txt");
+// A rename changes the file's change time, so its stamp is another one although nothing in it is.
+const S_RENAMED = "s1:5:0:1:1:7";
+const moved = (from: WirePath, to: WirePath) => emit(EVENT_DOC_MOVED, { from, to });
+/** The disk after a rename: the same text at the new path, with a stamp of its own. */
+const renamedOnDisk = (text = "hello") => {
+  ipc.textOpen.mockImplementation((path: WirePath) =>
+    Promise.resolve(
+      path.v === RENAMED.v ? opened({ path: RENAMED, text, stamp: S_RENAMED }) : opened()
+    )
+  );
+  // A check against the stamp the file has now finds it as it is; against any other, changed.
+  ipc.textCheck.mockImplementation((_path: WirePath, stamp: string) =>
+    Promise.resolve(stamp === S_RENAMED ? "same" : "changed")
+  );
+};
+
+test("a_renamed_file_keeps_its_tab_its_unsaved_text_and_is_saved_at_the_new_path", async () => {
+  const hook = await mount();
+  type(hook, "hello world");
+  renamedOnDisk();
+  await moved(FILE, RENAMED);
+  await waitFor(() => expect(ipc.textCheck).toHaveBeenCalled());
+
+  expect(useTabs.getState().tabs[0]).toMatchObject({ path: RENAMED, dirty: true });
+  expect(hook.result.current.dirty).toBe(true);
+  expect(hook.result.current.deletedOnDisk).toBe(false);
+  // The file is read at its new path to see that it is the same, but what was typed since it was
+  // opened is not replaced.
+  expect(ipc.textOpen).toHaveBeenLastCalledWith(RENAMED);
+  expect(hook.result.current.stamp).toBe(S_RENAMED);
+
+  await act(() => hook.result.current.save());
+  expect(ipc.textSave).toHaveBeenCalledWith(RENAMED, "hello world", "lf", false, {
+    kind: "unchanged",
+    stamp: S_RENAMED,
+  });
+});
+
+test("a_rename_that_changed_only_the_change_time_shows_no_banner", async () => {
+  const hook = await mount();
+  renamedOnDisk();
+  await moved(FILE, RENAMED);
+  await waitFor(() => expect(ipc.textCheck).toHaveBeenCalledWith(RENAMED, S_RENAMED));
+  expect(hook.result.current.changedOnDisk).toBe(false);
+  expect(hook.result.current.deletedOnDisk).toBe(false);
+});
+
+test("a_moved_file_whose_text_is_not_the_text_that_was_read_is_said_not_hidden", async () => {
+  const hook = await mount();
+  type(hook, "hello world");
+  renamedOnDisk("something else");
+  await moved(FILE, RENAMED);
+  await waitFor(() => expect(hook.result.current.changedOnDisk).toBe(true));
+  // The tab still holds what was typed.
+  expect(hook.result.current.dirty).toBe(true);
+  expect(hook.result.current.deletedOnDisk).toBe(false);
+  expect(useTabs.getState().tabs[0]).toMatchObject({ path: RENAMED });
+});
+
+test("a_moved_file_that_cannot_be_read_is_left_to_the_check_to_say", async () => {
+  const hook = await mount();
+  ipc.textOpen.mockRejectedValue(wireError("Io", "permission denied"));
+  ipc.textCheck.mockResolvedValue("changed");
+  await moved(FILE, RENAMED);
+  await waitFor(() => expect(hook.result.current.changedOnDisk).toBe(true));
+  expect(useTabs.getState().tabs[0]).toMatchObject({ path: RENAMED });
+});
+
+test("a_renamed_file_is_watched_in_its_new_folder_and_registered_at_the_new_path", async () => {
+  await mount();
+  renamedOnDisk();
+  await moved(FILE, RENAMED);
+  await waitFor(() => expect(ipc.watchDir).toHaveBeenLastCalledWith("doc:t1", p("/home/b")));
+  expect(ipc.unwatchDir).toHaveBeenCalledWith("doc:t1");
+  await waitFor(() =>
+    expect(ipc.docOpened).toHaveBeenLastCalledWith(RENAMED, {
+      kind: "tab",
+      window: "main",
+      tab_id: "t1",
+    })
+  );
+});
+
+test("a_move_reported_for_another_file_leaves_the_tab_where_it_is", async () => {
+  const hook = await mount();
+  await moved(p("/home/a/other.txt"), RENAMED);
+  expect(useTabs.getState().tabs[0]).toMatchObject({ path: FILE });
+  expect(hook.result.current.deletedOnDisk).toBe(false);
+  expect(ipc.textCheck).not.toHaveBeenCalled();
+  expect(ipc.textOpen).toHaveBeenCalledTimes(1);
 });

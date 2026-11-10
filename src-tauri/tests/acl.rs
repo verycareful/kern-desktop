@@ -50,6 +50,7 @@ fn env(label: &str) -> Env {
             kern_lib::identity::link_target,
             kern_lib::windows::doc_opened,
             kern_lib::windows::doc_closed,
+            kern_lib::windows::doc_moved,
             kern_lib::windows::doc_open_elsewhere,
             kern_lib::windows::detach_doc,
             kern_lib::windows::detached,
@@ -604,6 +605,19 @@ fn an_editor_window_registers_its_own_tabs_and_not_another_windows() {
     )
     .unwrap_err();
     assert_eq!(err["kind"], "Denied", "{err}");
+}
+
+#[test]
+fn every_window_that_holds_documents_may_report_a_rename_and_a_stranger_may_not() {
+    let pairs = json!({"pairs": [{"from": {"k": "Utf8", "v": "/no/a.txt"}, "to": {"k": "Utf8", "v": "/no/b.txt"}}]});
+    for label in ["main", "editor-1", "doc-1"] {
+        let e = env(label);
+        let out = invoke(&e, "doc_moved", pairs.clone()).unwrap();
+        assert_eq!(out, json!({"kept": []}), "{label}");
+    }
+    let e = env("stranger");
+    let err = invoke(&e, "doc_moved", pairs).unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
 }
 
 #[test]

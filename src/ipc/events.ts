@@ -60,6 +60,7 @@ export const EVENT_CLOSE_REQUESTED = "kern://close-requested";
 export const EVENT_SELECT = "kern://select";
 export const EVENT_PROPERTIES = "kern://properties";
 export const EVENT_DOC_RELEASED = "kern://doc-released";
+export const EVENT_DOC_MOVED = "kern://doc-moved";
 
 // Event name to payload. `kern://close-requested` is emitted with the unit
 // value, which arrives as null. `kern://select` and `kern://properties` are
@@ -91,6 +92,8 @@ export interface EventPayloads {
   "kern://close-requested": null;
   /** A place let go of a document: a tab refused because of it may register again. */
   "kern://doc-released": null;
+  /** A document open in this window was renamed or moved inside Kern: its tab follows the file. */
+  "kern://doc-moved": { from: WirePath; to: WirePath };
   "kern://select": { tab: WirePath; paths: WirePath[] };
   "kern://properties": { paths: WirePath[] };
 }

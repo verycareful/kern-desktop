@@ -3,12 +3,14 @@
 import { create } from "zustand";
 import {
   answerConflict,
+  docMoved,
   redo,
   dropStartOp,
   isEditorWindow,
   removeStartOp,
   startOp,
   toWireError,
+  type MovedPair,
   undo,
   undoState,
   type ConflictChoice,
@@ -21,7 +23,7 @@ import {
 } from "../ipc";
 import { logError } from "./error-log";
 import { errorText } from "./error-text";
-import { opLabels } from "./labels";
+import { baseName, opLabels } from "./labels";
 import { needsAttention, type Outcome } from "./outcome";
 import { runOp, type RunningOp } from "./run-op";
 
@@ -148,6 +150,11 @@ interface OpsState {
   changes: number;
   /** Runs an operation; settles once it has ended and been reported. */
   start(spec: OpSpec): Promise<void>;
+  /**
+   * Files were renamed or moved inside Kern: the tabs open on them follow. What cannot be
+   * followed, and a failure to tell the backend, is said.
+   */
+  documentsMoved(pairs: MovedPair[]): Promise<void>;
   answer(key: number, choice: ConflictChoice, applyToAll: boolean): void;
   cancel(key: number): void;
   report(outcome: Outcome): void;
@@ -231,7 +238,29 @@ export const useOps = create<OpsState>()((set, get) => ({
     if (needsAttention(outcome)) get().report(outcome);
     else get().notify(labels.done(outcome.report));
     void get().refreshUndo();
+    if (spec.kind === "move" && outcome.report) {
+      // Also for a move that was cancelled or left items behind: what has a destination moved.
+      await get().documentsMoved(
+        outcome.report.done.flatMap((d) => (d.dest ? [{ from: d.source, to: d.dest }] : []))
+      );
+    }
     spec.onEnd?.({ report: outcome.report, error: outcome.error });
+  },
+
+  async documentsMoved(pairs) {
+    if (pairs.length === 0) return;
+    try {
+      const { kept } = await docMoved(pairs);
+      for (const path of kept) {
+        get().notify(
+          `${baseName(path)} was moved, but its tab was not: the new place is open in another tab.`
+        );
+      }
+    } catch (e) {
+      get().notify(
+        `Tabs open on the renamed files may not follow them: ${errorText(toWireError(e))}`
+      );
+    }
   },
 
   answer(key, choice, applyToAll) {

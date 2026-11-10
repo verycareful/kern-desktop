@@ -107,7 +107,8 @@ export function TreeOps(props: {
           }
           onSubmit={async (name) => {
             if (name !== renaming.name) {
-              await renameItem(renaming.path, name);
+              const to = await renameItem(renaming.path, name);
+              void useOps.getState().documentsMoved([{ from: renaming.path, to }]);
               void useOps.getState().refreshUndo();
             }
             closeRename();

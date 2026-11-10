@@ -26,6 +26,7 @@ const COMMANDS: &[&str] = &[
     "open_paths",
     "doc_opened",
     "doc_closed",
+    "doc_moved",
     "open_pending_take",
     "doc_open_elsewhere",
     "detach_doc",

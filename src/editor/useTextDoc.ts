@@ -5,6 +5,7 @@ import { Text } from "@codemirror/state";
 import {
   EVENT_DIR_CHANGED,
   EVENT_DIR_GONE,
+  EVENT_DOC_MOVED,
   EVENT_DOC_RELEASED,
   docClosed,
   docOpenElsewhere,
@@ -606,6 +607,60 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
     },
     []
   );
+
+  // ---- the file is renamed or moved inside Kern ----
+  // The backend has registered the document under its new path already. The tab takes that path
+  // as its own, as Save As does, so the file is not replaced by a read and the text typed since it
+  // was opened stays. A rename changes the file's change time, so its stamp is another one although
+  // nothing in it is: the file is read at its new path, and when its text is the text this tab last
+  // read or saved, the new stamp is taken as the file's own. Otherwise the stamp stays, and the
+  // check below says that the file has changed.
+  useEffect(() => {
+    if (!ready) return;
+    let alive = true;
+    const unlisten: UnlistenFn[] = [];
+    on(EVENT_DOC_MOVED, (ev) => {
+      if (pathKey(latestPlace.current.path) !== pathKey(ev.from)) return;
+      void run(async () => {
+        const f = file.current;
+        const named = f !== null && pathKey(f.path) === pathKey(ev.from);
+        if (f && named) file.current = { ...f, path: ev.to };
+        ownedKey.current = pathKey(ev.to);
+        useTabs.getState().retargetDoc(tabId, ev.to);
+        if (!named) return;
+        try {
+          const t = await textOpen(ev.to);
+          const now = file.current;
+          const last = saved.current;
+          if (
+            now &&
+            last &&
+            t.ending === now.ending &&
+            t.bom === now.bom &&
+            toDoc(t.text).eq(last)
+          ) {
+            file.current = { ...now, stamp: t.stamp };
+            patch({ stamp: t.stamp });
+          }
+        } catch {
+          // Not read: the stamp stays, and the check that follows reports what it finds.
+        }
+      }).then(() => checkRef.current());
+    }).then(
+      (off) => {
+        if (alive) unlisten.push(off);
+        else off();
+      },
+      (e: unknown) =>
+        say(
+          `${baseName(latestPlace.current.path)} will not follow a rename or a move: ${errorText(toWireError(e))}`
+        )
+    );
+    return () => {
+      alive = false;
+      unlisten.forEach((u) => u());
+    };
+  }, [ready, tabId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- the tab's dirty flag and the status bar's facts ----
   // A tab starts clean, so only a change of the flag is written to it.

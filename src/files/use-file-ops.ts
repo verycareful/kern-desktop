@@ -297,6 +297,9 @@ export function useFileOps(args: FileOpsArgs) {
     setRenaming((cur) => (cur ? { ...cur, busy: true, error: null } : cur));
     try {
       const to = await renameItem(r.path, r.text);
+      // Told before the component is asked whether it is still there: the file is renamed
+      // whatever became of the view, and a tab open on it has to follow.
+      void useOps.getState().documentsMoved([{ from: r.path, to }]);
       if (!alive.current) return;
       setRenaming(null);
       void useOps.getState().refreshUndo();

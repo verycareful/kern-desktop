@@ -137,6 +137,7 @@ pub fn run() {
             windows::open_paths,
             windows::doc_opened,
             windows::doc_closed,
+            windows::doc_moved,
             windows::open_pending_take,
             windows::doc_open_elsewhere,
             windows::detach_doc,

@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use kernkraft_tauri::{KernkraftExt, WireError, WireOpened, WirePath};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{
     webview::{PageLoadEvent, PageLoadPayload},
@@ -47,6 +47,9 @@ pub const EVENT_OPEN: &str = "kern://open";
 /// window is told, so a tab that was refused because that place had the file open can register
 /// again. No payload; the tab asks the backend, which still knows who holds what.
 pub const EVENT_DOC_RELEASED: &str = "kern://doc-released";
+/// A document open in this window was renamed or moved inside Kern: `{ from, to }`, the paths it
+/// had and has. Sent to the window that holds the document, which makes the tab follow the file.
+pub const EVENT_DOC_MOVED: &str = "kern://doc-moved";
 pub const EVENT_ADOPT_DOC: &str = "kern://adopt-doc";
 pub const EVENT_ADOPT_CANCELLED: &str = "kern://adopt-cancelled";
 pub const EVENT_OPEN_ERROR: &str = "kern://open-error";
@@ -1458,6 +1461,54 @@ pub fn doc_closed<R: Runtime>(
         }
     }
     Ok(())
+}
+
+/// A rename or a move done inside Kern: the path a file had and the path it has.
+#[derive(Deserialize)]
+pub struct MovedPair {
+    from: WirePath,
+    to: WirePath,
+}
+
+/// What `doc_moved` did not do: the documents whose new path is open already.
+#[derive(Serialize)]
+pub struct DocsMoved {
+    kept: Vec<WirePath>,
+}
+
+/// Files were renamed or moved inside Kern. Every open document at a `from`, or under it when it
+/// is a folder, is registered under its new path at the same place, and the window that holds it
+/// is told (`EVENT_DOC_MOVED`) so the tab follows the file. A document whose new path is open
+/// already stays as it is and is returned in `kept`: the caller says so, since that tab goes on
+/// showing the path it had, which holds no file.
+#[tauri::command]
+pub fn doc_moved<R: Runtime>(
+    app: AppHandle<R>,
+    pairs: Vec<MovedPair>,
+) -> Result<DocsMoved, WireError> {
+    let st = state(&app)?;
+    let mut kept = Vec::new();
+    let mut unsent = None;
+    for pair in pairs {
+        let (from, to) = (pair.from.to_path_buf()?, pair.to.to_path_buf()?);
+        let done = st.open.retarget(&from, &to);
+        for m in &done.moved {
+            let told = send(
+                &app,
+                m.location.window(),
+                EVENT_DOC_MOVED,
+                json!({ "from": WirePath::from(m.from.as_path()), "to": WirePath::from(m.to.as_path()) }),
+            );
+            if let Err(e) = told {
+                unsent.get_or_insert(e);
+            }
+        }
+        kept.extend(done.kept.iter().map(|p| WirePath::from(p.as_path())));
+    }
+    match unsent {
+        Some(e) => Err(e),
+        None => Ok(DocsMoved { kept }),
+    }
 }
 
 fn registry_busy() -> WireError {

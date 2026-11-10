@@ -15,8 +15,8 @@ use std::time::Duration;
 use common::{env, env_with, invoke, tab, wait_for, wp, Answer, QUIET};
 use kern_lib::open::{FileId, Location, Stat};
 use kern_lib::windows::{
-    WindowState, EVENT_ADOPT_CANCELLED, EVENT_ADOPT_DOC, EVENT_CLOSE_REQUESTED, EVENT_DOC_RELEASED,
-    EVENT_OPEN, MAX_SWEEPS,
+    WindowState, EVENT_ADOPT_CANCELLED, EVENT_ADOPT_DOC, EVENT_CLOSE_REQUESTED, EVENT_DOC_MOVED,
+    EVENT_DOC_RELEASED, EVENT_OPEN, MAX_SWEEPS,
 };
 use serde_json::{json, Value};
 use tauri::test::MockRuntime;
@@ -2009,4 +2009,70 @@ fn a_document_that_is_let_go_is_announced_so_a_refused_tab_can_try_again() {
     .unwrap();
     std::thread::sleep(Duration::from_millis(100));
     assert_eq!(released.load(Ordering::SeqCst), 1);
+}
+
+// ---- a rename or a move of an open document ----
+
+/// The `doc_moved` events waiting for window `label`.
+fn moves_for(e: &common::Ctx, label: &str) -> Vec<Value> {
+    e.take(label)
+        .into_iter()
+        .filter(|q| q["event"] == json!(EVENT_DOC_MOVED))
+        .map(|q| q["payload"].clone())
+        .collect()
+}
+
+fn moved(e: &common::Ctx, from: &str, pairs: &[(&Path, &Path)]) -> Value {
+    let pairs: Vec<Value> = pairs
+        .iter()
+        .map(|(a, b)| json!({"from": wp(a), "to": wp(b)}))
+        .collect();
+    e.call_from(from, "doc_moved", json!({"pairs": pairs}))
+        .unwrap()
+}
+
+#[test]
+fn a_renamed_document_stays_registered_at_its_tab_and_the_tab_is_told() {
+    let e = env(Duration::from_secs(5));
+    let (a, b) = (e.text("a.txt"), e.text("b.txt"));
+    e.with_main();
+    register(&e, "main", "t1", &a);
+    let out = moved(&e, "main", &[(&a, &b)]);
+    assert_eq!(out, json!({"kept": []}));
+    assert_eq!(
+        moves_for(&e, "main"),
+        vec![json!({"from": wp(&a), "to": wp(&b)})]
+    );
+    // The registry now holds the new name at the tab, and the old name is free.
+    assert_eq!(inside(&e, "main", &b)["action"], json!("focus"));
+    assert_eq!(inside(&e, "main", &a)["action"], json!("doc_tab"));
+}
+
+#[test]
+fn the_window_that_holds_the_document_is_told_not_the_window_that_renamed_it() {
+    let e = env(Duration::from_secs(5));
+    let (a, b) = (e.text("a.txt"), e.text("b.txt"));
+    e.open(&[&a], "outside", "default");
+    assert!(e.exists("doc-1"));
+    e.with_main();
+    moved(&e, "main", &[(&a, &b)]);
+    assert_eq!(
+        moves_for(&e, "doc-1"),
+        vec![json!({"from": wp(&a), "to": wp(&b)})]
+    );
+    assert_eq!(moves_for(&e, "main"), Vec::<Value>::new());
+}
+
+#[test]
+fn a_move_onto_an_open_document_moves_nothing_and_names_the_one_kept() {
+    let e = env(Duration::from_secs(5));
+    let (a, b) = (e.text("a.txt"), e.text("b.txt"));
+    e.with_main();
+    register(&e, "main", "t1", &a);
+    register(&e, "main", "t2", &b);
+    let out = moved(&e, "main", &[(&a, &b)]);
+    assert_eq!(out, json!({"kept": [wp(&a)]}));
+    assert_eq!(moves_for(&e, "main"), Vec::<Value>::new());
+    assert_eq!(inside(&e, "main", &a)["location"], tab("main", "t1"));
+    assert_eq!(inside(&e, "main", &b)["location"], tab("main", "t2"));
 }
