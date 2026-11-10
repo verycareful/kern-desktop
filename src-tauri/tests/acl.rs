@@ -620,6 +620,121 @@ fn every_window_that_holds_documents_may_report_a_rename_and_a_stranger_may_not(
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
 }
 
+/// What a document window's page has no use for, each refused to it by its capability: the layout,
+/// the settings' writes and window, the file manager's own commands (drags out, the clipboard of
+/// files, drops, the default file manager), moving a tab to a window or taking a document in, and
+/// the files of other places.
+const NOT_FOR_DOCUMENT_WINDOWS: [&str; 20] = [
+    "layout_get",
+    "layout_set",
+    "settings_set",
+    "open_settings",
+    "restart_request",
+    "detach_doc",
+    "adopted",
+    "refuse_adoption",
+    "open_editor",
+    "file_identity",
+    "drag_out",
+    "dnd_target",
+    "drop_start_op",
+    "remove_start_op",
+    "clip_get",
+    "clip_set",
+    "clip_text",
+    "fm1_status",
+    "default_fm_status",
+    "make_default_fm",
+];
+
+/// The kernkraft commands a document window's page does not send: every file operation, the
+/// Trash, the volumes, applications and the listing of folders. `start_op` takes the kind of
+/// operation as a string, which a capability cannot look at, so granting it would let the page
+/// empty the Trash.
+const KERNKRAFT_NOT_FOR_DOCUMENT_WINDOWS: [&str; 14] = [
+    "start_op",
+    "list_dir",
+    "rename",
+    "create_dir",
+    "create_file",
+    "search",
+    "trash_purge",
+    "trash_list",
+    "undo",
+    "volume_mount",
+    "launch_app",
+    "set_default_app",
+    "documents",
+    "open_terminal",
+];
+
+#[test]
+fn a_document_window_is_granted_every_command_its_capability_names() {
+    let e = env("doc-1");
+    let (kernkraft_cmds, kern_cmds) = granted("doc.json", "doc-*");
+    // The page needs at least its document's text, its registration, and the hand-over.
+    for needed in ["text_open", "text_save", "text_check", "watch_dir"] {
+        assert!(kernkraft_cmds.iter().any(|c| c == needed), "{needed}");
+    }
+    for needed in [
+        "doc_opened",
+        "doc_closed",
+        "doc_moved",
+        "detached",
+        "refuse_detach",
+        "move_doc_to_main",
+        "hand_doc",
+        "hand_refused",
+        "confirm_close",
+        "log_error",
+    ] {
+        assert!(kern_cmds.iter().any(|c| c == needed), "{needed}");
+    }
+    for cmd in &kern_cmds {
+        // Reached or refused by the command itself, never by the access control.
+        if let Err(err) = invoke(&e, cmd, json!({"path": {"k": "Utf8", "v": "/a"}})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "{cmd}: {err}"
+            );
+        }
+    }
+    for cmd in &kernkraft_cmds {
+        if let Err(err) = invoke(&e, &kernkraft(cmd), json!({})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "{cmd}: {err}"
+            );
+        }
+    }
+    // What is refused is not among the grants.
+    for cmd in KERNKRAFT_NOT_FOR_DOCUMENT_WINDOWS {
+        assert!(!kernkraft_cmds.iter().any(|c| c == cmd), "{cmd}");
+    }
+    for cmd in NOT_FOR_DOCUMENT_WINDOWS {
+        assert!(!kern_cmds.iter().any(|c| c == cmd), "{cmd}");
+    }
+}
+
+#[test]
+fn a_document_window_is_refused_what_only_the_main_window_needs() {
+    let e = env("doc-1");
+    for cmd in NOT_FOR_DOCUMENT_WINDOWS {
+        let err = invoke(&e, cmd, json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{cmd}: {err}"
+        );
+    }
+    for cmd in KERNKRAFT_NOT_FOR_DOCUMENT_WINDOWS {
+        let err = invoke(&e, &kernkraft(cmd), json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{cmd}: {err}"
+        );
+    }
+}
+
 #[test]
 fn the_main_and_editor_windows_may_ask_for_a_files_identity_and_a_stranger_may_not() {
     for label in ["main", "editor-1"] {
@@ -648,12 +763,15 @@ fn only_the_main_window_stores_its_layout_and_every_window_that_has_one_may_read
     assert!(invoke(&editor, "layout_get", json!({})).is_ok());
     let err = invoke(&editor, "layout_set", patch.clone()).unwrap_err();
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
-    // A document window shares the main window's capability, so the write is the command's to refuse.
+    // A document window has no layout of its own: its capability grants neither the read nor the write.
     let doc = env("doc-1");
-    assert_eq!(
-        invoke(&doc, "layout_set", patch).unwrap_err()["kind"],
-        "Denied"
-    );
+    for cmd in ["layout_get", "layout_set"] {
+        let err = invoke(&doc, cmd, patch.clone()).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{cmd}: {err}"
+        );
+    }
     let stranger = env("stranger");
     let err = invoke(&stranger, "layout_get", json!({})).unwrap_err();
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
@@ -732,8 +850,8 @@ fn the_settings_window_is_granted_what_its_capability_names_and_nothing_of_the_f
 }
 
 #[test]
-fn every_kind_of_window_may_open_settings_and_only_the_settings_window_asks_a_restart() {
-    for label in ["main", "doc-1", "editor-1"] {
+fn the_main_and_editor_windows_may_open_settings_and_a_document_window_may_not() {
+    for label in ["main", "editor-1"] {
         let e = env(label);
         if let Err(err) = invoke(&e, "open_settings", json!({"section": null})) {
             assert!(
@@ -741,6 +859,16 @@ fn every_kind_of_window_may_open_settings_and_only_the_settings_window_asks_a_re
                 "{label}: {err}"
             );
         }
+    }
+    let doc = env("doc-1");
+    let err = invoke(&doc, "open_settings", json!({"section": null})).unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+}
+
+#[test]
+fn only_the_settings_window_asks_a_restart_and_every_window_that_may_be_closed_calls_it_off() {
+    for label in ["main", "doc-1", "editor-1"] {
+        let e = env(label);
         let err = invoke(&e, "restart_request", json!({})).unwrap_err();
         assert!(
             err.as_str().unwrap().contains("not allowed"),
