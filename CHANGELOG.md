@@ -13,9 +13,9 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 - **Installer and binds**: on a fresh install, an update and a reinstall, the installer asks whether to keep or clear your binds when a `binds.json` exists. `--defaults` keeps them and asks nothing. The uninstaller names binds in its question.
 - **Click settings**: four settings choose a single or a double click to open a file or folder, one each for the left panel, the right panel, the centre and the editor. The left panel defaults to a single click.
 - **Panel order**: the file manager's three columns and the editor window's two panels can be put in any order in Settings > Files > Panels. The order is kept.
-- **Folder view menu**: the right-click menu keeps the most used entries on top and folds the rest into submenus (More ways to open, More edit actions, Pinned, Selection, View). Settings > Files can make it Collapsed (six rows) or Expanded (the flat list). Hover, click and the Right and Left arrow keys open and close a submenu, and Escape closes the submenu before the menu. The other menus are unchanged.
+- **Time of day in dates**: Settings > Files picks the system clock, a 12 hour clock or a 24 hour one for the times Kern shows. The Properties dialog follows it.
+- **Right-click menu setting**: Settings > Files can make the folder view's right-click menu Standard, Collapsed (six rows) or Expanded (the flat list). Standard is the default.
 - **Library**: the Library has a toolbar row, sortable columns (sorting waits until the search is complete), a filter, a card view and a button for hidden items.
-- **Time in Modified**: the Modified column shows the day and the time ("Today 14:32", "Mar 4, 2025 10:07"), and "Nw ago" is gone. Settings > Files picks the system clock, a 12 hour clock or a 24 hour one, and the Properties dialog follows it.
 - **Cut files**: cut files are greyed until they are pasted, and Escape cancels the cut. When the folder shown is cut or lies inside a cut folder, every row and card is greyed, and so is everything below a cut folder in the editor tree. Search and Library hits grey only their own cut paths.
 - **Editor tree**: a Sort button orders the tree by name, size, date modified or type, either way round (not kept across restarts). Expand all and Collapse all are one button. In a narrow column the heading's buttons drop to a row under the folder name.
 - **Editor tree keys**: while the tree has the keyboard, Ctrl+X, Ctrl+C, Ctrl+V, F2, Delete and Shift+Delete cut, copy, paste, rename, trash and delete the current row. They can be rebound in Settings > Keys and mouse, mouse buttons included, and editor windows answer them. F4 opens a terminal in the editor layout, in the tree's root or the folder of the row under the pointer.
@@ -23,17 +23,19 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 - **Open documents follow their file**: a tab keeps its text and its place when its file, or a folder above it, is renamed or moved from Kern. A move onto a document that is already open skips that document and says so.
 - **Repeated messages**: a message raised again with the same words flashes instead of being dropped, in the status bar, the banners, the rename, the name dialog, the location bar and the editor's save problem.
 - **Open errors**: a file that fails to open in an editor window is reported once, centred at the top of the editor area, with a button to dismiss it.
-- **Installer**: it finds a running Kern through `gdbus` or `dbus-send` when `busctl` is missing, says so when it cannot tell, and warns when run as root.
 
 ### Changed
 
-- **Document windows**: a document window has a capability of its own and no longer holds the commands only the main window needs (file operations, Trash, mounts, settings and the layout).
+- **Modified column**: it shows the day and the time ("Today 14:32", "Mar 4, 2025 10:07").
+- **Folder view menu**: the right-click menu keeps the most used entries on top and folds the rest into submenus (More ways to open, More edit actions, Pinned, Selection, View). Hover, click and the Right and Left arrow keys open and close a submenu, and Escape closes the submenu before the menu. The other menus are unchanged.
+- **Desktop entry**: Keywords no longer repeat file manager, which the name already says.
 - **kernkraft**: the pin moves to 0.1.3.1.
 - **Android link**: the link to Kern for Android in Settings and in the welcome text points to https://github.com/verycareful/kern-android.
 - **Development tools**: the dev loop ignores edits to tests and to local notes.
 
 ### Fixed
 
+- **Installer**: it finds a running Kern through `gdbus` or `dbus-send` when `busctl` is missing, so a system without systemd no longer reads as not running, and it says so when it cannot tell. Run as root, it warns that installing for just you means root.
 - **Terminal**: Open terminal here opens the terminal you chose in Settings, then the system's terminal lists, then `$TERMINAL`, then any installed terminal. A program started from the AppImage no longer inherits the bundle's Python environment, which stopped kitty at start while Kern said it had opened a terminal. The message when no terminal is found says what to set.
 - **Text rendering**: all text is drawn with greyscale antialiasing. A region whose content fits was drawn with colour fringes and a scrolling region without, so a short list and a long one looked different.
 - **Clipboard**: copy offers `text/plain;charset=utf-8`, so a pasted name keeps its characters.
@@ -44,6 +46,14 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 - **Properties**: it is not shown over a folder that did not open.
 - **List header**: the column header sits flush under the path bar, and rows scrolling up no longer show in a gap above it.
 - **Notices**: the text of a one-line notice is centred against its button.
+
+### Removed
+
+- **Weeks in Modified**: the "Nw ago" form is gone. A date from the last week reads Today, Yesterday or N days ago, and an older one reads as a calendar date.
+
+### Security
+
+- **Document windows**: a document window has a capability of its own and no longer holds the commands only the main window needs (file operations, Trash, mounts, settings and the layout). Before, it held the same permissions as the main window.
 
 ### Tests
 
@@ -309,3 +319,18 @@ The first release of Kern Desktop: a file manager and a plain text editor in one
 ### Results
 
 - 1629 tests across 139 suites, all passed (76.3s, CachyOS x86-64, rustc 1.99.1).
+
+[Unreleased]: https://github.com/verycareful/kern-desktop/compare/0.1.2.0...HEAD
+[0.1.2.0]: https://github.com/verycareful/kern-desktop/compare/0.1.1.4...0.1.2.0
+[0.1.1.4]: https://github.com/verycareful/kern-desktop/compare/0.1.1.3...0.1.1.4
+[0.1.1.3]: https://github.com/verycareful/kern-desktop/compare/0.1.1.2...0.1.1.3
+[0.1.1.2]: https://github.com/verycareful/kern-desktop/compare/0.1.1.0...0.1.1.2
+[0.1.1.0]: https://github.com/verycareful/kern-desktop/compare/0.1.0.7...0.1.1.0
+[0.1.0.7]: https://github.com/verycareful/kern-desktop/compare/0.1.0.6...0.1.0.7
+[0.1.0.6]: https://github.com/verycareful/kern-desktop/compare/0.1.0.5...0.1.0.6
+[0.1.0.5]: https://github.com/verycareful/kern-desktop/compare/0.1.0.4...0.1.0.5
+[0.1.0.4]: https://github.com/verycareful/kern-desktop/compare/0.1.0.3...0.1.0.4
+[0.1.0.3]: https://github.com/verycareful/kern-desktop/compare/0.1.0.2...0.1.0.3
+[0.1.0.2]: https://github.com/verycareful/kern-desktop/compare/0.1.0.1...0.1.0.2
+[0.1.0.1]: https://github.com/verycareful/kern-desktop/compare/0.1.0.0...0.1.0.1
+[0.1.0.0]: https://github.com/verycareful/kern-desktop/releases/tag/0.1.0.0
