@@ -7,6 +7,7 @@ import { empty } from "./selection";
 import { entry } from "./test-entries";
 import { stubLayout } from "./test-layout";
 import { clearCut, setCut } from "../ops/cut-store";
+import type { WirePath } from "../ipc";
 import { useViewSettings } from "./view-settings";
 
 let restore: () => void;
@@ -18,10 +19,11 @@ afterEach(() => {
   restore();
 });
 
-function list(sortFailed: boolean, entries = [entry("a"), entry("b")]) {
+function list(sortFailed: boolean, entries = [entry("a"), entry("b")], cutFolder?: WirePath) {
   render(
     <FileList
       entries={entries}
+      {...(cutFolder ? { cutFolder } : {})}
       sel={empty}
       onItemClick={vi.fn()}
       onItemDoubleClick={vi.fn()}
@@ -82,5 +84,39 @@ test("a_row_the_clipboard_holds_as_a_cut_is_marked_and_the_others_are_not", () =
   list(false);
   const rows = screen.getAllByTestId("file-row");
   expect(rows.map((r) => r.classList.contains("kern-cut"))).toEqual([false, true]);
+  clearCut();
+});
+
+test("every_row_is_cut_when_the_folder_listed_is_cut_or_lies_inside_a_cut_folder", () => {
+  const rows = () => screen.getAllByTestId("file-row").map((r) => r.classList.contains("kern-cut"));
+  setCut([{ k: "Utf8", v: "/d" }]);
+  list(false, undefined, { k: "Utf8", v: "/d" });
+  expect(rows()).toEqual([true, true]);
+  cleanup();
+  setCut([{ k: "Utf8", v: "/" }]);
+  list(false, undefined, { k: "Utf8", v: "/d" });
+  expect(rows()).toEqual([true, true]);
+  clearCut();
+});
+
+test("no_row_is_cut_for_the_folder_when_a_sibling_or_a_child_is_the_one_cut", () => {
+  const rows = () => screen.getAllByTestId("file-row").map((r) => r.classList.contains("kern-cut"));
+  setCut([{ k: "Utf8", v: "/d2" }]);
+  list(false, undefined, { k: "Utf8", v: "/d" });
+  expect(rows()).toEqual([false, false]);
+  cleanup();
+  setCut([{ k: "Utf8", v: "/d/sub" }]);
+  list(false, undefined, { k: "Utf8", v: "/d" });
+  expect(rows()).toEqual([false, false]);
+  clearCut();
+});
+
+test("rows_of_many_folders_are_cut_only_for_their_own_paths_when_no_folder_is_given", () => {
+  setCut([{ k: "Utf8", v: "/d" }]);
+  list(false);
+  expect(screen.getAllByTestId("file-row").map((r) => r.classList.contains("kern-cut"))).toEqual([
+    false,
+    false,
+  ]);
   clearCut();
 });

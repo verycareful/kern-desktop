@@ -6,6 +6,14 @@ import { within } from "../shell/place-nav";
 import type { Row } from "./tree";
 
 /**
+ * True when the folder being listed is itself cut, or lies inside a cut folder: everything it
+ * lists is then cut with it, though no row's own path is on the clipboard.
+ */
+export function folderIsCut(folder: WirePath, cutPaths: readonly WirePath[]): boolean {
+  return cutPaths.some((c) => within(c, folder, true));
+}
+
+/**
  * The keys of the tree rows that are cut: a row whose own path is cut, and every row listed below
  * a cut folder, however deep. Rows come in tree order, so what lies below a folder is the run of
  * rows deeper than it. When the root is itself cut, or lies inside a cut folder, every row is cut.
@@ -18,7 +26,7 @@ export function cutRowKeys(
 ): Set<string> {
   const out = new Set<string>();
   if (cutKeys.size === 0) return out;
-  const everything = cutPaths.some((c) => within(c, root, true));
+  const everything = folderIsCut(root, cutPaths);
   // Depth of the outermost cut folder whose rows are being walked, or null outside one.
   let below: number | null = null;
   for (const row of rows) {

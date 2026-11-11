@@ -17,6 +17,7 @@ import { useRubberBand } from "./useRubberBand";
 import { useCurrentItem } from "./use-current-item";
 import { RenameInput } from "./RenameInput";
 import { useCut } from "../ops/cut-store";
+import { folderIsCut } from "./cut-rows";
 import { useViewSettings } from "./view-settings";
 import { zoomFactor } from "../theme/interface-size";
 
@@ -100,6 +101,8 @@ export function FileGrid(
   const zoom = zoomFactor(useViewSettings((s) => s.interfaceSize));
   const timeFormat = useViewSettings((s) => s.timeFormat);
   const cut = useCut((s) => s.keys);
+  const cutPaths = useCut((s) => s.paths);
+  const allCut = props.cutFolder !== undefined && folderIsCut(props.cutFolder, cutPaths);
   const thumbs = useThumbnails(
     `${props.thumbKey}:${mount.current}`,
     visible,
@@ -175,7 +178,7 @@ export function FileGrid(
                     className={
                       "kern-card" +
                       (selected ? " kern-selected" : "") +
-                      (cut.has(pathKey(e.path)) ? " kern-cut" : "") +
+                      (allCut || cut.has(pathKey(e.path)) ? " kern-cut" : "") +
                       (item.outlined === i ? " kern-cursor" : "")
                     }
                     style={{ width: CARD.width, height: CARD.height }}

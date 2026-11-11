@@ -16,7 +16,7 @@ import { pathKey } from "../ipc";
 import { currentContext, getAction, isEnabled, runAction } from "../keys/actions";
 import { useShortcuts } from "../keys/useShortcuts";
 import { OpsHost } from "../ops/OpsHost";
-import { clearCut, useCut } from "../ops/cut-store";
+import { clearCut, setCut, useCut } from "../ops/cut-store";
 import { forgetSpentCuts } from "../ops/spent-cut";
 import { useOps } from "../ops/useOps";
 import { activeTab, useTabs, type FolderTab } from "../store/tabs";
@@ -1616,6 +1616,16 @@ test("a_cut_greys_the_cut_items_and_a_copy_after_it_greys_nothing", async () => 
   key("c", { ctrlKey: true });
   await waitFor(() => expect(useCut.getState().keys.size).toBe(0));
   expect(document.querySelector(".kern-cut")).toBeNull();
+});
+
+test("a_folder_view_inside_a_cut_folder_greys_every_row", async () => {
+  await mount([entry("a"), entry("b")]);
+  act(() => setCut([p("/")]));
+  expect(screen.getAllByTestId("file-row").map((r) => r.classList.contains("kern-cut"))).toEqual([
+    true,
+    true,
+  ]);
+  act(() => clearCut());
 });
 
 test("a_cut_that_failed_to_reach_the_clipboard_greys_nothing", async () => {

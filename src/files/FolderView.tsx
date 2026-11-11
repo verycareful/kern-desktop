@@ -571,6 +571,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     onBand,
     onBackgroundClick,
     onSeedCursor,
+    cutFolder: tab.path,
     rename: fileOps.renaming
       ? {
           state: fileOps.renaming,

@@ -3,7 +3,7 @@
 import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, Folder, Link2 } from "lucide-react";
-import { pathKey, type WireEntry } from "../ipc";
+import { pathKey, type WirePath, type WireEntry } from "../ipc";
 import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 import type { Layout } from "./band";
 import { fileType, isFolder } from "./file-type";
@@ -15,6 +15,7 @@ import { useRestoredScroll } from "./restore-scroll";
 import { useRubberBand } from "./useRubberBand";
 import { useCurrentItem } from "./use-current-item";
 import { useCut } from "../ops/cut-store";
+import { folderIsCut } from "./cut-rows";
 import { useViewSettings } from "./view-settings";
 import { RenameInput, type RenameProps } from "./RenameInput";
 
@@ -41,6 +42,11 @@ export interface ItemsProps {
   onSeedCursor(): void;
   /** The item whose name is being edited in place, if any. */
   rename?: RenameProps | null;
+  /**
+   * The folder every entry is listed from. When it is cut, or lies inside a cut folder, all of
+   * its entries are drawn cut. Left out where the entries come from many folders (search hits).
+   */
+  cutFolder?: WirePath;
 }
 
 export function FileBadge(props: { entry: WireEntry; size: number }) {
@@ -107,6 +113,8 @@ export function FileList(
   const item = useCurrentItem(entries.length, sel.cursor, props.onSeedCursor);
   const timeFormat = useViewSettings((s) => s.timeFormat);
   const cut = useCut((s) => s.keys);
+  const cutPaths = useCut((s) => s.paths);
+  const allCut = props.cutFolder !== undefined && folderIsCut(props.cutFolder, cutPaths);
 
   const layout: Layout = { kind: "list", rowHeight, count: entries.length };
   const { onPointerDown, band } = useRubberBand({
@@ -185,7 +193,7 @@ export function FileList(
                 className={
                   "kern-row" +
                   (selected ? " kern-selected" : "") +
-                  (cut.has(pathKey(e.path)) ? " kern-cut" : "") +
+                  (allCut || cut.has(pathKey(e.path)) ? " kern-cut" : "") +
                   (item.outlined === v.index ? " kern-cursor" : "")
                 }
                 style={{

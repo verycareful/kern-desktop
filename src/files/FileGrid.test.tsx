@@ -70,3 +70,28 @@ test("a_card_the_clipboard_holds_as_a_cut_is_marked_and_the_others_are_not", () 
   expect(cards.map((c) => c.classList.contains("kern-cut"))).toEqual([false, true]);
   clearCut();
 });
+
+test("every_card_is_cut_when_the_folder_listed_lies_inside_a_cut_folder", () => {
+  setCut([{ k: "Utf8", v: "/" }]);
+  render(
+    <FileGrid
+      entries={[entry("a"), entry("b")]}
+      cutFolder={{ k: "Utf8", v: "/d" }}
+      sel={empty}
+      onItemClick={vi.fn()}
+      onItemDoubleClick={vi.fn()}
+      onContextMenu={vi.fn()}
+      onBand={vi.fn()}
+      onBackgroundClick={vi.fn()}
+      onSeedCursor={vi.fn()}
+      rootRef={{ current: null }}
+      revealTick={0}
+      initialScroll={0}
+      thumbKey="t"
+      onColumns={vi.fn()}
+    />
+  );
+  const cards = screen.getAllByTestId("file-card");
+  expect(cards.map((c) => c.classList.contains("kern-cut"))).toEqual([true, true]);
+  clearCut();
+});
