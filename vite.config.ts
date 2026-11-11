@@ -36,7 +36,10 @@ export function woff2Only(): Plugin {
   };
 }
 
-// Tauri expects a fixed port and a dev server that leaves src-tauri alone.
+// Tauri expects a fixed port and a dev server that leaves src-tauri alone. The
+// dev server also leaves a top-level local/ folder alone: nothing in it is part
+// of the page, and a file written there while the app runs would otherwise
+// reload the window.
 export default defineConfig({
   plugins: [react(), woff2Only()],
   clearScreen: false,
@@ -48,6 +51,6 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
-    watch: { ignored: ["**/src-tauri/**"] },
+    watch: { ignored: ["**/src-tauri/**", "**/local/**"] },
   },
 });
