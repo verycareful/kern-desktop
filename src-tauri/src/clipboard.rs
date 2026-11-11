@@ -15,10 +15,14 @@
 //!   `setClipboardDataCut` writes it and `isClipboardDataCut` reads it),
 //!   not from the GNOME target. On a read, a `text/uri-list` carrying it
 //!   with `1` is a cut.
-//! - The text targets `STRING`, `TEXT`, `text/plain` and `UTF8_STRING`
-//!   (GTK's set of text targets, so X11 clients find one they ask for): the
-//!   paths, newline separated, so pasting into a
-//!   terminal gives paths. A name that is not UTF-8 cannot be exact text;
+//! - The text targets `STRING`, `TEXT`, `UTF8_STRING`,
+//!   `text/plain;charset=utf-8` and `text/plain` (some of GTK's text
+//!   targets, so clients find one they ask for): the paths, newline
+//!   separated, so pasting into a terminal gives paths. GTK answers a bare
+//!   `text/plain` in ASCII, escaping every other character, so a client that
+//!   wants a name with such characters exactly asks for `UTF8_STRING` or
+//!   `text/plain;charset=utf-8`, which carry it as UTF-8.
+//!   A name that is not UTF-8 cannot be exact text;
 //!   it is written with U+FFFD for the bytes that are not UTF-8. The two
 //!   URI targets stay exact, and a file manager pastes from those. The
 //!   alternative, writing such a name in its URI form, would hand a terminal
@@ -74,9 +78,17 @@ pub const TARGET_GNOME: &str = "x-special/gnome-copied-files";
 pub const TARGET_URI_LIST: &str = "text/uri-list";
 /// KDE's cut marker (KIO `isClipboardDataCut`).
 pub const TARGET_KDE_CUT: &str = "application/x-kde-cutselection";
-/// The text targets offered, the set of GTK's `add_text_targets`; GTK
-/// converts the text for each.
-pub const TARGETS_TEXT: [&str; 4] = ["STRING", "TEXT", "text/plain", "UTF8_STRING"];
+/// The text targets offered, some of those GTK's `add_text_targets` adds; GTK
+/// converts the text for each. A bare `text/plain` is converted to ASCII with
+/// the other characters escaped; `UTF8_STRING` and `text/plain;charset=utf-8`
+/// are UTF-8.
+pub const TARGETS_TEXT: [&str; 5] = [
+    "STRING",
+    "TEXT",
+    "text/plain",
+    "text/plain;charset=utf-8",
+    "UTF8_STRING",
+];
 
 /// How long a command waits for GTK. The clipboard's owner is another
 /// process, and one that is busy (a file manager building a large list) can

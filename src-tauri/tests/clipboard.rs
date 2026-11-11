@@ -174,7 +174,13 @@ fn kde_cut_target_is_offered_on_cut_only() {
         let t = offered_targets(op);
         assert!(t.contains(&TARGET_GNOME) && t.contains(&TARGET_URI_LIST));
         // Every text variant an X11 client may ask for (GTK's text targets).
-        for name in ["STRING", "TEXT", "text/plain", "UTF8_STRING"] {
+        for name in [
+            "STRING",
+            "TEXT",
+            "text/plain",
+            "text/plain;charset=utf-8",
+            "UTF8_STRING",
+        ] {
             assert!(t.contains(&name), "{name}");
         }
     }
