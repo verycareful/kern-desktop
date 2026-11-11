@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { Check } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDocStatus } from "../editor/doc-status";
 import { currentContext, isEnabled, runAction, type Action } from "./actions";
@@ -98,7 +99,8 @@ export function ActionMenu(props: {
             {section.actions.map((a) => (
               <li key={a.id} role="none">
                 <button
-                  role="menuitem"
+                  role={a.checked ? "menuitemradio" : "menuitem"}
+                  aria-checked={a.checked ? a.checked() : undefined}
                   data-action-id={a.id}
                   disabled={!isEnabled(a, ctx)}
                   onClick={() => {
@@ -108,6 +110,7 @@ export function ActionMenu(props: {
                 >
                   <span>{a.menuLabel?.() ?? a.label}</span>
                   {a.keys[0] && <kbd>{a.keys[0]}</kbd>}
+                  {a.checked?.() && <Check size={14} strokeWidth={2} aria-hidden />}
                 </button>
               </li>
             ))}

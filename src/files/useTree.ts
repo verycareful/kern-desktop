@@ -22,6 +22,7 @@ import { logError } from "../ops/error-log";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { isFolder } from "./file-type";
+import { DEFAULT_SORT, type SortSpec } from "./folder-ui";
 import { createSorter, type Sorter } from "./sort-async";
 import {
   branchPaths,
@@ -92,6 +93,8 @@ export interface TreeOptions {
   root: WirePath;
   /** Whether hidden items are listed. */
   hidden: boolean;
+  /** The order of every folder the tree lists; name, A to Z, when absent. */
+  sort?: SortSpec;
   /**
    * Names this tree's watches. The default is the window's label and a random id, so no two trees
    * of the application share a key: the watches live in one registry for all windows, and a
@@ -146,6 +149,7 @@ export function useTree(opts: TreeOptions): TreeApi {
   const nextNote = useRef(0);
   const ctl = useRef<Controller>(NONE);
   const hidden = useRef(opts.hidden);
+  const sort = useRef(opts.sort ?? DEFAULT_SORT);
   const onRootGone = useRef(opts.onRootGone);
   useLayoutEffect(() => {
     onRootGone.current = opts.onRootGone;
@@ -245,7 +249,7 @@ export function useTree(opts: TreeOptions): TreeApi {
       try {
         const raw = await listDir(path, hidden.current);
         if (stale()) return;
-        const entries = await sorter.sort(raw, "name", "asc");
+        const entries = await sorter.sort(raw, sort.current.by, sort.current.dir);
         if (stale()) return;
         showListing(key, { state: "ready", entries });
       } catch (e) {
@@ -472,6 +476,17 @@ export function useTree(opts: TreeOptions): TreeApi {
     shownHidden.current = opts.hidden;
     ctl.current.refresh();
   }, [opts.hidden]);
+
+  // Another order: every open folder is listed again, in it; the watches stay.
+  const by = opts.sort?.by ?? DEFAULT_SORT.by;
+  const dir = opts.sort?.dir ?? DEFAULT_SORT.dir;
+  const shownSort = useRef(`${by}:${dir}`);
+  useEffect(() => {
+    sort.current = { by, dir };
+    if (shownSort.current === `${by}:${dir}`) return;
+    shownSort.current = `${by}:${dir}`;
+    ctl.current.refresh();
+  }, [by, dir]);
 
   const rows = useMemo(() => flatten(model), [model]);
   return {

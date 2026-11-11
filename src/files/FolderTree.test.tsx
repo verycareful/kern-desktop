@@ -7,6 +7,7 @@ import { clearCut, setCut } from "../ops/cut-store";
 import { useOpenError } from "../ops/open-error-store";
 import { entry } from "./test-entries";
 import { stubLayout } from "./test-layout";
+import { DEFAULT_TREE_SORT, useTreeSort } from "./tree-sort";
 import { useViewSettings } from "./view-settings";
 
 const ipc = vi.hoisted(() => ({
@@ -85,6 +86,7 @@ afterEach(async () => {
     singleClickEditor: false,
   });
   useOpenError.getState().dismiss();
+  useTreeSort.setState({ sort: DEFAULT_TREE_SORT });
   await Promise.resolve();
   restoreLayout();
   vi.clearAllMocks();
@@ -758,4 +760,56 @@ test("the_same_note_raised_again_is_listed_once_and_flashes", async () => {
     ).not.toBeNull()
   );
   expect(screen.getAllByText(/did not end: Io: inotify busy/)).toHaveLength(1);
+});
+
+/** A root and an open folder whose files differ in size and in age. */
+function sizedDisk() {
+  disk = {
+    "/r": [
+      folder("/r", "docs"),
+      folder("/r", "src"),
+      entry("readme.md", { len: 5, modified_ms: 300 }, "/r"),
+      entry("z.txt", { len: 50, modified_ms: 100 }, "/r"),
+      entry("a.bin", { len: 20, modified_ms: 200 }, "/r"),
+    ],
+    "/r/docs": [
+      entry("a.txt", { len: 1, modified_ms: 20 }, "/r/docs"),
+      entry("b.txt", { len: 9, modified_ms: 10 }, "/r/docs"),
+    ],
+  };
+}
+
+test("the_tree_lists_in_the_order_chosen_and_keeps_folders_first", async () => {
+  sizedDisk();
+  useTreeSort.getState().chooseBy("size");
+  await mount();
+  expect(names()).toEqual(["docs", "src", "z.txt", "a.bin", "readme.md"]);
+});
+
+test("a_new_sort_orders_every_open_folder_again_and_leaves_them_open_and_watched", async () => {
+  sizedDisk();
+  await mount();
+  fireEvent.click(row("docs"));
+  await waitFor(() => expect(names()).toContain("b.txt"));
+  expect(names()).toEqual(["docs", "a.txt", "b.txt", "src", "a.bin", "readme.md", "z.txt"]);
+  const watches = ipc.watchDir.mock.calls.length;
+
+  act(() => useTreeSort.getState().chooseBy("size"));
+  await waitFor(() =>
+    expect(names()).toEqual(["docs", "b.txt", "a.txt", "src", "z.txt", "a.bin", "readme.md"])
+  );
+  expect(row("docs")).toHaveAttribute("aria-expanded", "true");
+  expect(ipc.watchDir).toHaveBeenCalledTimes(watches);
+
+  act(() => useTreeSort.getState().chooseBy("modified"));
+  await waitFor(() =>
+    expect(names()).toEqual(["docs", "a.txt", "b.txt", "src", "readme.md", "a.bin", "z.txt"])
+  );
+});
+
+test("the_direction_flips_files_and_folders_each_within_their_group", async () => {
+  sizedDisk();
+  await mount();
+  act(() => useTreeSort.getState().chooseDir("desc"));
+  await waitFor(() => expect(names()).toEqual(["src", "docs", "z.txt", "readme.md", "a.bin"]));
 });

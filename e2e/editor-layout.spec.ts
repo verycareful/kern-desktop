@@ -132,6 +132,70 @@ test("tree_keyboard_navigation", async ({ page, mockTauri, invokeCalls }) => {
   });
 });
 
+test("the_tree_heading_buttons_fit_the_narrowest_column", async ({ page, mockTauri }) => {
+  await mockTauri({
+    ...COMMON,
+    layout_get: { ...COMMON.layout_get, left_width: 180 },
+    "plugin:kernkraft-tauri|list_dir": SMALL_TREE,
+  });
+  await page.goto("/");
+  const tools = page.getByRole("toolbar", { name: "Folder tree" });
+  await expect(tools).toBeVisible();
+  const column = (await page.getByTestId("editor-left").boundingBox())!;
+  expect(column.width).toBe(180);
+  const buttons = tools.getByRole("button");
+  const last = (await buttons.last().boundingBox())!;
+  expect(last.x + last.width).toBeLessThanOrEqual(column.x + column.width);
+  const first = (await buttons.first().boundingBox())!;
+  expect(first.x).toBeGreaterThanOrEqual(column.x);
+});
+
+test("the_tree_sort_menu_orders_the_tree_in_the_browser", async ({ page, mockTauri }) => {
+  await mockTauri({
+    ...COMMON,
+    "plugin:kernkraft-tauri|list_dir": (args: Record<string, unknown>) => {
+      const at = (args.path as { v: string }).v;
+      const e = (name: string, folder: boolean, len: number) => ({
+        path: { k: "Utf8", v: `${at}/${name}` },
+        name,
+        kind: folder ? "dir" : "file",
+        target_is_dir: folder,
+        len,
+        modified_ms: null,
+        hidden: false,
+        mime: "text/plain",
+        mode: 0o644,
+      });
+      return at === "/home/tester"
+        ? [e("docs", true, 0), e("apple.txt", false, 1), e("zebra.txt", false, 99)]
+        : [];
+    },
+  });
+  await page.goto("/");
+  const names = () =>
+    page.getByRole("treeitem").evaluateAll((els) => els.map((el) => el.getAttribute("data-name")));
+  await expect.poll(names).toEqual(["docs", "apple.txt", "zebra.txt"]);
+
+  await page.getByRole("button", { name: "Sort the tree" }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitemradio", { name: "Name" })).toHaveAttribute(
+    "aria-checked",
+    "true"
+  );
+  await menu.getByRole("menuitemradio", { name: "Size" }).click();
+  await expect(menu).toHaveCount(0);
+  await expect.poll(names).toEqual(["docs", "zebra.txt", "apple.txt"]);
+
+  await page.getByRole("button", { name: "Sort the tree" }).click();
+  await expect(page.getByRole("menuitemradio", { name: "Largest first" })).toHaveAttribute(
+    "aria-checked",
+    "true"
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sort the tree" })).toBeFocused();
+});
+
 test("ctrl_b_hides_and_shows_the_left_column_and_the_welcome_pane_fills_the_centre", async ({
   page,
   mockTauri,

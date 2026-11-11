@@ -79,7 +79,8 @@ Kern Desktop is in alpha.
   own, and its Home button moves it into the main window.
 - **Editor windows.** Open as editor gives a folder its own window, with a
   folder tree beside your documents. The tree's menu carries the file
-  operations, and its heading holds search, the terminal, hidden files and
+  operations, and its heading holds search, the terminal, hidden files, the
+  sort order (name, size, date modified or type, either way round) and
   collapse or expand all. Each folder has one editor window:
   open the folder again and that window comes forward. A file opened from
   inside an editor window moves into it, from whichever window held it. A file

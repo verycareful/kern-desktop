@@ -731,15 +731,21 @@
   white-space: nowrap;
 }
 
-/* The tree's buttons, at the end of its heading; the name gives way to them. */
+/*
+ * The tree's buttons, at the end of its heading; the name gives way to them first. In the
+ * narrowest column the buttons themselves shrink, down to 20px, so the row stays inside it.
+ */
 .kern-tree-tools {
   display: flex;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   gap: 2px;
   font-weight: normal;
 }
 
 .kern-tree-tools .kern-tree-tool {
+  flex: 0 1 26px;
+  min-width: 20px;
   width: 26px;
   height: 26px;
 }

@@ -20,6 +20,7 @@ import { openTerminalIn } from "../files/use-folder-tools";
 import { toggleHidden } from "../files/view-settings";
 import { treeMenu } from "../files/tree-menu";
 import { TreeOps } from "../files/TreeOps";
+import { TreeSortButton } from "../files/TreeSortButton";
 import { useTreeMenu } from "../files/tree-menu-store";
 import { useViewSettings } from "../files/view-settings";
 import { ActionMenu } from "../keys/ActionMenu";
@@ -73,7 +74,8 @@ function treeNote(text: string): void {
 /**
  * The buttons of the tree's heading: the name search in the window's folder, a terminal at the
  * root, in an editor window the folder opened in the file manager, hidden items shown or not (the
- * window's choice, which folder tabs follow too), and every folder closed or opened.
+ * window's choice, which folder tabs follow too), the order of the tree, and every folder closed or
+ * opened.
  */
 function TreeTools(props: {
   root: WirePath;
@@ -107,6 +109,7 @@ function TreeTools(props: {
           runAction(getAction("editor.openInFileManager"), currentContext())
         )}
       {button("Show hidden files", hidden ? Eye : EyeOff, () => void toggleHidden(), hidden)}
+      <TreeSortButton />
       {button("Collapse all", ChevronsDownUp, () => props.tree.current?.collapseAll())}
       {button("Expand all", ChevronsUpDown, () => props.tree.current?.expandAll())}
     </span>

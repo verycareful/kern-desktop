@@ -3,7 +3,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { ActionMenu } from "./ActionMenu";
-import { actions } from "./actions";
+import { actions, type Action } from "./actions";
 import { registerDoc } from "../editor/doc-controller";
 import { useDocStatus } from "../editor/doc-status";
 import { useTabs } from "../store/tabs";
@@ -106,4 +106,35 @@ test("an_open_menu_follows_a_document_becoming_busy", () => {
     off();
     useDocStatus.getState().clear(id);
   }
+});
+
+test("an_action_that_is_a_choice_is_a_radio_item_marked_when_chosen", () => {
+  const choice = (id: string, label: string, on: boolean): Action => ({
+    id,
+    label,
+    area: "View",
+    keys: [],
+    when: "any",
+    checked: () => on,
+    run: () => undefined,
+  });
+  render(
+    <ActionMenu
+      sections={[
+        { title: "Sort by", actions: [choice("t.a", "One", true), choice("t.b", "Two", false)] },
+        { actions: actions.filter((a) => a.id === "tab.close") },
+      ]}
+      x={0}
+      y={0}
+      onClose={() => undefined}
+    />
+  );
+  const one = screen.getByRole("menuitemradio", { name: "One" });
+  expect(one).toHaveAttribute("aria-checked", "true");
+  expect(one.querySelector("svg.lucide-check")).not.toBeNull();
+  const two = screen.getByRole("menuitemradio", { name: "Two" });
+  expect(two).toHaveAttribute("aria-checked", "false");
+  expect(two.querySelector("svg")).toBeNull();
+  // An action that is not a choice stays a plain item.
+  expect(screen.getByRole("menuitem", { name: /Close tab/ })).not.toHaveAttribute("aria-checked");
 });

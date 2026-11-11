@@ -58,6 +58,7 @@ vi.mock("../files/sort-async", async () => {
 
 import { actions, currentContext, getAction, isEnabled, runAction } from "../keys/actions";
 import { useTreeMenu } from "../files/tree-menu-store";
+import { DEFAULT_TREE_SORT, useTreeSort } from "../files/tree-sort";
 import { useOps } from "../ops/useOps";
 import { useLayout } from "../store/layout";
 import { usePanelsStore } from "../store/panels";
@@ -85,6 +86,7 @@ beforeEach(() => {
   useCloseGuard.getState().reset();
   useLayout.getState().reset();
   useTreeMenu.getState().setCurrent(null);
+  useTreeSort.setState({ sort: DEFAULT_TREE_SORT });
   useOps.setState({ notice: null });
   useTabs.setState({ tabs: [], activeId: null });
   usePanelsStore.setState({ leftSlid: false, rightSlid: false });
@@ -656,4 +658,50 @@ test("the_tree_search_finds_in_the_root_opens_a_file_and_shows_a_folder_in_the_t
   await waitFor(() =>
     expect(screen.getByRole("treeitem", { name: /^work/ })).toHaveAttribute("data-active", "true")
   );
+});
+
+test("the_tree_sort_button_opens_a_menu_that_orders_the_tree_and_marks_the_choice", async () => {
+  ipc.listDir.mockImplementation((path: WirePath) =>
+    Promise.resolve(
+      path.v === "/home/a"
+        ? [
+            folder("/home/a", "work"),
+            entry("zebra.txt", { len: 99 }, "/home/a"),
+            entry("apple.txt", { len: 1 }, "/home/a"),
+          ]
+        : []
+    )
+  );
+  await editorWindow();
+  const treeNames = () => screen.getAllByTestId("tree-row").map((r) => r.getAttribute("data-name"));
+  await waitFor(() => expect(treeNames()).toEqual(["work", "apple.txt", "zebra.txt"]));
+
+  const open = () => {
+    fireEvent.click(tools().getByRole("button", { name: "Sort the tree" }));
+    return screen.findByRole("menu");
+  };
+  let menu = await open();
+  expect(within(menu).getByRole("menuitemradio", { name: "Name" })).toHaveAttribute(
+    "aria-checked",
+    "true"
+  );
+  expect(within(menu).getByRole("menuitemradio", { name: "A to Z" })).toHaveAttribute(
+    "aria-checked",
+    "true"
+  );
+  fireEvent.click(within(menu).getByRole("menuitemradio", { name: "Size" }));
+  await waitFor(() => expect(treeNames()).toEqual(["work", "zebra.txt", "apple.txt"]));
+  expect(screen.queryByRole("menu")).toBeNull();
+
+  menu = await open();
+  expect(within(menu).getByRole("menuitemradio", { name: "Size" })).toHaveAttribute(
+    "aria-checked",
+    "true"
+  );
+  expect(within(menu).getByRole("menuitemradio", { name: "Largest first" })).toHaveAttribute(
+    "aria-checked",
+    "true"
+  );
+  fireEvent.click(within(menu).getByRole("menuitemradio", { name: "Smallest first" }));
+  await waitFor(() => expect(treeNames()).toEqual(["work", "apple.txt", "zebra.txt"]));
 });

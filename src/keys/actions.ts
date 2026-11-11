@@ -21,7 +21,8 @@ import { activeTab, tabTitle, useTabs, type Tab, type TabsState } from "../store
 import { usePanelsStore } from "../store/panels";
 import { folderController, type MoveTo } from "../files/folder-controller";
 import { useFolderUi } from "../files/folder-ui";
-import type { SortBy } from "../files/sort";
+import type { SortBy, SortDir } from "../files/sort";
+import { orderWords, useTreeSort, type TreeSortBy } from "../files/tree-sort";
 import { setViewMode, toggleHidden, useViewSettings } from "../files/view-settings";
 import { trashController, type TrashMove } from "../files/trash-controller";
 import { useVolumes } from "../shell/volumes-store";
@@ -106,6 +107,11 @@ export type Action = {
   inEditable?: boolean;
   /** "view": the shortcut acts only while the keyboard is in the folder view or the tab row (keys/file-keys.ts). Menus are not limited. */
   scope?: "view";
+  /**
+   * Present for an action that is one choice among several (a sort field): a menu draws it as a
+   * radio item and marks it while this is true.
+   */
+  checked?(): boolean;
   /** Absent means always enabled where `when` holds. A disabled menu entry is shown greyed. */
   enabled?(ctx: ActionContext): boolean;
   /**
@@ -846,6 +852,44 @@ const treeActions: Action[] = [
   ),
 ];
 actions.push(...treeActions);
+
+// ---- the folder tree's sort menu (the sort button of the tree's heading) ----
+// Not aimed at an entry. The field and the order are the window's (files/tree-sort.ts).
+
+function treeSortField(by: TreeSortBy, label: string): Action {
+  return {
+    id: `tree.sort.${by}`,
+    label,
+    area: "View",
+    keys: [],
+    when: "tree",
+    checked: () => useTreeSort.getState().sort.by === by,
+    run: () => useTreeSort.getState().chooseBy(by),
+  };
+}
+
+function treeSortOrder(dir: SortDir, label: string): Action {
+  return {
+    id: `tree.sort.${dir}`,
+    label,
+    // The words that fit the field now chosen: Smallest first, Newest first, A to Z.
+    menuLabel: () => orderWords(useTreeSort.getState().sort.by, dir),
+    area: "View",
+    keys: [],
+    when: "tree",
+    checked: () => useTreeSort.getState().sort.dir === dir,
+    run: () => useTreeSort.getState().chooseDir(dir),
+  };
+}
+
+actions.push(
+  treeSortField("name", "Name"),
+  treeSortField("size", "Size"),
+  treeSortField("modified", "Date modified"),
+  treeSortField("type", "Type"),
+  treeSortOrder("asc", "Ascending"),
+  treeSortOrder("desc", "Descending")
+);
 
 // ---- the Trash ----
 

@@ -19,6 +19,7 @@ import { FlashSpan } from "../ops/repeat-flash";
 import { showOpenErrors } from "../ops/open-error-store";
 import { cutRowKeys } from "./cut-rows";
 import { openFiles } from "./open-entries";
+import { useTreeSort } from "./tree-sort";
 import { useSingleClick } from "./view-settings";
 import {
   INDENT,
@@ -78,9 +79,11 @@ export function FolderTree(props: {
 }) {
   const { root } = props;
   const uid = useId();
+  const sort = useTreeSort((s) => s.sort);
   const tree = useTree({
     root,
     hidden: props.hidden,
+    sort,
     treeId: props.treeId,
     onRootGone: props.onRootGone,
   });
