@@ -129,12 +129,15 @@ installing anything. The installer is the only part that uses the network;
 Kern itself never does.
 
 Run it again when Kern is installed to update to a newer release (your
-settings, pins and recents stay as they are) or to reinstall from scratch,
-choosing whether to keep your settings and whether to clear pins and recents.
-Anything a reinstall replaces is moved to a `.backup-<time>` file beside it.
+settings, binds, pins and recents stay as they are) or to reinstall from
+scratch, choosing whether to keep your settings and whether to clear pins and
+recents. When you have set key or mouse binds, an install, update or reinstall
+also asks whether to keep or clear them. Anything the installer replaces or
+clears is moved to a `.backup-<time>` file beside it.
 
 - `--defaults` installs for you alone with the default settings and asks
-  nothing; on an installed Kern it updates when a newer release exists.
+  nothing; on an installed Kern it updates when a newer release exists and
+  keeps your settings, binds, pins and recents.
 - `--from DIR` installs from release files you have already downloaded
   (`SHA256SUMS`, the deb, the AppImage and `uninstall.sh`), with no network.
 
@@ -149,7 +152,7 @@ To remove Kern:
 bash ~/.local/lib/kern/uninstall.sh   # or /opt/kern/uninstall.sh
 ```
 
-It asks whether to keep Kern's settings, pins and recents or delete them, and
+It asks whether to keep Kern's settings, binds, pins and recents or delete them, and
 gives the default file manager back to the one Kern replaced.
 
 ## Building

@@ -491,7 +491,7 @@ layout_remove() {
     [[ $KERN_FORMAT == deb ]] || refresh_caches
 }
 
-# uninstall.sh: removes Kern, and on request its settings, pins and recents.
+# uninstall.sh: removes Kern, and on request its settings, binds, pins and recents.
 #
 # Remove deletes Kern's own folders, $XDG_CONFIG_HOME/kern and
 # $XDG_STATE_HOME/kern, outright. Kern keeps nothing else: the files it
@@ -502,7 +502,7 @@ UNINSTALL_USAGE="Usage: uninstall.sh [--defaults] [--help]
 
 Removes Kern for Linux as install.sh installed it.
 
-  --defaults   Ask nothing: remove Kern and keep its settings, pins and
+  --defaults   Ask nothing: remove Kern and keep its settings, binds, pins and
                recents.
   --help       Show this text."
 
@@ -563,7 +563,7 @@ main() {
             ui_say "Nothing was changed."
             exit 0
         fi
-        ui_menu pick 0 "Settings, pins and recents" "Keep them" "Remove them"
+        ui_menu pick 0 "Settings, binds, pins and recents" "Keep them" "Remove them"
     fi
     while kern_running; do
         ((OPT_DEFAULTS)) && ui_fail 1 "Kern is running. Close every Kern window, then run this again."
@@ -577,9 +577,9 @@ main() {
     layout_remove
     if ((pick == 1)); then
         rm -rf -- "$config" "$state" || ui_fail 1 "Kern is removed, but $config or $state could not be deleted."
-        ui_say "Kern, its settings, pins and recents are removed."
+        ui_say "Kern, its settings, binds, pins and recents are removed."
     else
-        ui_say "Kern is removed. Its settings, pins and recents are kept in $config and $state."
+        ui_say "Kern is removed. Its settings, binds, pins and recents are kept in $config and $state."
     fi
 }
 

@@ -669,16 +669,156 @@ class Flows(unittest.TestCase):
         self.assertFalse((self.w.lib / OLD_VERSION).exists())
         self.assertIn(f"KERN_VERSION={VERSION}", (self.w.lib / "install.env").read_text())
 
-    def reinstall(self, settings_keys: tuple, pins_keys: tuple) -> Session:
-        # Kern is at the latest release, so Fresh reinstall is the first entry.
+    def reinstall(self, settings_keys: tuple, pins_keys: tuple, binds_keys: tuple | None = None) -> Session:
+        # Kern is at the latest release, so Fresh reinstall is the first entry. The binds question
+        # is asked only when a binds.json is there, so a test that has one passes its answer.
         s = self.install()
         s.expect(b"Fresh reinstall")
         s.expect(b"Cancel")
         s.send(ENTER)
         self.answer(s, b"Settings", *settings_keys)
         self.answer(s, b"Pins and recents", *pins_keys)
+        if binds_keys is not None:
+            self.answer(s, b"Key and mouse binds", *binds_keys)
         self.answer(s, b"Install Kern for")
         return s
+
+    def binds_file(self) -> tuple[Path, bytes]:
+        self.config.mkdir(parents=True, exist_ok=True)
+        path, body = self.config / "binds.json", b'{"binds":{"tab.close":["F9"]}}'
+        path.write_bytes(body)
+        return path, body
+
+    def test_update_asks_about_binds_only_when_there_are_some_and_keeps_them_on_keep(self) -> None:
+        self.installed_old()
+        path, body = self.binds_file()
+        s = self.install()
+        self.answer(s, b"Update to " + VERSION.encode())
+        self.answer(s, b"Key and mouse binds")
+        s.expect(b"updated to " + VERSION.encode())
+        self.assertEqual(s.finish(), 0)
+        self.assertEqual(path.read_bytes(), body)
+        self.assertIn(b"binds", s.out.split(b"updated to")[1])
+        self.assertEqual(list(self.config.glob("binds.json.backup-*")), [])
+
+    def test_update_clear_moves_only_the_binds_aside_and_says_so(self) -> None:
+        self.installed_old()
+        files = self.user_data()
+        path, body = self.binds_file()
+        s = self.install()
+        self.answer(s, b"Update to " + VERSION.encode())
+        self.answer(s, b"Key and mouse binds", DOWN)
+        s.expect(b"updated to " + VERSION.encode())
+        self.assertEqual(s.finish(), 0)
+        self.assertFalse(path.exists())
+        self.assertEqual(next(self.config.glob("binds.json.backup-*")).read_bytes(), body)
+        for p, b in files.items():
+            self.assertEqual(p.read_bytes(), b)
+        self.assertIn(b"Moved aside", s.out)
+        self.assertIn(f"KERN_VERSION={VERSION}", (self.w.lib / "install.env").read_text())
+
+    def test_update_without_binds_asks_nothing_about_them(self) -> None:
+        self.installed_old()
+        self.user_data()
+        s = self.install()
+        self.answer(s, b"Update to " + VERSION.encode())
+        s.expect(b"updated to " + VERSION.encode())
+        self.assertEqual(s.finish(), 0)
+        self.assertNotIn(b"Key and mouse binds", s.out)
+
+    def test_defaults_update_keeps_the_binds_and_asks_nothing(self) -> None:
+        self.installed_old()
+        path, body = self.binds_file()
+        r = self.unattended()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(path.read_bytes(), body)
+        self.assertNotIn("Key and mouse binds", r.stdout + r.stderr)
+
+    def test_reinstall_keep_leaves_the_binds(self) -> None:
+        self.assertEqual(self.unattended().returncode, 0)
+        path, body = self.binds_file()
+        s = self.reinstall((), (), ())
+        self.answer(s, b"default file manager?", DOWN)
+        self.answer(s, b"Launch Kern now?", DOWN)
+        self.assertEqual(s.finish(), 0)
+        self.assertEqual(path.read_bytes(), body)
+
+    def test_reinstall_clear_moves_the_binds_aside_and_leaves_the_pins(self) -> None:
+        self.assertEqual(self.unattended().returncode, 0)
+        files = self.user_data()
+        path, body = self.binds_file()
+        s = self.reinstall((), (), (DOWN,))
+        self.answer(s, b"default file manager?", DOWN)
+        self.answer(s, b"Launch Kern now?", DOWN)
+        self.assertEqual(s.finish(), 0)
+        self.assertFalse(path.exists())
+        self.assertEqual(next(self.config.glob("binds.json.backup-*")).read_bytes(), body)
+        self.assertEqual((self.state / "pins.json").read_bytes(), files[self.state / "pins.json"])
+
+    def test_reinstall_without_binds_does_not_ask(self) -> None:
+        self.assertEqual(self.unattended().returncode, 0)
+        s = self.reinstall((), ())
+        self.answer(s, b"default file manager?", DOWN)
+        self.answer(s, b"Launch Kern now?", DOWN)
+        self.assertEqual(s.finish(), 0)
+        self.assertNotIn(b"Key and mouse binds", s.out)
+
+    def test_failed_reinstall_keeps_the_binds_even_when_clear_was_chosen(self) -> None:
+        self.assertEqual(self.unattended().returncode, 0)
+        path, body = self.binds_file()
+        app = next(self.w.release.glob("*.AppImage"))
+        app.write_text("#!/bin/bash\nexit 1\n")
+        sums = [l for l in (self.w.release / "SHA256SUMS").read_text().splitlines() if not l.endswith(".AppImage")]
+        sums.append(f"{hashlib.sha256(app.read_bytes()).hexdigest()}  {app.name}")
+        (self.w.release / "SHA256SUMS").write_text("\n".join(sums) + "\n")
+        s = self.reinstall((), (), (DOWN,))
+        self.answer(s, b"default file manager?", DOWN)
+        self.answer(s, b"Launch Kern now?", DOWN)
+        s.expect(b"could not be extracted")
+        self.assertEqual(s.finish(), 1)
+        self.assertEqual(path.read_bytes(), body)
+
+    def test_fresh_install_over_an_old_binds_file_asks_and_clear_moves_it_aside(self) -> None:
+        path, body = self.binds_file()
+        s = self.install()
+        s.expect(b"Thank you for choosing Kern")
+        self.answer(s, b"Key and mouse binds", DOWN)
+        self.answer(s, b"Install Kern for")
+        self.answer(s, b"Customise Kern now?", DOWN)
+        self.answer(s, b"default file manager?", DOWN)
+        self.answer(s, b"Launch Kern now?", DOWN)
+        self.assertEqual(s.finish(), 0)
+        self.assertFalse(path.exists())
+        self.assertEqual(next(self.config.glob("binds.json.backup-*")).read_bytes(), body)
+
+    def test_fresh_install_without_a_binds_file_does_not_ask(self) -> None:
+        s = self.install()
+        self.answer(s, b"Install Kern for")
+        self.answer(s, b"Customise Kern now?", DOWN)
+        self.answer(s, b"default file manager?", DOWN)
+        self.answer(s, b"Launch Kern now?", DOWN)
+        self.assertEqual(s.finish(), 0)
+        self.assertNotIn(b"Key and mouse binds", s.out)
+
+    def test_uninstall_names_the_binds_and_remove_deletes_them_with_the_rest(self) -> None:
+        self.assertEqual(self.unattended().returncode, 0)
+        self.binds_file()
+        u = self.run_script(UNINSTALL)
+        self.answer(u, b"Remove Kern", UP)
+        self.answer(u, b"Settings, binds, pins and recents", DOWN)
+        u.expect(b"binds")
+        self.assertEqual(u.finish(), 0)
+        self.assertFalse(self.config.exists())
+
+    def test_uninstall_keep_leaves_the_binds_and_says_so(self) -> None:
+        self.assertEqual(self.unattended().returncode, 0)
+        path, body = self.binds_file()
+        u = self.run_script(UNINSTALL)
+        self.answer(u, b"Remove Kern", UP)
+        self.answer(u, b"Settings, binds, pins and recents")
+        self.assertEqual(u.finish(), 0)
+        self.assertEqual(path.read_bytes(), body)
+        self.assertIn(b"binds", u.out.split(b"removed")[-1])
 
     def test_reinstall_clear_moves_pins_and_recents_to_backups(self) -> None:
         self.assertEqual(self.unattended().returncode, 0)
@@ -769,7 +909,7 @@ class Flows(unittest.TestCase):
         self.user_data()
         u = self.run_script(UNINSTALL)
         self.answer(u, b"Remove Kern", UP)
-        self.answer(u, b"Settings, pins and recents", DOWN)
+        self.answer(u, b"Settings, binds, pins and recents", DOWN)
         u.expect(b"removed")
         self.assertEqual(u.finish(), 0)
         self.assertFalse(self.config.exists())
@@ -782,7 +922,7 @@ class Flows(unittest.TestCase):
         files = self.user_data()
         u = self.run_script(UNINSTALL)
         self.answer(u, b"Remove Kern", UP)
-        self.answer(u, b"Settings, pins and recents")
+        self.answer(u, b"Settings, binds, pins and recents")
         self.assertEqual(u.finish(), 0)
         self.assertFalse(self.w.lib.exists())
         for p, b in files.items():

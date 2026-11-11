@@ -822,7 +822,7 @@ reinstalls it when it is already installed.
 
   --defaults   Ask nothing. A new install is for you alone, with Kern's
                default settings; an existing one is updated when a newer
-               release exists.
+               release exists, keeping its settings, binds, pins and recents.
   --from DIR   Install from release files already downloaded to DIR
                (SHA256SUMS, the deb, the AppImage and uninstall.sh). Nothing
                is downloaded.
@@ -927,6 +927,18 @@ backup_aside() {
     mv -n -- "$file" "$dest" || ui_fail 1 "Could not move $file aside."
     [[ -e $file ]] && ui_fail 1 "Could not move $file aside."
     BACKUPS+=("$dest")
+}
+
+# Asks whether to clear the key and mouse binds, when there are some to clear (binds.json in
+# the config folder). Clear queues the file to be moved aside with the others, so nothing
+# changes until the install is in place. --defaults asks nothing and keeps them.
+ask_binds() {
+    local choice=0
+    ((OPT_DEFAULTS)) && return 0
+    [[ -f $CONFIG_DIR/binds.json ]] || return 0
+    ui_menu choice 0 "Key and mouse binds" Keep Clear
+    ((choice == 1)) && PENDING_ASIDE+=("$CONFIG_DIR/binds.json")
+    return 0
 }
 
 # Waits until Kern is closed, or the user cancels.
@@ -1055,13 +1067,14 @@ summary() {
 fresh_install() {
     welcome
     find_release
+    ask_binds
     ask_install_questions ask
     do_install ""
 }
 
 existing_install() {
     local installed=$KERN_VERSION scope=$KERN_SCOPE format=$KERN_FORMAT prev_fm=$KERN_PREV_FM
-    local pick newer=0 settings_choice=0 pins_choice=0
+    local pick newer=0 settings_choice=0 pins_choice=0 moved
     local -a options=()
     ui_say "Kern $installed is installed ($(scope_words "$scope"))."
     find_release
@@ -1081,17 +1094,29 @@ existing_install() {
     fi
     case $pick in
     0)
+        ask_binds
         wait_for_kern_closed
         fetch_release
         ui_say "Updating Kern $installed to $REL_VERSION..."
         layout_install "$scope" "$format" "$REL_VERSION" "$REL_APPIMAGE" "$REL_DEB" "$REL_UNINSTALL"
+        for moved in "${PENDING_ASIDE[@]}"; do
+            backup_aside "$moved"
+        done
         record_write "$scope" "$format" "$REL_VERSION" "$prev_fm"
-        ui_say "Kern is updated to $REL_VERSION. Settings, pins and recents are as they were."
+        if ((${#BACKUPS[@]} > 0)); then
+            ui_say "Kern is updated to $REL_VERSION. Settings, pins and recents are as they were."
+            for moved in "${BACKUPS[@]}"; do
+                ui_say "  Moved aside: $moved"
+            done
+        else
+            ui_say "Kern is updated to $REL_VERSION. Settings, binds, pins and recents are as they were."
+        fi
         ;;
     1)
         welcome
         ui_menu settings_choice 0 "Settings" "Keep current settings" "Choose new settings" "Restore defaults"
         ui_menu pins_choice 0 "Pins and recents" Keep Clear
+        ask_binds
         if ((settings_choice == 1)); then
             ask_install_questions y
         else
