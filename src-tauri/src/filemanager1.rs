@@ -422,8 +422,14 @@ async fn show_properties<R: Runtime>(
         let folder = first.parent().unwrap_or(first).to_path_buf();
         let opened =
             open_paths_impl(app, vec![folder], Origin::Outside, Gesture::Default, token).await;
+        let mut failed = false;
         for e in opened.into_iter().filter_map(|o| o.error) {
+            failed = true;
             push_unique(errors, e);
+        }
+        // A folder that did not open leaves nothing under the dialog: the problem is the answer.
+        if failed {
+            return;
         }
     }
     let shown = ensure_main(app)
