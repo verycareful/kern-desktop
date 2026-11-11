@@ -146,6 +146,18 @@ export const ROWS = {
     label: "Default file manager",
     words: "inode directory filemanager1 folders open",
   },
+  clear_pins: {
+    category: "files",
+    group: "Pinned and recent",
+    label: "Clear pins",
+    words: "unpin remove forget right panel pinned",
+  },
+  clear_recents: {
+    category: "files",
+    group: "Pinned and recent",
+    label: "Clear recents",
+    words: "remove forget history right panel recent opened",
+  },
   scan_documents: { category: "library", group: "Folders", label: "Documents", words: "walk scan" },
   scan_downloads: { category: "library", group: "Folders", label: "Downloads", words: "walk scan" },
   scan_roots: {

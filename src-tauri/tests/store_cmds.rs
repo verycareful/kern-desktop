@@ -29,15 +29,17 @@ const WAIT: Duration = Duration::from_secs(30);
 /// How long a test waits to be sure an event does not arrive.
 const QUIET: Duration = Duration::from_millis(300);
 
-const COMMANDS: [&str; 10] = [
+const COMMANDS: [&str; 12] = [
     "settings_get",
     "settings_set",
     "pins_get",
     "pin",
     "unpin",
     "pins_reorder",
+    "pins_clear",
     "recents_get",
     "recent_touch",
+    "recents_clear",
     "prune",
     "store_errors_take",
 ];
@@ -72,8 +74,10 @@ fn env() -> Env {
             kern_lib::store_cmds::pin,
             kern_lib::store_cmds::unpin,
             kern_lib::store_cmds::pins_reorder,
+            kern_lib::store_cmds::pins_clear,
             kern_lib::store_cmds::recents_get,
             kern_lib::store_cmds::recent_touch,
+            kern_lib::store_cmds::recents_clear,
             kern_lib::store_cmds::prune,
             kern_lib::store_cmds::store_errors_take,
         ])
@@ -178,6 +182,38 @@ fn settings_and_recents_emit_their_events() {
     let got = e.call("recents_get", json!({})).unwrap();
     assert_eq!(got["entries"].as_array().unwrap().len(), 1);
     e.expect_quiet();
+}
+
+#[test]
+fn clearing_the_pins_and_the_recents_tells_every_window_once_and_only_on_change() {
+    let e = env();
+    // Nothing to clear: nothing to tell.
+    e.call("pins_clear", json!({})).unwrap();
+    e.call("recents_clear", json!({})).unwrap();
+    e.expect_quiet();
+
+    let p = e.files.join("a");
+    e.call("pin", json!({"path": wp(&p), "asEditor": false}))
+        .unwrap();
+    e.expect(EVENT_PINS_CHANGED);
+    e.call("recent_touch", json!({"path": wp(&p), "asEditor": false}))
+        .unwrap();
+    e.expect(EVENT_RECENTS_CHANGED);
+
+    let out = e.call("pins_clear", json!({})).unwrap();
+    assert_eq!(out["entries"], json!([]));
+    assert_eq!(e.expect(EVENT_PINS_CHANGED)["entries"], json!([]));
+    e.expect_quiet();
+    let out = e.call("recents_clear", json!({})).unwrap();
+    assert_eq!(out["entries"], json!([]));
+    assert_eq!(e.expect(EVENT_RECENTS_CHANGED)["entries"], json!([]));
+    e.expect_quiet();
+    // Cleared for good: the next read finds nothing.
+    assert_eq!(e.call("pins_get", json!({})).unwrap()["entries"], json!([]));
+    assert_eq!(
+        e.call("recents_get", json!({})).unwrap()["entries"],
+        json!([])
+    );
 }
 
 #[test]

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   defaultFmStatus,
   displayPath,
   fm1Status,
   makeDefaultFm,
+  pinsClear,
+  recentsClear,
   toWireError,
   type DefaultFm,
   type Fm1Status,
@@ -18,6 +20,7 @@ import {
 } from "../ipc";
 import { parseLocation } from "../files/path-input";
 import { errorText } from "../ops/error-text";
+import { Modal } from "../ops/Modal";
 import { useUserDirs } from "../shell/user-dirs-store";
 import { useSettingsDraft } from "./settings-draft";
 import { Choices, Group, Row, Toggle } from "./settings-ui";
@@ -26,7 +29,8 @@ import { Choices, Group, Row, Toggle } from "./settings-ui";
 // two new tabs Ctrl+T opens, list or grid and hidden items in a new folder view, the Terminal program, and whether Kern is the default file manager (default_fm.rs:
 // the inode/directory default, and the org.freedesktop.FileManager1 name other programs ask to
 // show folders). Making Kern the default is an action on the system, not a setting: it happens
-// when its button is pressed, not at Save.
+// when its button is pressed, not at Save. Clearing the pins or the recents is an action too,
+// asked about first: the lists are empty in every window at once and nothing brings them back.
 
 const VIEWS: readonly { value: ViewMode; label: string }[] = [
   { value: "list", label: "List" },
@@ -291,6 +295,100 @@ function DefaultFileManager() {
   );
 }
 
+// A row whose button empties a list kept for the right panel, after the question is answered
+// yes. The answer is said under the button; a failure is said there too, in the words the
+// backend gave.
+function ClearList(props: {
+  id: "clear_pins" | "clear_recents";
+  note: string;
+  button: string;
+  title: string;
+  text: string;
+  done: string;
+  failed: string;
+  clear(): Promise<unknown>;
+}) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: true } | { ok: false; message: string } | null>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      await props.clear();
+      setResult({ ok: true });
+    } catch (e) {
+      setResult({ ok: false, message: `${props.failed}: ${errorText(toWireError(e))}` });
+    } finally {
+      setBusy(false);
+      setAsking(false);
+    }
+  };
+
+  return (
+    <>
+      <Row id={props.id} wide note={props.note}>
+        <div className="kern-settings-inline">
+          <button
+            type="button"
+            className="kern-button"
+            disabled={busy}
+            onClick={() => {
+              setResult(null);
+              setAsking(true);
+            }}
+          >
+            {props.button}
+          </button>
+          <span className="kern-settings-hint">Happens at once, not at Save.</span>
+        </div>
+        {result?.ok && (
+          <p role="status" className="kern-settings-hint">
+            {props.done}
+          </p>
+        )}
+        {result && !result.ok && (
+          <p role="alert" className="kern-modal-error">
+            {result.message}
+          </p>
+        )}
+      </Row>
+      {asking && (
+        <Modal
+          role="alertdialog"
+          label={props.title}
+          onEscape={() => !busy && setAsking(false)}
+          initialFocus={cancel}
+          testId={`${props.id}-dialog`}
+        >
+          <h2 className="kern-modal-title">{props.title}</h2>
+          <p className="kern-modal-text">{props.text}</p>
+          <div className="kern-modal-actions">
+            <button
+              type="button"
+              className="kern-button"
+              disabled={busy}
+              onClick={() => void run()}
+            >
+              {props.button}
+            </button>
+            <button
+              ref={cancel}
+              type="button"
+              className="kern-button"
+              disabled={busy}
+              onClick={() => setAsking(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
 export function FilesSection(props: { settings: Settings }) {
   const { settings } = props;
   const edit = useSettingsDraft((s) => s.edit);
@@ -368,6 +466,28 @@ export function FilesSection(props: { settings: Settings }) {
       <Group rows={["terminal", "default_fm"]}>
         <Terminal settings={settings} />
         <DefaultFileManager />
+      </Group>
+      <Group rows={["clear_pins", "clear_recents"]}>
+        <ClearList
+          id="clear_pins"
+          note="Unpins every pinned folder and file in every window. The pinned items themselves are not touched."
+          button="Clear pins"
+          title="Clear all pins?"
+          text="Every pin is removed from the right panel of every window. The folders and files stay where they are, and you can pin them again."
+          done="The pins are cleared."
+          failed="The pins could not be cleared"
+          clear={pinsClear}
+        />
+        <ClearList
+          id="clear_recents"
+          note="Empties the list of recently opened folders and files in every window. The items themselves are not touched."
+          button="Clear recents"
+          title="Clear all recents?"
+          text="The list of recent folders and files is emptied in every window. The folders and files stay where they are; opening them again fills the list."
+          done="The recents are cleared."
+          failed="The recents could not be cleared"
+          clear={recentsClear}
+        />
       </Group>
     </>
   );

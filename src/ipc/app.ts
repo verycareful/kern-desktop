@@ -129,11 +129,15 @@ export const pinEditorSet = (path: WirePath, on: boolean) =>
   invoke<Pins>("pin_editor_set", { path, on });
 export const unpin = (path: WirePath) => invoke<Pins>("unpin", { path });
 export const pinsReorder = (paths: WirePath[]) => invoke<Pins>("pins_reorder", { paths });
+/** Unpins everything; only the Settings window may. */
+export const pinsClear = () => invoke<Pins>("pins_clear");
 export const recentsGet = () => invoke<Recents>("recents_get");
 /** Records `path` as opened now; `asEditor` for a folder open as an editor window. */
 export const recentTouch = (path: WirePath, asEditor = false) =>
   invoke<Recents>("recent_touch", { path, asEditor });
 export const recentRemove = (path: WirePath) => invoke<Recents>("recent_remove", { path });
+/** Empties the recents; only the Settings window may. */
+export const recentsClear = () => invoke<Recents>("recents_clear");
 export const prune = () => invoke<PruneReport>("prune");
 export const storeErrorsTake = () => invoke<CorruptReport[]>("store_errors_take");
 /** Adds a line to the error log (error_log.rs): `source` is a short name for where it came from. */

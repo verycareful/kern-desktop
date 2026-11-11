@@ -1351,6 +1351,16 @@ impl Store {
         })
     }
 
+    /// Unpins everything, with the editor marks. No pins changes nothing.
+    pub fn pins_clear(&self) -> Result<Loaded<Pins>, WireError> {
+        self.pins.update(|pins| {
+            let changed = !pins.entries.is_empty() || !pins.editors.is_empty();
+            pins.entries.clear();
+            pins.keep_editors_pinned();
+            Ok(changed)
+        })
+    }
+
     /// Puts the pins in the order of `paths`. A pin the request omits keeps
     /// its place after the named ones (another window may have pinned it
     /// meanwhile), and a path that is not pinned (unpinned meanwhile) is
@@ -1430,6 +1440,15 @@ impl Store {
             let before = recents.entries.len();
             recents.entries.retain(|e| !same_path(&e.path, &key));
             Ok(recents.entries.len() != before)
+        })
+    }
+
+    /// Empties the recents. No recents changes nothing.
+    pub fn recents_clear(&self) -> Result<Loaded<Recents>, WireError> {
+        self.recents.update(|recents| {
+            let changed = !recents.entries.is_empty();
+            recents.entries.clear();
+            Ok(changed)
         })
     }
 

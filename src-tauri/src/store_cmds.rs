@@ -257,6 +257,14 @@ pub async fn unpin<R: Runtime>(app: AppHandle<R>, path: WirePath) -> Result<Pins
     Ok(finish(&app, loaded, EVENT_PINS_CHANGED))
 }
 
+/// Unpins everything: the Settings window's Clear pins.
+#[tauri::command]
+pub async fn pins_clear<R: Runtime>(app: AppHandle<R>) -> Result<Pins, WireError> {
+    let store = app.state::<StoreState>().store()?;
+    let loaded = blocking(move || store.pins_clear()).await?;
+    Ok(finish(&app, loaded, EVENT_PINS_CHANGED))
+}
+
 #[tauri::command]
 pub async fn pins_reorder<R: Runtime>(
     app: AppHandle<R>,
@@ -292,6 +300,14 @@ pub async fn recent_remove<R: Runtime>(
 ) -> Result<Recents, WireError> {
     let store = app.state::<StoreState>().store()?;
     let loaded = blocking(move || store.recent_remove(&path)).await?;
+    Ok(finish(&app, loaded, EVENT_RECENTS_CHANGED))
+}
+
+/// Empties the recents: the Settings window's Clear recents.
+#[tauri::command]
+pub async fn recents_clear<R: Runtime>(app: AppHandle<R>) -> Result<Recents, WireError> {
+    let store = app.state::<StoreState>().store()?;
+    let loaded = blocking(move || store.recents_clear()).await?;
     Ok(finish(&app, loaded, EVENT_RECENTS_CHANGED))
 }
 

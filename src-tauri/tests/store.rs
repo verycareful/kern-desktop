@@ -278,6 +278,50 @@ fn recent_remove_takes_one_entry_off() {
 }
 
 #[test]
+fn clearing_the_pins_drops_every_pin_and_editor_mark_and_an_empty_list_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    assert!(!s.pins_clear().unwrap().changed);
+    let (a, b) = (e.files.join("a"), e.files.join("b"));
+    s.pin(&wp(&a), false).unwrap();
+    s.pin(&wp(&b), true).unwrap();
+    let cleared = s.pins_clear().unwrap();
+    assert!(cleared.changed);
+    assert!(cleared.value.entries.is_empty() && cleared.value.editors.is_empty());
+    // It is on disk, not only in the answer, and clearing again changes nothing.
+    let read = store(&e).pins_get().unwrap().value;
+    assert!(read.entries.is_empty() && read.editors.is_empty());
+    assert!(!s.pins_clear().unwrap().changed);
+    // A pin made after the clear is kept: nothing about the clear lingers.
+    assert_eq!(s.pin(&wp(&a), false).unwrap().value.entries, vec![wp(&a)]);
+}
+
+#[test]
+fn clearing_the_recents_empties_them_and_an_empty_list_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    assert!(!s.recents_clear().unwrap().changed);
+    for (i, name) in ["a", "b", "c"].iter().enumerate() {
+        s.recent_touch_at(&wp(&e.files.join(name)), i as u64 + 1, false)
+            .unwrap();
+    }
+    let cleared = s.recents_clear().unwrap();
+    assert!(cleared.changed);
+    assert!(cleared.value.entries.is_empty());
+    assert!(store(&e).recents_get().unwrap().value.entries.is_empty());
+    assert!(!s.recents_clear().unwrap().changed);
+    // Clearing the recents leaves the pins alone, and the other way round.
+    let a = e.files.join("a");
+    s.pin(&wp(&a), false).unwrap();
+    s.recent_touch_at(&wp(&a), 9, false).unwrap();
+    s.recents_clear().unwrap();
+    assert_eq!(s.pins_get().unwrap().value.entries, vec![wp(&a)]);
+    s.recent_touch_at(&wp(&a), 10, false).unwrap();
+    s.pins_clear().unwrap();
+    assert_eq!(s.recents_get().unwrap().value.entries.len(), 1);
+}
+
+#[test]
 fn a_pinned_folder_marked_as_an_editor_keeps_the_mark_only_while_pinned() {
     let e = env();
     let s = store(&e);

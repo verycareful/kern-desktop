@@ -624,10 +624,12 @@ fn every_window_that_holds_documents_may_report_a_rename_and_a_stranger_may_not(
 /// the settings' writes and window, the file manager's own commands (drags out, the clipboard of
 /// files, drops, the default file manager), moving a tab to a window or taking a document in, and
 /// the files of other places.
-const NOT_FOR_DOCUMENT_WINDOWS: [&str; 20] = [
+const NOT_FOR_DOCUMENT_WINDOWS: [&str; 22] = [
     "layout_get",
     "layout_set",
     "settings_set",
+    "pins_clear",
+    "recents_clear",
     "open_settings",
     "restart_request",
     "detach_doc",
@@ -811,6 +813,8 @@ fn the_settings_window_is_granted_what_its_capability_names_and_nothing_of_the_f
     for needed in [
         "settings_get",
         "settings_set",
+        "pins_clear",
+        "recents_clear",
         "restart_request",
         "confirm_close",
     ] {

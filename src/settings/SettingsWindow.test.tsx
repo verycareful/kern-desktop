@@ -50,6 +50,8 @@ let stored: Settings;
 let queued: Queued[];
 /** The next settings_set fails with this, once. */
 let failSet: unknown = null;
+/** The next pins_clear or recents_clear fails with this, once. */
+let failClear: unknown = null;
 
 function answer(cmd: string, args: Record<string, unknown>): unknown {
   const name = cmd.startsWith(KERNKRAFT) ? cmd.slice(KERNKRAFT.length) : cmd;
@@ -78,6 +80,15 @@ function answer(cmd: string, args: Record<string, unknown>): unknown {
       return { is_default: true, current: "io.github.verycareful.kern.desktop" };
     case "fm1_status":
       return { owned: true, owner: null, reason: null };
+    case "pins_clear":
+    case "recents_clear": {
+      if (failClear) {
+        const e = failClear;
+        failClear = null;
+        throw e;
+      }
+      return { entries: [] };
+    }
     case "store_errors_take":
       return [];
     default:
@@ -95,6 +106,7 @@ beforeEach(() => {
   stored = { ...SETTINGS, follow: { ...SETTINGS.follow } };
   queued = [];
   failSet = null;
+  failClear = null;
   wire.sent = [];
   wire.handlers = {};
   wire.answer = answer;
@@ -153,6 +165,17 @@ test("every_command_the_settings_window_sends_is_granted_to_it", async () => {
   await waitFor(() => expect(make).toBeEnabled());
   fireEvent.click(make);
   await waitFor(() => expect(sent("make_default_fm")).toHaveLength(1));
+  // The pins and the recents are cleared at once, after the question.
+  for (const [button, cmd] of [
+    ["Clear pins", "pins_clear"],
+    ["Clear recents", "recents_clear"],
+  ] as const) {
+    fireEvent.click(screen.getByRole("button", { name: button }));
+    const asked = await screen.findByRole("alertdialog");
+    fireEvent.click(within(asked).getByRole("button", { name: button }));
+    await waitFor(() => expect(sent(cmd)).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  }
   // Library: a folder typed with ~ asks for Home.
   nav("Library");
   fireEvent.change(screen.getByLabelText("Add a folder"), { target: { value: "~/Projects" } });
@@ -185,6 +208,8 @@ test("every_command_the_settings_window_sends_is_granted_to_it", async () => {
     `${KERNKRAFT}user_dirs`,
     `${KERNKRAFT}open_url`,
     "make_default_fm",
+    "pins_clear",
+    "recents_clear",
     "restart_request",
     "restart_abandon",
     "confirm_close",
@@ -647,4 +672,76 @@ test("the_time_of_day_in_dates_follows_the_system_or_is_set_to_12_or_24_hours", 
   fireEvent.click(pressed("Time of day in dates", "24-hour"));
   await save();
   expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ time_format: "24" }]);
+});
+
+test("clear_pins_asks_first_and_cancel_clears_nothing", async () => {
+  await mount();
+  nav("Files");
+  fireEvent.click(screen.getByRole("button", { name: "Clear pins" }));
+  const asked = await screen.findByRole("alertdialog", { name: "Clear all pins?" });
+  // The safe answer has the focus.
+  expect(within(asked).getByRole("button", { name: "Cancel" })).toHaveFocus();
+  fireEvent.click(within(asked).getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  // Escape is no too.
+  fireEvent.click(screen.getByRole("button", { name: "Clear pins" }));
+  await screen.findByRole("alertdialog");
+  fireEvent.keyDown(screen.getByRole("button", { name: "Cancel" }), { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  expect(sent("pins_clear")).toHaveLength(0);
+  expect(screen.queryByText("The pins are cleared.")).toBeNull();
+});
+
+test("clear_pins_and_clear_recents_each_clear_their_own_list_and_say_so", async () => {
+  await mount();
+  nav("Files");
+  fireEvent.click(screen.getByRole("button", { name: "Clear pins" }));
+  fireEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Clear pins" })
+  );
+  expect(await screen.findByText("The pins are cleared.")).toBeInTheDocument();
+  expect(sent("pins_clear")).toHaveLength(1);
+  expect(sent("recents_clear")).toHaveLength(0);
+  // Settings are not touched by it: nothing is waiting to be saved.
+  expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Clear recents" }));
+  const asked = await screen.findByRole("alertdialog", { name: "Clear all recents?" });
+  fireEvent.click(within(asked).getByRole("button", { name: "Clear recents" }));
+  expect(await screen.findByText("The recents are cleared.")).toBeInTheDocument();
+  expect(sent("recents_clear")).toHaveLength(1);
+  expect(sent("pins_clear")).toHaveLength(1);
+});
+
+test("a_clear_that_fails_says_why_and_asking_again_wipes_the_old_answer", async () => {
+  await mount();
+  nav("Files");
+  failClear = { kind: "Io", message: "disk full", path: null, details: null };
+  fireEvent.click(screen.getByRole("button", { name: "Clear recents" }));
+  fireEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Clear recents" })
+  );
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("The recents could not be cleared");
+  expect(alert).toHaveTextContent("disk full");
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  // The next question starts clean, and a yes this time works.
+  fireEvent.click(screen.getByRole("button", { name: "Clear recents" }));
+  await screen.findByRole("alertdialog");
+  expect(screen.queryByText(/could not be cleared/)).toBeNull();
+  fireEvent.click(
+    within(screen.getByRole("alertdialog")).getByRole("button", { name: "Clear recents" })
+  );
+  expect(await screen.findByText("The recents are cleared.")).toBeInTheDocument();
+});
+
+test("the_clear_rows_are_found_by_searching_for_unpin_and_history", async () => {
+  await mount();
+  const search = screen.getByRole("searchbox");
+  fireEvent.change(search, { target: { value: "unpin" } });
+  expect(await screen.findByRole("button", { name: "Clear pins" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Clear recents" })).toBeNull();
+  fireEvent.change(search, { target: { value: "history" } });
+  expect(await screen.findByRole("button", { name: "Clear recents" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Clear pins" })).toBeNull();
 });
