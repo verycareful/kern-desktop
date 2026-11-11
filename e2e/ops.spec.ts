@@ -153,6 +153,8 @@ const BACKEND = {
     new_tab_folder: null,
     new_tab_default: "folder",
     interface_size: 90,
+    panel_order: ["places", "folder", "pinned"],
+    editor_panel_order: ["places", "pinned"],
     ...(args.patch as object),
   }),
   [`${K}volumes_list`]: { mounted: [], unmounted: [], problems: [] },

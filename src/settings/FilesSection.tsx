@@ -23,6 +23,7 @@ import { errorText } from "../ops/error-text";
 import { useUserDirs } from "../shell/user-dirs-store";
 import { useSettingsDraft } from "./settings-draft";
 import { ClearList } from "./ClearList";
+import { PanelOrder } from "./PanelOrder";
 import { Choices, Group, Row, Toggle } from "./settings-ui";
 
 // Files: the main window's layout, what a new tab opens and which of the
@@ -54,6 +55,17 @@ const TIME_FORMATS: readonly { value: TimeFormat; label: string }[] = [
   { value: "12", label: "12-hour" },
   { value: "24", label: "24-hour" },
 ];
+
+// What the panels are called in the order rows. The file manager's columns are its places panel,
+// the folder area and Pinned and Recent; the editor layout's places panel is the column with the
+// folder tree under it.
+const FILE_MANAGER_PANEL_NAMES = {
+  places: "Places",
+  folder: "Files",
+  pinned: "Pinned and Recent",
+} as const;
+
+const EDITOR_PANEL_NAMES = { places: "Places and folders", pinned: "Pinned and Recent" } as const;
 
 type Click = "double" | "single";
 
@@ -310,6 +322,33 @@ export function FilesSection(props: { settings: Settings }) {
             value={settings.default_layout}
             options={LAYOUTS}
             onChange={(default_layout) => edit({ default_layout })}
+          />
+        </Row>
+      </Group>
+      <Group rows={["panel_order", "editor_panel_order"]}>
+        <Row
+          id="panel_order"
+          wide
+          note="The three columns of the file manager, left to right. Applies at once in every window."
+        >
+          <PanelOrder
+            label="File manager panel order"
+            order={settings.panel_order}
+            names={FILE_MANAGER_PANEL_NAMES}
+            onChange={(panel_order) => edit({ panel_order })}
+          />
+        </Row>
+        <Row
+          id="editor_panel_order"
+          wide
+          note="The two panels either side of the editor in an editor window, left to right."
+        >
+          <PanelOrder
+            label="Editor window panel order"
+            order={settings.editor_panel_order}
+            names={EDITOR_PANEL_NAMES}
+            between="Editor"
+            onChange={(editor_panel_order) => edit({ editor_panel_order })}
           />
         </Row>
       </Group>

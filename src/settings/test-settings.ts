@@ -29,6 +29,8 @@ export const SETTINGS: Settings = {
   single_click_editor: false,
   interface_size: 100,
   default_layout: "file_manager",
+  panel_order: ["places", "folder", "pinned"],
+  editor_panel_order: ["places", "pinned"],
   new_tab_folder: null,
   new_tab_default: "folder",
   time_format: "system",

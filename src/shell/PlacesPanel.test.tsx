@@ -37,6 +37,8 @@ beforeEach(() => {
   ipc.settingsGet.mockResolvedValue({
     show_hidden: false,
     view_mode: "list",
+    panel_order: ["places", "folder", "pinned"],
+    editor_panel_order: ["places", "pinned"],
   } as Settings);
   ipc.userDirs.mockResolvedValue({ home: p("/home/t"), dirs: [] });
   ipc.volumesProblemsTake.mockResolvedValue([]);

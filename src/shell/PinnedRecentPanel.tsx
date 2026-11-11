@@ -10,6 +10,7 @@ import { baseName } from "../ops/labels";
 import { FlashSpan, RepeatFlash } from "../ops/repeat-flash";
 import { RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN, useLayout } from "../store/layout";
 import { entryMenu } from "./entry-menu";
+import type { Side } from "./panel-order";
 import { Splitter } from "./Splitter";
 import { openOnClick } from "./open-on-click";
 import { useSingleClick } from "../files/view-settings";
@@ -52,7 +53,10 @@ function useNow(tick: number): number {
   return now;
 }
 
-export function PinnedRecentPanel(props: { overlay?: boolean }) {
+export function PinnedRecentPanel(props: { overlay?: boolean; side?: Side }) {
+  // The panel is on the right of the window unless the panel order puts it on the left; its
+  // divider is on the edge that faces the rest of the window.
+  const side = props.side ?? "right";
   const s = usePinnedRecent();
   const single = useSingleClick("right");
   const home = useUserDirs((u) => u.dirs?.home ?? null);
@@ -188,9 +192,13 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
 
   return (
     <aside
-      className={
-        props.overlay ? "kern-panel kern-panel-right kern-overlay" : "kern-panel kern-panel-right"
-      }
+      className={[
+        "kern-panel kern-panel-right",
+        props.overlay && "kern-overlay",
+        side === "left" && "kern-side-left",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       aria-label="Pinned and Recent"
       data-testid="side-panel"
     >
@@ -199,7 +207,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
         min={RIGHT_WIDTH_MIN}
         max={RIGHT_WIDTH_MAX}
         setWidth={setWidth}
-        grows="left"
+        grows={side === "left" ? "right" : "left"}
         label="Resize Pinned and Recent"
         className="kern-splitter kern-edge-splitter"
         testId="side-panel-splitter"

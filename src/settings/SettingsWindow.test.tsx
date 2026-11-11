@@ -800,3 +800,54 @@ test("the_keys_category_is_found_by_search_and_an_unreadable_binds_file_is_repor
   act(() => useStoreErrors.setState({ reports: [report] }));
   expect(await screen.findByText(/binds\.json could not be read/)).toBeInTheDocument();
 });
+
+test("the_panel_orders_start_as_the_layout_has_always_been", async () => {
+  await mount();
+  nav("Files");
+  const order = (name: string) =>
+    [...screen.getByRole("group", { name }).querySelectorAll("[data-panel]")].map((c) =>
+      c.getAttribute("data-panel")
+    );
+  expect(order("File manager panel order")).toEqual(["places", "folder", "pinned"]);
+  expect(order("Editor window panel order")).toEqual(["places", "pinned"]);
+});
+
+test("a_moved_panel_is_saved_at_save_as_the_whole_order_on_its_own_key", async () => {
+  await mount();
+  nav("Files");
+  const group = within(screen.getByRole("group", { name: "File manager panel order" }));
+  fireEvent.click(group.getByRole("button", { name: "Move Pinned and Recent left" }));
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([
+    { panel_order: ["places", "pinned", "folder"] },
+  ]);
+  expect(stored.panel_order).toEqual(["places", "pinned", "folder"]);
+});
+
+test("the_editor_panels_swap_sides_and_the_other_order_is_left_alone", async () => {
+  await mount();
+  nav("Files");
+  const group = within(screen.getByRole("group", { name: "Editor window panel order" }));
+  fireEvent.click(group.getByRole("button", { name: "Move Places and folders right" }));
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([
+    { editor_panel_order: ["pinned", "places"] },
+  ]);
+});
+
+test("a_moved_panel_can_be_reverted_before_save", async () => {
+  await mount();
+  nav("Files");
+  fireEvent.click(screen.getByRole("button", { name: "Move Files right" }));
+  fireEvent.click(screen.getByRole("button", { name: "Move Files left" }));
+  await save();
+  expect(sent("settings_set")).toEqual([]);
+});
+
+test("the_panel_orders_are_found_by_searching_for_panels", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "panel order" } });
+  expect(screen.getByRole("group", { name: "File manager panel order" })).toBeInTheDocument();
+  expect(screen.getByRole("group", { name: "Editor window panel order" })).toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "Left panel opens with" })).toBeNull();
+});

@@ -22,6 +22,13 @@ export type TimeFormat = "system" | "12" | "24";
 /** The two layouts of a window (store.rs LayoutKind). */
 export type LayoutKind = "file_manager" | "editor";
 
+/**
+ * A column of the file manager layout, or a panel of the editor layout (store.rs Panel): `places`
+ * is the left panel (in the editor layout the strip over the folder tree), `folder` the folder
+ * area, `pinned` Pinned and Recent.
+ */
+export type Panel = "places" | "folder" | "pinned";
+
 export interface Settings {
   theme_mode: ThemeMode;
   accent: KernAccent;
@@ -48,6 +55,10 @@ export interface Settings {
   interface_size: number;
   /** The layout of a window that has none remembered yet. */
   default_layout: LayoutKind;
+  /** The file manager's three columns, left to right: each panel once (store.rs Settings::panel_order). */
+  panel_order: Panel[];
+  /** The editor layout's two panels, left to right around the editor: Places and Pinned, each once. */
+  editor_panel_order: Panel[];
   /** The folder a new tab opens; null is Home. */
   new_tab_folder: WirePath | null;
   /** What Ctrl+T opens: the new tab folder, or the folder of the tab in front (store.rs NewTabDefault). */

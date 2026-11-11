@@ -141,6 +141,8 @@ beforeEach(() => {
     default_layout: "file_manager",
     new_tab_folder: null,
     new_tab_default: "folder",
+    panel_order: ["places", "folder", "pinned"],
+    editor_panel_order: ["places", "pinned"],
   } as Settings);
   ipc.layoutGet.mockResolvedValue({
     left_width: 280,
@@ -1125,6 +1127,8 @@ const editorSetting = () =>
     default_layout: "editor",
     new_tab_folder: null,
     new_tab_default: "folder",
+    panel_order: ["places", "folder", "pinned"],
+    editor_panel_order: ["places", "pinned"],
   } as Settings);
 
 test("the_main_window_in_the_editor_layout_opens_no_home_tab_and_shows_the_welcome_pane", async () => {

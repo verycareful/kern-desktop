@@ -596,9 +596,11 @@ layout_remove() {
     [[ $KERN_FORMAT == deb ]] || refresh_caches
 }
 
-# The settings walk. Every key of settings.json but default_layout (the main
-# window offers one layout) has a question here; a Rust test compares this
-# list with the settings Kern defines; nothing in the scripts reads it.
+# The settings walk. Every key of settings.json has a question here but
+# default_layout (the main window offers one layout), panel_order and
+# editor_panel_order (arranged in Settings once the windows are on screen); a
+# Rust test compares this list with the settings Kern defines; nothing in the
+# scripts reads it.
 # shellcheck disable=SC2034
 SETTING_KEYS="theme_mode accent follow scan_roots scan_documents scan_downloads terminal word_wrap editor_zoom view_mode show_hidden interface_size new_tab_folder new_tab_default single_click_left single_click_right single_click_centre single_click_editor time_format error_log"
 

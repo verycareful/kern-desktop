@@ -159,6 +159,29 @@ pub enum ViewMode {
     Grid,
 }
 
+/// A column of the file manager layout, or a panel of the editor layout. Places is the left
+/// panel (places, volumes, Trash, Library; in the editor layout the strip over the folder tree),
+/// Folder is the folder area, Pinned is Pinned and Recent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Panel {
+    Places,
+    Folder,
+    Pinned,
+}
+
+/// The file manager layout's columns, left to right, before the user reorders them: every panel
+/// exactly once.
+pub fn default_panel_order() -> Vec<Panel> {
+    vec![Panel::Places, Panel::Folder, Panel::Pinned]
+}
+
+/// The editor layout's two panels, left to right: the editor itself stays in the middle, so the
+/// order names the panel on its left and the panel on its right. Places and Pinned, each once.
+pub fn default_editor_panel_order() -> Vec<Panel> {
+    vec![Panel::Places, Panel::Pinned]
+}
+
 /// `settings.json`. Theme types are kernkraft-theme's, so the stored values
 /// are exactly what `theme_set_prefs` takes. The two maps are not part of
 /// the wire form: they hold what a rewrite must put back.
@@ -203,6 +226,12 @@ pub struct Settings {
     /// Editor window (file rows of the tree, and search hits shown there): whether a single click
     /// opens a file. Folder rows always expand on one click.
     pub single_click_editor: bool,
+    /// The file manager layout's columns, left to right: a permutation of [`Panel`]'s three
+    /// values (see [`default_panel_order`]).
+    pub panel_order: Vec<Panel>,
+    /// The editor layout's two panels, left to right (see [`default_editor_panel_order`]): a
+    /// permutation of Places and Pinned.
+    pub editor_panel_order: Vec<Panel>,
     /// Keys inside `follow` this version does not define.
     #[serde(skip)]
     pub follow_extra: Map<String, Value>,
@@ -237,6 +266,8 @@ impl Default for Settings {
             single_click_right: false,
             single_click_centre: false,
             single_click_editor: false,
+            panel_order: default_panel_order(),
+            editor_panel_order: default_editor_panel_order(),
             follow_extra: Map::new(),
             extra: Map::new(),
         }
@@ -675,6 +706,29 @@ fn check_interface_size(size: &u32) -> Result<(), String> {
     }
 }
 
+/// `order` names each panel of `expected` exactly once and no other.
+fn check_panel_set(order: &[Panel], expected: &[Panel], what: &str) -> Result<(), String> {
+    let each_once = order.len() == expected.len()
+        && expected
+            .iter()
+            .all(|p| order.iter().filter(|o| *o == p).count() == 1);
+    if each_once {
+        Ok(())
+    } else {
+        Err(format!(
+            "{what} must name {expected:?} once each, not {order:?}"
+        ))
+    }
+}
+
+fn check_panel_order(order: &[Panel]) -> Result<(), String> {
+    check_panel_set(order, &default_panel_order(), "panel order")
+}
+
+fn check_editor_panel_order(order: &[Panel]) -> Result<(), String> {
+    check_panel_set(order, &default_editor_panel_order(), "editor panel order")
+}
+
 fn check_left_width(w: &u32) -> Result<(), String> {
     if (LEFT_WIDTH_MIN..=LEFT_WIDTH_MAX).contains(w) {
         Ok(())
@@ -878,6 +932,22 @@ impl Stored for Settings {
             &mut keep,
             &mut problems,
             any_value,
+        );
+        take(
+            &mut obj,
+            "panel_order",
+            &mut s.panel_order,
+            &mut keep,
+            &mut problems,
+            |o: &Vec<Panel>| check_panel_order(o),
+        );
+        take(
+            &mut obj,
+            "editor_panel_order",
+            &mut s.editor_panel_order,
+            &mut keep,
+            &mut problems,
+            |o: &Vec<Panel>| check_editor_panel_order(o),
         );
         for key in DROPPED_SETTINGS {
             obj.remove(key);
@@ -1245,7 +1315,8 @@ impl Store {
     /// Merges `patch` (field name to new value) into the settings. A field
     /// this version does not define, a value of the wrong type, an
     /// `editor_zoom` outside [`ZOOM_MIN`] to [`ZOOM_MAX`], an `interface_size`
-    /// that is not one of [`INTERFACE_SIZES`] or a scan root
+    /// that is not one of [`INTERFACE_SIZES`], a `panel_order` or
+    /// `editor_panel_order` that is not a permutation of its panels or a scan root
     /// that is not an absolute path refuses the whole patch and writes
     /// nothing. A `null` clears `terminal`.
     ///

@@ -161,6 +161,7 @@ h2.kern-settings-heading {
 
 /* Choices and swatches keep their own width under the label, never the row's. */
 .kern-settings-row-wide > .kern-settings-choices,
+.kern-settings-row-wide > .kern-settings-panel-order,
 .kern-settings-row-wide > .kern-settings-swatches {
   align-self: flex-start;
 }
@@ -216,6 +217,44 @@ h2.kern-settings-heading {
   color: var(--kern-text);
   background: var(--kern-surface);
   border-color: var(--kern-border);
+}
+
+/* The panels in their order on the screen, each with its two move buttons. */
+.kern-settings-panel-order {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.kern-settings-panel-order-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.kern-settings-panel-order-chip,
+.kern-settings-panel-order-fixed {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 4px;
+  background: var(--kern-sunken);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-settings-panel-order-chip > span {
+  padding: 0 4px;
+}
+
+/* The piece that does not move: drawn as a gap in the order, not as a panel. */
+.kern-settings-panel-order-fixed {
+  padding: 0 12px;
+  color: var(--kern-text-dim);
+  background: none;
+  border-style: dashed;
 }
 
 .kern-settings-switch {

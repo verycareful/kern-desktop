@@ -783,3 +783,90 @@ test("f4_does_nothing_in_the_file_manager_layout_where_the_folder_view_owns_it",
 test("an_editor_window_answers_f4", () => {
   expect(EDITOR_WINDOW_KEYS(getAction("editor.terminal"))).toBe(true);
 });
+
+test("the_folder_column_is_left_of_the_editor_in_the_default_order", async () => {
+  useTabs.getState().openDoc(p("/home/a/notes.md"));
+  await editorWindow();
+  const frame = screen.getByTestId("main-grid");
+  const kids = [...frame.children].map((c) => c.getAttribute("data-testid") ?? c.className);
+  expect(kids.indexOf("editor-left")).toBeLessThan(
+    kids.findIndex((k) => k.includes("editor-centre"))
+  );
+  expect(kids.indexOf("column-splitter")).toBe(kids.indexOf("editor-left") + 1);
+  expect(screen.getByTestId("editor-left")).not.toHaveClass("kern-side-right");
+});
+
+test("with_pinned_and_recent_first_the_folder_column_and_its_divider_are_right_of_the_editor", async () => {
+  ipc.settingsGet.mockResolvedValue({
+    ...SETTINGS,
+    default_layout: "editor",
+    editor_panel_order: ["pinned", "places"],
+  });
+  useTabs.getState().openDoc(p("/home/a/notes.md"));
+  await editorWindow();
+  await waitFor(() =>
+    expect(useViewSettings.getState().editorPanelOrder).toEqual(["pinned", "places"])
+  );
+  const frame = screen.getByTestId("main-grid");
+  const kids = [...frame.children].map((c) => c.getAttribute("data-testid") ?? c.className);
+  const centre = kids.findIndex((k) => k.includes("editor-centre"));
+  // The divider sits between the editor and the column: on the column's edge that faces the editor.
+  expect(kids.indexOf("column-splitter")).toBeGreaterThan(centre);
+  expect(kids.indexOf("editor-left")).toBe(kids.indexOf("column-splitter") + 1);
+  expect(screen.getByTestId("editor-left")).toHaveClass("kern-side-right");
+});
+
+test("a_column_on_the_right_widens_as_its_divider_moves_left", async () => {
+  ipc.settingsGet.mockResolvedValue({
+    ...SETTINGS,
+    default_layout: "editor",
+    editor_panel_order: ["pinned", "places"],
+  });
+  await editorWindow();
+  await waitFor(() =>
+    expect(useViewSettings.getState().editorPanelOrder).toEqual(["pinned", "places"])
+  );
+  const before = useLayout.getState().leftWidth;
+  fireEvent.keyDown(screen.getByTestId("column-splitter"), { key: "ArrowLeft" });
+  expect(useLayout.getState().leftWidth).toBe(before + 16);
+});
+
+test("pinned_and_recent_slide_in_from_the_side_the_editor_order_gives_them", async () => {
+  useTabs.getState().openDoc(p("/home/a/notes.md"));
+  await editorWindow();
+  fireEvent.click(screen.getByRole("button", { name: "Pinned and Recent panel" }));
+  expect(await screen.findByTestId("side-panel")).not.toHaveClass("kern-side-left");
+  cleanup();
+  usePanelsStore.setState({ leftSlid: false, rightSlid: false });
+  ipc.settingsGet.mockResolvedValue({
+    ...SETTINGS,
+    default_layout: "editor",
+    editor_panel_order: ["pinned", "places"],
+  });
+  useViewSettings.setState({ editorPanelOrder: ["places", "pinned"] });
+  await editorWindow();
+  await waitFor(() =>
+    expect(useViewSettings.getState().editorPanelOrder).toEqual(["pinned", "places"])
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Pinned and Recent panel" }));
+  expect(await screen.findByTestId("side-panel")).toHaveClass("kern-side-left");
+});
+
+test("the_tab_row_buttons_sit_at_the_end_their_panel_is_on", async () => {
+  ipc.settingsGet.mockResolvedValue({
+    ...SETTINGS,
+    default_layout: "editor",
+    editor_panel_order: ["pinned", "places"],
+  });
+  useTabs.getState().openDoc(p("/home/a/notes.md"));
+  await editorWindow();
+  await waitFor(() =>
+    expect(useViewSettings.getState().editorPanelOrder).toEqual(["pinned", "places"])
+  );
+  const row = screen.getByTestId("tab-bar");
+  const order = within(row)
+    .getAllByRole("button")
+    .map((b) => b.getAttribute("data-testid"))
+    .filter((id) => id?.startsWith("panel-toggle"));
+  expect(order).toEqual(["panel-toggle-right", "panel-toggle-left"]);
+});

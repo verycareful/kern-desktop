@@ -1,7 +1,7 @@
 {
   "name": "kern-desktop",
   "private": true,
-  "version": "0.1.1+4.35",
+  "version": "0.1.1+4.36",
   "type": "module",
   "scripts": {
     "dev": "vite",

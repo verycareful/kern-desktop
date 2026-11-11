@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, type CSSProperties } from "react";
-import { useViewSettingsSync } from "../files/view-settings";
+import { usePanelOrder, useViewSettingsSync } from "../files/view-settings";
 import { useCutSync } from "../ops/cut-store";
 import { useShortcuts } from "../keys/useShortcuts";
 import { useLayout } from "../store/layout";
@@ -16,6 +16,7 @@ import { RestoreBar } from "./RestoreBar";
 import { activeTab, isPlaceTab, useTabs, type DocTab } from "../store/tabs";
 import { ClosePrompt } from "./ClosePrompt";
 import { PlacesPanel } from "./PlacesPanel";
+import { overlaySide, gridStyle, sideOfFolder } from "./panel-order";
 import { PinnedRecentPanel } from "./PinnedRecentPanel";
 import { usePinnedRecent } from "./pinned-recent-store";
 import { PropertiesHost } from "../files/PropertiesHost";
@@ -42,6 +43,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
   // stand and the failure is said, use-layout-sync.ts).
   const layoutReady = useLayout((s) => s.loaded);
   const rightWidth = useLayout((s) => s.rightWidth);
+  const order = usePanelOrder();
   // Pinned and Recent is followed while the window is open, not only while its panel shows:
   // a document tab folds the panel away, and Ctrl+D there reads whether the document is pinned.
   useEffect(() => {
@@ -83,8 +85,8 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
     layout = "folder";
     body = (
       <>
-        <PlacesPanel />
-        <PinnedRecentPanel />
+        <PlacesPanel side={sideOfFolder(order, "places")} />
+        <PinnedRecentPanel side={sideOfFolder(order, "pinned")} />
       </>
     );
   } else {
@@ -110,8 +112,10 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
           />
         ))}
       </main>
-      {layout === "doc" && leftOpen && <PlacesPanel overlay />}
-      {layout === "doc" && rightOpen && <PinnedRecentPanel overlay />}
+      {layout === "doc" && leftOpen && <PlacesPanel overlay side={overlaySide(order, "places")} />}
+      {layout === "doc" && rightOpen && (
+        <PinnedRecentPanel overlay side={overlaySide(order, "pinned")} />
+      )}
     </div>
   );
 
@@ -127,7 +131,7 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
           className="kern-main"
           data-layout={layout}
           data-testid="main-grid"
-          style={{ "--shell-right-width": `${rightWidth}px` } as CSSProperties}
+          style={{ ...gridStyle(order), "--shell-right-width": `${rightWidth}px` } as CSSProperties}
         >
           <TabBar />
           {body}

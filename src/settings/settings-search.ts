@@ -88,6 +88,20 @@ export const ROWS = {
     label: "Main window layout",
     words: "layout file manager editor",
   },
+  panel_order: {
+    category: "files",
+    group: "Panels",
+    label: "File manager panel order",
+    words:
+      "panels columns order move left right swap places pinned recent folders sidebar layout arrange",
+  },
+  editor_panel_order: {
+    category: "files",
+    group: "Panels",
+    label: "Editor window panel order",
+    words:
+      "panels columns order move left right swap places folders tree pinned recent sidebar layout arrange",
+  },
   new_tab_folder: {
     category: "files",
     group: "New tabs",

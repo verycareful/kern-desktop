@@ -10,9 +10,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use kern_lib::store::{
-    move_aside, volume_online, LayoutKind, NewTabDefault, SessionTab, SessionWindow, Settings,
-    Store, TimeFormat, ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES, LEFT_WIDTH_DEFAULT,
-    LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, MAIN_LAYOUTS, RECENTS_CAP, RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN,
+    move_aside, volume_online, LayoutKind, NewTabDefault, Panel, SessionTab, SessionWindow,
+    Settings, Store, TimeFormat, ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES,
+    LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, MAIN_LAYOUTS, RECENTS_CAP, RIGHT_WIDTH_MAX,
+    RIGHT_WIDTH_MIN,
 };
 use kernkraft_tauri::WirePath;
 use serde_json::{json, Map, Value};
@@ -805,6 +806,133 @@ fn a_bad_stored_interface_size_is_reported_kept_and_replaced_by_the_next_choice(
     let got = store(&e).settings_get().unwrap();
     assert_eq!(got.value.interface_size, 90);
     assert_eq!(got.corrupt[0].field.as_deref(), Some("interface_size"));
+}
+
+// ---- the panel order settings ----
+
+#[test]
+fn the_panels_default_to_places_folder_pinned_and_places_pinned_in_the_editor() {
+    let e = env();
+    let v = store(&e).settings_get().unwrap().value;
+    assert_eq!(
+        v.panel_order,
+        vec![Panel::Places, Panel::Folder, Panel::Pinned]
+    );
+    assert_eq!(v.editor_panel_order, vec![Panel::Places, Panel::Pinned]);
+    // The wire form is the snake_case names.
+    assert_eq!(
+        serde_json::to_value(&v).unwrap()["panel_order"],
+        json!(["places", "folder", "pinned"])
+    );
+}
+
+#[test]
+fn every_order_of_the_three_panels_is_kept_across_a_restart() {
+    let e = env();
+    // The default comes last: setting what is already stored writes nothing.
+    let all = [
+        ["places", "pinned", "folder"],
+        ["folder", "places", "pinned"],
+        ["folder", "pinned", "places"],
+        ["pinned", "places", "folder"],
+        ["pinned", "folder", "places"],
+        ["places", "folder", "pinned"],
+    ];
+    for order in all {
+        store(&e)
+            .settings_set(patch(json!({ "panel_order": order })))
+            .unwrap();
+        assert_eq!(
+            read_json(&e.config.join("settings.json"))["panel_order"],
+            json!(order)
+        );
+        let again = serde_json::to_value(store(&e).settings_get().unwrap().value).unwrap();
+        assert_eq!(again["panel_order"], json!(order));
+    }
+}
+
+#[test]
+fn both_orders_of_the_editor_panels_are_kept_across_a_restart() {
+    let e = env();
+    for order in [["pinned", "places"], ["places", "pinned"]] {
+        store(&e)
+            .settings_set(patch(json!({ "editor_panel_order": order })))
+            .unwrap();
+        let again = serde_json::to_value(store(&e).settings_get().unwrap().value).unwrap();
+        assert_eq!(again["editor_panel_order"], json!(order));
+    }
+}
+
+#[test]
+fn an_order_that_is_not_a_permutation_of_its_panels_is_refused_and_writes_nothing() {
+    let e = env();
+    let s = store(&e);
+    for bad in [
+        json!([]),
+        json!(["places", "folder"]),
+        json!(["places", "places", "folder"]),
+        json!(["places", "folder", "pinned", "places"]),
+        json!(["places", "folder", "recent"]),
+        json!(["places", "folder", null]),
+        json!("places"),
+        json!(null),
+    ] {
+        let err = s
+            .settings_set(patch(json!({"panel_order": bad.clone()})))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument", "{bad}");
+    }
+    for bad in [
+        json!([]),
+        json!(["places"]),
+        json!(["places", "places"]),
+        json!(["places", "folder"]),
+        json!(["places", "pinned", "folder"]),
+        json!(null),
+    ] {
+        let err = s
+            .settings_set(patch(json!({"editor_panel_order": bad.clone()})))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument", "{bad}");
+    }
+    assert!(!e.config.join("settings.json").exists());
+}
+
+#[test]
+fn a_bad_stored_panel_order_is_reported_kept_and_replaced_by_the_next_choice() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    fs::write(
+        e.config.join("settings.json"),
+        r#"{"panel_order": ["places", "places", "folder"], "editor_panel_order": ["pinned"]}"#,
+    )
+    .unwrap();
+    let got = store(&e).settings_get().unwrap();
+    assert_eq!(
+        got.value.panel_order,
+        vec![Panel::Places, Panel::Folder, Panel::Pinned]
+    );
+    assert_eq!(
+        got.value.editor_panel_order,
+        vec![Panel::Places, Panel::Pinned]
+    );
+    let mut fields: Vec<_> = got.corrupt.iter().filter_map(|c| c.field.clone()).collect();
+    fields.sort();
+    assert_eq!(fields, ["editor_panel_order", "panel_order"]);
+    // The file is left as it was until the user chooses an order.
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["panel_order"],
+        json!(["places", "places", "folder"])
+    );
+    let set = store(&e)
+        .settings_set(patch(
+            json!({"panel_order": ["pinned", "folder", "places"]}),
+        ))
+        .unwrap();
+    assert_eq!(
+        set.value.panel_order,
+        vec![Panel::Pinned, Panel::Folder, Panel::Places]
+    );
 }
 
 // ---- the window layout and the default layout setting ----

@@ -64,7 +64,9 @@ Kern Desktop is in alpha.
   double-click. Settings > Files sets single or double click for each of the
   four, and Enter and Space open in all of them. Pinned
   folders and files and your recent files sit in a panel on the right that you
-  can resize. Pin a folder as an editor and it opens in an editor window.
+  can resize. Settings > Files > Panels puts the three columns in any order
+  you like, and the two panels of an editor window on either side of the
+  editor. Pin a folder as an editor and it opens in an editor window.
 - **Finding and inspecting.** Search by name under a folder, open Properties
   (size, item counts, permissions), copy a path, open a file with any installed
   application, or open a terminal in the folder. Search results and the Library

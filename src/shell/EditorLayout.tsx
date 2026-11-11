@@ -17,7 +17,7 @@ import { isFolder } from "../files/file-type";
 import { openFiles } from "../files/open-entries";
 import { SearchView } from "../files/SearchView";
 import { openTerminalIn } from "../files/use-folder-tools";
-import { toggleHidden } from "../files/view-settings";
+import { toggleHidden, useEditorPanelOrder } from "../files/view-settings";
 import { treeMenu } from "../files/tree-menu";
 import { TreeOps } from "../files/TreeOps";
 import { TreeSortButton } from "../files/TreeSortButton";
@@ -34,6 +34,7 @@ import type { DocTab, Tab } from "../store/tabs";
 import { FolderArea, PlacesStrip } from "./PlacesPanel";
 import { OpenError } from "./OpenError";
 import { PinnedRecentPanel } from "./PinnedRecentPanel";
+import { editorSide, type Side } from "./panel-order";
 import { Splitter } from "./Splitter";
 import { TabBar } from "./TabBar";
 import { WelcomePane } from "./WelcomePane";
@@ -47,7 +48,7 @@ import { ensureTreeRoot } from "./layout-switch";
 // when its layout is the editor; an editor window (`editor-<n>`) always does.
 
 /** The divider between the column and the centre. */
-function ColumnSplitter() {
+function ColumnSplitter(props: { side: Side }) {
   const width = useLayout((s) => s.leftWidth);
   const setWidth = useLayout((s) => s.setLeftWidth);
   return (
@@ -56,7 +57,7 @@ function ColumnSplitter() {
       min={LEFT_WIDTH_MIN}
       max={LEFT_WIDTH_MAX}
       setWidth={setWidth}
-      grows="right"
+      grows={props.side === "left" ? "right" : "left"}
       label="Resize the folder column"
       className="kern-splitter"
       testId="column-splitter"
@@ -120,7 +121,7 @@ function TreeTools(props: {
 }
 
 /** The left column: the places strip on top, the folder tree below it. */
-function LeftColumn() {
+function LeftColumn(props: { side: Side }) {
   const root = useLayout((s) => s.treeRoot);
   const hidden = useViewSettings((s) => s.showHidden);
   const [menu, setMenu] = useState<{ x: number; y: number; entry: WireEntry | null } | null>(null);
@@ -177,7 +178,7 @@ function LeftColumn() {
   return (
     <aside
       ref={column}
-      className="kern-editor-left"
+      className={props.side === "right" ? "kern-editor-left kern-side-right" : "kern-editor-left"}
       aria-label="Places and folders"
       data-testid="editor-left"
     >
@@ -275,6 +276,21 @@ export function EditorLayout(props: {
   const width = useLayout((s) => s.leftWidth);
   const { rightOpen } = usePanels();
   const rightWidth = useLayout((s) => s.rightWidth);
+  const order = useEditorPanelOrder();
+  const placesSide = editorSide(order, "places");
+  // The divider is on the column's edge that faces the editor.
+  const column =
+    placesSide === "left" ? (
+      <>
+        <LeftColumn side="left" />
+        <ColumnSplitter side="left" />
+      </>
+    ) : (
+      <>
+        <ColumnSplitter side="right" />
+        <LeftColumn side="right" />
+      </>
+    );
   const style = {
     "--editor-left-width": `${width}px`,
     "--shell-right-width": `${rightWidth}px`,
@@ -293,12 +309,7 @@ export function EditorLayout(props: {
       data-testid="main-grid"
       style={style}
     >
-      {leftOpen && (
-        <>
-          <LeftColumn />
-          <ColumnSplitter />
-        </>
-      )}
+      {leftOpen && placesSide === "left" && column}
       <div
         className="kern-editor-centre"
         // Files dropped from another program on an editor window's documents are opened there.
@@ -309,9 +320,10 @@ export function EditorLayout(props: {
         <div className="kern-editor-body">
           {props.children}
           <OpenError />
-          {rightOpen && <PinnedRecentPanel overlay />}
+          {rightOpen && <PinnedRecentPanel overlay side={editorSide(order, "pinned")} />}
         </div>
       </div>
+      {leftOpen && placesSide === "right" && column}
     </div>
   );
 }

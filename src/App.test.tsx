@@ -26,6 +26,8 @@ const STORED = vi.hoisted(() => ({
   default_layout: "file_manager",
   new_tab_folder: null,
   new_tab_default: "folder",
+  panel_order: ["places", "folder", "pinned"],
+  editor_panel_order: ["places", "pinned"],
 }));
 const settingsGet = vi.hoisted(() => vi.fn(() => Promise.resolve({ ...STORED } as unknown)));
 const userDirs = vi.hoisted(() =>

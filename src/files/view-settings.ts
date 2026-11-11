@@ -9,6 +9,7 @@ import {
   settingsSet,
   toWireError,
   type NewTabDefault,
+  type Panel,
   type Settings,
   type SettingsPatch,
   type TimeFormat,
@@ -16,6 +17,7 @@ import {
   type WireError,
   type WirePath,
 } from "../ipc";
+import { DEFAULT_EDITOR_PANEL_ORDER, DEFAULT_PANEL_ORDER } from "../shell/panel-order";
 import { DEFAULT_INTERFACE_SIZE } from "../theme/interface-size";
 
 // The settings the folder view follows: whether hidden files show,
@@ -47,6 +49,9 @@ interface ViewSettingsState {
   newTabFolder: WirePath | null;
   /** Which of the two new tabs Ctrl+T opens. */
   newTabDefault: NewTabDefault;
+  /** The file manager's three columns, and the editor layout's two panels, left to right. */
+  panelOrder: Panel[];
+  editorPanelOrder: Panel[];
   /** The last read or write that failed, until the next one succeeds. */
   error: WireError | null;
 }
@@ -68,6 +73,8 @@ export const useViewSettings = create<ViewSettingsState>()(() => ({
   editorZoom: 1,
   newTabFolder: null,
   newTabDefault: "folder",
+  panelOrder: DEFAULT_PANEL_ORDER,
+  editorPanelOrder: DEFAULT_EDITOR_PANEL_ORDER,
   error: null,
 }));
 
@@ -89,6 +96,8 @@ function apply(s: Settings): void {
     editorZoom: s.editor_zoom,
     newTabFolder: s.new_tab_folder,
     newTabDefault: s.new_tab_default,
+    panelOrder: s.panel_order,
+    editorPanelOrder: s.editor_panel_order,
     error: null,
   });
 }
@@ -149,4 +158,14 @@ export function useSingleClick(area: ClickArea): boolean {
         return v.singleClickEditor;
     }
   });
+}
+
+/** The file manager's three columns, left to right. */
+export function usePanelOrder(): Panel[] {
+  return useViewSettings((v) => v.panelOrder);
+}
+
+/** The editor layout's two panels, left to right around the editor. */
+export function useEditorPanelOrder(): Panel[] {
+  return useViewSettings((v) => v.editorPanelOrder);
 }

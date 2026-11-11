@@ -38,11 +38,15 @@
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+/*
+ * The columns are in the order of the panel_order setting: --shell-columns is the template and
+ * --col-places, --col-folder and --col-pinned are each panel's column (panel-order.ts gridStyle).
+ */
 .kern-main[data-layout="folder"] {
-  grid-template-columns:
-    var(--shell-places-width)
-    minmax(0, 1fr)
-    var(--shell-right-width);
+  grid-template-columns: var(
+    --shell-columns,
+    var(--shell-places-width) minmax(0, 1fr) var(--shell-right-width)
+  );
 }
 
 .kern-main > .kern-tabbar {
@@ -51,23 +55,28 @@
 }
 
 .kern-main[data-layout="folder"] > .kern-tabbar {
-  grid-column: 2;
+  grid-column: var(--col-folder, 2);
 }
 
 .kern-main[data-layout="folder"] > .kern-places {
   grid-row: 1 / span 2;
-  grid-column: 1;
+  grid-column: var(--col-places, 1);
 }
 
 .kern-main[data-layout="folder"] > .kern-folder-area {
   grid-row: 2;
-  grid-column: 2;
+  grid-column: var(--col-folder, 2);
 }
 
 .kern-main[data-layout="folder"] > .kern-panel-right {
   grid-row: 1 / span 2;
-  grid-column: 3;
+  grid-column: var(--col-pinned, 3);
   border-left: 1px solid var(--kern-border);
+}
+
+.kern-main[data-layout="folder"] > .kern-panel-right.kern-side-left {
+  border-right: 1px solid var(--kern-border);
+  border-left: 0;
 }
 
 .kern-main > .kern-empty,
@@ -257,6 +266,17 @@
   flex-direction: column;
 }
 
+/* A panel on the other side of the window than its usual one has its border on the other edge. */
+.kern-panel-left.kern-side-right {
+  border-right: 0;
+  border-left: 1px solid var(--kern-border);
+}
+
+.kern-places.kern-side-right {
+  border-right: 0;
+  border-left: 1px solid var(--kern-border);
+}
+
 /*
  * The divider on the left edge of Pinned and Recent, over its border. Half of
  * it lies over the folder area, so it sits above the folder list's sticky
@@ -269,6 +289,11 @@
   left: -3px;
   z-index: 3;
   background: transparent;
+}
+
+.kern-side-left > .kern-edge-splitter {
+  right: -3px;
+  left: auto;
 }
 
 .kern-places {
@@ -571,6 +596,19 @@
 .kern-panel-right.kern-overlay {
   right: 0;
   width: var(--shell-right-width);
+  animation: kern-slide-right 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* The panels on the other edge: Pinned and Recent on the left, the file manager panel on the right. */
+.kern-panel-right.kern-overlay.kern-side-left {
+  right: auto;
+  left: 0;
+  animation: kern-slide-left 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.kern-panel-left.kern-overlay.kern-side-right {
+  right: 0;
+  left: auto;
   animation: kern-slide-right 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
