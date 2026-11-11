@@ -674,6 +674,15 @@ test("the_time_of_day_in_dates_follows_the_system_or_is_set_to_12_or_24_hours", 
   expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ time_format: "24" }]);
 });
 
+test("clear_pins_and_clear_recents_buttons_share_one_sizing_class", async () => {
+  await mount();
+  nav("Files");
+  // jsdom does no layout, so this checks the shared class that the stylesheet sizes, not the pixels.
+  for (const name of ["Clear pins", "Clear recents"]) {
+    expect(screen.getByRole("button", { name })).toHaveClass("kern-settings-clear");
+  }
+});
+
 test("clear_pins_asks_first_and_cancel_clears_nothing", async () => {
   await mount();
   nav("Files");

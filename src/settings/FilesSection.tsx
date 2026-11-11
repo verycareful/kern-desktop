@@ -332,7 +332,7 @@ function ClearList(props: {
         <div className="kern-settings-inline">
           <button
             type="button"
-            className="kern-button"
+            className="kern-button kern-settings-clear"
             disabled={busy}
             onClick={() => {
               setResult(null);
