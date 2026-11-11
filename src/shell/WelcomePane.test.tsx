@@ -188,7 +188,7 @@ test("the_words_name_the_author_s_github_pages", () => {
   expect(WELCOME_ASKS.map((a) => a.url)).toEqual([
     "https://github.com/verycareful/kern-desktop",
     "https://github.com/verycareful",
-    "https://github.com/verycareful/kern",
+    "https://github.com/verycareful/kern-android",
     "https://github.com/verycareful?tab=repositories",
   ]);
 });

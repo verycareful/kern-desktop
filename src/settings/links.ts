@@ -7,6 +7,6 @@
 
 export const KERNKRAFT_URL = "https://github.com/verycareful/kernkraft";
 export const SOURCE_URL = "https://github.com/verycareful/kern-desktop";
-export const ANDROID_URL = "https://github.com/verycareful/kern";
+export const ANDROID_URL = "https://github.com/verycareful/kern-android";
 export const PROFILE_URL = "https://github.com/verycareful";
 export const PROJECTS_URL = "https://github.com/verycareful?tab=repositories";

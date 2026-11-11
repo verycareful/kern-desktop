@@ -4,6 +4,59 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.2.0] - 2026-11-11 15:16 (IST)
+
+### Added
+
+- **Error log**: Kern writes the errors its windows show, its panics and a web process that stops to `kern.log` in the XDG state folder, one line each, rotated at 1 MiB. It is cleared at the first launch after a reboot. A switch under About in Settings turns it off.
+- **Keys and mouse**: Settings has a Keys and mouse category that lists every action and lets you set its keys and mouse buttons (middle click, back and forward, with modifiers). Binds are kept in `binds.json` beside `settings.json`, apply at once, and a bind that another action holds asks before it is taken. Middle click closing a tab is now a default bind of Close tab. A mouse bind never fires inside a text field.
+- **Installer and binds**: on a fresh install, an update and a reinstall, the installer asks whether to keep or clear your binds when a `binds.json` exists. `--defaults` keeps them and asks nothing. The uninstaller names binds in its question.
+- **Click settings**: four settings choose a single or a double click to open a file or folder, one each for the left panel, the right panel, the centre and the editor. The left panel defaults to a single click.
+- **Panel order**: the file manager's three columns and the editor window's two panels can be put in any order in Settings > Files > Panels. The order is kept.
+- **Folder view menu**: the right-click menu keeps the most used entries on top and folds the rest into submenus (More ways to open, More edit actions, Pinned, Selection, View). Settings > Files can make it Collapsed (six rows) or Expanded (the flat list). Hover, click and the Right and Left arrow keys open and close a submenu, and Escape closes the submenu before the menu. The other menus are unchanged.
+- **Library**: the Library has a toolbar row, sortable columns (sorting waits until the search is complete), a filter, a card view and a button for hidden items.
+- **Time in Modified**: the Modified column shows the day and the time ("Today 14:32", "Mar 4, 2025 10:07"), and "Nw ago" is gone. Settings > Files picks the system clock, a 12 hour clock or a 24 hour one, and the Properties dialog follows it.
+- **Cut files**: cut files are greyed until they are pasted, and Escape cancels the cut. When the folder shown is cut or lies inside a cut folder, every row and card is greyed, and so is everything below a cut folder in the editor tree. Search and Library hits grey only their own cut paths.
+- **Editor tree**: a Sort button orders the tree by name, size, date modified or type, either way round (not kept across restarts). Expand all and Collapse all are one button. In a narrow column the heading's buttons drop to a row under the folder name.
+- **Editor tree keys**: while the tree has the keyboard, Ctrl+X, Ctrl+C, Ctrl+V, F2, Delete and Shift+Delete cut, copy, paste, rename, trash and delete the current row. They can be rebound in Settings > Keys and mouse, mouse buttons included, and editor windows answer them. F4 opens a terminal in the editor layout, in the tree's root or the folder of the row under the pointer.
+- **Clear pins and Clear recents**: two buttons in Settings > Files empty the lists after a question.
+- **Open documents follow their file**: a tab keeps its text and its place when its file, or a folder above it, is renamed or moved from Kern. A move onto a document that is already open skips that document and says so.
+- **Repeated messages**: a message raised again with the same words flashes instead of being dropped, in the status bar, the banners, the rename, the name dialog, the location bar and the editor's save problem.
+- **Open errors**: a file that fails to open in an editor window is reported once, centred at the top of the editor area, with a button to dismiss it.
+- **Installer**: it finds a running Kern through `gdbus` or `dbus-send` when `busctl` is missing, says so when it cannot tell, and warns when run as root.
+
+### Changed
+
+- **Document windows**: a document window has a capability of its own and no longer holds the commands only the main window needs (file operations, Trash, mounts, settings and the layout).
+- **kernkraft**: the pin moves to 0.1.3.1.
+- **Android link**: the link to Kern for Android in Settings and in the welcome text points to https://github.com/verycareful/kern-android.
+- **Development tools**: the dev loop ignores edits to tests and to local notes.
+
+### Fixed
+
+- **Terminal**: Open terminal here opens the terminal you chose in Settings, then the system's terminal lists, then `$TERMINAL`, then any installed terminal. A program started from the AppImage no longer inherits the bundle's Python environment, which stopped kitty at start while Kern said it had opened a terminal. The message when no terminal is found says what to set.
+- **Text rendering**: all text is drawn with greyscale antialiasing. A region whose content fits was drawn with colour fringes and a scrolling region without, so a short list and a long one looked different.
+- **Clipboard**: copy offers `text/plain;charset=utf-8`, so a pasted name keeps its characters.
+- **Message text**: Ctrl+C copies words selected in a message.
+- **Two launches together**: two launches arriving at once create one main window, not two.
+- **Reload**: a reloaded page forgets its window's open tabs, so opening the same file again opens a tab and does not focus one that is gone.
+- **Settings**: an unreadable setting is reported once, not after every write.
+- **Properties**: it is not shown over a folder that did not open.
+- **List header**: the column header sits flush under the path bar, and rows scrolling up no longer show in a gap above it.
+- **Notices**: the text of a one-line notice is centred against its button.
+
+### Tests
+
+- Rust tests cover the error log (stamps, rotation, threads, the switch, the boot id), the main window made once, binds and the new settings (defaults, values kept across a restart, refusals that write nothing), the open-document registry (rename, move, collision, reload), each window kind's grants, Clear pins and Clear recents, and the clipboard's offered targets.
+- Unit tests cover the keys and mouse binds (matching, claims, text fields, the shared button, the context menu), the Keys and mouse editor, panel order in the file manager and the editor layout, the folded menu (submenus, keyboard, flip at the window's edge), the Library, time formats, cut dimming, the editor tree's sort, hover target and keys (including a rebound key and a mouse button), repeated messages, and each document window command that the page sends.
+- Browser tests check the panel order boxes, the folded menu's submenu beside its row and its flip at the window's edge, the editor tree's buttons at the narrowest column and its sort menu, F4 in the editor layout, and a centred one-line notice.
+- Real-app tests rename an open edited file from a folder tab and check that the tab keeps its text and saves under the new name, and edit and save a document opened from outside in a window of its own.
+- The installer suite covers the binds question in each flow, a running Kern found without `busctl`, and the warning as root.
+
+### Results
+
+- 2088 tests across 170 suites, all passed (220s, CachyOS x86-64, rustc 1.99.1, Python 3.14.9, Chromium through Playwright).
+
 ## [0.1.1.4] - 2026-11-07 20:59 (IST)
 
 ### Changed

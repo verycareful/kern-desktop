@@ -531,7 +531,7 @@ test("about_shows_the_licence_in_a_dialog_and_each_link_opens_its_address", asyn
   expect(sent(`${KERNKRAFT}open_url`).map((s) => s.args.url)).toEqual([
     "https://github.com/verycareful/kernkraft",
     "https://github.com/verycareful/kern-desktop",
-    "https://github.com/verycareful/kern",
+    "https://github.com/verycareful/kern-android",
   ]);
   expect(screen.queryByTestId("licence-dialog")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Licence" }));

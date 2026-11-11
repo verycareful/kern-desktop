@@ -2,7 +2,7 @@
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/)
 [![Rust](https://img.shields.io/badge/Rust-2021%20edition-000000?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![kernkraft](https://img.shields.io/badge/kernkraft-0.1.1.0-5A4FCF?style=flat-square)](https://github.com/verycareful/kernkraft)
+[![kernkraft](https://img.shields.io/badge/kernkraft-0.1.3.1-5A4FCF?style=flat-square)](https://github.com/verycareful/kernkraft)
 [![GTK](https://img.shields.io/badge/GTK-3-7FE719?style=flat-square&logo=gtk&logoColor=white)](https://www.gtk.org/)
 [![zbus](https://img.shields.io/badge/zbus-5-4A86CF?style=flat-square)](https://github.com/dbus2/zbus)
 [![React](https://img.shields.io/badge/React-19.1-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
@@ -15,9 +15,9 @@
 [![Quicksand](https://img.shields.io/badge/Quicksand-5.3-lightgrey?style=flat-square)](https://fontsource.org/fonts/quicksand)
 [![IBM Plex Mono](https://img.shields.io/badge/IBM%20Plex%20Mono-5.3-lightgrey?style=flat-square)](https://fontsource.org/fonts/ibm-plex-mono)
 [![Sora](https://img.shields.io/badge/Sora-5.3-lightgrey?style=flat-square)](https://fontsource.org/fonts/sora)
-[![Vitest](https://img.shields.io/badge/Vitest-3-6E9F18?style=flat-square&logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Vitest-4-6E9F18?style=flat-square&logo=vitest&logoColor=white)](https://vitest.dev/)
 [![Playwright](https://img.shields.io/badge/Playwright-1.49-2EAD33?style=flat-square&logo=playwright&logoColor=white)](https://playwright.dev/)
-[![WebdriverIO](https://img.shields.io/badge/WebdriverIO-10.1-EA5906?style=flat-square&logo=webdriverio&logoColor=white)](https://webdriver.io/)
+[![WebdriverIO](https://img.shields.io/badge/WebdriverIO-10.2-EA5906?style=flat-square&logo=webdriverio&logoColor=white)](https://webdriver.io/)
 [![ESLint](https://img.shields.io/badge/ESLint-9-4B32C3?style=flat-square&logo=eslint&logoColor=white)](https://eslint.org/)
 [![Prettier](https://img.shields.io/badge/Prettier-3-F7B93E?style=flat-square&logo=prettier&logoColor=black)](https://prettier.io/)
 [![Python](https://img.shields.io/badge/Python-3-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
@@ -43,12 +43,16 @@ Kern Desktop is in alpha.
 
 - **Folders.** You get list and grid views, sorting, multi-select, a breadcrumb
   and an editable location bar, and hidden files when you ask for them. The
-  view refreshes when something changes on disk. A toolbar over the folder
+  Modified column gives the day and the time, and Settings picks the system
+  clock, a 12 hour clock or a 24 hour one. The view refreshes when something
+  changes on disk. A toolbar over the folder
   holds Back, Forward and Up, New folder, Search, Open terminal here, the view
   switches and Open as editor. Folders open in tabs, and you can move a tab to
   a window of its own.
 - **File operations.** Create, rename in place, cut, copy and paste through the
-  system clipboard, so other file managers can take part. Trash files, or
+  system clipboard, so other file managers can take part. Cut files are greyed
+  until they are pasted, and so is everything inside a cut folder; Escape
+  cancels the cut. Trash files, or
   delete them for good after a question. Copies and moves run in the
   background with progress, a Cancel button, a prompt for name conflicts and a
   report of anything skipped or failed. Undo and redo cover the last
@@ -86,8 +90,11 @@ Kern Desktop is in alpha.
   folder tree beside your documents. The tree's menu carries the file
   operations, and its heading holds search, the terminal, hidden files, the
   sort order (name, size, date modified or type, either way round) and
-  collapse or expand all. F4 opens a terminal in the tree's folder, or in the
-  folder of the row the pointer is over. Each folder has one editor window:
+  collapse or expand all. While the tree has the keyboard, Ctrl+X, Ctrl+C,
+  Ctrl+V, F2, Delete and Shift+Delete cut, copy, paste, rename and delete the
+  current row, and Settings > Keys and mouse can rebind them. F4 opens a
+  terminal in the tree's folder, or in the folder of the row the pointer is
+  over. Each folder has one editor window:
   open the folder again and that window comes forward. A file opened from
   inside an editor window moves into it, from whichever window held it. A file
   opened any other way (from a folder, the command line or another app) brings
