@@ -388,6 +388,23 @@ impl OpenRegistry {
             .map(|(p, _)| p.clone())
     }
 
+    /// Forgets every tab of window `label`, with the documents and Save As
+    /// targets held at them: the page that registered them is gone. What the
+    /// window holds as a place of its own, and a path held for a tab that has
+    /// not registered yet, stay.
+    pub fn remove_tabs_of(&self, label: &str) {
+        let mut book = self.lock();
+        let before = book.map.len();
+        book.map
+            .retain(|_, e| !matches!(&e.location, Location::Tab { window, .. } if window == label));
+        let changed = book.map.len() != before;
+        if changed {
+            book.generation += 1;
+        }
+        drop(book);
+        self.announce(changed);
+    }
+
     /// Forgets what window `label` held: the document it shows as a
     /// standalone window and every tab it has. Other windows' tabs stay.
     pub fn remove_window(&self, label: &str) {

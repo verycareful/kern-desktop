@@ -15,8 +15,8 @@ use std::time::Duration;
 use common::{env, env_with, invoke, tab, wait_for, wp, Answer, QUIET};
 use kern_lib::open::{FileId, Location, Stat};
 use kern_lib::windows::{
-    WindowState, EVENT_ADOPT_CANCELLED, EVENT_ADOPT_DOC, EVENT_CLOSE_REQUESTED, EVENT_DOC_MOVED,
-    EVENT_DOC_RELEASED, EVENT_OPEN, MAX_SWEEPS,
+    page_reloading, WindowState, EVENT_ADOPT_CANCELLED, EVENT_ADOPT_DOC, EVENT_CLOSE_REQUESTED,
+    EVENT_DOC_MOVED, EVENT_DOC_RELEASED, EVENT_OPEN, MAX_SWEEPS,
 };
 use serde_json::{json, Value};
 use tauri::test::MockRuntime;
@@ -723,6 +723,64 @@ fn file_open_twice_focuses_across_windows() {
         assert_eq!(again[0]["location"], tab("editor-1", "t1"));
     }
     assert!(!e.exists("doc-1"));
+}
+
+#[test]
+fn a_reloaded_page_no_longer_holds_the_tabs_it_registered() {
+    let e = env(Duration::from_secs(5));
+    let a = e.text("a.txt");
+    let label = editor(&e);
+    e.call_from(
+        &label,
+        "doc_opened",
+        json!({"path": wp(&a), "location": tab(&label, "t1")}),
+    )
+    .unwrap();
+    let open_here = |e: &common::Ctx| {
+        e.call_from(
+            &label,
+            "open_paths",
+            json!({"paths": [wp(&a)], "origin": "inside", "gesture": "default"}),
+        )
+        .unwrap()
+    };
+    let out = open_here(&e);
+    assert_eq!(out[0]["action"], json!("focus"));
+    assert_eq!(out[0]["location"], tab(&label, "t1"));
+    // The page reloads: its tabs are gone with it, so the file is opened in a new tab and not
+    // focused in one that no longer exists.
+    page_reloading(&e.handle, &label);
+    let out = open_here(&e);
+    assert_eq!(out[0]["action"], json!("doc_tab"), "{out:?}");
+}
+
+#[test]
+fn a_reloaded_page_keeps_another_windows_tabs_and_a_document_window_being_built() {
+    let e = env(Duration::from_secs(5));
+    let a = e.text("a.txt");
+    let b = e.text("b.txt");
+    let label = editor(&e);
+    e.call_from(
+        "main",
+        "doc_opened",
+        json!({"path": wp(&a), "location": tab("main", "t1")}),
+    )
+    .unwrap();
+    // A document window made for b, whose page has not asked for its directive yet.
+    e.open(&[&b], "outside", "new_window");
+    assert!(e.exists("doc-1"));
+    page_reloading(&e.handle, &label);
+    page_reloading(&e.handle, "doc-1");
+    // main's tab is still main's, and the document window still holds b.
+    let out = e.open(&[&a], "outside", "default");
+    assert_eq!(out[0]["action"], json!("focus"));
+    assert_eq!(out[0]["location"], tab("main", "t1"));
+    let out = e.open(&[&b], "outside", "default");
+    assert_eq!(out[0]["action"], json!("focus"));
+    assert_eq!(
+        out[0]["location"],
+        json!({"kind": "window", "label": "doc-1"})
+    );
 }
 
 #[test]

@@ -2185,7 +2185,10 @@ pub fn ask_to_close<R: Runtime>(window: &Window<R>) {
 }
 
 /// A page (re)load in a window: whatever it had registered as ready is gone
-/// with the page, so directives queue again until it asks.
+/// with the page, so directives queue again until it asks. The tabs it had
+/// registered as open documents are gone with it too: the page makes its tabs
+/// afresh and registers them again, and a stale entry would send a later open
+/// of the file to a tab that does not exist.
 pub fn on_page_load<R: Runtime>(webview: &Webview<R>, payload: &PageLoadPayload<'_>) {
     if payload.event() == PageLoadEvent::Started {
         page_reloading(webview.app_handle(), webview.label());
@@ -2197,6 +2200,7 @@ pub fn on_page_load<R: Runtime>(webview: &Webview<R>, payload: &PageLoadPayload<
 pub fn page_reloading<R: Runtime>(app: &AppHandle<R>, label: &str) {
     if let Some(st) = app.try_state::<WindowState>() {
         st.lock().ready.remove(label);
+        st.open.remove_tabs_of(label);
     }
 }
 

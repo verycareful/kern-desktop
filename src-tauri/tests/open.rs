@@ -659,6 +659,72 @@ fn a_hold_for_a_window_is_a_place_found_by_identity_and_goes_with_the_window() {
 // ---- the generation, the survey and what does not answer ----
 
 #[test]
+fn a_window_losing_its_tabs_keeps_its_own_place_and_what_other_windows_hold() {
+    let reg = OpenRegistry::new();
+    let (a, b, c, d, e, f) = (
+        Path::new("/a"),
+        Path::new("/b"),
+        Path::new("/c"),
+        Path::new("/d"),
+        Path::new("/e"),
+        Path::new("/f"),
+    );
+    reg.insert(a, tab("editor-1", "t1"));
+    // A Save As target held at a tab goes with the tab.
+    reg.reserve(b, tab("editor-1", "t2"));
+    // Not tabs of the window: its own place, a path held for a tab that has not
+    // registered, another window's tab, and a document window.
+    reg.insert(
+        c,
+        Location::Window {
+            label: "editor-1".to_owned(),
+        },
+    );
+    reg.insert(
+        d,
+        Location::Opening {
+            window: "editor-1".to_owned(),
+        },
+    );
+    reg.insert(e, tab("main", "t1"));
+    reg.insert(
+        f,
+        Location::Window {
+            label: "doc-1".to_owned(),
+        },
+    );
+    let before = reg.generation();
+    reg.remove_tabs_of("editor-1");
+    assert!(reg.generation() > before);
+    let at = |p: &Path| get(&reg, p, &FileId::of(p));
+    assert_eq!(at(a), None);
+    assert_eq!(at(b), None);
+    assert!(matches!(at(c), Some(Location::Window { .. })));
+    assert!(matches!(at(d), Some(Location::Opening { .. })));
+    assert_eq!(at(e), Some(tab("main", "t1")));
+    assert!(matches!(at(f), Some(Location::Window { .. })));
+}
+
+#[test]
+fn a_window_with_no_tabs_losing_them_changes_nothing_and_says_nothing() {
+    let reg = OpenRegistry::new();
+    let told = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = Arc::clone(&told);
+    reg.on_release(Arc::new(move || {
+        seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }));
+    reg.insert(Path::new("/a"), tab("main", "t1"));
+    let g = reg.generation();
+    reg.remove_tabs_of("editor-1");
+    reg.remove_tabs_of("nobody");
+    assert_eq!(reg.generation(), g);
+    assert_eq!(told.load(std::sync::atomic::Ordering::SeqCst), 0);
+    // A window that did hold tabs lets go, and the places waiting to retry are told.
+    reg.remove_tabs_of("main");
+    assert_eq!(told.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[test]
 fn every_change_to_the_registry_moves_its_generation_and_a_no_op_does_not() {
     let reg = OpenRegistry::new();
     let g = |reg: &OpenRegistry| reg.generation();
