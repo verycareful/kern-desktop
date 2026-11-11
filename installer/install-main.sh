@@ -161,8 +161,21 @@ Q_SCOPE=user
 Q_CUSTOMISE=n
 Q_FM=n
 Q_LAUNCH=n
+running_as_root() {
+    ((EUID == 0))
+}
+
 ask_install_questions() {
     local walk=$1 pick
+    # Just me is the account running the script, which as root is root, not
+    # the user who ran sudo.
+    if running_as_root; then
+        if ((OPT_DEFAULTS)); then
+            ui_warn "This is running as root, so Kern is installed for root ($HOME) and no other user sees it. Run without --defaults and choose \"Everyone on this computer\" to install it for all users."
+        else
+            ui_warn "This is running as root, so \"Just me\" installs Kern for root ($HOME) and no other user sees it. Choose \"Everyone on this computer\" to install it for all users."
+        fi
+    fi
     ((OPT_DEFAULTS)) && return 0
     ui_menu pick 0 "Install Kern for" "Just me (no administrator password)" "Everyone on this computer (uses sudo)"
     if ((pick == 0)); then Q_SCOPE=user; else Q_SCOPE=system; fi

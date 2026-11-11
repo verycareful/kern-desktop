@@ -402,9 +402,30 @@ as_scope() {
     "${L_SUDO[@]}" "$@"
 }
 
-# Whether a Kern instance owns its bus name on the session bus.
+# Whether a Kern instance owns its bus name on the session bus. busctl comes
+# with systemd; without it gdbus (GLib) or dbus-send asks the bus daemon the
+# same question, NameHasOwner. With none of the three the answer is unknown:
+# it is reported once and taken as "not running".
+KERN_BUS_TOOL_WARNED=0
 kern_running() {
-    busctl --user status "$KERN_BUS_NAME" >/dev/null 2>&1
+    local reply
+    if command -v busctl >/dev/null 2>&1; then
+        busctl --user status "$KERN_BUS_NAME" >/dev/null 2>&1
+    elif command -v gdbus >/dev/null 2>&1; then
+        reply=$(gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.NameHasOwner "$KERN_BUS_NAME" 2>/dev/null) || return 1
+        [[ $reply == *true* ]]
+    elif command -v dbus-send >/dev/null 2>&1; then
+        reply=$(dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus \
+            org.freedesktop.DBus.NameHasOwner "string:$KERN_BUS_NAME" 2>/dev/null) || return 1
+        [[ $reply == *"boolean true"* ]]
+    else
+        if ((KERN_BUS_TOOL_WARNED == 0)); then
+            KERN_BUS_TOOL_WARNED=1
+            ui_warn "Cannot tell whether Kern is running: none of busctl, gdbus or dbus-send is installed. Close every Kern window before going on."
+        fi
+        return 1
+    fi
 }
 
 # record_write SCOPE FORMAT VERSION PREV_FM
@@ -948,8 +969,21 @@ Q_SCOPE=user
 Q_CUSTOMISE=n
 Q_FM=n
 Q_LAUNCH=n
+running_as_root() {
+    ((EUID == 0))
+}
+
 ask_install_questions() {
     local walk=$1 pick
+    # Just me is the account running the script, which as root is root, not
+    # the user who ran sudo.
+    if running_as_root; then
+        if ((OPT_DEFAULTS)); then
+            ui_warn "This is running as root, so Kern is installed for root ($HOME) and no other user sees it. Run without --defaults and choose \"Everyone on this computer\" to install it for all users."
+        else
+            ui_warn "This is running as root, so \"Just me\" installs Kern for root ($HOME) and no other user sees it. Choose \"Everyone on this computer\" to install it for all users."
+        fi
+    fi
     ((OPT_DEFAULTS)) && return 0
     ui_menu pick 0 "Install Kern for" "Just me (no administrator password)" "Everyone on this computer (uses sudo)"
     if ((pick == 0)); then Q_SCOPE=user; else Q_SCOPE=system; fi

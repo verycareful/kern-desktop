@@ -297,9 +297,30 @@ as_scope() {
     "${L_SUDO[@]}" "$@"
 }
 
-# Whether a Kern instance owns its bus name on the session bus.
+# Whether a Kern instance owns its bus name on the session bus. busctl comes
+# with systemd; without it gdbus (GLib) or dbus-send asks the bus daemon the
+# same question, NameHasOwner. With none of the three the answer is unknown:
+# it is reported once and taken as "not running".
+KERN_BUS_TOOL_WARNED=0
 kern_running() {
-    busctl --user status "$KERN_BUS_NAME" >/dev/null 2>&1
+    local reply
+    if command -v busctl >/dev/null 2>&1; then
+        busctl --user status "$KERN_BUS_NAME" >/dev/null 2>&1
+    elif command -v gdbus >/dev/null 2>&1; then
+        reply=$(gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.NameHasOwner "$KERN_BUS_NAME" 2>/dev/null) || return 1
+        [[ $reply == *true* ]]
+    elif command -v dbus-send >/dev/null 2>&1; then
+        reply=$(dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus \
+            org.freedesktop.DBus.NameHasOwner "string:$KERN_BUS_NAME" 2>/dev/null) || return 1
+        [[ $reply == *"boolean true"* ]]
+    else
+        if ((KERN_BUS_TOOL_WARNED == 0)); then
+            KERN_BUS_TOOL_WARNED=1
+            ui_warn "Cannot tell whether Kern is running: none of busctl, gdbus or dbus-send is installed. Close every Kern window before going on."
+        fi
+        return 1
+    fi
 }
 
 # record_write SCOPE FORMAT VERSION PREV_FM

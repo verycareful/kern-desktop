@@ -190,13 +190,21 @@ class World:
             "NO_COLOR": "1",
         }
 
-    def bash(self, body: str, sources=("ui.sh", "common.sh", "release.sh", "layout.sh")) -> subprocess.CompletedProcess:
+    def bash(
+        self,
+        body: str,
+        sources=("ui.sh", "common.sh", "release.sh", "layout.sh"),
+        path: str | None = None,
+    ) -> subprocess.CompletedProcess:
         prelude = "".join(f"source {INSTALLER / s}; " for s in sources)
+        env = self.env()
+        if path is not None:
+            env["PATH"] = path
         return subprocess.run(
-            ["bash", "--noprofile", "--norc", "-c", prelude + body],
+            ["/usr/bin/bash", "--noprofile", "--norc", "-c", prelude + body],
             capture_output=True,
             text=True,
-            env=self.env(),
+            env=env,
             stdin=subprocess.DEVNULL,
             start_new_session=True,
             timeout=60,
@@ -265,7 +273,7 @@ class Release(unittest.TestCase):
 
     def test_asset_missing_from_sums_is_refused(self) -> None:
         sums = self.w.release / "SHA256SUMS"
-        sums.write_text("".join(l + "\n" for l in sums.read_text().splitlines() if "deb" not in l))
+        sums.write_text("".join(l + "\n" for l in sums.read_text().splitlines() if not l.endswith(".deb")))
         r = self.w.bash(f'd=$(mktemp -d -p "$W"); release_fetch "{self.w.release}" "$d"')
         self.assertEqual(r.returncode, 1)
         self.assertIn(".deb", r.stderr)
@@ -865,6 +873,97 @@ class Flows(unittest.TestCase):
         r = subprocess.run(["bash", str(INSTALL), "--frobnicate"], capture_output=True, text=True,
                            env=self.w.env(), timeout=60)
         self.assertEqual(r.returncode, 2)
+
+
+class RunningKern(unittest.TestCase):
+    """kern_running asks the session bus whether Kern owns its name, with
+    whichever of busctl, gdbus and dbus-send the machine has."""
+
+    def setUp(self) -> None:
+        self.w = World()
+        self.addCleanup(self.w.close)
+        # The only commands on the PATH: the bus tools a test chooses to
+        # give, and cat, which the script's message output runs.
+        self.only = self.w.root / "only"
+        self.only.mkdir()
+        (self.only / "cat").symlink_to("/usr/bin/cat")
+
+    def tool(self, name: str, body: str) -> None:
+        self.w.script(self.only / name, body)
+
+    def ask(self) -> subprocess.CompletedProcess:
+        return self.w.bash("kern_running", path=str(self.only))
+
+    def test_gdbus_answers_when_there_is_no_busctl(self) -> None:
+        self.tool(
+            "gdbus",
+            'echo "gdbus $*" >> "$W/calls.log"\n'
+            'if [[ -e "$W/running" ]]; then echo "(true,)"; else echo "(false,)"; fi',
+        )
+        self.assertEqual(self.ask().returncode, 1)
+        (self.w.root / "running").touch()
+        r = self.ask()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        call = [l for l in self.w.calls().splitlines() if l.startswith("gdbus")][-1]
+        self.assertIn("--session", call)
+        self.assertIn("NameHasOwner", call)
+        self.assertIn("io.github.verycareful.kern", call)
+
+    def test_dbus_send_answers_when_there_is_neither(self) -> None:
+        self.tool(
+            "dbus-send",
+            'echo "dbus-send $*" >> "$W/calls.log"\n'
+            'echo "method return time=1 sender=:1.1 -> destination=:1.2 serial=3 reply_serial=2"\n'
+            'if [[ -e "$W/running" ]]; then echo "   boolean true"; else echo "   boolean false"; fi',
+        )
+        self.assertEqual(self.ask().returncode, 1)
+        (self.w.root / "running").touch()
+        r = self.ask()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        call = [l for l in self.w.calls().splitlines() if l.startswith("dbus-send")][-1]
+        self.assertIn("--session", call)
+        self.assertIn("NameHasOwner", call)
+        self.assertIn("string:io.github.verycareful.kern", call)
+
+    def test_busctl_is_asked_first_when_present(self) -> None:
+        self.tool("busctl", 'echo "busctl $*" >> "$W/calls.log"')
+        self.tool("gdbus", 'echo "gdbus $*" >> "$W/calls.log"; echo "(false,)"')
+        self.assertEqual(self.ask().returncode, 0)
+        self.assertIn("busctl --user status io.github.verycareful.kern", self.w.calls())
+        self.assertNotIn("gdbus", self.w.calls())
+
+    def test_no_tool_says_so_once_and_reports_not_running(self) -> None:
+        r = self.w.bash("kern_running; a=$?; kern_running; echo status=$a,$?", path=str(self.only))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("status=1,1", r.stdout)
+        self.assertEqual(r.stderr.count("busctl"), 1, r.stderr)
+        for name in ("gdbus", "dbus-send"):
+            self.assertIn(name, r.stderr)
+
+
+class RunAsRoot(unittest.TestCase):
+    """Running install.sh as root makes Just me mean root."""
+
+    def setUp(self) -> None:
+        self.w = World()
+        self.addCleanup(self.w.close)
+
+    def questions(self, root: bool) -> subprocess.CompletedProcess:
+        return self.w.bash(
+            f"running_as_root() {{ {'true' if root else 'false'}; }}; OPT_DEFAULTS=1; ask_install_questions ask",
+            sources=("ui.sh", "common.sh", "release.sh", "layout.sh", "settings.sh", "install-main.sh"),
+        )
+
+    def test_root_is_warned_that_just_me_is_root(self) -> None:
+        r = self.questions(True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("root", r.stderr)
+        self.assertIn("Everyone on this computer", r.stderr)
+
+    def test_an_ordinary_user_is_not_warned(self) -> None:
+        r = self.questions(False)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stderr, "")
 
 
 class Build(unittest.TestCase):
