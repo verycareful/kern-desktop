@@ -20,8 +20,9 @@ import { errorText } from "../ops/error-text";
 import { baseName, plural } from "../ops/labels";
 import { runOp, type RunningOp } from "../ops/run-op";
 import { isFolder } from "./file-type";
-import { formatSize } from "./format";
+import { formatLongDate, formatSize } from "./format";
 import { modeOctal, modeText } from "./permissions";
+import { useViewSettings } from "./view-settings";
 
 // Properties: for one item its type, place, size,
 // modification time, permissions as letters and octal, MIME type and, for a
@@ -29,8 +30,6 @@ import { modeOctal, modeText } from "./permissions";
 // together. Sizes come from the properties operation, which walks folders in
 // the background and reports what it could not read; closing the dialog
 // cancels it. Every part that cannot be found out says so in its place.
-
-const WHEN = new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeStyle: "short" });
 
 type Load<T> =
   { state: "loading" } | { state: "ready"; value: T } | { state: "failed"; error: WireError };
@@ -220,6 +219,7 @@ function One(props: { path: WirePath }) {
   const m = useMeasure([props.path]);
   const isFile = entry.state === "ready" && !isFolder(entry.value);
   const app = useLoad(isFile ? () => appDefault(props.path) : null, `${key}:${isFile}`);
+  const timeFormat = useViewSettings((s) => s.timeFormat);
   const where = parent(props.path);
   if (entry.state === "loading") return <p role="status">Reading…</p>;
   if (entry.state === "failed") {
@@ -244,7 +244,7 @@ function One(props: { path: WirePath }) {
         note={e.kind === "symlink" ? ", the link itself, not what it points to" : undefined}
       />
       <Row label="Modified">
-        {e.modified_ms === null ? "not known" : WHEN.format(new Date(e.modified_ms))}
+        {e.modified_ms === null ? "not known" : formatLongDate(e.modified_ms, timeFormat)}
       </Row>
       <Row label="Permissions">
         {e.kind === "symlink"

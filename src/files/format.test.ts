@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { formatDate, formatSize } from "./format";
+import { formatDate, formatLongDate, formatSize } from "./format";
 
 test("sizes_use_binary_units", () => {
   expect(formatSize(0)).toBe("0 B");
@@ -50,4 +50,18 @@ test("the_system_clock_is_the_locales_own_way_of_writing_the_time", () => {
     .replace(/[\u202f\u00a0]/g, " ");
   expect(formatDate(at(0, 14, 32), NOW, "system")).toBe(`Today ${expected}`);
   expect(formatDate(at(0, 14, 32), NOW)).toBe(`Today ${expected}`);
+});
+
+test("a_long_date_is_the_whole_date_then_the_time_in_the_chosen_clock", () => {
+  const ms = new Date(2026, 10, 9, 14, 32).getTime();
+  expect(formatLongDate(ms, "24")).toBe("November 9, 2026 at 14:32");
+  expect(formatLongDate(new Date(2026, 10, 9, 9, 5).getTime(), "24")).toBe(
+    "November 9, 2026 at 09:05"
+  );
+  expect(formatLongDate(ms, "12").toLowerCase()).toBe("november 9, 2026 at 2:32 pm");
+  const system = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" })
+    .format(new Date(ms))
+    .replace(/[\u202f\u00a0]/g, " ");
+  expect(formatLongDate(ms, "system")).toBe(`November 9, 2026 at ${system}`);
+  expect(formatLongDate(ms)).toBe(`November 9, 2026 at ${system}`);
 });

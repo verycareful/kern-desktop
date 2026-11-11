@@ -15,6 +15,7 @@ const ipc = vi.hoisted(() => ({
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
 import { PropertiesDialog } from "./PropertiesDialog";
+import { useViewSettings } from "./view-settings";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 let handlers: Record<string, (payload: unknown) => void>;
@@ -168,4 +169,29 @@ test("a_link_has_no_permissions_of_its_own_and_holds_nothing", async () => {
   expect(rowOf("Permissions")).not.toHaveTextContent("0777");
   await waitFor(() => expect(rowOf("Size")).toHaveTextContent("the link itself"));
   expect(screen.queryByText("Contains")).toBeNull();
+});
+
+test("modified_is_written_in_the_clock_the_settings_choose", async () => {
+  useViewSettings.setState({ timeFormat: "24" });
+  ipc.entryOf.mockResolvedValue(
+    entry(
+      "notes.md",
+      {
+        mime: "text/markdown",
+        mode: 0o640,
+        len: 1,
+        modified_ms: new Date(2026, 9, 17, 9, 5).getTime(),
+      },
+      "/home/t"
+    )
+  );
+  render(<PropertiesDialog paths={[p("/home/t/notes.md")]} onClose={onClose} />);
+  await screen.findByText("notes.md", { selector: "dd" });
+  expect(rowOf("Modified")).toHaveTextContent("October 17, 2026 at 09:05");
+  cleanup();
+  useViewSettings.setState({ timeFormat: "12" });
+  render(<PropertiesDialog paths={[p("/home/t/notes.md")]} onClose={onClose} />);
+  await screen.findByText("notes.md", { selector: "dd" });
+  expect(rowOf("Modified").textContent).toMatch(/^October 17, 2026 at 9:05 (AM|am)$/);
+  useViewSettings.setState({ timeFormat: "system" });
 });

@@ -63,3 +63,11 @@ export function formatDate(
   }
   return `${day} ${timeOfDay(d, format)}`;
 }
+
+const LONG_DAY = new Intl.DateTimeFormat("en-US", { dateStyle: "long" });
+
+/** The whole date and the time of day, "November 9, 2026 at 2:32 PM", the time in the chosen clock. */
+export function formatLongDate(ms: number, format: TimeFormat = "system"): string {
+  const d = new Date(ms);
+  return `${LONG_DAY.format(d)} at ${timeOfDay(d, format)}`;
+}
