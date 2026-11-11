@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { Queued, Settings } from "../ipc";
+import type { CorruptReport, Queued, Settings } from "../ipc";
 import { SETTINGS } from "./test-settings";
 
 // The Settings window as the app mounts it (App in a window labelled "settings"), with the one
@@ -47,6 +47,8 @@ import { useSettingsNav } from "./settings-nav";
 const KERNKRAFT = "plugin:kernkraft-tauri|";
 
 let stored: Settings;
+/** The binds the backend holds. */
+let storedBinds: Record<string, string[]>;
 let queued: Queued[];
 /** The next settings_set fails with this, once. */
 let failSet: unknown = null;
@@ -89,6 +91,18 @@ function answer(cmd: string, args: Record<string, unknown>): unknown {
       }
       return { entries: [] };
     }
+    case "binds_get":
+      return { binds: storedBinds };
+    case "binds_set": {
+      for (const [id, list] of Object.entries(args.patch as Record<string, string[] | null>)) {
+        if (list === null) delete storedBinds[id];
+        else storedBinds[id] = list;
+      }
+      return { binds: storedBinds };
+    }
+    case "binds_clear":
+      storedBinds = {};
+      return { binds: storedBinds };
     case "store_errors_take":
       return [];
     default:
@@ -104,6 +118,7 @@ beforeEach(() => {
     metadata: { currentWindow: { label: "settings" } },
   };
   stored = { ...SETTINGS, follow: { ...SETTINGS.follow } };
+  storedBinds = {};
   queued = [];
   failSet = null;
   failClear = null;
@@ -176,6 +191,17 @@ test("every_command_the_settings_window_sends_is_granted_to_it", async () => {
     await waitFor(() => expect(sent(cmd)).toHaveLength(1));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   }
+  // Keys and mouse: a bind is added and the binds are reset, both at once.
+  nav("Keys and mouse");
+  fireEvent.click(await screen.findByRole("button", { name: "Add a bind to Close tab" }));
+  fireEvent.keyDown(window, { key: "q", ctrlKey: true });
+  await waitFor(() => expect(sent("binds_set")).toHaveLength(1));
+  fireEvent.click(screen.getByRole("button", { name: "Reset all binds" }));
+  fireEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Reset all binds" })
+  );
+  await waitFor(() => expect(sent("binds_clear")).toHaveLength(1));
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   // Library: a folder typed with ~ asks for Home.
   nav("Library");
   fireEvent.change(screen.getByLabelText("Add a folder"), { target: { value: "~/Projects" } });
@@ -210,6 +236,9 @@ test("every_command_the_settings_window_sends_is_granted_to_it", async () => {
     "make_default_fm",
     "pins_clear",
     "recents_clear",
+    "binds_get",
+    "binds_set",
+    "binds_clear",
     "restart_request",
     "restart_abandon",
     "confirm_close",
@@ -753,4 +782,21 @@ test("the_clear_rows_are_found_by_searching_for_unpin_and_history", async () => 
   fireEvent.change(search, { target: { value: "history" } });
   expect(await screen.findByRole("button", { name: "Clear recents" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Clear pins" })).toBeNull();
+});
+
+test("the_keys_category_is_found_by_search_and_an_unreadable_binds_file_is_reported_in_it", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
+    target: { value: "middle click" },
+  });
+  expect(await screen.findByRole("heading", { name: "Keys and mouse" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Appearance" })).toBeNull();
+  const report: CorruptReport = {
+    file: "binds.json",
+    moved_to: { k: "Utf8", v: "/c/kern/binds.json.corrupt-1" },
+    field: null,
+    reason: "not an object",
+  };
+  act(() => useStoreErrors.setState({ reports: [report] }));
+  expect(await screen.findByText(/binds\.json could not be read/)).toBeInTheDocument();
 });

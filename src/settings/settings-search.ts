@@ -5,7 +5,7 @@
 // when each word typed is part of its label, its group, its category or its other words (case
 // does not matter), so "dark" finds the theme and "hidden" the hidden items.
 
-export type Category = "appearance" | "files" | "library" | "editor" | "about";
+export type Category = "appearance" | "files" | "library" | "editor" | "keys" | "about";
 
 export const CATEGORIES: readonly { id: Category; label: string; blurb: string }[] = [
   { id: "appearance", label: "Appearance", blurb: "How Kern looks in every window." },
@@ -16,6 +16,12 @@ export const CATEGORIES: readonly { id: Category; label: string; blurb: string }
   },
   { id: "library", label: "Library", blurb: "The folders the Library walks for documents." },
   { id: "editor", label: "Editor", blurb: "The text editor." },
+  {
+    id: "keys",
+    label: "Keys and mouse",
+    blurb:
+      "The keys and mouse buttons that run each action. A change applies at once, in every window.",
+  },
   {
     id: "about",
     label: "About",
@@ -177,6 +183,19 @@ export const ROWS = {
     group: "Text",
     label: "Text size",
     words: "zoom font bigger smaller",
+  },
+  keys_list: {
+    category: "keys",
+    group: "Binds",
+    label: "Keys and mouse buttons",
+    words:
+      "shortcut shortcuts keyboard hotkey binding bindings bind rebind remap middle click mouse button back forward",
+  },
+  reset_binds: {
+    category: "keys",
+    group: "Reset",
+    label: "Reset all binds",
+    words: "default defaults restore clear shortcuts keyboard mouse remove",
   },
   version: { category: "about", group: "Kern", label: "Version", words: "alpha release" },
   network: {

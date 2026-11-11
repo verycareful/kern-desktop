@@ -455,3 +455,74 @@ h2.kern-settings-heading {
     flex-basis: 180px;
   }
 }
+
+/* The Keys and mouse category: an action's binds as small keys with a remove button, then Add and
+   Reset. The row's messages (waiting for a bind, a bind that is taken) run the full width below. */
+.kern-bind-row {
+  align-items: flex-start;
+}
+
+.kern-bind-controls {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.kern-bind-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kern-bind {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 2px 2px 8px;
+  background: var(--kern-bg);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-bind kbd {
+  font-family: var(--kern-font-mono);
+  font-size: 12px;
+}
+
+.kern-bind-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: var(--kern-text-dim);
+  background: none;
+  border: 0;
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-bind-remove:hover {
+  color: var(--kern-text);
+  background: var(--kern-surface);
+}
+
+.kern-bind-changed {
+  font-family: var(--kern-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kern-text-dim);
+}
+
+.kern-bind-say {
+  flex: 1 0 100%;
+  margin: 0;
+}

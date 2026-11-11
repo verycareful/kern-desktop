@@ -94,6 +94,13 @@ Kern Desktop is in alpha.
   them.
 - **Settings.** Settings opens in a window of its own, with a search field.
   Changes wait for Save, and Revert drops them.
+- **Keys and mouse.** Settings > Keys and mouse lists every action with the
+  keys and mouse buttons that run it. Any action can take any key, or a mouse
+  button (middle click, back, forward, or a click with Ctrl, Alt, Shift or Meta
+  held), and one that another action holds is moved only after you agree. A
+  change applies at once in every window. The binds are kept in `binds.json`
+  in Kern's config folder, apart from the settings, and Reset all binds
+  deletes it.
 - **Desktop integration.** Kern follows the system theme: colours, accent,
   fonts and corner radius from Hyprland, the desktop portal, GTK and
   fontconfig, each with its own switch in Settings. It installs a desktop

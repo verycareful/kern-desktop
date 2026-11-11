@@ -91,7 +91,8 @@ export function useBindLabel(a: Bindable): string | undefined {
   return useBinds((s) => bindLabel(bindsOf(a, s.overrides)));
 }
 
-function apply(b: Binds): void {
+/** Takes `b` as the stored binds: the answer of a command, which the event repeats. */
+export function applyBinds(b: Binds): void {
   useBinds.setState({ loaded: true, overrides: b.binds, error: null });
 }
 
@@ -107,7 +108,7 @@ function reportFailure(e: unknown, what: string): void {
 /** Reads the stored binds. */
 export async function loadBinds(): Promise<void> {
   try {
-    apply(await bindsGet());
+    applyBinds(await bindsGet());
   } catch (e) {
     reportFailure(e, "could not be read");
   }
@@ -119,7 +120,7 @@ export function useBindsSync(): void {
     let alive = true;
     let unlisten: (() => void) | undefined;
     void loadBinds();
-    on(EVENT_BINDS_CHANGED, apply).then(
+    on(EVENT_BINDS_CHANGED, applyBinds).then(
       (u) => (alive ? (unlisten = u) : u()),
       (e: unknown) => alive && reportFailure(e, "cannot be followed")
     );

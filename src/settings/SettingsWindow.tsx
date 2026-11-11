@@ -14,11 +14,13 @@ import { AboutSection } from "./AboutSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { EditorSection } from "./EditorSection";
 import { FilesSection } from "./FilesSection";
+import { KeysSection } from "./KeysSection";
 import { LibrarySection } from "./LibrarySection";
 import { isDirty, SETTINGS_FILE, shown, useSettingsDraft } from "./settings-draft";
 import { useSettingsNav } from "./settings-nav";
 import { CATEGORIES, isCategory, rowsShown, searching, type Category } from "./settings-search";
 import { SettingsQuery } from "./settings-query";
+import { BINDS_FILE } from "./settings-reports";
 import { VERSION_LABEL } from "./version";
 // The shared button, banner, modal and logo styles, then the window's own.
 import "../files/files.css";
@@ -41,6 +43,7 @@ const SECTIONS: Record<Category, ComponentType<{ settings: Settings }>> = {
   files: FilesSection,
   library: LibrarySection,
   editor: EditorSection,
+  keys: KeysSection,
   about: AboutSection,
 };
 
@@ -186,7 +189,9 @@ export function SettingsWindow() {
   const listenError = useSettingsDraft((s) => s.listenError);
   // The whole list is selected and filtered here: a filtered list made in the selector is a new
   // array on every read, which the store takes for a change.
-  const reports = useStoreErrors((s) => s.reports).filter((r) => r.file === SETTINGS_FILE);
+  const reports = useStoreErrors((s) => s.reports).filter(
+    (r) => r.file === SETTINGS_FILE || r.file === BINDS_FILE
+  );
   const reportsError = useStoreErrors((s) => s.error);
   const asked = useSettingsNav((s) => s.section);
   const notice = useOps((s) => s.notice);

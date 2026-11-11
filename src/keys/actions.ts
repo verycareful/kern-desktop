@@ -1498,7 +1498,7 @@ export function menuSections(tab: Tab | null): { title: string; actions: Action[
 }
 
 /** Two contexts collide when they are equal or either is "any". */
-function overlaps(a: Action["when"], b: Action["when"]): boolean {
+export function overlaps(a: Action["when"], b: Action["when"]): boolean {
   return a === b || a === "any" || b === "any";
 }
 
