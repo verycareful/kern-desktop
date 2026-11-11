@@ -58,6 +58,14 @@ body,
   margin: 0;
 }
 
+/* WebKitGTK draws text in a region that scrolls (it has a layer of its own) differently from
+   text in a region whose content fits: the second gets coloured subpixel fringes, whatever the
+   toolkit's antialiasing setting says, and the first comes out darker and heavier. Greyscale
+   antialiasing, inherited by every element, makes all text look the same in both schemes. */
+html {
+  -webkit-font-smoothing: antialiased;
+}
+
 body {
   background: var(--kern-bg);
   color: var(--kern-text);
