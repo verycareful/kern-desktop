@@ -697,6 +697,45 @@ test("a_tree_row_the_clipboard_holds_as_a_cut_is_marked_until_the_cut_is_gone", 
   expect(rows().some((r) => r.classList.contains("kern-cut"))).toBe(false);
 });
 
+const dimmed = () =>
+  rows()
+    .filter((r) => r.classList.contains("kern-cut"))
+    .map((r) => r.dataset.name);
+
+test("everything_inside_a_cut_folder_is_marked_with_it_as_it_opens", async () => {
+  await mount();
+  act(() => setCut([p("/r/docs")]));
+  expect(dimmed()).toEqual(["docs"]);
+  fireEvent.click(row("docs"));
+  await waitFor(() => expect(names()).toContain("a.txt"));
+  // Folders opened after the cut are marked too, down to any depth.
+  fireEvent.click(row("deep"));
+  await waitFor(() => expect(names()).toContain("d.txt"));
+  expect(names()).toEqual(["docs", "deep", "d.txt", "a.txt", "src", "readme.md", "z.txt"]);
+  expect(dimmed()).toEqual(["docs", "deep", "d.txt", "a.txt"]);
+  act(() => clearCut());
+  expect(dimmed()).toEqual([]);
+});
+
+test("a_cut_folder_marks_its_contents_and_not_the_rows_after_them", async () => {
+  await mount();
+  fireEvent.click(row("docs"));
+  await waitFor(() => expect(names()).toContain("a.txt"));
+  fireEvent.click(row("src"));
+  await waitFor(() => expect(names()).toContain("main.rs"));
+  act(() => setCut([p("/r/src"), p("/r/docs/deep")]));
+  expect(dimmed()).toEqual(["deep", "src", "main.rs"]);
+});
+
+test("a_tree_whose_root_is_inside_a_cut_folder_is_marked_throughout", async () => {
+  await mount({ root: p("/r/docs") });
+  act(() => setCut([p("/r")]));
+  expect(dimmed()).toEqual(["deep", "a.txt"]);
+  // A folder whose name only starts with the root's is not above it.
+  act(() => setCut([p("/r/do")]));
+  expect(dimmed()).toEqual([]);
+});
+
 test("the_same_note_raised_again_is_listed_once_and_flashes", async () => {
   ipc.unwatchDir.mockRejectedValue(wireError("Io", "inotify busy"));
   await mount();
