@@ -7,6 +7,7 @@ import { clearCut, setCut } from "../ops/cut-store";
 import { useOpenError } from "../ops/open-error-store";
 import { entry } from "./test-entries";
 import { stubLayout } from "./test-layout";
+import { useTreeHover } from "./tree-hover";
 import { DEFAULT_TREE_SORT, useTreeSort } from "./tree-sort";
 import { useViewSettings } from "./view-settings";
 
@@ -829,4 +830,36 @@ test("the_tree_says_whether_any_folder_is_open_as_that_changes", async () => {
   expect(last()).toBe(true);
   fireEvent.click(row("src"));
   await waitFor(() => expect(last()).toBe(false));
+});
+
+test("the_row_under_the_pointer_is_held_until_the_pointer_leaves_it_or_the_row_goes", async () => {
+  await mount();
+  const held = () => useTreeHover.getState().entry?.name ?? null;
+  fireEvent.pointerEnter(row("docs"));
+  expect(held()).toBe("docs");
+  fireEvent.pointerLeave(row("docs"));
+  expect(held()).toBeNull();
+
+  // A row that closes under a pointer that never moved is let go.
+  fireEvent.click(row("docs"));
+  await waitFor(() => expect(names()).toContain("a.txt"));
+  fireEvent.pointerEnter(screen.getByRole("treeitem", { name: /^a\.txt/ }));
+  expect(held()).toBe("a.txt");
+  fireEvent.click(row("docs"));
+  await waitFor(() => expect(names()).not.toContain("a.txt"));
+  await waitFor(() => expect(held()).toBeNull());
+
+  // Leaving the tree altogether lets go as well.
+  fireEvent.pointerEnter(row("src"));
+  expect(held()).toBe("src");
+  fireEvent.pointerLeave(screen.getByTestId("folder-tree"));
+  expect(held()).toBeNull();
+});
+
+test("a_tree_that_goes_lets_go_of_the_row_it_held", async () => {
+  const view = await mount();
+  fireEvent.pointerEnter(row("docs"));
+  expect(useTreeHover.getState().entry).not.toBeNull();
+  view.unmount();
+  expect(useTreeHover.getState().entry).toBeNull();
 });

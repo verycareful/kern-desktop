@@ -19,6 +19,7 @@ import { FlashSpan } from "../ops/repeat-flash";
 import { showOpenErrors } from "../ops/open-error-store";
 import { cutRowKeys } from "./cut-rows";
 import { openFiles } from "./open-entries";
+import { useTreeHover } from "./tree-hover";
 import { useTreeSort } from "./tree-sort";
 import { useSingleClick } from "./view-settings";
 import {
@@ -107,6 +108,13 @@ export function FolderTree(props: {
   useEffect(() => {
     onOpenChange.current?.(anyOpen);
   }, [anyOpen]);
+  // The row under the pointer is let go when it leaves the tree (a folder closed under a pointer
+  // that did not move, the tree going), since no pointer event says so.
+  useEffect(() => {
+    const held = useTreeHover.getState().key;
+    if (held !== null && !at.has(held)) useTreeHover.getState().set(null);
+  }, [at]);
+  useEffect(() => () => useTreeHover.getState().set(null), []);
   const scroller = useRef<HTMLDivElement>(null);
   const typed = useRef({ text: "", at: 0 });
   const activeIndex = active !== null ? (at.get(active) ?? -1) : -1;
@@ -257,7 +265,11 @@ export function FolderTree(props: {
 
   const rowId = (i: number) => `${uid}-row-${i}`;
   return (
-    <div className="kern-tree-wrap" data-testid="folder-tree">
+    <div
+      className="kern-tree-wrap"
+      data-testid="folder-tree"
+      onPointerLeave={() => useTreeHover.getState().set(null)}
+    >
       <div className="kern-tree-head" title={displayPath(root)}>
         <FolderOpen size={16} strokeWidth={2} aria-hidden />
         <span className="kern-tree-head-name">{baseName(root)}</span>
@@ -344,6 +356,8 @@ export function FolderTree(props: {
                 data-row-index={v.index}
                 data-active={isActive ? "true" : undefined}
                 title={displayPath(row.entry.path)}
+                onPointerEnter={() => useTreeHover.getState().set(row.key, row.entry)}
+                onPointerLeave={() => useTreeHover.getState().leave(row.key)}
                 onClick={(e) => onRowClick(row, e)}
                 onDoubleClick={() => onRowDoubleClick(row)}
               >

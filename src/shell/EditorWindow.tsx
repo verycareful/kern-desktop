@@ -27,8 +27,8 @@ import "./shell.css";
 
 /**
  * What an editor window answers to: the document's keys, closing and switching tabs, both side
- * panels (the folder column and Pinned and Recent), its folder opened in the file manager, and
- * Settings (a window of its own). Not Trash or the Library, which are the main window's, and not
+ * panels (the folder column and Pinned and Recent), its folder opened in the file manager, a
+ * terminal opened from the keyboard (F4), and Settings (a window of its own). Not Trash or the Library, which are the main window's, and not
  * the new tabs: an editor's tabs are documents of its folder.
  */
 export const EDITOR_WINDOW_KEYS = (a: Action): boolean =>
@@ -36,7 +36,8 @@ export const EDITOR_WINDOW_KEYS = (a: Action): boolean =>
   a.id.startsWith("tab.") ||
   a.id === "place.settings" ||
   a.id.startsWith("panel.") ||
-  a.id === "editor.openInFileManager";
+  a.id === "editor.openInFileManager" ||
+  a.id === "editor.terminal";
 
 export function EditorWindow(props: { starting: boolean }) {
   useShortcuts(EDITOR_WINDOW_KEYS);

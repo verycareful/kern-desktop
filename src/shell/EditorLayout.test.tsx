@@ -57,6 +57,7 @@ vi.mock("../files/sort-async", async () => {
 });
 
 import { actions, currentContext, getAction, isEnabled, runAction } from "../keys/actions";
+import { useTreeHover } from "../files/tree-hover";
 import { useTreeMenu } from "../files/tree-menu-store";
 import { DEFAULT_TREE_SORT, useTreeSort } from "../files/tree-sort";
 import { useOps } from "../ops/useOps";
@@ -64,6 +65,7 @@ import { useLayout } from "../store/layout";
 import { usePanelsStore } from "../store/panels";
 import { useTabs } from "../store/tabs";
 import { useViewSettings } from "../files/view-settings";
+import { EDITOR_WINDOW_KEYS } from "./EditorWindow";
 import MainWindow from "./MainWindow";
 import { switchLayout } from "./layout-switch";
 import { EMPTY_PRUNE } from "./test-pinned-recent";
@@ -87,6 +89,7 @@ beforeEach(() => {
   useLayout.getState().reset();
   useTreeMenu.getState().setCurrent(null);
   useTreeSort.setState({ sort: DEFAULT_TREE_SORT });
+  useTreeHover.getState().set(null);
   useOps.setState({ notice: null });
   useTabs.setState({ tabs: [], activeId: null });
   usePanelsStore.setState({ leftSlid: false, rightSlid: false });
@@ -723,4 +726,60 @@ test("the_tree_sort_button_opens_a_menu_that_orders_the_tree_and_marks_the_choic
   );
   fireEvent.click(within(menu).getByRole("menuitemradio", { name: "Smallest first" }));
   await waitFor(() => expect(treeNames()).toEqual(["work", "apple.txt", "zebra.txt"]));
+});
+
+test("f4_opens_a_terminal_in_the_tree_root_with_no_tab_open_and_in_the_pointed_row_when_there_is_one", async () => {
+  ipc.openTerminal.mockResolvedValue(undefined);
+  await editorWindow();
+  // Nothing on the right: the welcome pane.
+  expect(screen.getByTestId("welcome-pane")).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "F4" });
+  await waitFor(() => expect(ipc.openTerminal).toHaveBeenCalledExactlyOnceWith(HOME, undefined));
+
+  // The pointer over a folder of the tree: that folder.
+  const work = await screen.findByRole("treeitem", { name: /^work/ });
+  fireEvent.pointerEnter(work);
+  fireEvent.keyDown(window, { key: "F4" });
+  await waitFor(() => expect(ipc.openTerminal).toHaveBeenCalledTimes(2));
+  expect(ipc.openTerminal).toHaveBeenLastCalledWith(p("/home/a/work"), undefined);
+
+  // Over a file: the folder it is in, here the root.
+  fireEvent.pointerLeave(work);
+  fireEvent.pointerEnter(screen.getByRole("treeitem", { name: /^notes\.md/ }));
+  fireEvent.keyDown(window, { key: "F4" });
+  await waitFor(() => expect(ipc.openTerminal).toHaveBeenCalledTimes(3));
+  expect(ipc.openTerminal).toHaveBeenLastCalledWith(HOME, undefined);
+
+  // The pointer gone from the tree: the root again.
+  fireEvent.pointerLeave(screen.getByTestId("folder-tree"));
+  fireEvent.keyDown(window, { key: "F4" });
+  await waitFor(() => expect(ipc.openTerminal).toHaveBeenCalledTimes(4));
+  expect(ipc.openTerminal).toHaveBeenLastCalledWith(HOME, undefined);
+});
+
+test("f4_works_while_the_keyboard_is_in_a_text_field", async () => {
+  ipc.openTerminal.mockResolvedValue(undefined);
+  useTabs.getState().openDoc(p("/home/a/notes.md"));
+  await editorWindow();
+  const field = document.createElement("textarea");
+  document.body.append(field);
+  field.focus();
+  fireEvent.keyDown(field, { key: "F4" });
+  await waitFor(() => expect(ipc.openTerminal).toHaveBeenCalledExactlyOnceWith(HOME, undefined));
+  field.remove();
+});
+
+test("f4_does_nothing_in_the_file_manager_layout_where_the_folder_view_owns_it", async () => {
+  ipc.openTerminal.mockResolvedValue(undefined);
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, default_layout: "file_manager" });
+  useLayout.getState().setLayout("file_manager");
+  const view = render(<MainWindow />);
+  await screen.findByTestId("main-grid");
+  expect(getAction("editor.terminal").keys).toEqual(["F4"]);
+  expect(isEnabled(getAction("editor.terminal"), currentContext())).toBe(false);
+  view.unmount();
+});
+
+test("an_editor_window_answers_f4", () => {
+  expect(EDITOR_WINDOW_KEYS(getAction("editor.terminal"))).toBe(true);
 });

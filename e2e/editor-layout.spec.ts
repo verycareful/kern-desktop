@@ -176,6 +176,39 @@ test("the_tree_buttons_share_the_row_of_the_name_in_a_wide_column", async ({ pag
   expect(widths.every((w) => w === 26)).toBe(true);
 });
 
+test("f4_opens_a_terminal_in_the_tree_root_or_in_the_row_the_pointer_is_over", async ({
+  page,
+  mockTauri,
+  invokeCalls,
+}) => {
+  await mockTauri({
+    ...COMMON,
+    "plugin:kernkraft-tauri|list_dir": SMALL_TREE,
+    "plugin:kernkraft-tauri|open_terminal": null,
+  });
+  await page.goto("/");
+  await expect(page.getByRole("treeitem")).toHaveCount(4);
+  const terminals = async () =>
+    (await invokeCalls())
+      .filter((c) => c.cmd.endsWith("open_terminal"))
+      .map((c) => (c.args as { dir: { v: string } }).dir.v);
+
+  // No document and the pointer off the tree: the root.
+  await page.mouse.move(700, 400);
+  await page.keyboard.press("F4");
+  await expect.poll(terminals).toEqual(["/home/tester"]);
+
+  // The pointer over a folder row: that folder.
+  await page.getByRole("treeitem", { name: /^docs/ }).hover();
+  await page.keyboard.press("F4");
+  await expect.poll(terminals).toEqual(["/home/tester", "/home/tester/docs"]);
+
+  // Over a file row: its folder.
+  await page.getByRole("treeitem", { name: /^readme\.md/ }).hover();
+  await page.keyboard.press("F4");
+  await expect.poll(terminals).toEqual(["/home/tester", "/home/tester/docs", "/home/tester"]);
+});
+
 test("the_tree_sort_menu_orders_the_tree_in_the_browser", async ({ page, mockTauri }) => {
   await mockTauri({
     ...COMMON,

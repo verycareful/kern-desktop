@@ -81,7 +81,8 @@ Kern Desktop is in alpha.
   folder tree beside your documents. The tree's menu carries the file
   operations, and its heading holds search, the terminal, hidden files, the
   sort order (name, size, date modified or type, either way round) and
-  collapse or expand all. Each folder has one editor window:
+  collapse or expand all. F4 opens a terminal in the tree's folder, or in the
+  folder of the row the pointer is over. Each folder has one editor window:
   open the folder again and that window comes forward. A file opened from
   inside an editor window moves into it, from whichever window held it. A file
   opened any other way (from a folder, the command line or another app) brings

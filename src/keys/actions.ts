@@ -37,6 +37,7 @@ import { closeTab } from "../shell/useCloseGuard";
 import { openAsEditor } from "../shell/layout-switch";
 import { isEditorLayout, useLayout } from "../store/layout";
 import { treeMenuFolder, useTreeMenu } from "../files/tree-menu-store";
+import { terminalFolder } from "../files/tree-hover";
 import { openFiles, openFolderTab, showFileInFolder } from "../files/open-entries";
 import { isFolder } from "../files/file-type";
 import { useUserDirs } from "../shell/user-dirs-store";
@@ -689,6 +690,12 @@ const treeFolderEntry = () => {
 };
 const treeOps = () => useTreeMenu.getState().ops;
 const treeNote = (text: string) => treeOps()?.note(text);
+/** Says `text` where the tree shows its problems, else in the status bar (the tree may not be on show). */
+const editorNote = (text: string) => {
+  const ops = treeOps();
+  if (ops) ops.note(text);
+  else useOps.getState().notify(text);
+};
 
 /** A tree action that runs one of the tree's file operations. */
 function treeOp(
@@ -780,6 +787,24 @@ const treeActions: Action[] = [
     run: () => {
       const dir = treeMenuFolder();
       if (dir) void openTerminalIn(dir, treeNote);
+    },
+  },
+  // F4 is Dolphin's key for the terminal. The editor layout has no folder view for the folder
+  // action to ask, so this one takes the folder from the tree: the row under the pointer, else
+  // the root. It is "tree" so that it applies with no tab open and does not share F4 with the
+  // folder action; the tree heading has a button for it.
+  {
+    id: "editor.terminal",
+    menu: false,
+    label: "Open terminal here",
+    area: "Open",
+    keys: ["F4"],
+    when: "tree",
+    inEditable: true,
+    enabled: () => (isEditorLayout() || isEditorWindow()) && terminalFolder() !== null,
+    run: () => {
+      const dir = terminalFolder();
+      if (dir) void openTerminalIn(dir, editorNote);
     },
   },
   treeOp(
