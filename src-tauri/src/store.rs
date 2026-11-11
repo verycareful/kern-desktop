@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-//! Persistent settings, pins and recents.
+//! Persistent settings, binds, pins and recents.
 //!
-//! Six JSON files: `settings.json` under `$XDG_CONFIG_HOME/kern/`, and
+//! Seven JSON files: `settings.json` and `binds.json` (the keys and mouse buttons bound to
+//! actions) under `$XDG_CONFIG_HOME/kern/`, and
 //! `pins.json`, `recents.json`, `layout.json` (how the main window is laid
 //! out: its column widths and tree root), `session.json` (the windows open
 //! and their tabs) and `closed-session.json` (the windows of the last run,
@@ -33,7 +34,7 @@
 //!
 //! Paths are stored as [`WirePath`], so a name that is not UTF-8 survives.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::{self, ErrorKind};
 use std::marker::PhantomData;
@@ -320,6 +321,45 @@ pub struct Recents {
     pub extra: Map<String, Value>,
 }
 
+/// `binds.json`: the keys and mouse buttons the user has bound to actions, apart from the settings so
+/// that clearing one leaves the other.
+///
+/// `binds` maps an action id to the binds that trigger it, replacing the action's defaults. An
+/// action with no entry keeps its defaults; an empty list is an action deliberately left unbound.
+/// The text of a bind and what an id names are the interface's: a bind this file holds for an
+/// action that no longer exists is kept as it is.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Binds {
+    pub binds: BTreeMap<String, Vec<String>>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+/// A change to the binds: an action id to its new list of binds, or to `None` to give the action
+/// back its defaults.
+pub type BindsPatch = BTreeMap<String, Option<Vec<String>>>;
+
+/// An action id that is not empty, and binds that are not empty and appear once each.
+fn check_binds_patch(patch: &BindsPatch) -> Result<(), WireError> {
+    for (id, binds) in patch {
+        if id.is_empty() {
+            return Err(invalid("binds", "an action id is empty"));
+        }
+        let Some(binds) = binds else { continue };
+        let mut seen = HashSet::new();
+        for bind in binds {
+            if bind.is_empty() {
+                return Err(invalid("binds", format!("{id}: a bind is empty")));
+            }
+            if !seen.insert(bind) {
+                return Err(invalid("binds", format!("{id}: {bind} is listed twice")));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// A tab of a window kept in `session.json`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -556,6 +596,7 @@ macro_rules! stored_by_serde {
 }
 stored_by_serde!(Pins);
 stored_by_serde!(Recents);
+stored_by_serde!(Binds);
 
 /// Reads `key` of `obj` into `slot`. A value that does not parse, or that
 /// `check` refuses, is a problem: the raw value goes to `keep` and `slot`
@@ -1119,6 +1160,7 @@ pub struct Store {
     settings: JsonFile<Settings>,
     pins: JsonFile<Pins>,
     recents: JsonFile<Recents>,
+    binds: JsonFile<Binds>,
     layout: JsonFile<WindowLayout>,
     session: JsonFile<Session>,
     closed: JsonFile<Session>,
@@ -1132,6 +1174,7 @@ impl Store {
             settings: JsonFile::new(config_dir.join("settings.json")),
             pins: JsonFile::new(state_dir.join("pins.json")),
             recents: JsonFile::new(state_dir.join("recents.json")),
+            binds: JsonFile::new(config_dir.join("binds.json")),
             layout: JsonFile::new(state_dir.join("layout.json")),
             session: JsonFile::new(state_dir.join("session.json")),
             closed: JsonFile::new(state_dir.join("closed-session.json")),
@@ -1449,6 +1492,42 @@ impl Store {
             let changed = !recents.entries.is_empty();
             recents.entries.clear();
             Ok(changed)
+        })
+    }
+
+    pub fn binds_get(&self) -> Result<Loaded<Binds>, WireError> {
+        self.binds.get()
+    }
+
+    /// Applies `patch` to the binds: an action named with a list gets exactly those binds, one
+    /// named with `None` goes back to its defaults, the others are untouched. An empty action id, an
+    /// empty bind or a bind listed twice for one action refuses the whole patch and writes nothing.
+    pub fn binds_set(&self, patch: BindsPatch) -> Result<Loaded<Binds>, WireError> {
+        check_binds_patch(&patch)?;
+        self.binds.update(|current| {
+            let mut changed = false;
+            for (id, binds) in patch {
+                changed |= match binds {
+                    Some(list) => current.binds.insert(id, list.clone()) != Some(list),
+                    None => current.binds.remove(&id).is_some(),
+                };
+            }
+            Ok(changed)
+        })
+    }
+
+    /// Deletes `binds.json`, so every action is back on its defaults. No file changes nothing.
+    pub fn binds_clear(&self) -> Result<Loaded<Binds>, WireError> {
+        let _held = lock(&self.binds.guard);
+        let existed = match fs::remove_file(&self.binds.path) {
+            Ok(()) => true,
+            Err(e) if e.kind() == ErrorKind::NotFound => false,
+            Err(e) => return Err(io_err(&self.binds.path, &e)),
+        };
+        Ok(Loaded {
+            value: Binds::default(),
+            corrupt: Vec::new(),
+            changed: existed,
         })
     }
 

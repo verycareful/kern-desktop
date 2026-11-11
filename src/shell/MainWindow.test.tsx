@@ -38,6 +38,7 @@ vi.mock("../ipc", async (orig) => ({
     return Promise.resolve();
   },
   settingsGet: async () => (await import("../settings/test-settings")).SETTINGS,
+  bindsGet: () => Promise.resolve({ binds: {} }),
   layoutGet: async () => (await import("../settings/test-settings")).NO_LAYOUT,
   defaultFmStatus: () => Promise.resolve({ is_default: true, current: null }),
   fm1Status: () => Promise.resolve({ owned: true, owner: null, reason: null }),
@@ -286,10 +287,9 @@ test("close_button_and_middle_click_close_their_tab", () => {
   expect(screen.getAllByRole("tab")).toHaveLength(2);
   // Middle click on a background tab closes it and leaves the active tab alone.
   const active = useTabs.getState().activeId;
-  fireEvent(
-    screen.getByRole("tab", { name: "b" }),
-    new MouseEvent("auxclick", { bubbles: true, button: 1 })
-  );
+  const tab = screen.getByRole("tab", { name: "b" });
+  fireEvent.mouseDown(tab, { button: 1 });
+  fireEvent.mouseUp(tab, { button: 1 });
   expect(screen.getAllByRole("tab")).toHaveLength(1);
   expect(useTabs.getState().activeId).toBe(active);
 });

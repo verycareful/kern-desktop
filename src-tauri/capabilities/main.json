@@ -7,6 +7,7 @@
     "core:default",
     "kernkraft-tauri:default",
     "allow-settings-get",
+    "allow-binds-get",
     "allow-settings-set",
     "allow-layout-get",
     "allow-layout-set",

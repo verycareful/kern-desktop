@@ -36,6 +36,7 @@ vi.mock("./ipc", async () => ({
   ...(await import("./ipc/wire-path")),
   EVENT_THEME_CHANGED: "kernkraft://theme-changed",
   EVENT_SETTINGS_CHANGED: "kern://settings-changed",
+  EVENT_BINDS_CHANGED: "kern://binds-changed",
   EVENT_DIR_CHANGED: "kernkraft://dir-changed",
   EVENT_DIR_GONE: "kernkraft://dir-gone",
   EVENT_VOLUMES_CHANGED: "kernkraft://volumes-changed",
@@ -76,6 +77,8 @@ vi.mock("./ipc", async () => ({
   EVENT_ADOPT_CANCELLED: "kern://adopt-cancelled",
   EVENT_CLOSE_REQUESTED: "kern://close-requested",
   settingsGet,
+  // No binds of the user's: every action keeps its keys.
+  bindsGet: () => Promise.resolve({ binds: {} }),
   themeGet,
   userDirs,
   volumesList: () => Promise.resolve({ mounted: [], unmounted: [], problems: [] }),

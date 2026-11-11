@@ -4,6 +4,7 @@ import { Check } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDocStatus } from "../editor/doc-status";
 import { currentContext, isEnabled, runAction, type Action } from "./actions";
+import { bindLabel, bindsOf, useBinds } from "./binds";
 import { clampToViewport } from "./menu-position";
 import "./action-menu.css";
 
@@ -23,6 +24,8 @@ export function ActionMenu(props: {
   onClose(): void;
 }) {
   const { sections, targetId } = props;
+  // The bind each entry shows is the user's, so the menu redraws when they change them.
+  const overrides = useBinds((s) => s.overrides);
   // The caller may pass a new callback on every render; the listeners below must not re-run for that.
   const onClose = useRef(props.onClose);
   useLayoutEffect(() => {
@@ -109,7 +112,9 @@ export function ActionMenu(props: {
                   }}
                 >
                   <span>{a.menuLabel?.() ?? a.label}</span>
-                  {a.keys[0] && <kbd>{a.keys[0]}</kbd>}
+                  {bindLabel(bindsOf(a, overrides)) && (
+                    <kbd>{bindLabel(bindsOf(a, overrides))}</kbd>
+                  )}
                   {a.checked?.() && <Check size={14} strokeWidth={2} aria-hidden />}
                 </button>
               </li>

@@ -3,7 +3,8 @@
 import { fireEvent, render, within } from "@testing-library/react";
 import type { WirePath } from "../ipc";
 import { activeTab, useTabs } from "../store/tabs";
-import { actions, candidateKeys, eventToKey, findDuplicateBindings } from "./actions";
+import { actions, candidateKeys, eventToKey, findDuplicateBindings, getAction } from "./actions";
+import { useBinds } from "./binds";
 import { useShortcuts } from "./useShortcuts";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
@@ -27,7 +28,10 @@ function Host() {
   );
 }
 
-beforeEach(() => useTabs.setState({ tabs: [], activeId: null }));
+beforeEach(() => {
+  useTabs.setState({ tabs: [], activeId: null });
+  useBinds.setState({ loaded: true, overrides: {}, error: null });
+});
 
 test("every_action_has_menu_label", () => {
   const ids = new Set<string>();
@@ -289,4 +293,174 @@ test("ctrl_c_with_words_selected_in_a_message_copies_the_words_and_not_the_files
   } finally {
     window.getSelection()!.removeAllRanges();
   }
+});
+
+// The binds the user sets (binds.ts) replace an action's default keys, and a mouse button is a
+// bind like a key.
+
+/** A tab strip as TabBar draws it: a `.kern-tab` holding the button that carries the tab id. */
+function Strip() {
+  useShortcuts();
+  return (
+    <div>
+      {useTabs.getState().tabs.map((t) => (
+        <div key={t.id} className="kern-tab" data-testid={`strip-${t.id}`}>
+          <button type="button" data-tab-id={t.id}>
+            {t.id}
+          </button>
+        </div>
+      ))}
+      <input aria-label="field" />
+      <p data-testid="empty">nothing</p>
+    </div>
+  );
+}
+
+const mouse = (target: Element | Window, button: number, init: MouseEventInit = {}) => {
+  const down = !fireEvent.mouseDown(target, { button, ...init });
+  fireEvent.mouseUp(target, { button, ...init });
+  return down;
+};
+
+test("a_key_the_user_set_replaces_the_default_and_the_default_stops_working", () => {
+  useBinds.setState({ overrides: { "tab.close": ["F9"] } });
+  render(<Host />);
+  useTabs.getState().openFolder(p("/a"), false);
+  useTabs.getState().openFolder(p("/b"), true);
+  fireEvent.keyDown(window, { key: "w", ctrlKey: true });
+  expect(useTabs.getState().tabs).toHaveLength(2);
+  fireEvent.keyDown(window, { key: "F9" });
+  expect(useTabs.getState().tabs).toHaveLength(1);
+});
+
+test("an_action_with_an_empty_list_has_no_key_and_the_key_is_not_claimed", () => {
+  useBinds.setState({ overrides: { "tab.close": [] } });
+  render(<Host />);
+  useTabs.getState().openFolder(p("/a"), false);
+  expect(fireEvent.keyDown(window, { key: "w", ctrlKey: true })).toBe(true);
+  expect(useTabs.getState().tabs).toHaveLength(1);
+});
+
+test("a_key_taken_from_one_action_for_another_runs_the_other", () => {
+  // Ctrl+W moved to Next tab: the user may give any action any key.
+  useBinds.setState({ overrides: { "tab.close": [], "tab.next": ["Ctrl+W"] } });
+  render(<Host />);
+  useTabs.getState().openFolder(p("/a"), false);
+  useTabs.getState().openFolder(p("/b"), true);
+  const [a] = useTabs.getState().tabs.map((t) => t.id);
+  fireEvent.keyDown(window, { key: "w", ctrlKey: true });
+  expect(useTabs.getState().tabs).toHaveLength(2);
+  expect(useTabs.getState().activeId).toBe(a);
+});
+
+test("a_mouse_button_the_user_bound_runs_its_action_anywhere_in_the_window", () => {
+  useBinds.setState({ overrides: { "tab.next": ["MiddleClick"] } });
+  useTabs.getState().openFolder(p("/a"), false);
+  useTabs.getState().openFolder(p("/b"), true);
+  const [a] = useTabs.getState().tabs.map((t) => t.id);
+  const { getByTestId } = render(<Strip />);
+  mouse(getByTestId("empty"), 1);
+  expect(useTabs.getState().activeId).toBe(a);
+});
+
+test("a_modifier_is_part_of_a_mouse_bind", () => {
+  useBinds.setState({ overrides: { "tab.next": ["Ctrl+MouseBack"] } });
+  useTabs.getState().openFolder(p("/a"), false);
+  useTabs.getState().openFolder(p("/b"), true);
+  const [a, b] = useTabs.getState().tabs.map((t) => t.id);
+  const { getByTestId } = render(<Strip />);
+  mouse(getByTestId("empty"), 3);
+  expect(useTabs.getState().activeId).toBe(b);
+  mouse(getByTestId("empty"), 3, { ctrlKey: true });
+  expect(useTabs.getState().activeId).toBe(a);
+  // A bind with more modifiers than the click is not the click's.
+  mouse(getByTestId("empty"), 3, { ctrlKey: true, shiftKey: true });
+  expect(useTabs.getState().activeId).toBe(a);
+});
+
+test("a_bound_mouse_press_is_claimed_so_the_webview_does_not_also_act_on_it", () => {
+  useBinds.setState({ overrides: { "tab.next": ["MiddleClick"] } });
+  useTabs.getState().openFolder(p("/a"), false);
+  const { getByTestId } = render(<Strip />);
+  expect(mouse(getByTestId("empty"), 1)).toBe(true);
+  // A button nothing is bound to is left alone.
+  expect(mouse(getByTestId("empty"), 4)).toBe(false);
+});
+
+test("a_mouse_bind_does_not_fire_in_a_text_field_where_the_middle_button_pastes", () => {
+  useBinds.setState({ overrides: { "tab.next": ["MiddleClick"] } });
+  useTabs.getState().openFolder(p("/a"), false);
+  useTabs.getState().openFolder(p("/b"), true);
+  const [, b] = useTabs.getState().tabs.map((t) => t.id);
+  const { getByLabelText } = render(<Strip />);
+  expect(mouse(getByLabelText("field"), 1)).toBe(false);
+  expect(useTabs.getState().activeId).toBe(b);
+});
+
+test("a_bare_left_or_right_click_stored_as_a_bind_is_never_matched", () => {
+  useBinds.setState({ overrides: { "tab.next": ["Click"], "tab.prev": ["RightClick"] } });
+  useTabs.getState().openFolder(p("/a"), false);
+  useTabs.getState().openFolder(p("/b"), true);
+  const [, b] = useTabs.getState().tabs.map((t) => t.id);
+  const { getByTestId } = render(<Strip />);
+  mouse(getByTestId("empty"), 0);
+  mouse(getByTestId("empty"), 2);
+  expect(useTabs.getState().activeId).toBe(b);
+});
+
+test("a_middle_click_on_a_tab_closes_that_tab_by_default_and_on_empty_space_does_nothing", () => {
+  useTabs.getState().openFolder(p("/a"), false);
+  useTabs.getState().openFolder(p("/b"), true);
+  const [a, b] = useTabs.getState().tabs.map((t) => t.id);
+  const { getByTestId } = render(<Strip />);
+  mouse(getByTestId("empty"), 1);
+  expect(useTabs.getState().tabs).toHaveLength(2);
+  // The tab under the pointer, not the one in front.
+  mouse(getByTestId(`strip-${a}`), 1);
+  expect(useTabs.getState().tabs.map((t) => t.id)).toEqual([b]);
+});
+
+test("close_tab_moved_to_another_mouse_button_still_acts_only_on_the_tab_under_it", () => {
+  useBinds.setState({ overrides: { "tab.close": ["Ctrl+MiddleClick"] } });
+  useTabs.getState().openFolder(p("/a"), false);
+  useTabs.getState().openFolder(p("/b"), true);
+  const [a, b] = useTabs.getState().tabs.map((t) => t.id);
+  const { getByTestId } = render(<Strip />);
+  // The default button no longer closes it; the new one does, and only over a tab.
+  mouse(getByTestId(`strip-${a}`), 1);
+  expect(useTabs.getState().tabs).toHaveLength(2);
+  mouse(getByTestId("empty"), 1, { ctrlKey: true });
+  expect(useTabs.getState().tabs).toHaveLength(2);
+  mouse(getByTestId(`strip-${a}`), 1, { ctrlKey: true });
+  expect(useTabs.getState().tabs.map((t) => t.id)).toEqual([b]);
+});
+
+test("a_button_shared_by_actions_of_different_tab_kinds_runs_the_one_that_applies", () => {
+  // Folder refresh comes before Save in the table, and a document tab is in front.
+  useBinds.setState({
+    overrides: { "folder.refresh": ["MouseForward"], "doc.save": ["MouseForward"] },
+  });
+  const refresh = vi.spyOn(getAction("folder.refresh"), "run").mockImplementation(() => undefined);
+  const save = vi.spyOn(getAction("doc.save"), "run").mockImplementation(() => undefined);
+  vi.spyOn(getAction("doc.save"), "enabled").mockReturnValue(true);
+  vi.spyOn(getAction("folder.refresh"), "enabled").mockReturnValue(true);
+  useTabs.getState().openDoc(p("/a/n.md"));
+  const { getByTestId } = render(<Strip />);
+  mouse(getByTestId("empty"), 4);
+  expect(save).toHaveBeenCalledOnce();
+  expect(refresh).not.toHaveBeenCalled();
+  vi.restoreAllMocks();
+});
+
+test("the_context_menu_of_a_right_click_bound_with_a_modifier_is_suppressed", () => {
+  useBinds.setState({ overrides: { "tab.next": ["Shift+RightClick"] } });
+  useTabs.getState().openFolder(p("/a"), false);
+  const { getByTestId } = render(<Strip />);
+  const seen = vi.fn();
+  getByTestId("empty").addEventListener("contextmenu", seen);
+  fireEvent.contextMenu(getByTestId("empty"), { button: 2, shiftKey: true });
+  expect(seen).not.toHaveBeenCalled();
+  // Without the modifier the menu is the page's own.
+  fireEvent.contextMenu(getByTestId("empty"), { button: 2 });
+  expect(seen).toHaveBeenCalledOnce();
 });

@@ -37,6 +37,7 @@ const ipc = vi.hoisted(() => ({
   unwatchDir: vi.fn(),
   on: vi.fn(),
   settingsGet: vi.fn(),
+  bindsGet: vi.fn(),
   settingsSet: vi.fn(),
   openPaths: vi.fn(),
   thumbRequest: vi.fn(),
@@ -157,6 +158,7 @@ beforeEach(() => {
   ipc.watchDir.mockResolvedValue(undefined);
   ipc.unwatchDir.mockResolvedValue(undefined);
   ipc.settingsGet.mockResolvedValue(SETTINGS);
+  ipc.bindsGet.mockResolvedValue({ binds: {} });
   ipc.settingsSet.mockImplementation((patch: Partial<Settings>) =>
     Promise.resolve({ ...SETTINGS, ...patch })
   );

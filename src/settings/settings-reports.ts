@@ -9,10 +9,13 @@ import { SETTINGS_FILE } from "./settings-draft";
 /** The store file the window's layout is kept in (store.rs). */
 export const LAYOUT_FILE = "layout.json";
 
+/** The store file the user's key and mouse binds are kept in (store.rs). */
+export const BINDS_FILE = "binds.json";
+
 /**
- * Says in the status bar when settings.json or layout.json could not be read. Kern then runs
- * on defaults, which the user would otherwise only find out about in the
- * Settings window. The reports are followed by Pinned and Recent for the whole
+ * Says in the status bar when settings.json, layout.json or binds.json could not be read. Kern
+ * then runs on defaults, which the user would otherwise only find out about in the Settings
+ * window. The reports are followed by Pinned and Recent for the whole
  * life of the main window (MainWindow.tsx), so this only reads them.
  */
 export function useSettingsReportNotice(): void {
@@ -21,7 +24,7 @@ export function useSettingsReportNotice(): void {
     const say = (reports: CorruptReport[]) => {
       const fresh = reports
         .slice(seen)
-        .filter((r) => r.file === SETTINGS_FILE || r.file === LAYOUT_FILE);
+        .filter((r) => r.file === SETTINGS_FILE || r.file === LAYOUT_FILE || r.file === BINDS_FILE);
       seen = reports.length;
       for (const r of fresh) useOps.getState().notify(corruptText(r));
     };

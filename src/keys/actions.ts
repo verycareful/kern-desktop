@@ -41,6 +41,7 @@ import { terminalFolder } from "../files/tree-hover";
 import { openFiles, openFolderTab, showFileInFolder } from "../files/open-entries";
 import { isFolder } from "../files/file-type";
 import { useUserDirs } from "../shell/user-dirs-store";
+import { withModifiers } from "./binds";
 
 // The single table of user-visible actions. Shortcuts (useShortcuts), the
 // main menu and the tab context menu (ActionMenu) all read it, so keyboard and
@@ -108,6 +109,11 @@ export type Action = {
   inEditable?: boolean;
   /** "view": the shortcut acts only while the keyboard is in the folder view or the tab row (keys/file-keys.ts). Menus are not limited. */
   scope?: "view";
+  /**
+   * "tab": the action's mouse binds answer only over a tab of the tab strip, and aim it at that
+   * tab, not the one in front (Close tab).
+   */
+  mouseOn?: "tab";
   /**
    * Present for an action that is one choice among several (a sort field): a menu draws it as a
    * radio item and marks it while this is true.
@@ -192,14 +198,16 @@ async function openNewTabFolder(): Promise<void> {
 export const actions: Action[] = [
   // Ctrl+W and Ctrl+Tab are the tab keys of browsers and editors. Both also work inside an editor, where
   // focus sits in an editable field. Shift+Tab reversal is the usual partner of Ctrl+Tab.
-  // Every way to close a tab (shortcut, x button, middle click, menus) runs this one action.
+  // Every way to close a tab (shortcut, x button, middle click, menus) runs this one action. The middle
+  // click is a default bind like the key: the user can move it to another button or take it away.
   // A document that would lose something (unsaved changes, a file deleted on disk) asks first
   // (shell/useCloseGuard.ts).
   {
     id: "tab.close",
     label: "Close tab",
     area: "Tabs",
-    keys: ["Ctrl+W"],
+    keys: ["Ctrl+W", "MiddleClick"],
+    mouseOn: "tab",
     when: "any",
     inEditable: true,
     enabled: (c) => c.target !== null,
@@ -1510,11 +1518,7 @@ export function findDuplicateBindings(list: Action[] = actions): string[] {
 
 type KeyEvent = Pick<KeyboardEvent, "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">;
 
-function format(e: KeyEvent, key: string): string {
-  return [e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Meta", key]
-    .filter(Boolean)
-    .join("+");
-}
+const format = withModifiers;
 
 /** The key string for a keyboard event, in the table's format. */
 export function eventToKey(e: KeyEvent): string {

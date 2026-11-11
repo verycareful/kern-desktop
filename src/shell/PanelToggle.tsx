@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { Folder, Menu } from "lucide-react";
 import { currentContext, getAction, runAction } from "../keys/actions";
+import { useBindLabel } from "../keys/binds";
 import { usePanels } from "../store/panels";
 import { useLayout } from "../store/layout";
 
@@ -23,7 +24,7 @@ export function PanelToggle(props: { side: "left" | "right" }) {
       : editorLayout
         ? "Folder column"
         : "File manager panel";
-  const key = action.keys[0];
+  const key = useBindLabel(action);
   return (
     <button
       type="button"

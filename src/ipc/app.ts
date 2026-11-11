@@ -131,6 +131,20 @@ export const unpin = (path: WirePath) => invoke<Pins>("unpin", { path });
 export const pinsReorder = (paths: WirePath[]) => invoke<Pins>("pins_reorder", { paths });
 /** Unpins everything; only the Settings window may. */
 export const pinsClear = () => invoke<Pins>("pins_clear");
+/** The keys and mouse buttons the user bound to actions (store.rs Binds, binds.json). */
+export interface Binds {
+  /** An action id to its binds, replacing the action's defaults; an empty list leaves it unbound. */
+  binds: Record<string, string[]>;
+}
+
+/** An action id to its new list of binds, or null to give the action back its defaults. */
+export type BindsPatch = Record<string, string[] | null>;
+
+export const bindsGet = () => invoke<Binds>("binds_get");
+/** Sets the binds of some actions and resets others; only the Settings window may. */
+export const bindsSet = (patch: BindsPatch) => invoke<Binds>("binds_set", { patch });
+/** Deletes every bind of the user's; only the Settings window may. */
+export const bindsClear = () => invoke<Binds>("binds_clear");
 export const recentsGet = () => invoke<Recents>("recents_get");
 /** Records `path` as opened now; `asEditor` for a folder open as an editor window. */
 export const recentTouch = (path: WirePath, asEditor = false) =>

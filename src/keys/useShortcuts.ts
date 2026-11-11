@@ -11,6 +11,7 @@ import {
   type Action,
 } from "./actions";
 import { useOps } from "../ops/useOps";
+import { bindsOf, eventToMouseBind, mouseOf, refusedBind, useBindsSync } from "./binds";
 import { inFileKeysArea } from "./file-keys";
 
 /** True when keystrokes in `el` are text input: input, textarea, select or contenteditable. */
@@ -67,16 +68,61 @@ export function wordsSelectedInMessage(): boolean {
   return start != null && start === end;
 }
 
+/** The id of the tab whose strip entry holds `target`, or null (TabBar marks each tab button). */
+function tabUnder(target: EventTarget | null): string | null {
+  if (!(target instanceof Element)) return null;
+  const tab = target.closest(".kern-tab");
+  return tab?.querySelector("[data-tab-id]")?.getAttribute("data-tab-id") ?? null;
+}
+
 /**
- * One window-level keydown listener that looks the key up in the action
- * table. A matched key is claimed (default prevented) even when the action is
- * disabled, so the webview does not also act on it. A key of an action with
- * `scope: "view"` aimed at another pane is not matched: it is that pane's.
- * `allow` limits the actions a window answers to (a document window has no tabs or folders);
- * it is read once, so it must not change.
+ * The action a mouse event triggers, with the context to run it in, or null. The rules are the
+ * keys': the action must apply and `scope: "view"` holds. A field of text keeps its mouse (the middle
+ * button pastes there, a drag selects), whatever `inEditable` says of keys. An action with `mouseOn: "tab"` answers only over a tab, and
+ * is aimed at that tab. A plain left or right click is never matched.
+ */
+function mouseHit(
+  e: MouseEvent,
+  allow: ((a: Action) => boolean) | undefined
+): { action: Action; ctx: ReturnType<typeof currentContext> } | null {
+  const bind = eventToMouseBind(e);
+  if (!bind || refusedBind(bind)) return null;
+  if (isEditable(e.target)) return null;
+  const tabId = tabUnder(e.target);
+  for (const a of actions) {
+    if (
+      (allow && !allow(a)) ||
+      !mouseOf(a).includes(bind) ||
+      (a.mouseOn === "tab" && tabId === null) ||
+      (a.scope === "view" && !inFileKeysArea(e.target))
+    ) {
+      continue;
+    }
+    // Actions of different contexts may share a button: the one that applies to this tab runs.
+    const ctx = currentContext(a.mouseOn === "tab" ? (tabId ?? undefined) : undefined, e.shiftKey);
+    if (appliesTo(a, ctx.target)) return { action: a, ctx };
+  }
+  return null;
+}
+
+/**
+ * The window-level listeners that look a key or a mouse button up in the action table (through
+ * the user's binds, binds.ts). A matched key is claimed (default prevented) even when the action is
+ * disabled, so the webview does not also act on it; so is a matched mouse press, and the context
+ * menu of a right click bound with a modifier. A key of an action with `scope: "view"` aimed at
+ * another pane is not matched: it is that pane's. `allow` limits the actions a window answers to
+ * (a document window has no tabs or folders); it is read once, so it must not change.
  */
 export function useShortcuts(allow?: (a: Action) => boolean): void {
+  useBindsSync();
   useEffect(() => {
+    const run = (hit: Action, ctx: ReturnType<typeof currentContext>) => {
+      if (isEnabled(hit, ctx)) runAction(hit, ctx);
+      else {
+        const why = hit.refusal?.(ctx);
+        if (why) useOps.getState().notify(why);
+      }
+    };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented || ownedByControl(e)) return;
       const keys = candidateKeys(e);
@@ -87,21 +133,37 @@ export function useShortcuts(allow?: (a: Action) => boolean): void {
       const hit = actions.find(
         (a) =>
           (!allow || allow(a)) &&
-          a.keys.some((k) => keys.includes(k)) &&
+          bindsOf(a).some((k) => keys.includes(k)) &&
           appliesTo(a, ctx.active) &&
           (!editable || a.inEditable) &&
           (a.scope !== "view" || inFileKeysArea(e.target))
       );
       if (!hit) return;
       e.preventDefault();
-      if (isEnabled(hit, ctx)) runAction(hit, ctx);
-      else {
-        const why = hit.refusal?.(ctx);
-        if (why) useOps.getState().notify(why);
-      }
+      run(hit, ctx);
+    };
+    const onMouseDown = (e: MouseEvent) => {
+      if (mouseHit(e, allow)) e.preventDefault();
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      const hit = mouseHit(e, allow);
+      if (hit) run(hit.action, hit.ctx);
+    };
+    const onContextMenu = (e: MouseEvent) => {
+      if (!mouseHit(e, allow)) return;
+      e.preventDefault();
+      e.stopPropagation();
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("contextmenu", onContextMenu, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("contextmenu", onContextMenu, true);
+    };
     // `allow` is read once, as documented.
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 }

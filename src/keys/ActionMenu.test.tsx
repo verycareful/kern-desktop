@@ -7,6 +7,7 @@ import { actions, type Action } from "./actions";
 import { registerDoc } from "../editor/doc-controller";
 import { useDocStatus } from "../editor/doc-status";
 import { useTabs } from "../store/tabs";
+import { useBinds } from "./binds";
 
 function Host() {
   const [open, setOpen] = useState(false);
@@ -28,6 +29,7 @@ function Host() {
 }
 
 beforeEach(() => {
+  useBinds.setState({ loaded: true, overrides: {}, error: null });
   useTabs.setState({ tabs: [], activeId: null });
   useTabs.getState().openFolder({ k: "Utf8", v: "/a" }, false);
   useTabs.getState().openFolder({ k: "Utf8", v: "/b" }, true);
@@ -137,4 +139,17 @@ test("an_action_that_is_a_choice_is_a_radio_item_marked_when_chosen", () => {
   expect(two.querySelector("svg")).toBeNull();
   // An action that is not a choice stays a plain item.
   expect(screen.getByRole("menuitem", { name: /Close tab/ })).not.toHaveAttribute("aria-checked");
+});
+
+test("an_entry_shows_the_bind_the_user_set_and_a_mouse_button_when_it_has_no_key", () => {
+  openMenu();
+  const close = () => screen.getByText("Close tab").closest("button")!;
+  expect(close().querySelector("kbd")?.textContent).toBe("Ctrl+W");
+  // Changed while the menu is open: it redraws.
+  act(() => useBinds.setState({ overrides: { "tab.close": ["F9", "MiddleClick"] } }));
+  expect(close().querySelector("kbd")?.textContent).toBe("F9");
+  act(() => useBinds.setState({ overrides: { "tab.close": ["MiddleClick"] } }));
+  expect(close().querySelector("kbd")?.textContent).toBe("MiddleClick");
+  act(() => useBinds.setState({ overrides: { "tab.close": [] } }));
+  expect(close().querySelector("kbd")).toBeNull();
 });

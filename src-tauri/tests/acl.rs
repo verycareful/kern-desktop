@@ -44,6 +44,9 @@ fn env(label: &str) -> Env {
             kern_lib::store_cmds::settings_set,
             kern_lib::store_cmds::layout_get,
             kern_lib::store_cmds::layout_set,
+            kern_lib::store_cmds::binds_get,
+            kern_lib::store_cmds::binds_set,
+            kern_lib::store_cmds::binds_clear,
             kern_lib::error_log::log_error,
             kern_lib::windows::open_pending_take,
             kern_lib::identity::file_identity,
@@ -280,7 +283,9 @@ fn granted(name: &str, windows: &str) -> (Vec<String>, Vec<String>) {
 /// Every command of Kern's own that only the main window (or a document window) needs, each
 /// refused to an editor window by its capability: moving a document Home, answering for a
 /// document window, drags out of the file manager, the default file manager, the stored layout.
-const NOT_FOR_EDITORS: [&str; 8] = [
+const NOT_FOR_EDITORS: [&str; 10] = [
+    "binds_set",
+    "binds_clear",
     "detached",
     "refuse_detach",
     "move_doc_to_main",
@@ -624,7 +629,9 @@ fn every_window_that_holds_documents_may_report_a_rename_and_a_stranger_may_not(
 /// the settings' writes and window, the file manager's own commands (drags out, the clipboard of
 /// files, drops, the default file manager), moving a tab to a window or taking a document in, and
 /// the files of other places.
-const NOT_FOR_DOCUMENT_WINDOWS: [&str; 22] = [
+const NOT_FOR_DOCUMENT_WINDOWS: [&str; 24] = [
+    "binds_set",
+    "binds_clear",
     "layout_get",
     "layout_set",
     "settings_set",
@@ -813,6 +820,9 @@ fn the_settings_window_is_granted_what_its_capability_names_and_nothing_of_the_f
     for needed in [
         "settings_get",
         "settings_set",
+        "binds_get",
+        "binds_set",
+        "binds_clear",
         "pins_clear",
         "recents_clear",
         "restart_request",
@@ -881,4 +891,32 @@ fn only_the_settings_window_asks_a_restart_and_every_window_that_may_be_closed_c
         // A window kept open when a restart asked it to close calls the restart off.
         invoke(&e, "restart_abandon", json!({})).unwrap();
     }
+}
+
+#[test]
+fn every_window_reads_the_binds_and_only_the_settings_window_changes_them() {
+    for label in ["main", "editor-1", "doc-1", "settings"] {
+        let e = env(label);
+        assert_eq!(
+            invoke(&e, "binds_get", json!({})).unwrap()["binds"],
+            json!({}),
+            "{label}"
+        );
+    }
+    for label in ["main", "editor-1", "doc-1"] {
+        let e = env(label);
+        for (cmd, args) in [
+            ("binds_set", json!({"patch": {"tab.close": ["Middle"]}})),
+            ("binds_clear", json!({})),
+        ] {
+            let err = invoke(&e, cmd, args).unwrap_err();
+            assert!(
+                err.as_str().unwrap().contains("not allowed"),
+                "{label} {cmd}: {err}"
+            );
+        }
+    }
+    let e = env("stranger");
+    let err = invoke(&e, "binds_get", json!({})).unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
 }

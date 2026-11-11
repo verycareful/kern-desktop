@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "doc",
-  "description": "Capability for the document windows: one document, with its text open, save and check, its folder watched, the theme, the places Save As offers, the name and kind lookups it needs, its registration as open, the hand-over of the document to the main window or an editor window, a pin and a recent entry for it, its tab kept for the next launch (session_put), the report of a rename or move that changes its path (doc_moved), the error log, and the close and restart calls every window has. Never a file operation, the Trash, a mount, a launcher, a default-application setting, the layout, or the main window's own commands",
+  "description": "Capability for the document windows: one document, with its text open, save and check, its folder watched, the theme, the places Save As offers, the name and kind lookups it needs, its registration as open, the hand-over of the document to the main window or an editor window, a pin and a recent entry for it, its tab kept for the next launch (session_put), the binds of keys and mouse buttons (read only), the report of a rename or move that changes its path (doc_moved), the error log, and the close and restart calls every window has. Never a file operation, the Trash, a mount, a launcher, a default-application setting, the layout, or the main window's own commands",
   "windows": ["doc-*"],
   "permissions": [
     "core:default",
@@ -35,6 +35,7 @@
     "allow-restart-abandon",
     "allow-session-put",
     "allow-settings-get",
+    "allow-binds-get",
     "allow-unpin"
   ]
 }

@@ -21,6 +21,7 @@ import {
 } from "../ipc";
 import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
 import { actions, currentContext, getAction, runAction } from "../keys/actions";
+import { bindLabel, bindsOf, useBinds } from "../keys/binds";
 import { needsAttention, type Outcome } from "../ops/outcome";
 import { ReportPanel } from "../ops/ReportPanel";
 import { RepeatFlash } from "../ops/repeat-flash";
@@ -356,15 +357,17 @@ export function TrashView(props: { tab: TrashTab }) {
 
   // The buttons run the same actions as the keys and the menu; whether they can
   // is worked out from this render's state, which the controller sees one effect later.
+  const binds = useBinds((s) => s.overrides);
   const idle = working === null;
   const button = (id: string, Icon: typeof Folder, enabled: boolean) => {
     const action = getAction(id);
+    const bind = bindLabel(bindsOf(action, binds));
     return (
       <button
         type="button"
         className="kern-button kern-trash-button"
         disabled={!enabled}
-        title={action.keys[0] ? `${action.label} (${action.keys[0]})` : action.label}
+        title={bind ? `${action.label} (${bind})` : action.label}
         onClick={() => runAction(action, currentContext(tabId))}
       >
         <Icon size={16} strokeWidth={2} aria-hidden />

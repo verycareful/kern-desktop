@@ -103,7 +103,6 @@ export function TabBar(props: { allow?: (a: Action) => boolean }) {
             <div
               key={t.id}
               className={isActive ? "kern-tab kern-tab-active" : "kern-tab"}
-              onAuxClick={(e) => e.button === 1 && close(t.id)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 setMenu({ kind: "tab", x: e.clientX, y: e.clientY, targetId: t.id });

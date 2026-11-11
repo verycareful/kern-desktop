@@ -41,8 +41,8 @@ export type InvokeCall = { cmd: string; args: Record<string, unknown> };
  * resolves to null and logs a warning.
  */
 export async function installTauriMocks(page: Page, handlers: MockResponses = {}): Promise<void> {
-  // Every window reads its stored layout once; a test that cares overrides it.
-  const literals: Record<string, unknown> = { layout_get: NO_LAYOUT };
+  // Every window reads its stored layout and binds once; a test that cares overrides them.
+  const literals: Record<string, unknown> = { layout_get: NO_LAYOUT, binds_get: { binds: {} } };
   const fns: Record<string, string> = {};
   for (const [name, value] of Object.entries(handlers)) {
     if (typeof value === "function") fns[name] = `(${value.toString()})`;

@@ -15,6 +15,7 @@ import type {
   WireTheme,
 } from "./kernkraft";
 import type {
+  Binds,
   CorruptReport,
   DragFiles,
   DragLeave,
@@ -44,6 +45,7 @@ export const EVENT_VOLUMES_CHANGED = "kernkraft://volumes-changed";
 // Kern's own events (src-tauri: store_cmds.rs, windows.rs, dnd.rs).
 export const EVENT_SETTINGS_CHANGED = "kern://settings-changed";
 export const EVENT_PINS_CHANGED = "kern://pins-changed";
+export const EVENT_BINDS_CHANGED = "kern://binds-changed";
 export const EVENT_RECENTS_CHANGED = "kern://recents-changed";
 export const EVENT_STORE_ERROR = "kern://store-error";
 export const EVENT_DROP = "kern://drop";
@@ -78,6 +80,7 @@ export interface EventPayloads {
   "kern://settings-changed": Settings;
   "kern://pins-changed": Pins;
   "kern://recents-changed": Recents;
+  "kern://binds-changed": Binds;
   "kern://store-error": CorruptReport;
   "kern://drop": DropPayload;
   "kern://drop-refused": DropRefused;

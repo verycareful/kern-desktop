@@ -1464,3 +1464,116 @@ fn an_unknown_time_format_is_refused_and_changes_nothing() {
         TimeFormat::Hour24
     );
 }
+
+fn bind_patch(v: Value) -> std::collections::BTreeMap<String, Option<Vec<String>>> {
+    serde_json::from_value(v).unwrap()
+}
+
+#[test]
+fn binds_are_kept_in_their_own_file_beside_the_settings_and_nothing_is_there_by_default() {
+    let e = env();
+    let s = store(&e);
+    assert!(s.binds_get().unwrap().value.binds.is_empty());
+    assert!(!e.config.join("binds.json").exists());
+    let set = s
+        .binds_set(bind_patch(
+            json!({"tab.close": ["Ctrl+W", "Middle"], "tab.new": []}),
+        ))
+        .unwrap();
+    assert!(set.changed);
+    assert_eq!(set.value.binds["tab.close"], vec!["Ctrl+W", "Middle"]);
+    // An empty list is a deliberate "no bind", and is kept.
+    assert!(set.value.binds["tab.new"].is_empty());
+    assert_eq!(
+        read_json(&e.config.join("binds.json")),
+        json!({"binds": {"tab.close": ["Ctrl+W", "Middle"], "tab.new": []}})
+    );
+    // The settings file was not made, and a second store reads the same.
+    assert!(!e.config.join("settings.json").exists());
+    assert_eq!(store(&e).binds_get().unwrap().value, set.value);
+}
+
+#[test]
+fn a_bind_patch_sets_some_actions_and_returns_others_to_their_defaults_and_says_when_nothing_changed(
+) {
+    let e = env();
+    let s = store(&e);
+    s.binds_set(bind_patch(json!({"a": ["F1"], "b": ["F2"]})))
+        .unwrap();
+    // null takes the override away (the action is back on its defaults); the others stay.
+    let patched = s
+        .binds_set(bind_patch(json!({"a": null, "c": ["F3"]})))
+        .unwrap();
+    assert!(patched.changed);
+    let keys: Vec<&String> = patched.value.binds.keys().collect();
+    assert_eq!(keys, ["b", "c"]);
+    // The same patch again, and a null for an action with no override, change nothing.
+    assert!(
+        !s.binds_set(bind_patch(json!({"c": ["F3"]})))
+            .unwrap()
+            .changed
+    );
+    assert!(!s.binds_set(bind_patch(json!({"a": null}))).unwrap().changed);
+}
+
+#[test]
+fn a_bind_patch_with_one_bad_entry_is_refused_whole_and_writes_nothing() {
+    let e = env();
+    let s = store(&e);
+    s.binds_set(bind_patch(json!({"keep": ["F1"]}))).unwrap();
+    for bad in [
+        json!({"ok": ["F2"], "": ["F3"]}),
+        json!({"ok": ["F2"], "x": [""]}),
+        json!({"ok": ["F2"], "x": ["F3", "F3"]}),
+    ] {
+        let err = s.binds_set(bind_patch(bad)).unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument");
+    }
+    assert_eq!(
+        read_json(&e.config.join("binds.json")),
+        json!({"binds": {"keep": ["F1"]}})
+    );
+}
+
+#[test]
+fn clearing_the_binds_deletes_the_file_and_leaves_the_settings_alone() {
+    let e = env();
+    let s = store(&e);
+    assert!(!s.binds_clear().unwrap().changed);
+    s.settings_set(patch(json!({"word_wrap": true}))).unwrap();
+    s.binds_set(bind_patch(json!({"a": ["F1"]}))).unwrap();
+    let cleared = s.binds_clear().unwrap();
+    assert!(cleared.changed);
+    assert!(cleared.value.binds.is_empty());
+    assert!(!e.config.join("binds.json").exists());
+    assert!(s.settings_get().unwrap().value.word_wrap);
+    assert!(!s.binds_clear().unwrap().changed);
+    // A bind made after the clear is kept: nothing about the clear lingers.
+    s.binds_set(bind_patch(json!({"a": ["F2"]}))).unwrap();
+    assert_eq!(s.binds_get().unwrap().value.binds["a"], vec!["F2"]);
+}
+
+#[test]
+fn a_binds_file_that_is_not_a_binds_document_is_moved_aside_and_reported_and_extra_keys_survive() {
+    let e = env();
+    let s = store(&e);
+    fs::create_dir_all(&e.config).unwrap();
+    fs::write(e.config.join("binds.json"), r#"{"binds": {"a": "F1"}}"#).unwrap();
+    let loaded = s.binds_get().unwrap();
+    assert!(loaded.value.binds.is_empty());
+    assert_eq!(loaded.corrupt.len(), 1);
+    assert_eq!(loaded.corrupt[0].file, "binds.json");
+    assert!(loaded.corrupt[0].moved_to.is_some());
+    assert!(!e.config.join("binds.json").exists());
+
+    fs::write(
+        e.config.join("binds.json"),
+        r#"{"binds": {"a": ["F1"]}, "future": 7}"#,
+    )
+    .unwrap();
+    s.binds_set(bind_patch(json!({"b": ["F2"]}))).unwrap();
+    assert_eq!(
+        read_json(&e.config.join("binds.json")),
+        json!({"binds": {"a": ["F1"], "b": ["F2"]}, "future": 7})
+    );
+}
