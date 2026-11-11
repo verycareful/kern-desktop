@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { parent, type WireEntry, type WirePath } from "../ipc";
 import { useLayout } from "../store/layout";
 import { isFolder } from "./file-type";
+import { useTreeMenu } from "./tree-menu-store";
 
 // The row of the folder tree the pointer is over, so a key can be aimed at it as a right-click
 // is: F4 opens a terminal in that row's folder, and in the tree's root when the pointer is over
@@ -38,4 +39,12 @@ export function terminalFolder(): WirePath | null {
   const root = useLayout.getState().treeRoot;
   if (!entry) return root;
   return (isFolder(entry) ? entry.path : parent(entry.path)) ?? root;
+}
+
+/**
+ * Aims the tree's operations at the row under the pointer, or at the root when the pointer is over
+ * no row, as a right-click does: a mouse button bound to a tree action acts on the row it is pressed over.
+ */
+export function aimTreeAtPointer(): void {
+  useTreeMenu.getState().setCurrent(useTreeHover.getState().entry, useLayout.getState().treeRoot);
 }

@@ -20,6 +20,7 @@ import { showOpenErrors } from "../ops/open-error-store";
 import { cutRowKeys } from "./cut-rows";
 import { openFiles } from "./open-entries";
 import { useTreeHover } from "./tree-hover";
+import { useTreeMenu } from "./tree-menu-store";
 import { useTreeSort } from "./tree-sort";
 import { useSingleClick } from "./view-settings";
 import {
@@ -116,6 +117,14 @@ export function FolderTree(props: {
   }, [at]);
   useEffect(() => () => useTreeHover.getState().set(null), []);
   const scroller = useRef<HTMLDivElement>(null);
+  const hasMenu = props.onContextMenu !== undefined;
+  // While the tree has the keyboard its file operations are aimed at the current row, as a menu
+  // opened on that row aims them (tree-menu-store.ts); no current row stands for the root.
+  const cursorRow = active !== null ? rows[at.get(active) ?? -1] : undefined;
+  const cursorEntry = cursorRow?.kind === "entry" ? cursorRow.entry : null;
+  useEffect(() => {
+    if (focused && hasMenu) useTreeMenu.getState().setCurrent(cursorEntry, root);
+  }, [focused, hasMenu, cursorEntry, root]);
   const typed = useRef({ text: "", at: 0 });
   const activeIndex = active !== null ? (at.get(active) ?? -1) : -1;
   // The row a reveal asked for, made current once its folder has listed it.

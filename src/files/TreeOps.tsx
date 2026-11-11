@@ -28,8 +28,8 @@ export function TreeOps(props: {
   /** Gives the keyboard back to the tree. */
   focusTree(): void;
 }) {
-  const current = useTreeMenu((s) => s.current);
-  // Read again whenever what the menu is aimed at changes.
+  // Drawn again whenever what the operations are aimed at changes: the folder below follows it.
+  useTreeMenu((s) => s.current);
   useTreeMenu((s) => s.root);
   const folder = treeMenuFolder();
   const [renaming, setRenaming] = useState<WireEntry | null>(null);
@@ -38,7 +38,12 @@ export function TreeOps(props: {
   const ops = useFileOps({
     // Unused while `ready` says false: nothing is created or pasted without a folder.
     folder: folder ?? { k: "Utf8", v: "/" },
-    selected: () => (current ? [current] : []),
+    // Read when the operation runs, not when the view drew: a key follows the tree's cursor,
+    // which can have moved since.
+    selected: () => {
+      const now = useTreeMenu.getState().current;
+      return now ? [now] : [];
+    },
     ready: () => folder !== null,
     relist: () => Promise.resolve(true),
     selectKeys: () => undefined,

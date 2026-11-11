@@ -12,7 +12,8 @@ import {
 } from "./actions";
 import { useOps } from "../ops/useOps";
 import { bindsOf, eventToMouseBind, mouseOf, refusedBind, useBindsSync } from "./binds";
-import { inFileKeysArea } from "./file-keys";
+import { inScope } from "./file-keys";
+import { aimTreeAtPointer } from "../files/tree-hover";
 
 /** True when keystrokes in `el` are text input: input, textarea, select or contenteditable. */
 export function isEditable(el: EventTarget | null): boolean {
@@ -77,7 +78,7 @@ function tabUnder(target: EventTarget | null): string | null {
 
 /**
  * The action a mouse event triggers, with the context to run it in, or null. The rules are the
- * keys': the action must apply and `scope: "view"` holds. A field of text keeps its mouse (the middle
+ * keys': the action must apply and `scope` holds. A field of text keeps its mouse (the middle
  * button pastes there, a drag selects), whatever `inEditable` says of keys. An action with `mouseOn: "tab"` answers only over a tab, and
  * is aimed at that tab. A plain left or right click is never matched.
  */
@@ -94,7 +95,7 @@ function mouseHit(
       (allow && !allow(a)) ||
       !mouseOf(a).includes(bind) ||
       (a.mouseOn === "tab" && tabId === null) ||
-      (a.scope === "view" && !inFileKeysArea(e.target))
+      !inScope(a.scope, e.target)
     ) {
       continue;
     }
@@ -136,14 +137,19 @@ export function useShortcuts(allow?: (a: Action) => boolean): void {
           bindsOf(a).some((k) => keys.includes(k)) &&
           appliesTo(a, ctx.active) &&
           (!editable || a.inEditable) &&
-          (a.scope !== "view" || inFileKeysArea(e.target))
+          inScope(a.scope, e.target)
       );
       if (!hit) return;
       e.preventDefault();
       run(hit, ctx);
     };
     const onMouseDown = (e: MouseEvent) => {
-      if (mouseHit(e, allow)) e.preventDefault();
+      const hit = mouseHit(e, allow);
+      if (!hit) return;
+      // The tree's operations read what the tree is aimed at once it has drawn again, which
+      // happens before the button comes up.
+      if (hit.action.scope === "tree") aimTreeAtPointer();
+      e.preventDefault();
     };
     const onMouseUp = (e: MouseEvent) => {
       const hit = mouseHit(e, allow);

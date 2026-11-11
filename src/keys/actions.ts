@@ -107,8 +107,12 @@ export type Action = {
   menu?: false;
   /** True when the shortcut also fires while focus is in an editable field. */
   inEditable?: boolean;
-  /** "view": the shortcut acts only while the keyboard is in the folder view or the tab row (keys/file-keys.ts). Menus are not limited. */
-  scope?: "view";
+  /**
+   * "view": the shortcut acts only while the keyboard is in the folder view or the tab row
+   * (keys/file-keys.ts). "tree": only while it is in the folder tree, aimed at the tree's current
+   * row (the pointer's row for a mouse button). Menus are not limited.
+   */
+  scope?: "view" | "tree";
   /**
    * "tab": the action's mouse binds answer only over a tab of the tab strip, and aim it at that
    * tab, not the one in front (Close tab).
@@ -711,13 +715,15 @@ function treeOp(
   label: string,
   area: Action["area"],
   run: (ops: NonNullable<ReturnType<typeof treeOps>>) => void,
-  enabled: () => boolean = () => true
+  enabled: () => boolean = () => true,
+  keys: string[] = []
 ): Action {
   return {
     id,
     label,
     area,
-    keys: [],
+    keys,
+    scope: "tree",
     when: "tree",
     enabled: () => treeOps() !== null && enabled(),
     run: () => {
@@ -733,6 +739,7 @@ const treeActions: Action[] = [
     label: "Open",
     area: "Open",
     keys: [],
+    scope: "tree",
     when: "tree",
     enabled: () => treeEntry() !== null && treeFolderEntry() === null,
     run: () => {
@@ -748,6 +755,7 @@ const treeActions: Action[] = [
     label: "Open in file manager",
     area: "Open",
     keys: [],
+    scope: "tree",
     when: "tree",
     enabled: () => treeMenuFolder() !== null,
     run: () => {
@@ -765,6 +773,7 @@ const treeActions: Action[] = [
     label: "Open as editor",
     area: "Open",
     keys: [],
+    scope: "tree",
     when: "tree",
     enabled: () => treeFolderEntry() !== null,
     run: () => {
@@ -777,6 +786,7 @@ const treeActions: Action[] = [
     label: "Pin as editor",
     area: "Pinned",
     keys: [],
+    scope: "tree",
     when: "tree",
     enabled: () => treeFolderEntry() !== null,
     run: () => {
@@ -790,6 +800,7 @@ const treeActions: Action[] = [
     label: "Open terminal here",
     area: "Open",
     keys: [],
+    scope: "tree",
     when: "tree",
     enabled: () => treeMenuFolder() !== null,
     run: () => {
@@ -834,34 +845,39 @@ const treeActions: Action[] = [
     "Cut",
     "Edit",
     (o) => o.cut(),
-    () => treeEntry() !== null
+    () => treeEntry() !== null,
+    ["Ctrl+X"]
   ),
   treeOp(
     "tree.copy",
     "Copy",
     "Edit",
     (o) => o.copy(),
-    () => treeEntry() !== null
+    () => treeEntry() !== null,
+    ["Ctrl+C"]
   ),
   treeOp(
     "tree.paste",
     "Paste",
     "Edit",
     (o) => o.paste(),
-    () => treeMenuFolder() !== null
+    () => treeMenuFolder() !== null,
+    ["Ctrl+V"]
   ),
   treeOp(
     "tree.rename",
     "Rename",
     "Edit",
     (o) => o.rename(),
-    () => treeEntry() !== null
+    () => treeEntry() !== null,
+    ["F2"]
   ),
   {
     id: "tree.copyPath",
     label: "Copy path",
     area: "Edit",
     keys: [],
+    scope: "tree",
     when: "tree",
     enabled: () => (treeEntry()?.path ?? useTreeMenu.getState().root) !== null,
     run: () => {
@@ -874,14 +890,16 @@ const treeActions: Action[] = [
     "Move to Trash",
     "Edit",
     (o) => o.trash(),
-    () => treeEntry() !== null
+    () => treeEntry() !== null,
+    ["Delete"]
   ),
   treeOp(
     "tree.delete",
     "Delete permanently",
     "Edit",
     (o) => o.askDelete(),
-    () => treeEntry() !== null
+    () => treeEntry() !== null,
+    ["Shift+Delete"]
   ),
 ];
 actions.push(...treeActions);

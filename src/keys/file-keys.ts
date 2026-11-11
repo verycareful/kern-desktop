@@ -19,3 +19,15 @@ export function inFileKeysArea(target: EventTarget | null): boolean {
   const zone = target.closest(`[${FILE_KEYS_ATTR}], [${NO_FILE_KEYS_ATTR}]`);
   return zone !== null && zone.hasAttribute(FILE_KEYS_ATTR);
 }
+
+/** True when `target` is inside the folder tree (its element has the ARIA role `tree`). */
+export function inTreeKeysArea(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[role="tree"]') !== null;
+}
+
+/** True when a key or mouse button aimed at `target` is in the area an action of `scope` belongs to. */
+export function inScope(scope: "view" | "tree" | undefined, target: EventTarget | null): boolean {
+  if (scope === "view") return inFileKeysArea(target);
+  if (scope === "tree") return inTreeKeysArea(target);
+  return true;
+}
