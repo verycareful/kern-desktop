@@ -150,6 +150,18 @@ pub enum TimeFormat {
     Hour24,
 }
 
+/// The shape of the right-click menu of the file manager's folder view: the most used entries on
+/// top with the rest folded into submenus (`Standard`), every group folded (`Collapsed`), or every
+/// entry listed at once (`Expanded`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FolderMenu {
+    #[default]
+    Standard,
+    Collapsed,
+    Expanded,
+}
+
 /// The Files view mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -212,6 +224,8 @@ pub struct Settings {
     pub new_tab_default: NewTabDefault,
     /// The clock the time of day is shown in (see [`TimeFormat`]).
     pub time_format: TimeFormat,
+    /// The shape of the folder view's right-click menu (see [`FolderMenu`]).
+    pub folder_menu: FolderMenu,
     /// Whether Kern writes the error log (`error_log.rs`). Off stops all writing and leaves a file
     /// already there as it is.
     pub error_log: bool,
@@ -261,6 +275,7 @@ impl Default for Settings {
             new_tab_folder: None,
             new_tab_default: NewTabDefault::default(),
             time_format: TimeFormat::default(),
+            folder_menu: FolderMenu::default(),
             error_log: true,
             single_click_left: true,
             single_click_right: false,
@@ -889,6 +904,14 @@ impl Stored for Settings {
             &mut obj,
             "time_format",
             &mut s.time_format,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "folder_menu",
+            &mut s.folder_menu,
             &mut keep,
             &mut problems,
             any_value,

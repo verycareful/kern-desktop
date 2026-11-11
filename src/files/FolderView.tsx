@@ -28,8 +28,7 @@ import {
   type WireError,
   type WirePath,
 } from "../ipc";
-import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
-import { actions } from "../keys/actions";
+import { ActionMenu } from "../keys/ActionMenu";
 import { ActionButton } from "../shell/ActionButton";
 import { FILE_KEYS_ATTR } from "../keys/file-keys";
 import {
@@ -56,6 +55,7 @@ import { ROW_HEIGHT } from "./grid-layout";
 import { useFolderUi, DEFAULT_SORT } from "./folder-ui";
 import { registerFolder, type MoveTo } from "./folder-controller";
 import { useFolderStatus } from "./folder-status";
+import { folderMenu } from "./folder-menu";
 import { GoneBanner } from "./GoneBanner";
 import { LocationBar } from "./LocationBar";
 import { useFileOps } from "./use-file-ops";
@@ -84,15 +84,6 @@ import { useFolder } from "./useFolder";
 import { FlashSpan, RepeatFlash } from "../ops/repeat-flash";
 import "../ops/ops.css";
 import "./files.css";
-
-// The right-click menu is the folder actions of the table, grouped as the
-// main menu groups them (keyboard and right-click parity).
-const CONTEXT_MENU: MenuSection[] = (
-  ["Open", "Pinned", "Edit", "Create", "Selection", "View"] as const
-).map((area) => ({
-  title: area,
-  actions: actions.filter((a) => a.when === "folder" && a.area === area),
-}));
 
 function ErrorText(props: { error: WireError }) {
   return (
@@ -132,7 +123,7 @@ export function FolderView(props: { tab: FolderTab }) {
 }
 
 function LoadedFolder({ tab }: { tab: FolderTab }) {
-  const { showHidden, viewMode, error: settingsError } = useViewSettings();
+  const { showHidden, viewMode, folderMenu: menuShape, error: settingsError } = useViewSettings();
   const singleClick = useSingleClick("centre");
   const sort = useFolderUi((s) => s.sort[tab.id] ?? DEFAULT_SORT);
   const key = pathKey(tab.path);
@@ -840,7 +831,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       <div ref={drag.ghost} className="kern-drag-ghost" aria-hidden hidden />
       {menu && (
         <ActionMenu
-          sections={CONTEXT_MENU}
+          sections={folderMenu(menuShape)}
           x={menu.x}
           y={menu.y}
           targetId={tab.id}

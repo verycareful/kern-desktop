@@ -11,6 +11,7 @@ import {
   toWireError,
   type DefaultFm,
   type Fm1Status,
+  type FolderMenu,
   type LayoutKind,
   type NewTabDefault,
   type TimeFormat,
@@ -48,6 +49,12 @@ const LAYOUTS: readonly { value: LayoutKind; label: string; disabled?: boolean }
 const NEW_TAB_DEFAULTS: readonly { value: NewTabDefault; label: string }[] = [
   { value: "folder", label: "New tab folder" },
   { value: "current", label: "Current folder" },
+];
+
+const FOLDER_MENUS: readonly { value: FolderMenu; label: string }[] = [
+  { value: "standard", label: "Standard" },
+  { value: "collapsed", label: "Collapsed" },
+  { value: "expanded", label: "Expanded" },
 ];
 
 const TIME_FORMATS: readonly { value: TimeFormat; label: string }[] = [
@@ -405,6 +412,19 @@ export function FilesSection(props: { settings: Settings }) {
             value={settings.time_format}
             options={TIME_FORMATS}
             onChange={(time_format) => edit({ time_format })}
+          />
+        </Row>
+      </Group>
+      <Group rows={["folder_menu"]}>
+        <Row
+          id="folder_menu"
+          note="Standard keeps the most used entries on top and folds the rest into submenus. Collapsed folds every group. Expanded lists everything at once."
+        >
+          <Choices
+            label="Right-click menu of the file manager"
+            value={settings.folder_menu}
+            options={FOLDER_MENUS}
+            onChange={(folder_menu) => edit({ folder_menu })}
           />
         </Row>
       </Group>

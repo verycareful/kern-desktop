@@ -399,9 +399,14 @@ test("trash_then_undo_restores", async ({ page, mockTauri }) => {
 
   // The Edit entries name what they would do.
   await page.getByTestId("folder-scroll").click({ button: "right", position: { x: 5, y: 150 } });
+  await page.getByRole("menuitem", { name: "More edit actions" }).click();
   await expect(page.getByRole("menuitem", { name: /^Undo trash of a\.txt/ })).toBeEnabled();
   await expect(page.getByRole("menuitem", { name: /^Redo/ })).toBeDisabled();
+  // The first Escape closes the submenu, the second the menu.
   await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu", { name: "More edit actions" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("action-menu")).toHaveCount(0);
 
   await page.getByTestId("folder-list").focus();
   await page.keyboard.press("Control+z");

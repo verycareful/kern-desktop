@@ -73,6 +73,9 @@ Kern Desktop is in alpha.
   list each file with its type, size, time and the folder it is in, and once the
   walk has finished a click on a column header sorts them. The Library has a
   filter by name, a list or card view, and a switch for hidden items.
+  The right-click menu of a folder keeps the most used entries on top and folds
+  the rest into submenus; Settings > Files can fold every group or list
+  everything at once.
 - **Text editor.** A text file opens in a tab with line numbers, find and
   replace, and undo. Saving keeps the file's line endings and byte order mark.
   If another program changed or deleted the file, Kern asks before it writes.

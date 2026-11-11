@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use kern_lib::store::{
-    move_aside, volume_online, LayoutKind, NewTabDefault, Panel, SessionTab, SessionWindow,
-    Settings, Store, TimeFormat, ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES,
+    move_aside, volume_online, FolderMenu, LayoutKind, NewTabDefault, Panel, SessionTab,
+    SessionWindow, Settings, Store, TimeFormat, ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES,
     LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, MAIN_LAYOUTS, RECENTS_CAP, RIGHT_WIDTH_MAX,
     RIGHT_WIDTH_MIN,
 };
@@ -1590,6 +1590,49 @@ fn an_unknown_time_format_is_refused_and_changes_nothing() {
     assert_eq!(
         s.settings_get().unwrap().value.time_format,
         TimeFormat::Hour24
+    );
+}
+
+#[test]
+fn the_folder_menu_defaults_to_standard_and_is_stored_as_standard_collapsed_or_expanded() {
+    let e = env();
+    let s = store(&e);
+    assert_eq!(
+        s.settings_get().unwrap().value.folder_menu,
+        FolderMenu::Standard
+    );
+    for (text, want) in [
+        ("collapsed", FolderMenu::Collapsed),
+        ("expanded", FolderMenu::Expanded),
+        ("standard", FolderMenu::Standard),
+    ] {
+        let out = s
+            .settings_set(patch(json!({ "folder_menu": text })))
+            .unwrap();
+        assert_eq!(out.value.folder_menu, want);
+        assert_eq!(
+            read_json(&e.config.join("settings.json"))["folder_menu"],
+            json!(text)
+        );
+        assert_eq!(store(&e).settings_get().unwrap().value.folder_menu, want);
+    }
+}
+
+#[test]
+fn an_unknown_folder_menu_is_refused_and_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    s.settings_set(patch(json!({"folder_menu": "collapsed"})))
+        .unwrap();
+    for bad in [json!("folded"), json!(1), json!("Standard"), json!(null)] {
+        let err = s
+            .settings_set(patch(json!({ "folder_menu": bad })))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument");
+    }
+    assert_eq!(
+        s.settings_get().unwrap().value.folder_menu,
+        FolderMenu::Collapsed
     );
 }
 

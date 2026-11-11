@@ -8,6 +8,7 @@ import {
   settingsGet,
   settingsSet,
   toWireError,
+  type FolderMenu,
   type NewTabDefault,
   type Panel,
   type Settings,
@@ -36,6 +37,8 @@ interface ViewSettingsState {
   viewMode: ViewMode;
   /** The clock the time of day is shown in. */
   timeFormat: TimeFormat;
+  /** The shape of the folder view's right-click menu. */
+  folderMenu: FolderMenu;
   /** The interface size in percent. */
   interfaceSize: number;
   /** What the Library walks: the Documents and Downloads folders when on, and these. */
@@ -65,6 +68,7 @@ export const useViewSettings = create<ViewSettingsState>()(() => ({
   singleClickEditor: false,
   viewMode: "list",
   timeFormat: "system",
+  folderMenu: "standard",
   interfaceSize: DEFAULT_INTERFACE_SIZE,
   scanDocuments: true,
   scanDownloads: true,
@@ -88,6 +92,7 @@ function apply(s: Settings): void {
     singleClickEditor: s.single_click_editor,
     viewMode: s.view_mode,
     timeFormat: s.time_format,
+    folderMenu: s.folder_menu,
     interfaceSize: s.interface_size,
     scanDocuments: s.scan_documents,
     scanDownloads: s.scan_downloads,

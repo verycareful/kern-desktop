@@ -34,5 +34,6 @@ export const SETTINGS: Settings = {
   new_tab_folder: null,
   new_tab_default: "folder",
   time_format: "system",
+  folder_menu: "standard",
   error_log: true,
 };

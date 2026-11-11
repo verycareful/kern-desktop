@@ -59,3 +59,19 @@
 .kern-menu-title {
   padding: 8px 10px 4px;
 }
+
+.kern-menu-rule {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--kern-border);
+}
+
+/* The row of a folded section: its title, and an arrow at the end. */
+.kern-menu-fold[aria-expanded="true"]:not(:disabled) {
+  background: var(--kern-accent-soft);
+}
+
+/* A submenu is fixed to the window like the menu, so the menu's scrolling never clips it. */
+.kern-submenu {
+  z-index: 51;
+}

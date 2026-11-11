@@ -703,6 +703,22 @@ test("the_time_of_day_in_dates_follows_the_system_or_is_set_to_12_or_24_hours", 
   expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ time_format: "24" }]);
 });
 
+test("the_right_click_menu_is_standard_collapsed_or_expanded", async () => {
+  await mount();
+  nav("Files");
+  const label = "Right-click menu of the file manager";
+  expect(pressed(label, "Standard")).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(pressed(label, "Collapsed"));
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ folder_menu: "collapsed" }]);
+});
+
+test("a_search_for_submenu_finds_the_right_click_menu_row", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "submenu" } });
+  expect(screen.getByText("Right-click menu of the file manager")).toBeInTheDocument();
+});
+
 test("clear_pins_and_clear_recents_buttons_share_one_sizing_class", async () => {
   await mount();
   nav("Files");

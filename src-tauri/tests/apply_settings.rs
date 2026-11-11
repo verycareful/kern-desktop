@@ -145,8 +145,9 @@ fn missing_file_is_refused() {
 }
 
 /// The installer's settings walk names every setting but `default_layout`, which offers the main
-/// window one choice, and the two panel orders, which are arranged in Settings once the windows
-/// are on screen. A setting added without a question in the walk fails here.
+/// window one choice, the two panel orders, which are arranged in Settings once the windows are
+/// on screen, and `folder_menu`, the shape of the right-click menu, which is chosen there too. A
+/// setting added without a question in the walk fails here.
 #[test]
 fn installer_walk_covers_every_setting() {
     let src = include_str!("../../installer/settings.sh");
@@ -160,7 +161,12 @@ fn installer_walk_covers_every_setting() {
         Value::Object(m) => m.into_iter().map(|(k, _)| k).collect(),
         other => panic!("settings serialise to {other}"),
     };
-    let not_asked = ["default_layout", "panel_order", "editor_panel_order"];
+    let not_asked = [
+        "default_layout",
+        "panel_order",
+        "editor_panel_order",
+        "folder_menu",
+    ];
     let expected: BTreeSet<String> = known
         .into_iter()
         .filter(|k| !not_asked.contains(&k.as_str()))

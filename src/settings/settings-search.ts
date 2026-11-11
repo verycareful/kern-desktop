@@ -154,6 +154,13 @@ export const ROWS = {
     label: "Time of day in dates",
     words: "clock 12 hour 24 hour am pm modified date time format locale",
   },
+  folder_menu: {
+    category: "files",
+    group: "Menus",
+    label: "Right-click menu of the file manager",
+    words:
+      "context menu submenu sub menu folded fold collapsed expanded standard options entries centre panel",
+  },
   terminal: {
     category: "files",
     group: "Programs",

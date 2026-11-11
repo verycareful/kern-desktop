@@ -69,7 +69,15 @@ vi.mock("../ipc", async (orig) => ({
 import { FolderView } from "./FolderView";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
-const SETTINGS = { show_hidden: false, view_mode: "list" } as Settings;
+const SETTINGS = {
+  show_hidden: false,
+  view_mode: "list",
+  folder_menu: "standard",
+} as Settings;
+
+/** The shape of the right-click menu for the folder mounted next. */
+const menuShape = (folder_menu: Settings["folder_menu"]) =>
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, folder_menu });
 const err = (kind: string, message = kind): WireError => ({
   kind,
   message,
@@ -215,6 +223,7 @@ test("keys_that_act_on_files_do_nothing_when_an_item_is_only_outlined", async ()
 });
 
 test("the_file_actions_are_greyed_in_the_menu_when_only_an_item_is_outlined", async () => {
+  menuShape("expanded");
   await mount([entry("a")]);
   act(() => screen.getByTestId("folder-list").focus());
   fireEvent.contextMenu(screen.getByTestId("folder-scroll"));
@@ -255,6 +264,7 @@ test("the_toolbar_buttons_are_live_in_an_empty_folder", async () => {
 });
 
 test("a_right_click_in_an_empty_folder_opens_the_folder_menu", async () => {
+  menuShape("expanded");
   await mount([]);
   const shown = fireEvent.contextMenu(screen.getByTestId("folder-empty"));
   // false: the web view's own menu is kept out.
@@ -262,6 +272,68 @@ test("a_right_click_in_an_empty_folder_opens_the_folder_menu", async () => {
   const menu = await screen.findByTestId("action-menu");
   for (const name of [/^New folder/, /^New file/, /^Paste/, /^Copy path/, /^Open terminal here/]) {
     expect(within(menu).getByRole("menuitem", { name })).toBeEnabled();
+  }
+});
+
+test("the_standard_menu_has_the_most_used_on_top_and_the_rest_in_submenus", async () => {
+  await mount([entry("a")]);
+  fireEvent.contextMenu(screen.getByTestId("folder-scroll"));
+  const menu = await screen.findByTestId("action-menu");
+  for (const name of [
+    /^Open\s*Enter$/,
+    /^Cut/,
+    /^Copy\s*Ctrl\+C$/,
+    /^Paste/,
+    /^Rename/,
+    /^New folder/,
+  ]) {
+    expect(within(menu).getByRole("menuitem", { name })).toBeInTheDocument();
+  }
+  // What is folded is not in the menu until its row is opened.
+  expect(within(menu).queryByRole("menuitem", { name: /^Copy path/ })).toBeNull();
+  const more = within(menu).getByRole("menuitem", { name: "More edit actions" });
+  expect(more).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(more);
+  const sub = screen.getByRole("menu", { name: "More edit actions" });
+  expect(within(sub).getByRole("menuitem", { name: /^Copy path/ })).toBeEnabled();
+  expect(within(sub).getByRole("menuitem", { name: /^Undo/ })).toBeInTheDocument();
+});
+
+test("an_action_from_a_submenu_runs_on_the_folder", async () => {
+  await mount([entry("a")]);
+  fireEvent.contextMenu(screen.getByTestId("folder-scroll"));
+  const menu = await screen.findByTestId("action-menu");
+  fireEvent.click(within(menu).getByRole("menuitem", { name: "View" }));
+  fireEvent.click(
+    within(screen.getByRole("menu", { name: "View" })).getByRole("menuitem", { name: /^Grid view/ })
+  );
+  await waitFor(() => expect(ipc.settingsSet).toHaveBeenCalledWith({ view_mode: "grid" }));
+  expect(screen.queryByTestId("action-menu")).toBeNull();
+});
+
+test("the_collapsed_menu_is_six_rows_and_each_opens_its_group", async () => {
+  menuShape("collapsed");
+  await mount([entry("a")]);
+  fireEvent.contextMenu(screen.getByTestId("folder-scroll"));
+  const menu = await screen.findByTestId("action-menu");
+  const top = within(menu)
+    .getAllByRole("menuitem")
+    .map((i) => i.textContent);
+  expect(top).toEqual(["Open", "Pinned", "Edit", "Create", "Selection", "View"]);
+  fireEvent.click(within(menu).getByRole("menuitem", { name: "Create" }));
+  const sub = screen.getByRole("menu", { name: "Create" });
+  expect(within(sub).getByRole("menuitem", { name: /^New folder/ })).toBeEnabled();
+  expect(within(sub).getByRole("menuitem", { name: /^New file/ })).toBeEnabled();
+});
+
+test("the_expanded_menu_lists_every_action_with_no_submenu", async () => {
+  menuShape("expanded");
+  await mount([entry("a")]);
+  fireEvent.contextMenu(screen.getByTestId("folder-scroll"));
+  const menu = await screen.findByTestId("action-menu");
+  expect(within(menu).queryByRole("menuitem", { name: "More edit actions" })).toBeNull();
+  for (const name of [/^Copy path/, /^Select all/, /^Grid view/, /^Pin\s*Ctrl\+D$/]) {
+    expect(within(menu).getByRole("menuitem", { name })).toBeInTheDocument();
   }
 });
 
@@ -690,6 +762,7 @@ test("with_nothing_to_undo_the_keys_do_nothing", async () => {
 });
 
 test("the_edit_menu_names_what_undo_and_redo_would_do", async () => {
+  menuShape("expanded");
   await mount([entry("a")]);
   useOps.setState({ undoLabel: "Undo rename of notes.md", redoLabel: null });
   fireEvent.contextMenu(screen.getByTestId("folder-scroll"));

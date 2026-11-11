@@ -48,12 +48,14 @@ export async function installTauriMocks(page: Page, handlers: MockResponses = {}
     if (typeof value === "function") fns[name] = `(${value.toString()})`;
     else literals[name] = value;
   }
-  // The backend always answers with both panel orders; a test's partial settings get the defaults.
+  // The backend always answers with both panel orders and the menu shape; a test's partial settings
+  // get the defaults.
   const settings = literals["settings_get"];
   if (settings !== null && typeof settings === "object") {
     literals["settings_get"] = {
       panel_order: ["places", "folder", "pinned"],
       editor_panel_order: ["places", "pinned"],
+      folder_menu: "standard",
       ...settings,
     };
   }
