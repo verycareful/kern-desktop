@@ -2,16 +2,16 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 // The file manager. Docked, its two parts are cells of the
 // main grid: the places strip from the window top to the status bar, and the
-// folder area beside it under the tab row. Slid in over a document they
-// are one panel. The strip holds Kern's logo in its top slot, level with the tab
-// row, then Places, the Library, Volumes and Trash.
+// folder area beside it under the tab row. Slid in over a document only the strip comes: a
+// folder shown there would be a second view of a tab that is not in front. The strip holds Kern's
+// logo in its top slot, level with the tab row, then Places, the Library, Volumes and Trash.
 import { FileSearch, Trash2, type LucideIcon } from "lucide-react";
 import { isMainWindow } from "../ipc";
 import { FolderView } from "../files/FolderView";
 import { DocumentsView } from "../files/DocumentsView";
 import { TrashView } from "../files/TrashView";
 import { currentContext, getAction, runAction } from "../keys/actions";
-import { activeTab, recentFolderTab, useTabs, type TabsState } from "../store/tabs";
+import { activeTab, useTabs, type TabsState } from "../store/tabs";
 import type { Side } from "./panel-order";
 import { KernLogo } from "./KernLogo";
 import { PlacesList } from "./PlacesList";
@@ -83,9 +83,6 @@ export function PlacesStrip(props: { column?: boolean; side?: Side }) {
 
 export function FolderArea(props: { docked?: boolean }) {
   const active = useTabs((s) => activeTab(s));
-  // Slid in over a document, the panel shows the folder tab used last.
-  const recent = useTabs((s) => recentFolderTab(s));
-  const tab = active?.kind === "folder" ? active : recent;
   const region = props.docked ? { role: "region", "aria-label": "File manager" } : {};
   return (
     <div className="kern-folder-area" data-testid="folder-area" {...region}>
@@ -94,7 +91,7 @@ export function FolderArea(props: { docked?: boolean }) {
       ) : active?.kind === "documents" ? (
         <DocumentsView key={active.id} tabId={active.id} />
       ) : (
-        tab && <FolderView key={tab.id} tab={tab} />
+        active?.kind === "folder" && <FolderView key={active.id} tab={active} />
       )}
     </div>
   );
@@ -120,7 +117,6 @@ export function PlacesPanel(props: { overlay?: boolean; side?: Side }) {
       data-testid="places-panel"
     >
       <PlacesStrip />
-      <FolderArea />
     </section>
   );
 }

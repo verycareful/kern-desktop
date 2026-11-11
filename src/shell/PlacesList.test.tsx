@@ -122,17 +122,25 @@ test("clicking_a_place_navigates_the_current_folder_tab_and_marks_it", async () 
   expect(screen.getByRole("button", { name: "Home" })).not.toHaveAttribute("aria-current");
 });
 
-test("in_a_document_tab_a_place_navigates_the_most_recent_folder_tab", async () => {
+test("in_a_document_tab_a_place_opens_its_folder_and_navigates_no_other_tab", async () => {
   ipc.userDirs.mockResolvedValue(dirs(["documents"]));
   useTabs.getState().openFolder(p("/home/t"), false);
   const folder = useTabs.getState().activeId!;
   useTabs.getState().openDoc(p("/home/t/n.md"));
-  const doc = useTabs.getState().activeId!;
   render(<PlacesList />);
   fireEvent.click(await screen.findByRole("button", { name: "Documents" }));
-  const tab = useTabs.getState().tabs.find((t) => t.id === folder) as FolderTab;
-  expect(tab.path).toEqual(p("/home/t/documents"));
-  expect(useTabs.getState().activeId).toBe(doc);
+  const { tabs, activeId } = useTabs.getState();
+  expect((tabs.find((t) => t.id === folder) as FolderTab).path).toEqual(p("/home/t"));
+  expect(tabs).toHaveLength(3);
+  expect((tabs.find((t) => t.id === activeId) as FolderTab).path).toEqual(p("/home/t/documents"));
+});
+
+test("in_a_document_tab_no_place_is_marked_current", async () => {
+  ipc.userDirs.mockResolvedValue(dirs(["documents"]));
+  useTabs.getState().openFolder(p("/home/t"), false);
+  useTabs.getState().openDoc(p("/home/t/n.md"));
+  render(<PlacesList />);
+  expect(await screen.findByRole("button", { name: "Home" })).not.toHaveAttribute("aria-current");
 });
 
 test("from_the_trash_a_place_shows_the_most_recent_folder_tab_there", async () => {

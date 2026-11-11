@@ -4,6 +4,26 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.2.1] - 2026-11-11 18:40 (IST)
+
+### Changed
+
+- **Panel over a document**: the panel slid in over a document holds the places strip alone: Places, the Library, Volumes and Trash. It no longer shows a folder view of the folder tab used last. A place chosen there brings forward the folder tab that shows it, or opens one, and navigates no other folder tab. No place is marked while a document is in front.
+- **Closing the last tab**: closing the last tab of the main window opens a new tab, as before, and now says so. It also says that Kern is closed with the desktop's close-window shortcut or the window's close button.
+
+### Fixed
+
+- **Empty folder pane**: with only documents open (a document moved to the main window with Home, or every folder tab closed), the panel slid in over a document showed nothing beside the places strip.
+
+### Tests
+
+- The panel slid in over a document holds the strip and no folder view, with or without a folder tab. A place chosen there opens its folder and leaves the other folder tab alone, or brings the tab that shows it forward. No place is marked current while a document is in front.
+- Closing the last tab of the main window says how to close Kern; closing another tab, or the last tab of another window, says nothing.
+
+### Results
+
+- 2093 tests across 172 suites (the Rust tests, every unit test, the browser tests, the real-app driver tests and the packaging and script suites), all passed (204s, CachyOS x86-64, rustc 1.99.1, Python 3.14.10, Chromium through Playwright).
+
 ## [0.1.2.0] - 2026-11-11 15:16 (IST)
 
 ### Added

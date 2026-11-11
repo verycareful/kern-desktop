@@ -7,6 +7,7 @@ import type { WirePath } from "../ipc";
 const ipc = vi.hoisted(() => ({
   confirmClose: vi.fn(),
   isDocumentWindow: vi.fn(),
+  isMainWindow: vi.fn(),
   restartAbandon: vi.fn(),
 }));
 const layout = vi.hoisted(() => ({ flushLayout: vi.fn() }));
@@ -48,6 +49,7 @@ beforeEach(() => {
   ipc.confirmClose.mockResolvedValue(undefined);
   layout.flushLayout.mockResolvedValue(undefined);
   ipc.isDocumentWindow.mockReturnValue(false);
+  ipc.isMainWindow.mockReturnValue(true);
   ipc.restartAbandon.mockResolvedValue(undefined);
   useCloseGuard.getState().reset();
   useOps.setState({ notice: null });
@@ -338,4 +340,30 @@ test("a_check_taken_away_is_not_asked", async () => {
   await closeWindow();
   expect(check).not.toHaveBeenCalled();
   expect(ipc.confirmClose).toHaveBeenCalledTimes(1);
+});
+
+test("closing_the_last_tab_of_the_main_window_says_how_to_close_kern", () => {
+  useTabs.setState({
+    tabs: [{ id: "a", kind: "doc", path: p("/home/a/a.md"), dirty: false }],
+    activeId: "a",
+  });
+  act(() => closeTab("a"));
+  expect(useOps.getState().notice?.text).toMatch(/last tab/);
+  expect(useOps.getState().notice?.text).toMatch(/close its window/);
+});
+
+test("closing_a_tab_that_is_not_the_last_says_nothing", () => {
+  act(() => closeTab("a"));
+  expect(useTabs.getState().tabs).toHaveLength(2);
+  expect(useOps.getState().notice).toBeNull();
+});
+
+test("closing_the_last_tab_of_another_window_says_nothing", () => {
+  ipc.isMainWindow.mockReturnValue(false);
+  useTabs.setState({
+    tabs: [{ id: "a", kind: "doc", path: p("/home/a/a.md"), dirty: false }],
+    activeId: "a",
+  });
+  act(() => closeTab("a"));
+  expect(useOps.getState().notice).toBeNull();
 });

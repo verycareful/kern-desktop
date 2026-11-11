@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { create } from "zustand";
-import { confirmClose, isDocumentWindow, restartAbandon, toWireError } from "../ipc";
+import { confirmClose, isDocumentWindow, isMainWindow, restartAbandon, toWireError } from "../ipc";
 import { docController } from "../editor/doc-controller";
 import { errorText } from "../ops/error-text";
 import { useOps } from "../ops/useOps";
@@ -131,6 +131,15 @@ async function ask(items: AtRisk[], what: "tab" | "window"): Promise<Outcome> {
   }
 }
 
+const LAST_TAB_TEXT =
+  "That was the last tab, so Kern opened a new one. To close Kern, close its window with your desktop's close-window shortcut or the window's close button.";
+
+/** Closes tab `id`. The main window never sits without a tab, so closing its last one says what happened. */
+function closeAndSay(id: string): void {
+  useTabs.getState().close(id);
+  if (isMainWindow() && useTabs.getState().tabs.length === 0) say(LAST_TAB_TEXT);
+}
+
 /**
  * Closes tab `id`: at once when nothing would be lost, else once the question is answered. In a
  * document window the document is the window, so the window closes; the main window and an editor
@@ -142,8 +151,8 @@ export function closeTab(id: string): void {
     return;
   }
   const items = atRisk([id]);
-  if (items.length === 0) useTabs.getState().close(id);
-  else void ask(items, "tab").then((o) => o !== "stop" && useTabs.getState().close(id));
+  if (items.length === 0) closeAndSay(id);
+  else void ask(items, "tab").then((o) => o !== "stop" && closeAndSay(id));
 }
 
 /**

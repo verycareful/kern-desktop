@@ -342,9 +342,8 @@ export const useTabs = create<TabsState>()((set, get) => ({
     }),
 }));
 
-// The folder tab that was active most recently (TabsState.lastFolderId). A
-// document tab folds the file manager panel away; slid back in over the
-// document, the panel shows this tab's folder.
+// The folder tab that was active most recently (TabsState.lastFolderId): the folder tab a place
+// is shown in from the Trash or the Library, which have no folder to navigate.
 useTabs.subscribe((s) => {
   const a = activeTab(s);
   if (a?.kind === "folder" && a.id !== s.lastFolderId) useTabs.setState({ lastFolderId: a.id });

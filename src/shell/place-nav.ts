@@ -12,10 +12,10 @@ import {
 } from "../store/tabs";
 
 // A place of the strip (Home, a user folder, a volume) is shown in
-// the current folder tab. In a document tab, where the strip is slid in over
-// the document, that is the folder tab used last; from the Trash or the
-// Library that tab is brought forward, since they have no folder to navigate. With no
-// folder tab at all one is opened.
+// the current folder tab. In a document tab, where the strip is slid in over the document, no
+// folder tab is navigated: the folder tab that shows the place is brought forward, or one is
+// opened. From the Trash or the Library the folder tab used last is brought forward, since they
+// have no folder to navigate; with no folder tab at all one is opened.
 //
 // In the editor layout the strip is the top of the left column and a place is where the tree is
 // rooted: it re-roots the tree and opens no folder tab.
@@ -30,6 +30,10 @@ export function showFolder(path: WirePath): void {
     s.navigateTab(active.id, path);
     return;
   }
+  if (active?.kind === "doc") {
+    s.focusOrOpenFolder(path);
+    return;
+  }
   const recent = recentFolderTab(s);
   if (!recent) {
     s.openFolder(path, true);
@@ -39,14 +43,13 @@ export function showFolder(path: WirePath): void {
   if (isPlaceTab(active)) s.activate(recent.id);
 }
 
-/** The folder the places strip marks as current: the active folder tab's, else the one a slid-in panel shows. */
+/** The folder the places strip marks as current: the active folder tab's; a document marks none. */
 export function shownFolder(
   s: Pick<TabsState, "tabs" | "activeId" | "lastFolderId">
 ): WirePath | null {
   const active: Tab | null = activeTab(s);
   if (isPlaceTab(active)) return null;
-  if (active?.kind === "folder") return active.path;
-  return recentFolderTab(s)?.path ?? null;
+  return active?.kind === "folder" ? active.path : null;
 }
 
 /** True when the Library is the tab on show. */

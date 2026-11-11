@@ -583,13 +583,12 @@
   top: 0;
   bottom: 0;
   z-index: 10;
-  /* Slid in together, the file manager takes what Pinned and Recent leave, so the two meet. */
-  width: calc(100% - var(--shell-right-width));
   box-shadow: 0 10px 30px color-mix(in srgb, var(--kern-text) 12%, transparent);
 }
 
 .kern-panel-left.kern-overlay {
   left: 0;
+  width: var(--shell-places-width);
   animation: kern-slide-left 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 

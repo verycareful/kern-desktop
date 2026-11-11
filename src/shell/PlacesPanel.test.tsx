@@ -71,47 +71,52 @@ async function slideIn() {
   // The window draws once its stored layout is read.
   await screen.findByTestId("main-grid");
   fireEvent.click(screen.getByRole("button", { name: "File manager panel" }));
-  await waitFor(() => expect(screen.getAllByTestId("file-row")).toHaveLength(1));
   await stripSettled();
   return folderId;
 }
 
-test("the_slid_in_panel_shows_the_most_recent_folder_tab", async () => {
+test("the_slid_in_panel_holds_the_places_strip_and_no_folder_view", async () => {
   await slideIn();
-  expect(screen.getByTestId("folder-view")).toBeInTheDocument();
-  expect(ipc.listDir).toHaveBeenCalledWith(p("/d/sub"), false);
+  const panel = screen.getByTestId("places-panel");
+  expect(within(panel).getByTestId("places-strip")).toBeInTheDocument();
+  expect(screen.queryByTestId("folder-area")).toBeNull();
+  expect(screen.queryByTestId("folder-view")).toBeNull();
+  expect(ipc.listDir).not.toHaveBeenCalled();
 });
 
-test("navigating_in_the_slid_in_panel_navigates_that_tab_and_keeps_the_document", async () => {
+test("a_place_in_the_slid_in_panel_opens_its_folder_and_leaves_the_other_folder_tab_alone", async () => {
   const folderId = await slideIn();
-  const doc = useTabs.getState().activeId;
-  fireEvent.click(
-    within(screen.getByRole("navigation", { name: /path/i })).getByRole("button", { name: "d" })
-  );
-  const tab = useTabs.getState().tabs.find((t) => t.id === folderId) as FolderTab;
-  expect(tab.path).toEqual(p("/d"));
-  expect(useTabs.getState().tabs).toHaveLength(2);
-  expect(useTabs.getState().activeId).toBe(doc);
-  // The tab lists its new folder; wait for it so the update lands inside the test.
-  await waitFor(() => expect(ipc.listDir).toHaveBeenLastCalledWith(p("/d"), false));
-  await waitFor(() => expect(screen.getAllByTestId("file-row")).toHaveLength(1));
+  fireEvent.click(screen.getByRole("button", { name: "Home" }));
+  const { tabs, activeId } = useTabs.getState();
+  expect((tabs.find((t) => t.id === folderId) as FolderTab).path).toEqual(p("/d/sub"));
+  expect(tabs).toHaveLength(3);
+  const shown = tabs.find((t) => t.id === activeId) as FolderTab;
+  expect(shown.kind).toBe("folder");
+  expect(shown.path).toEqual(p("/home/t"));
+  await waitFor(() => expect(ipc.listDir).toHaveBeenCalledWith(p("/home/t"), false));
 });
 
-test("opening_a_file_in_the_slid_in_panel_asks_the_backend_for_a_document_tab", async () => {
-  await slideIn();
-  ipc.openPaths.mockResolvedValue([
-    { path: p("/d/sub/n.txt"), action: "doc_tab", location: null, error: null },
-  ]);
-  fireEvent.doubleClick(screen.getByTestId("file-row"));
-  await waitFor(() => expect(ipc.openPaths).toHaveBeenCalled());
-  // Origin "inside": the backend decides and sends the directive that opens the tab.
-  expect(ipc.openPaths).toHaveBeenCalledWith([p("/d/sub/n.txt")], "inside", "default");
-});
-
-test("with_no_folder_tab_the_slid_in_panel_has_no_folder_view", async () => {
+test("a_place_whose_folder_is_open_in_a_tab_brings_that_tab_forward", async () => {
+  useTabs.getState().openFolder(p("/home/t"), false);
+  const home = useTabs.getState().activeId!;
+  useTabs.getState().openFolder(p("/d/sub"), true);
   useTabs.getState().openDoc(p("/d/old.md"));
   render(<MainWindow />);
+  await screen.findByTestId("main-grid");
   fireEvent.click(screen.getByRole("button", { name: "File manager panel" }));
   await stripSettled();
-  expect(screen.getByTestId("folder-area")).toBeEmptyDOMElement();
+  fireEvent.click(screen.getByRole("button", { name: "Home" }));
+  expect(useTabs.getState().activeId).toBe(home);
+  expect(useTabs.getState().tabs).toHaveLength(3);
+  await waitFor(() => expect(ipc.listDir).toHaveBeenCalledWith(p("/home/t"), false));
+});
+
+test("with_no_folder_tab_the_slid_in_panel_still_shows_the_places_strip", async () => {
+  useTabs.getState().openDoc(p("/d/old.md"));
+  render(<MainWindow />);
+  await screen.findByTestId("main-grid");
+  fireEvent.click(screen.getByRole("button", { name: "File manager panel" }));
+  await stripSettled();
+  expect(screen.getByTestId("places-strip")).toBeInTheDocument();
+  expect(screen.queryByTestId("folder-area")).toBeNull();
 });
