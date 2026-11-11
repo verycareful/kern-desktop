@@ -990,8 +990,10 @@ impl Stored for Session {
 struct JsonFile<T> {
     path: PathBuf,
     guard: Mutex<()>,
-    /// Fields already reported this run; cleared by a write, which may fix
-    /// them. Only touched under `guard`.
+    /// Fields already reported this run. A write forgets the ones that read
+    /// well in what it wrote (a patch that names a field replaces its bad
+    /// value) and keeps the ones still unreadable, whose raw value is written
+    /// back as it was. Only touched under `guard`.
     reported: Mutex<HashSet<String>>,
     marker: PhantomData<fn() -> T>,
 }
@@ -1074,7 +1076,10 @@ impl<T: Stored> JsonFile<T> {
         bytes.push(b'\n');
         // Only Kern writes its settings files, so what is at the name is the copy to replace.
         write_bytes_atomic(&self.path, Expect::Anything, &bytes)?;
-        lock(&self.reported).clear();
+        let unreadable: HashSet<String> = T::parse(json)
+            .map(|(_, problems)| problems.into_iter().map(|p| p.field).collect())
+            .unwrap_or_default();
+        lock(&self.reported).retain(|field| unreadable.contains(field));
         Ok(())
     }
 

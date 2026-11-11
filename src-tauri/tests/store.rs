@@ -578,6 +578,56 @@ fn newer_settings_values_are_kept_and_reported_once() {
 }
 
 #[test]
+fn an_unreadable_field_is_not_reported_again_by_a_write_that_leaves_it_alone() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    let file = e.config.join("settings.json");
+    fs::write(
+        &file,
+        r#"{"accent":"teal-from-the-future","word_wrap":true}"#,
+    )
+    .unwrap();
+    let s = store(&e);
+    assert_eq!(s.settings_get().unwrap().corrupt.len(), 1);
+    // The patch changes another field, writes the bad value back as it was and reports
+    // nothing, then and on every later read and write.
+    let out = s.settings_set(patch(json!({"show_hidden": true}))).unwrap();
+    assert!(out.corrupt.is_empty(), "{:?}", out.corrupt);
+    assert!(s.settings_get().unwrap().corrupt.is_empty());
+    let out = s.settings_set(patch(json!({"word_wrap": false}))).unwrap();
+    assert!(out.corrupt.is_empty(), "{:?}", out.corrupt);
+    assert_eq!(read_json(&file)["accent"], json!("teal-from-the-future"));
+    // A patch that names the field replaces the bad value, and the field is reported again
+    // if something later makes it unreadable again.
+    s.settings_set(patch(json!({"accent": "teal"}))).unwrap();
+    assert!(s.settings_get().unwrap().corrupt.is_empty());
+    let mut v = read_json(&file);
+    v["accent"] = json!("teal-from-the-future");
+    fs::write(&file, serde_json::to_vec(&v).unwrap()).unwrap();
+    let again = s.settings_get().unwrap();
+    assert_eq!(again.corrupt.len(), 1);
+    assert_eq!(again.corrupt[0].field.as_deref(), Some("accent"));
+}
+
+#[test]
+fn a_layout_field_left_unreadable_is_reported_once_across_writes() {
+    let e = env();
+    fs::create_dir_all(&e.state).unwrap();
+    fs::write(
+        e.state.join("layout.json"),
+        r#"{"left_width": 9999, "left_open": false}"#,
+    )
+    .unwrap();
+    let s = store(&e);
+    assert_eq!(s.layout_get().unwrap().corrupt.len(), 1);
+    let out = s.layout_set(patch(json!({"left_open": true}))).unwrap();
+    assert!(out.corrupt.is_empty(), "{:?}", out.corrupt);
+    let out = s.layout_set(patch(json!({"left_open": false}))).unwrap();
+    assert!(out.corrupt.is_empty(), "{:?}", out.corrupt);
+    assert!(s.layout_get().unwrap().corrupt.is_empty());
+}
+
+#[test]
 fn follow_patch_may_be_partial_and_keeps_unknown_keys() {
     let e = env();
     fs::create_dir_all(&e.config).unwrap();
