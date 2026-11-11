@@ -11,7 +11,7 @@ import { useViewSettings } from "../files/view-settings";
 import { useOps } from "../ops/useOps";
 import { useTabs } from "../store/tabs";
 import { errorText } from "../ops/error-text";
-import { RepeatFlash } from "../ops/repeat-flash";
+import { FlashSpan, RepeatFlash } from "../ops/repeat-flash";
 import { baseName } from "../ops/labels";
 import { KEYS } from "./editor-keys";
 import { ChangedOnDiskBanner } from "./ChangedOnDiskBanner";
@@ -284,8 +284,9 @@ export function TextEditor(props: {
         </div>
       )}
       {doc.problem && (
-        <div className="kern-doc-banner" role="alert" data-testid="doc-problem">
+        <div className="kern-doc-banner kern-flash-host" role="alert" data-testid="doc-problem">
           <p>{doc.problem}</p>
+          <FlashSpan count={doc.problemRepeats} />
         </div>
       )}
       {body}

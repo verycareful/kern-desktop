@@ -609,6 +609,41 @@ test("a_failed_save_is_said_and_the_edit_is_kept", async () => {
   expect(hook.result.current.prompt).toBeNull();
 });
 
+test("a_save_that_fails_again_with_the_same_words_is_counted_as_a_repeat", async () => {
+  const hook = await mount();
+  ipc.textSave.mockRejectedValue(wireError("ReadOnly", "no permission"));
+  type(hook, "mine");
+  await act(() => hook.result.current.save());
+  expect(hook.result.current.problem).toMatch(/not saved.*no permission/);
+  expect(hook.result.current.problemRepeats).toBe(0);
+  await act(() => hook.result.current.save());
+  expect(hook.result.current.problemRepeats).toBe(1);
+  await act(() => hook.result.current.save());
+  expect(hook.result.current.problemRepeats).toBe(2);
+  // Other words are a new problem, and a save that works takes the problem away.
+  ipc.textSave.mockRejectedValue(wireError("Io", "disk full"));
+  await act(() => hook.result.current.save());
+  expect(hook.result.current.problem).toMatch(/disk full/);
+  expect(hook.result.current.problemRepeats).toBe(0);
+  ipc.textSave.mockResolvedValue(S1);
+  await act(() => hook.result.current.save());
+  expect(hook.result.current.problem).toBeNull();
+  expect(hook.result.current.problemRepeats).toBe(0);
+});
+
+test("a_save_that_ends_in_a_question_takes_the_failure_before_it_away", async () => {
+  const hook = await mount();
+  ipc.textSave.mockRejectedValueOnce(wireError("Io", "disk full"));
+  type(hook, "mine");
+  await act(() => hook.result.current.save());
+  expect(hook.result.current.problem).toMatch(/disk full/);
+  ipc.textSave.mockRejectedValueOnce(wireError("ExternalModification", "changed"));
+  ipc.textCheck.mockResolvedValue("changed");
+  await act(() => hook.result.current.save());
+  expect(hook.result.current.prompt).toBe("external");
+  expect(hook.result.current.problem).toBeNull();
+});
+
 test("a_clean_document_has_nothing_to_save", async () => {
   await mount();
   expect(docController("t1")?.canSave()).toBe(false);

@@ -91,3 +91,28 @@ test("a_second_enter_while_the_first_is_sending_sends_nothing_more", async () =>
   expect(onSubmit).toHaveBeenCalledTimes(1);
   release();
 });
+
+test("a_name_refused_again_with_the_same_words_flashes_the_message", async () => {
+  const { input } = show();
+  fireEvent.change(input, { target: { value: "a/b" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  const alert = await screen.findByRole("alert");
+  expect(alert.querySelector(".kern-repeat-flash")).toBeNull();
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(alert.querySelector(".kern-repeat-flash")).not.toBeNull());
+  // Other words are a new message, not a repeat.
+  fireEvent.change(input, { target: { value: "" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/empty/i));
+  expect(screen.getByRole("alert").querySelector(".kern-repeat-flash")).toBeNull();
+});
+
+test("a_refusal_from_the_backend_again_with_the_same_words_flashes_the_message", async () => {
+  const refusal = { kind: "Exists", message: "already there", path: null, details: null };
+  const { input } = show(vi.fn().mockRejectedValue(refusal));
+  fireEvent.keyDown(input, { key: "Enter" });
+  const alert = await screen.findByRole("alert");
+  expect(alert.querySelector(".kern-repeat-flash")).toBeNull();
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(alert.querySelector(".kern-repeat-flash")).not.toBeNull());
+});

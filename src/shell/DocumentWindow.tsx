@@ -5,6 +5,8 @@ import { House } from "lucide-react";
 import { TextEditor } from "../editor/TextEditor";
 import { detached, refuseDetach, toWireError } from "../ipc";
 import { errorText } from "../ops/error-text";
+import { useRaisedText } from "../ops/raised-text";
+import { FlashSpan } from "../ops/repeat-flash";
 import { useViewSettingsSync } from "../files/view-settings";
 import { useShortcuts } from "../keys/useShortcuts";
 import type { Action } from "../keys/actions";
@@ -31,7 +33,7 @@ export function DocumentWindow(props: { label: string; starting: boolean }) {
   useViewSettingsSync();
   const tab = useTabs((s) => s.tabs.find((t) => t.id === label && t.kind === "doc"));
   const [moving, setMoving] = useState(false);
-  const [homeError, setHomeError] = useState<string | null>(null);
+  const { text: homeError, repeats: homeRepeats, raise: raiseHomeError } = useRaisedText();
   const doc = tab?.kind === "doc" ? tab : null;
   const owesAck = doc?.awaitingAck === true;
 
@@ -42,19 +44,18 @@ export function DocumentWindow(props: { label: string; starting: boolean }) {
       const answer = result.ok ? detached(label) : refuseDetach(label, result.reason);
       answer.catch((e: unknown) => {
         // The backend no longer waits (the move timed out): this window is being closed.
-        setHomeError(`The document was not handed over: ${errorText(toWireError(e))}`);
+        raiseHomeError(`The document was not handed over: ${errorText(toWireError(e))}`);
       });
     },
-    [owesAck, label]
+    [owesAck, label, raiseHomeError]
   );
 
   const home = async () => {
     setMoving(true);
-    setHomeError(null);
     // On success the backend closes this window.
     const failed = await moveDocHome();
     if (failed) {
-      setHomeError(failed);
+      raiseHomeError(failed);
       setMoving(false);
     }
   };
@@ -77,6 +78,7 @@ export function DocumentWindow(props: { label: string; starting: boolean }) {
       {homeError && (
         <div role="alert" className="kern-banner" data-testid="home-error">
           {homeError}
+          <FlashSpan count={homeRepeats} />
         </div>
       )}
       <main className="kern-doc-area" data-testid="doc-area">

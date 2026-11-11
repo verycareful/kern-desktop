@@ -36,6 +36,7 @@ import {
 } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
+import { repeatsAfter } from "../ops/raised-text";
 import { useOps } from "../ops/useOps";
 import { useTabs } from "../store/tabs";
 import { registerDoc } from "./doc-controller";
@@ -110,6 +111,8 @@ export interface TextDoc {
   watchError: WireError | null;
   /** A failure of a save, a reload or a check, in words, until the next success. */
   problem: string | null;
+  /** How many times `problem` was set again to the same words (the flash, see ops/raised-text.ts). */
+  problemRepeats: number;
   prompt: DocPrompt | null;
   saving: boolean;
   /** The document is being handed to another window: it cannot be edited or saved meanwhile. */
@@ -152,6 +155,7 @@ interface State {
   deletedOnDisk: boolean;
   watchError: WireError | null;
   problem: string | null;
+  problemRepeats: number;
   prompt: DocPrompt | null;
   saving: boolean;
   moving: boolean;
@@ -171,6 +175,7 @@ const LOADING: State = {
   deletedOnDisk: false,
   watchError: null,
   problem: null,
+  problemRepeats: 0,
   prompt: null,
   saving: false,
   moving: false,
@@ -274,6 +279,16 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
   const heldElsewhere = useRef<WireReadOnly | null>(null);
   const patch = useCallback((p: Partial<State>) => {
     if (heldElsewhere.current && "readOnly" in p) p = { ...p, readOnly: heldElsewhere.current };
+    if ("problem" in p) {
+      const held = st.current;
+      p = {
+        ...p,
+        problemRepeats:
+          typeof p.problem === "string"
+            ? repeatsAfter(held.problem, held.problemRepeats, p.problem)
+            : 0,
+      };
+    }
     st.current = { ...st.current, ...p };
     setState(st.current);
   }, []);
@@ -698,7 +713,9 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
       const f = file.current;
       const snap = current.current;
       if (!f || !snap) return;
-      patch({ saving: true, problem: null });
+      // A failure still shown stays while the save runs: one that fails the same way again
+      // is then seen to repeat. Each way out below takes it away or replaces it.
+      patch({ saving: true });
       try {
         const next = await textSave(at ?? f.path, snap.toString(), f.ending, f.bom, expect);
         file.current = { ...f, stamp: next };
@@ -711,6 +728,7 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
           changedOnDisk: false,
           deletedOnDisk: false,
           prompt: null,
+          problem: null,
         });
         say(`Saved ${baseName(f.path)}`);
         // A file written again after its folder vanished needs its watch back.
@@ -728,6 +746,7 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
             prompt: dangling ? "dangling" : "external",
             deletedOnDisk: false,
             changedOnDisk: !dangling,
+            problem: null,
           });
         } else if (err.kind === "ExternalModification" && expect.kind === "unchanged") {
           // A deleted file counts as changed to the backend; the user is told which it is.
@@ -742,6 +761,7 @@ export function useTextDoc(tabId: string, path: WirePath, opts: TextDocOptions =
             prompt: deleted ? "recreate" : "external",
             deletedOnDisk: deleted,
             changedOnDisk: !deleted,
+            problem: null,
           });
         } else {
           patch({

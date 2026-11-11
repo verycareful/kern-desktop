@@ -177,3 +177,18 @@ test("a_bar_that_stayed_open_with_an_error_closes_on_the_next_blur", async () =>
   screen.getByRole("button", { name: "elsewhere" }).focus();
   expect(onClose).toHaveBeenCalledWith("blur");
 });
+
+test("a_location_refused_again_with_the_same_words_flashes_the_message", async () => {
+  const input = bar();
+  fireEvent.change(input, { target: { value: "relative/path" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  const alert = await screen.findByRole("alert");
+  expect(alert.querySelector(".kern-repeat-flash")).toBeNull();
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(alert.querySelector(".kern-repeat-flash")).not.toBeNull());
+  // Other words are a new message, not a repeat.
+  fireEvent.change(input, { target: { value: "" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Enter a path."));
+  expect(screen.getByRole("alert").querySelector(".kern-repeat-flash")).toBeNull();
+});

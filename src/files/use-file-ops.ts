@@ -19,6 +19,7 @@ import { dropItems } from "../ops/drop-items";
 import { editErrorText } from "../ops/edit-error";
 import { baseName, itemsText, namesText } from "../ops/labels";
 import { nameIsText, nameProblem } from "../ops/names";
+import { repeatsAfter } from "../ops/raised-text";
 import { clearCut, setCut } from "../ops/cut-store";
 import { clearSpentCut } from "../ops/spent-cut";
 import { useOps } from "../ops/useOps";
@@ -56,7 +57,14 @@ export interface RenameState {
   stem: boolean;
   text: string;
   error: string | null;
+  /** How many times `error` was set again to the same words (the flash, see ops/raised-text.ts). */
+  errorRepeats: number;
   busy: boolean;
+}
+
+/** `r` with `error` set, counted as a repeat when it says what the error already did. */
+function withError(r: RenameState, error: string): RenameState {
+  return { ...r, error, errorRepeats: repeatsAfter(r.error, r.errorRepeats, error) };
 }
 
 export interface FileOpsArgs {
@@ -263,12 +271,13 @@ export function useFileOps(args: FileOpsArgs) {
       stem: only.kind !== "dir" && !only.target_is_dir,
       text: only.name,
       error: null,
+      errorRepeats: 0,
       busy: false,
     });
   }, []);
 
   const editRename = useCallback((text: string) => {
-    setRenaming((r) => (r ? { ...r, text, error: null } : r));
+    setRenaming((r) => (r ? { ...r, text, error: null, errorRepeats: 0 } : r));
   }, []);
 
   const cancelRename = useCallback(() => {
@@ -291,10 +300,11 @@ export function useFileOps(args: FileOpsArgs) {
         ? `The name has bytes that are not text, shown as ${REPLACEMENT}. Type the new name without them.`
         : null);
     if (problem) {
-      setRenaming((cur) => (cur ? { ...cur, error: problem } : cur));
+      setRenaming((cur) => (cur ? withError(cur, problem) : cur));
       return;
     }
-    setRenaming((cur) => (cur ? { ...cur, busy: true, error: null } : cur));
+    // The failure shown stays while the rename is tried, so a try that fails the same way shows.
+    setRenaming((cur) => (cur ? { ...cur, busy: true } : cur));
     try {
       const to = await renameItem(r.path, r.text);
       // Told before the component is asked whether it is still there: the file is renamed
@@ -308,7 +318,7 @@ export function useFileOps(args: FileOpsArgs) {
     } catch (e) {
       if (!alive.current) return;
       const err = toWireError(e);
-      setRenaming((cur) => (cur ? { ...cur, busy: false, error: editErrorText(err) } : cur));
+      setRenaming((cur) => (cur ? withError({ ...cur, busy: false }, editErrorText(err)) : cur));
     }
   }, [cancelRename, showResult]);
 

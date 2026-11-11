@@ -432,6 +432,37 @@ test("a_rename_refused_as_busy_names_the_operation_that_runs_here", async () => 
   expect(screen.getByRole("textbox", { name: /rename/i })).toBeInTheDocument();
 });
 
+test("a_rename_refused_again_with_the_same_words_flashes_the_banner", async () => {
+  await mount([entry("notes.md"), entry("b")], "/d", { ops: true });
+  select("notes.md");
+  key("F2");
+  const input = await screen.findByRole("textbox", { name: "Rename notes.md" });
+  const banner = () => screen.getByText(/^Rename:/).closest("[role=alert]")!;
+  fireEvent.change(input, { target: { value: "a/b" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await screen.findByText(/^Rename:/);
+  expect(banner().querySelector(".kern-repeat-flash")).toBeNull();
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(banner().querySelector(".kern-repeat-flash")).not.toBeNull());
+  expect(ipc.rename).not.toHaveBeenCalled();
+});
+
+test("a_rename_the_backend_refuses_again_with_the_same_words_flashes_the_banner", async () => {
+  await mount([entry("notes.md"), entry("b")], "/d", { ops: true });
+  select("notes.md");
+  key("F2");
+  const input = await screen.findByRole("textbox", { name: "Rename notes.md" });
+  ipc.rename.mockRejectedValue(err("Exists", "todo.md already exists"));
+  const banner = () => screen.getByText(/^Rename:/).closest("[role=alert]")!;
+  fireEvent.change(input, { target: { value: "todo.md" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await screen.findByText(/^Rename:/);
+  expect(banner().querySelector(".kern-repeat-flash")).toBeNull();
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(banner().querySelector(".kern-repeat-flash")).not.toBeNull());
+  expect(ipc.rename).toHaveBeenCalledTimes(2);
+});
+
 test("a_folder_is_renamed_with_its_whole_name_selected", async () => {
   await mount([dir("v1.2")]);
   select("v1.2");
