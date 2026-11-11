@@ -17,7 +17,7 @@
 use std::path::{Path, PathBuf};
 
 use kernkraft_fs::base_dirs;
-use kernkraft_xdg_apps::{default_groups, launch_groups, AppRegistry, MimeDb};
+use kernkraft_xdg_apps::{default_groups, launch_groups, AppRegistry, MimeDb, TerminalPrefs};
 
 use crate::cli::{self, Plan};
 use crate::instance::Invocation;
@@ -158,7 +158,11 @@ fn launch_default(base: &kernkraft_fs::BaseDirs, db: &MimeDb, files: &[PathBuf])
     } else {
         None
     };
-    launch_groups(&groups, terminal.as_deref())
+    let prefs = TerminalPrefs {
+        setting: terminal.as_deref(),
+        base: Some(base),
+    };
+    launch_groups(&groups, &prefs)
         .into_iter()
         .filter_map(|o| o.result.err().map(|e| format!("{}: {e}", o.app)))
         .collect()

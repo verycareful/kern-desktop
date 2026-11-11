@@ -2,6 +2,8 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useRef, useState } from "react";
 import { displayPath, toWireError, userDirs, type WirePath } from "../ipc";
+import { useRaisedText } from "../ops/raised-text";
+import { FlashSpan } from "../ops/repeat-flash";
 import { parseLocation } from "./path-input";
 
 // The typed location (Ctrl+L). Enter checks the text and navigates;
@@ -25,7 +27,7 @@ export function LocationBar(props: {
 }) {
   const [initial] = useState(() => displayPath(props.path));
   const [text, setText] = useState(initial);
-  const [error, setError] = useState<string | null>(null);
+  const { text: error, repeats, raise } = useRaisedText();
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
@@ -50,7 +52,6 @@ export function LocationBar(props: {
   };
 
   const submit = async () => {
-    setError(null);
     if (text === initial) {
       props.onNavigate(props.path);
       close("done");
@@ -64,7 +65,7 @@ export function LocationBar(props: {
       const home = text.startsWith("~") ? (await userDirs()).home : null;
       const parsed = parseLocation(text, home);
       if (!parsed.ok) {
-        if (alive.current) setError(parsed.message);
+        if (alive.current) raise(parsed.message);
         return;
       }
       if (!alive.current) return;
@@ -72,7 +73,7 @@ export function LocationBar(props: {
       close(leftDuringCheck.current ? "blur" : "done");
     } catch (e) {
       const err = toWireError(e);
-      if (alive.current) setError(`${err.kind}: ${err.message}`);
+      if (alive.current) raise(`${err.kind}: ${err.message}`);
     } finally {
       checking.current = false;
       if (alive.current) setBusy(false);
@@ -106,8 +107,9 @@ export function LocationBar(props: {
         }}
       />
       {error && (
-        <p role="alert" className="kern-location-error">
+        <p role="alert" className="kern-location-error kern-flash-host">
           {error}
+          <FlashSpan count={repeats} />
         </p>
       )}
     </div>

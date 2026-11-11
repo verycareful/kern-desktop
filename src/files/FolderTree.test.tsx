@@ -3,8 +3,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { DirEvent, WireEntry, WireError, WirePath } from "../ipc";
+import { clearCut, setCut } from "../ops/cut-store";
+import { useOpenError } from "../ops/open-error-store";
 import { entry } from "./test-entries";
 import { stubLayout } from "./test-layout";
+import { useTreeHover } from "./tree-hover";
+import { DEFAULT_TREE_SORT, useTreeSort } from "./tree-sort";
+import { useViewSettings } from "./view-settings";
 
 const ipc = vi.hoisted(() => ({
   listDir: vi.fn(),
@@ -75,6 +80,14 @@ beforeEach(() => {
 });
 afterEach(async () => {
   cleanup();
+  useViewSettings.setState({
+    singleClickLeft: true,
+    singleClickRight: false,
+    singleClickCentre: false,
+    singleClickEditor: false,
+  });
+  useOpenError.getState().dismiss();
+  useTreeSort.setState({ sort: DEFAULT_TREE_SORT });
   await Promise.resolve();
   restoreLayout();
   vi.clearAllMocks();
@@ -332,16 +345,68 @@ test("a_link_whose_identity_cannot_be_told_is_not_opened_and_says_why", async ()
 
 test("a_file_opens_as_the_folder_view_opens_it_and_a_failure_is_said", async () => {
   await mount();
-  fireEvent.click(row("readme.md"));
+  fireEvent.doubleClick(row("readme.md"));
   await waitFor(() =>
     expect(ipc.openPaths).toHaveBeenCalledExactlyOnceWith([p("/r/readme.md")], "inside", "default")
   );
+  fireEvent.click(row("readme.md"));
   expect(row("readme.md")).toHaveAttribute("aria-selected", "true");
   ipc.openPaths.mockResolvedValue([
     { path: p("/r/z.txt"), action: "failed", location: null, error: wireError("NotFound", "gone") },
   ]);
-  fireEvent.click(row("z.txt"));
-  expect(await screen.findByText(/z\.txt: .*gone/)).toBeInTheDocument();
+  fireEvent.doubleClick(row("z.txt"));
+  // Said in the editor area (OpenError.tsx), not among the tree's own notes.
+  await waitFor(() =>
+    expect(useOpenError.getState().lines).toEqual([
+      expect.stringMatching(/^z\.txt was not opened: .*gone/),
+    ])
+  );
+  expect(screen.queryByRole("status")).toBeNull();
+});
+
+test("a_single_click_on_a_file_only_marks_it_while_the_editor_setting_is_off", async () => {
+  await mount();
+  fireEvent.click(row("readme.md"), { detail: 1 });
+  expect(row("readme.md")).toHaveAttribute("aria-selected", "true");
+  await act(async () => {});
+  expect(ipc.openPaths).not.toHaveBeenCalled();
+});
+
+test("with_the_editor_setting_on_a_single_click_opens_a_file_and_a_double_click_opens_it_once", async () => {
+  useViewSettings.setState({ singleClickEditor: true });
+  await mount();
+  const readme = row("readme.md");
+  fireEvent.click(readme, { detail: 1 });
+  fireEvent.click(readme, { detail: 2 });
+  fireEvent.doubleClick(readme);
+  await waitFor(() =>
+    expect(ipc.openPaths).toHaveBeenCalledExactlyOnceWith([p("/r/readme.md")], "inside", "default")
+  );
+});
+
+test("the_settings_of_the_other_areas_do_not_open_a_file_on_a_single_click", async () => {
+  useViewSettings.setState({
+    singleClickLeft: true,
+    singleClickRight: true,
+    singleClickCentre: true,
+    singleClickEditor: false,
+  });
+  await mount();
+  fireEvent.click(row("readme.md"), { detail: 1 });
+  await act(async () => {});
+  expect(ipc.openPaths).not.toHaveBeenCalled();
+});
+
+test("a_folder_row_expands_and_collapses_on_a_single_click_with_the_setting_on_or_off", async () => {
+  for (const singleClickEditor of [false, true]) {
+    useViewSettings.setState({ singleClickEditor });
+    const { unmount } = await mount();
+    fireEvent.click(row("docs"), { detail: 1 });
+    await waitFor(() => expect(names()).toContain("a.txt"));
+    fireEvent.click(row("docs"), { detail: 1 });
+    await waitFor(() => expect(names()).not.toContain("a.txt"));
+    unmount();
+  }
 });
 
 test("a_name_that_is_not_utf8_is_listed_and_opened_by_its_real_path", async () => {
@@ -475,7 +540,11 @@ test("a_note_can_be_dismissed", async () => {
   delete disk["/r/src"];
   await emit("kernkraft://dir-changed", { key: "tree:t:Utf8:/r/src" });
   const notes = await screen.findByRole("status");
-  fireEvent.click(within(notes).getByRole("button", { name: "Dismiss" }));
+  // The class carries the fixed square size (shell.css); without it the button takes the toolbar
+  // button's 36px height and is squeezed narrow by the note's text.
+  const dismiss = within(notes).getByRole("button", { name: "Dismiss" });
+  expect(dismiss).toHaveClass("kern-dismiss");
+  fireEvent.click(dismiss);
   expect(screen.queryByRole("status")).toBeNull();
 });
 
@@ -621,4 +690,176 @@ test("reveal_opens_the_folders_down_to_a_path_and_makes_it_the_current_row", asy
     shown = h.current!.reveal(p("/elsewhere/x"));
   });
   expect(shown).toBe(false);
+});
+
+test("a_tree_row_the_clipboard_holds_as_a_cut_is_marked_until_the_cut_is_gone", async () => {
+  await mount();
+  act(() => setCut([p("/r/readme.md")]));
+  expect(rows().map((r) => r.classList.contains("kern-cut"))).toEqual([false, false, true, false]);
+  act(() => clearCut());
+  expect(rows().some((r) => r.classList.contains("kern-cut"))).toBe(false);
+});
+
+const dimmed = () =>
+  rows()
+    .filter((r) => r.classList.contains("kern-cut"))
+    .map((r) => r.dataset.name);
+
+test("everything_inside_a_cut_folder_is_marked_with_it_as_it_opens", async () => {
+  await mount();
+  act(() => setCut([p("/r/docs")]));
+  expect(dimmed()).toEqual(["docs"]);
+  fireEvent.click(row("docs"));
+  await waitFor(() => expect(names()).toContain("a.txt"));
+  // Folders opened after the cut are marked too, down to any depth.
+  fireEvent.click(row("deep"));
+  await waitFor(() => expect(names()).toContain("d.txt"));
+  expect(names()).toEqual(["docs", "deep", "d.txt", "a.txt", "src", "readme.md", "z.txt"]);
+  expect(dimmed()).toEqual(["docs", "deep", "d.txt", "a.txt"]);
+  act(() => clearCut());
+  expect(dimmed()).toEqual([]);
+});
+
+test("a_cut_folder_marks_its_contents_and_not_the_rows_after_them", async () => {
+  await mount();
+  fireEvent.click(row("docs"));
+  await waitFor(() => expect(names()).toContain("a.txt"));
+  fireEvent.click(row("src"));
+  await waitFor(() => expect(names()).toContain("main.rs"));
+  act(() => setCut([p("/r/src"), p("/r/docs/deep")]));
+  expect(dimmed()).toEqual(["deep", "src", "main.rs"]);
+});
+
+test("a_tree_whose_root_is_inside_a_cut_folder_is_marked_throughout", async () => {
+  await mount({ root: p("/r/docs") });
+  act(() => setCut([p("/r")]));
+  expect(dimmed()).toEqual(["deep", "a.txt"]);
+  // A folder whose name only starts with the root's is not above it.
+  act(() => setCut([p("/r/do")]));
+  expect(dimmed()).toEqual([]);
+});
+
+test("the_same_note_raised_again_is_listed_once_and_flashes", async () => {
+  ipc.unwatchDir.mockRejectedValue(wireError("Io", "inotify busy"));
+  await mount();
+  const toggle = async () => {
+    fireEvent.click(row("docs"));
+    await waitFor(() => expect(row("docs")).toHaveAttribute("aria-expanded", "true"));
+    fireEvent.click(row("docs"));
+    await waitFor(() => expect(row("docs")).toHaveAttribute("aria-expanded", "false"));
+  };
+  await toggle();
+  const note = await screen.findByText(/did not end: Io: inotify busy/);
+  expect(note.closest("li")!.querySelector(".kern-repeat-flash")).toBeNull();
+  await toggle();
+  await waitFor(() =>
+    expect(
+      screen
+        .getByText(/did not end: Io: inotify busy/)
+        .closest("li")!
+        .querySelector(".kern-repeat-flash")
+    ).not.toBeNull()
+  );
+  expect(screen.getAllByText(/did not end: Io: inotify busy/)).toHaveLength(1);
+});
+
+/** A root and an open folder whose files differ in size and in age. */
+function sizedDisk() {
+  disk = {
+    "/r": [
+      folder("/r", "docs"),
+      folder("/r", "src"),
+      entry("readme.md", { len: 5, modified_ms: 300 }, "/r"),
+      entry("z.txt", { len: 50, modified_ms: 100 }, "/r"),
+      entry("a.bin", { len: 20, modified_ms: 200 }, "/r"),
+    ],
+    "/r/docs": [
+      entry("a.txt", { len: 1, modified_ms: 20 }, "/r/docs"),
+      entry("b.txt", { len: 9, modified_ms: 10 }, "/r/docs"),
+    ],
+  };
+}
+
+test("the_tree_lists_in_the_order_chosen_and_keeps_folders_first", async () => {
+  sizedDisk();
+  useTreeSort.getState().chooseBy("size");
+  await mount();
+  expect(names()).toEqual(["docs", "src", "z.txt", "a.bin", "readme.md"]);
+});
+
+test("a_new_sort_orders_every_open_folder_again_and_leaves_them_open_and_watched", async () => {
+  sizedDisk();
+  await mount();
+  fireEvent.click(row("docs"));
+  await waitFor(() => expect(names()).toContain("b.txt"));
+  expect(names()).toEqual(["docs", "a.txt", "b.txt", "src", "a.bin", "readme.md", "z.txt"]);
+  const watches = ipc.watchDir.mock.calls.length;
+
+  act(() => useTreeSort.getState().chooseBy("size"));
+  await waitFor(() =>
+    expect(names()).toEqual(["docs", "b.txt", "a.txt", "src", "z.txt", "a.bin", "readme.md"])
+  );
+  expect(row("docs")).toHaveAttribute("aria-expanded", "true");
+  expect(ipc.watchDir).toHaveBeenCalledTimes(watches);
+
+  act(() => useTreeSort.getState().chooseBy("modified"));
+  await waitFor(() =>
+    expect(names()).toEqual(["docs", "a.txt", "b.txt", "src", "readme.md", "a.bin", "z.txt"])
+  );
+});
+
+test("the_direction_flips_files_and_folders_each_within_their_group", async () => {
+  sizedDisk();
+  await mount();
+  act(() => useTreeSort.getState().chooseDir("desc"));
+  await waitFor(() => expect(names()).toEqual(["src", "docs", "z.txt", "readme.md", "a.bin"]));
+});
+
+test("the_tree_says_whether_any_folder_is_open_as_that_changes", async () => {
+  const seen: boolean[] = [];
+  const last = () => seen[seen.length - 1];
+  await mount({ onOpenChange: (open) => seen.push(open) });
+  expect(last()).toBe(false);
+  fireEvent.click(row("docs"));
+  await waitFor(() => expect(last()).toBe(true));
+  fireEvent.click(row("src"));
+  await waitFor(() => expect(names()).toContain("main.rs"));
+  // One folder still open: still open.
+  fireEvent.click(row("docs"));
+  await waitFor(() => expect(names()).not.toContain("a.txt"));
+  expect(last()).toBe(true);
+  fireEvent.click(row("src"));
+  await waitFor(() => expect(last()).toBe(false));
+});
+
+test("the_row_under_the_pointer_is_held_until_the_pointer_leaves_it_or_the_row_goes", async () => {
+  await mount();
+  const held = () => useTreeHover.getState().entry?.name ?? null;
+  fireEvent.pointerEnter(row("docs"));
+  expect(held()).toBe("docs");
+  fireEvent.pointerLeave(row("docs"));
+  expect(held()).toBeNull();
+
+  // A row that closes under a pointer that never moved is let go.
+  fireEvent.click(row("docs"));
+  await waitFor(() => expect(names()).toContain("a.txt"));
+  fireEvent.pointerEnter(screen.getByRole("treeitem", { name: /^a\.txt/ }));
+  expect(held()).toBe("a.txt");
+  fireEvent.click(row("docs"));
+  await waitFor(() => expect(names()).not.toContain("a.txt"));
+  await waitFor(() => expect(held()).toBeNull());
+
+  // Leaving the tree altogether lets go as well.
+  fireEvent.pointerEnter(row("src"));
+  expect(held()).toBe("src");
+  fireEvent.pointerLeave(screen.getByTestId("folder-tree"));
+  expect(held()).toBeNull();
+});
+
+test("a_tree_that_goes_lets_go_of_the_row_it_held", async () => {
+  const view = await mount();
+  fireEvent.pointerEnter(row("docs"));
+  expect(useTreeHover.getState().entry).not.toBeNull();
+  view.unmount();
+  expect(useTreeHover.getState().entry).toBeNull();
 });

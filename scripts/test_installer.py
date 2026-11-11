@@ -190,13 +190,21 @@ class World:
             "NO_COLOR": "1",
         }
 
-    def bash(self, body: str, sources=("ui.sh", "common.sh", "release.sh", "layout.sh")) -> subprocess.CompletedProcess:
+    def bash(
+        self,
+        body: str,
+        sources=("ui.sh", "common.sh", "release.sh", "layout.sh"),
+        path: str | None = None,
+    ) -> subprocess.CompletedProcess:
         prelude = "".join(f"source {INSTALLER / s}; " for s in sources)
+        env = self.env()
+        if path is not None:
+            env["PATH"] = path
         return subprocess.run(
-            ["bash", "--noprofile", "--norc", "-c", prelude + body],
+            ["/usr/bin/bash", "--noprofile", "--norc", "-c", prelude + body],
             capture_output=True,
             text=True,
-            env=self.env(),
+            env=env,
             stdin=subprocess.DEVNULL,
             start_new_session=True,
             timeout=60,
@@ -265,7 +273,7 @@ class Release(unittest.TestCase):
 
     def test_asset_missing_from_sums_is_refused(self) -> None:
         sums = self.w.release / "SHA256SUMS"
-        sums.write_text("".join(l + "\n" for l in sums.read_text().splitlines() if "deb" not in l))
+        sums.write_text("".join(l + "\n" for l in sums.read_text().splitlines() if not l.endswith(".deb")))
         r = self.w.bash(f'd=$(mktemp -d -p "$W"); release_fetch "{self.w.release}" "$d"')
         self.assertEqual(r.returncode, 1)
         self.assertIn(".deb", r.stderr)
@@ -428,11 +436,17 @@ DEFAULTS = {
     "new_tab_default": "folder",
     "view_mode": "list",
     "show_hidden": False,
+    "single_click_left": True,
+    "single_click_right": False,
+    "single_click_centre": False,
+    "single_click_editor": False,
+    "time_format": "system",
     "terminal": None,
     "scan_documents": True,
     "scan_downloads": True,
     "scan_roots": [],
     "word_wrap": False,
+    "error_log": True,
     "editor_zoom": 1,
 }
 
@@ -464,8 +478,9 @@ class Walk(unittest.TestCase):
     def test_enter_everywhere_writes_the_defaults(self) -> None:
         self.defaults_until_folder()
         for p in (b"New tab folder", b"Ctrl+T opens", b"View of new folder views",
-                  b"Show hidden items", b"Terminal", b"Walk Documents", b"Walk Downloads",
-                  b"Add a folder", b"Wrap long lines", b"Text size"):
+                  b"Show hidden items", b"Left panel opens with", b"Right panel opens with",
+                  b"File manager list and grid open with", b"Editor window file tree opens with", b"Time of day in dates", b"Terminal",
+                  b"Walk Documents", b"Walk Downloads", b"Add a folder", b"Wrap long lines", b"Text size", b"Write an error log"):
             self.answer(p)
         self.assertEqual(self.patch(), DEFAULTS)
 
@@ -481,12 +496,18 @@ class Walk(unittest.TestCase):
         self.answer(b"Ctrl+T opens", DOWN)
         self.answer(b"View of new folder views", DOWN)
         self.answer(b"Show hidden items", UP)
+        self.answer(b"Left panel opens with", UP)  # Double click
+        self.answer(b"Right panel opens with", DOWN)  # Single click
+        self.answer(b"File manager list and grid open with", DOWN)
+        self.answer(b"Editor window file tree opens with")
+        self.answer(b"Time of day in dates", DOWN, DOWN)  # 24-hour
         self.answer(b"Terminal", b"foot")
         self.answer(b"Walk Documents", DOWN)
         self.answer(b"Walk Downloads")
         self.answer(b"Add a folder")
         self.answer(b"Wrap long lines", UP)
         self.answer(b"Text size", DOWN, DOWN)  # 150 %
+        self.answer(b"Write an error log", DOWN)  # No
         p = self.patch()
         self.assertEqual(p["theme_mode"], "dark")
         self.assertEqual(p["interface_size"], 110)
@@ -495,10 +516,16 @@ class Walk(unittest.TestCase):
         self.assertEqual(p["new_tab_default"], "current")
         self.assertEqual(p["view_mode"], "grid")
         self.assertTrue(p["show_hidden"])
+        self.assertFalse(p["single_click_left"])
+        self.assertTrue(p["single_click_right"])
+        self.assertTrue(p["single_click_centre"])
+        self.assertFalse(p["single_click_editor"])
+        self.assertEqual(p["time_format"], "24")
         self.assertEqual(p["terminal"], "foot")
         self.assertFalse(p["scan_documents"])
         self.assertTrue(p["word_wrap"])
         self.assertEqual(p["editor_zoom"], 1.5)
+        self.assertFalse(p["error_log"])
 
     def test_bad_folder_is_asked_again_and_odd_names_round_trip(self) -> None:
         odd = self.w.home / 'my "odd" \\ dir'
@@ -510,7 +537,9 @@ class Walk(unittest.TestCase):
         self.answer(b"Folder for new tabs", b"/does/not/exist")
         self.answer(b"Folder for new tabs", b"~/Projects")
         for p in (b"Ctrl+T opens", b"View of new folder views", b"Show hidden items",
-                  b"Terminal", b"Walk Documents", b"Walk Downloads"):
+                  b"Left panel opens with", b"Right panel opens with",
+                  b"File manager list and grid open with", b"Editor window file tree opens with", b"Time of day in dates", b"Terminal", b"Walk Documents",
+                  b"Walk Downloads"):
             self.answer(p)
         self.answer(b"Add a folder", str(odd).encode())
         self.answer(b"Add a folder", b"nope")
@@ -518,6 +547,7 @@ class Walk(unittest.TestCase):
         self.answer(b"Add a folder")
         self.answer(b"Wrap long lines")
         self.answer(b"Text size")
+        self.answer(b"Write an error log")
         p = self.patch()
         self.assertEqual(p["new_tab_folder"], {"k": "Utf8", "v": str(self.w.home / "Projects")})
         self.assertEqual(p["scan_roots"], [{"k": "Utf8", "v": str(odd)}])
@@ -584,9 +614,11 @@ class Flows(unittest.TestCase):
         self.answer(s, b"Customise Kern now?")
         for p in (b"Theme", b"Interface size", b"colours?", b"accent colour?", b"fonts?",
                   b"corner radius?", b"New tab folder", b"Ctrl+T opens",
-                  b"View of new folder views", b"Show hidden items", b"Terminal",
-                  b"Walk Documents", b"Walk Downloads", b"Add a folder", b"Wrap long lines",
-                  b"Text size"):
+                  b"View of new folder views", b"Show hidden items",
+                  b"Left panel opens with", b"Right panel opens with",
+                  b"File manager list and grid open with", b"Editor window file tree opens with", b"Time of day in dates", b"Terminal", b"Walk Documents",
+                  b"Walk Downloads", b"Add a folder", b"Wrap long lines", b"Text size",
+                  b"Write an error log"):
             self.answer(s, p)
         self.answer(s, b"default file manager?", UP)
         self.answer(s, b"Launch Kern now?", DOWN)
@@ -637,16 +669,156 @@ class Flows(unittest.TestCase):
         self.assertFalse((self.w.lib / OLD_VERSION).exists())
         self.assertIn(f"KERN_VERSION={VERSION}", (self.w.lib / "install.env").read_text())
 
-    def reinstall(self, settings_keys: tuple, pins_keys: tuple) -> Session:
-        # Kern is at the latest release, so Fresh reinstall is the first entry.
+    def reinstall(self, settings_keys: tuple, pins_keys: tuple, binds_keys: tuple | None = None) -> Session:
+        # Kern is at the latest release, so Fresh reinstall is the first entry. The binds question
+        # is asked only when a binds.json is there, so a test that has one passes its answer.
         s = self.install()
         s.expect(b"Fresh reinstall")
         s.expect(b"Cancel")
         s.send(ENTER)
         self.answer(s, b"Settings", *settings_keys)
         self.answer(s, b"Pins and recents", *pins_keys)
+        if binds_keys is not None:
+            self.answer(s, b"Key and mouse binds", *binds_keys)
         self.answer(s, b"Install Kern for")
         return s
+
+    def binds_file(self) -> tuple[Path, bytes]:
+        self.config.mkdir(parents=True, exist_ok=True)
+        path, body = self.config / "binds.json", b'{"binds":{"tab.close":["F9"]}}'
+        path.write_bytes(body)
+        return path, body
+
+    def test_update_asks_about_binds_only_when_there_are_some_and_keeps_them_on_keep(self) -> None:
+        self.installed_old()
+        path, body = self.binds_file()
+        s = self.install()
+        self.answer(s, b"Update to " + VERSION.encode())
+        self.answer(s, b"Key and mouse binds")
+        s.expect(b"updated to " + VERSION.encode())
+        self.assertEqual(s.finish(), 0)
+        self.assertEqual(path.read_bytes(), body)
+        self.assertIn(b"binds", s.out.split(b"updated to")[1])
+        self.assertEqual(list(self.config.glob("binds.json.backup-*")), [])
+
+    def test_update_clear_moves_only_the_binds_aside_and_says_so(self) -> None:
+        self.installed_old()
+        files = self.user_data()
+        path, body = self.binds_file()
+        s = self.install()
+        self.answer(s, b"Update to " + VERSION.encode())
+        self.answer(s, b"Key and mouse binds", DOWN)
+        s.expect(b"updated to " + VERSION.encode())
+        self.assertEqual(s.finish(), 0)
+        self.assertFalse(path.exists())
+        self.assertEqual(next(self.config.glob("binds.json.backup-*")).read_bytes(), body)
+        for p, b in files.items():
+            self.assertEqual(p.read_bytes(), b)
+        self.assertIn(b"Moved aside", s.out)
+        self.assertIn(f"KERN_VERSION={VERSION}", (self.w.lib / "install.env").read_text())
+
+    def test_update_without_binds_asks_nothing_about_them(self) -> None:
+        self.installed_old()
+        self.user_data()
+        s = self.install()
+        self.answer(s, b"Update to " + VERSION.encode())
+        s.expect(b"updated to " + VERSION.encode())
+        self.assertEqual(s.finish(), 0)
+        self.assertNotIn(b"Key and mouse binds", s.out)
+
+    def test_defaults_update_keeps_the_binds_and_asks_nothing(self) -> None:
+        self.installed_old()
+        path, body = self.binds_file()
+        r = self.unattended()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(path.read_bytes(), body)
+        self.assertNotIn("Key and mouse binds", r.stdout + r.stderr)
+
+    def test_reinstall_keep_leaves_the_binds(self) -> None:
+        self.assertEqual(self.unattended().returncode, 0)
+        path, body = self.binds_file()
+        s = self.reinstall((), (), ())
+        self.answer(s, b"default file manager?", DOWN)
+        self.answer(s, b"Launch Kern now?", DOWN)
+        self.assertEqual(s.finish(), 0)
+        self.assertEqual(path.read_bytes(), body)
+
+    def test_reinstall_clear_moves_the_binds_aside_and_leaves_the_pins(self) -> None:
+        self.assertEqual(self.unattended().returncode, 0)
+        files = self.user_data()
+        path, body = self.binds_file()
+        s = self.reinstall((), (), (DOWN,))
+        self.answer(s, b"default file manager?", DOWN)
+        self.answer(s, b"Launch Kern now?", DOWN)
+        self.assertEqual(s.finish(), 0)
+        self.assertFalse(path.exists())
+        self.assertEqual(next(self.config.glob("binds.json.backup-*")).read_bytes(), body)
+        self.assertEqual((self.state / "pins.json").read_bytes(), files[self.state / "pins.json"])
+
+    def test_reinstall_without_binds_does_not_ask(self) -> None:
+        self.assertEqual(self.unattended().returncode, 0)
+        s = self.reinstall((), ())
+        self.answer(s, b"default file manager?", DOWN)
+        self.answer(s, b"Launch Kern now?", DOWN)
+        self.assertEqual(s.finish(), 0)
+        self.assertNotIn(b"Key and mouse binds", s.out)
+
+    def test_failed_reinstall_keeps_the_binds_even_when_clear_was_chosen(self) -> None:
+        self.assertEqual(self.unattended().returncode, 0)
+        path, body = self.binds_file()
+        app = next(self.w.release.glob("*.AppImage"))
+        app.write_text("#!/bin/bash\nexit 1\n")
+        sums = [l for l in (self.w.release / "SHA256SUMS").read_text().splitlines() if not l.endswith(".AppImage")]
+        sums.append(f"{hashlib.sha256(app.read_bytes()).hexdigest()}  {app.name}")
+        (self.w.release / "SHA256SUMS").write_text("\n".join(sums) + "\n")
+        s = self.reinstall((), (), (DOWN,))
+        self.answer(s, b"default file manager?", DOWN)
+        self.answer(s, b"Launch Kern now?", DOWN)
+        s.expect(b"could not be extracted")
+        self.assertEqual(s.finish(), 1)
+        self.assertEqual(path.read_bytes(), body)
+
+    def test_fresh_install_over_an_old_binds_file_asks_and_clear_moves_it_aside(self) -> None:
+        path, body = self.binds_file()
+        s = self.install()
+        s.expect(b"Thank you for choosing Kern")
+        self.answer(s, b"Key and mouse binds", DOWN)
+        self.answer(s, b"Install Kern for")
+        self.answer(s, b"Customise Kern now?", DOWN)
+        self.answer(s, b"default file manager?", DOWN)
+        self.answer(s, b"Launch Kern now?", DOWN)
+        self.assertEqual(s.finish(), 0)
+        self.assertFalse(path.exists())
+        self.assertEqual(next(self.config.glob("binds.json.backup-*")).read_bytes(), body)
+
+    def test_fresh_install_without_a_binds_file_does_not_ask(self) -> None:
+        s = self.install()
+        self.answer(s, b"Install Kern for")
+        self.answer(s, b"Customise Kern now?", DOWN)
+        self.answer(s, b"default file manager?", DOWN)
+        self.answer(s, b"Launch Kern now?", DOWN)
+        self.assertEqual(s.finish(), 0)
+        self.assertNotIn(b"Key and mouse binds", s.out)
+
+    def test_uninstall_names_the_binds_and_remove_deletes_them_with_the_rest(self) -> None:
+        self.assertEqual(self.unattended().returncode, 0)
+        self.binds_file()
+        u = self.run_script(UNINSTALL)
+        self.answer(u, b"Remove Kern", UP)
+        self.answer(u, b"Settings, binds, pins and recents", DOWN)
+        u.expect(b"binds")
+        self.assertEqual(u.finish(), 0)
+        self.assertFalse(self.config.exists())
+
+    def test_uninstall_keep_leaves_the_binds_and_says_so(self) -> None:
+        self.assertEqual(self.unattended().returncode, 0)
+        path, body = self.binds_file()
+        u = self.run_script(UNINSTALL)
+        self.answer(u, b"Remove Kern", UP)
+        self.answer(u, b"Settings, binds, pins and recents")
+        self.assertEqual(u.finish(), 0)
+        self.assertEqual(path.read_bytes(), body)
+        self.assertIn(b"binds", u.out.split(b"removed")[-1])
 
     def test_reinstall_clear_moves_pins_and_recents_to_backups(self) -> None:
         self.assertEqual(self.unattended().returncode, 0)
@@ -737,7 +909,7 @@ class Flows(unittest.TestCase):
         self.user_data()
         u = self.run_script(UNINSTALL)
         self.answer(u, b"Remove Kern", UP)
-        self.answer(u, b"Settings, pins and recents", DOWN)
+        self.answer(u, b"Settings, binds, pins and recents", DOWN)
         u.expect(b"removed")
         self.assertEqual(u.finish(), 0)
         self.assertFalse(self.config.exists())
@@ -750,7 +922,7 @@ class Flows(unittest.TestCase):
         files = self.user_data()
         u = self.run_script(UNINSTALL)
         self.answer(u, b"Remove Kern", UP)
-        self.answer(u, b"Settings, pins and recents")
+        self.answer(u, b"Settings, binds, pins and recents")
         self.assertEqual(u.finish(), 0)
         self.assertFalse(self.w.lib.exists())
         for p, b in files.items():
@@ -841,6 +1013,97 @@ class Flows(unittest.TestCase):
         r = subprocess.run(["bash", str(INSTALL), "--frobnicate"], capture_output=True, text=True,
                            env=self.w.env(), timeout=60)
         self.assertEqual(r.returncode, 2)
+
+
+class RunningKern(unittest.TestCase):
+    """kern_running asks the session bus whether Kern owns its name, with
+    whichever of busctl, gdbus and dbus-send the machine has."""
+
+    def setUp(self) -> None:
+        self.w = World()
+        self.addCleanup(self.w.close)
+        # The only commands on the PATH: the bus tools a test chooses to
+        # give, and cat, which the script's message output runs.
+        self.only = self.w.root / "only"
+        self.only.mkdir()
+        (self.only / "cat").symlink_to("/usr/bin/cat")
+
+    def tool(self, name: str, body: str) -> None:
+        self.w.script(self.only / name, body)
+
+    def ask(self) -> subprocess.CompletedProcess:
+        return self.w.bash("kern_running", path=str(self.only))
+
+    def test_gdbus_answers_when_there_is_no_busctl(self) -> None:
+        self.tool(
+            "gdbus",
+            'echo "gdbus $*" >> "$W/calls.log"\n'
+            'if [[ -e "$W/running" ]]; then echo "(true,)"; else echo "(false,)"; fi',
+        )
+        self.assertEqual(self.ask().returncode, 1)
+        (self.w.root / "running").touch()
+        r = self.ask()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        call = [l for l in self.w.calls().splitlines() if l.startswith("gdbus")][-1]
+        self.assertIn("--session", call)
+        self.assertIn("NameHasOwner", call)
+        self.assertIn("io.github.verycareful.kern", call)
+
+    def test_dbus_send_answers_when_there_is_neither(self) -> None:
+        self.tool(
+            "dbus-send",
+            'echo "dbus-send $*" >> "$W/calls.log"\n'
+            'echo "method return time=1 sender=:1.1 -> destination=:1.2 serial=3 reply_serial=2"\n'
+            'if [[ -e "$W/running" ]]; then echo "   boolean true"; else echo "   boolean false"; fi',
+        )
+        self.assertEqual(self.ask().returncode, 1)
+        (self.w.root / "running").touch()
+        r = self.ask()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        call = [l for l in self.w.calls().splitlines() if l.startswith("dbus-send")][-1]
+        self.assertIn("--session", call)
+        self.assertIn("NameHasOwner", call)
+        self.assertIn("string:io.github.verycareful.kern", call)
+
+    def test_busctl_is_asked_first_when_present(self) -> None:
+        self.tool("busctl", 'echo "busctl $*" >> "$W/calls.log"')
+        self.tool("gdbus", 'echo "gdbus $*" >> "$W/calls.log"; echo "(false,)"')
+        self.assertEqual(self.ask().returncode, 0)
+        self.assertIn("busctl --user status io.github.verycareful.kern", self.w.calls())
+        self.assertNotIn("gdbus", self.w.calls())
+
+    def test_no_tool_says_so_once_and_reports_not_running(self) -> None:
+        r = self.w.bash("kern_running; a=$?; kern_running; echo status=$a,$?", path=str(self.only))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("status=1,1", r.stdout)
+        self.assertEqual(r.stderr.count("busctl"), 1, r.stderr)
+        for name in ("gdbus", "dbus-send"):
+            self.assertIn(name, r.stderr)
+
+
+class RunAsRoot(unittest.TestCase):
+    """Running install.sh as root makes Just me mean root."""
+
+    def setUp(self) -> None:
+        self.w = World()
+        self.addCleanup(self.w.close)
+
+    def questions(self, root: bool) -> subprocess.CompletedProcess:
+        return self.w.bash(
+            f"running_as_root() {{ {'true' if root else 'false'}; }}; OPT_DEFAULTS=1; ask_install_questions ask",
+            sources=("ui.sh", "common.sh", "release.sh", "layout.sh", "settings.sh", "install-main.sh"),
+        )
+
+    def test_root_is_warned_that_just_me_is_root(self) -> None:
+        r = self.questions(True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("root", r.stderr)
+        self.assertIn("Everyone on this computer", r.stderr)
+
+    def test_an_ordinary_user_is_not_warned(self) -> None:
+        r = self.questions(False)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stderr, "")
 
 
 class Build(unittest.TestCase):

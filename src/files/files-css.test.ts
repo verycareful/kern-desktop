@@ -40,11 +40,17 @@ test("the_cursor_outline_is_not_in_the_stylesheet_unconditionally", () => {
   expect(rulesFor(css, ".kern-cursor").join()).toMatch(/outline:\s*2px solid var\(--kern-accent\)/);
 });
 
-test("the_first_row_and_the_cards_are_spaced_from_the_path_bar_by_the_gap_token", () => {
+test("the_cards_are_spaced_from_the_path_bar_by_the_gap_token", () => {
   // --kern-density-gap is the theme's gap for the density in use (base.css).
-  for (const sel of [".kern-list", ".kern-grid"]) {
-    expect(rulesFor(css, sel).join(), sel).toMatch(/padding-top:\s*var\(--kern-density-gap\)/);
-  }
+  expect(rulesFor(css, ".kern-grid").join()).toMatch(/padding-top:\s*var\(--kern-density-gap\)/);
+});
+
+test("the_list_header_sits_flush_under_the_bar_with_no_space_above_it", () => {
+  // The header is sticky at the top of the scroller; any padding above the scroller would show
+  // rows scrolling past in the gap between the bar and the header.
+  expect(rulesFor(css, ".kern-list").join()).not.toMatch(/padding/);
+  expect(rulesFor(css, ".kern-list-head").join()).toMatch(/position:\s*sticky/);
+  expect(rulesFor(css, ".kern-list-head").join()).toMatch(/top:\s*0\b/);
 });
 
 test("the_empty_notes_keep_the_theme_focus_frame_when_they_hold_the_keyboard", () => {

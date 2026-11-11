@@ -10,7 +10,9 @@ import {
   type WireEntry,
   type WirePath,
 } from "../ipc";
+import { clearCut } from "../ops/cut-store";
 import { errorText } from "../ops/error-text";
+import { NO_NOTES, raiseNote, type NoteList } from "../ops/note-list";
 import { baseName, itemsText } from "../ops/labels";
 import { useOps } from "../ops/useOps";
 import { openAsEditor as openAsEditorWindow } from "../shell/layout-switch";
@@ -55,7 +57,10 @@ export function copyPaths(paths: readonly WirePath[], note: (text: string) => vo
     return;
   }
   clipText(paths.map(displayPath).join("\n")).then(
-    () => useOps.getState().notify(`Copied the path of ${itemsText(paths)}`),
+    () => {
+      clearCut();
+      useOps.getState().notify(`Copied the path of ${itemsText(paths)}`);
+    },
     (e: unknown) => note(`The path could not be copied: ${errorText(toWireError(e))}`)
   );
 }
@@ -81,7 +86,7 @@ export async function openTerminalIn(dir: WirePath, note: (text: string) => void
     const err = toWireError(e);
     note(
       err.kind === "NoTerminal"
-        ? `No terminal could be opened (${err.message}). Choose one under Terminal in the settings, or set $TERMINAL.`
+        ? `No terminal could be opened. Enter your terminal program under Terminal in the settings (for example kitty), or set $TERMINAL. (${err.message})`
         : `A terminal could not be opened in ${baseName(dir)}: ${errorText(err)}`
     );
   }
@@ -101,7 +106,9 @@ export interface FolderTools {
   /** The file the Open with dialog is open for. */
   choosing: WireEntry | null;
   closeOpenWith(): void;
-  notes: string[];
+  notes: readonly string[];
+  /** How many times a note already listed was raised again (the view flashes on each). */
+  noteRepeats: number;
   dismissNotes(): void;
 }
 
@@ -123,10 +130,10 @@ export function useFolderTools(args: {
       alive.current = false;
     };
   }, []);
-  const [notes, setNotes] = useState<string[]>([]);
+  const [notes, setNotes] = useState<NoteList>(NO_NOTES);
   const [choosing, setChoosing] = useState<WireEntry | null>(null);
   const note = useCallback((text: string) => {
-    if (alive.current) setNotes((n) => (n.includes(text) ? n : [...n, text]));
+    if (alive.current) setNotes((n) => raiseNote(n, text));
   }, []);
 
   const copyPath = useCallback(() => {
@@ -170,8 +177,9 @@ export function useFolderTools(args: {
       editorRoot,
       choosing,
       closeOpenWith: () => setChoosing(null),
-      notes,
-      dismissNotes: () => setNotes([]),
+      notes: notes.texts,
+      noteRepeats: notes.repeats,
+      dismissNotes: () => setNotes(NO_NOTES),
     }),
     [copyPath, openTerminalHere, canOpenWith, openWith, openAsEditor, editorRoot, choosing, notes]
   );

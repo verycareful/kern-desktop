@@ -6,11 +6,13 @@ import { displayPath, isMainWindow, type Device, type Identity } from "../ipc";
 import { formatSize } from "../files/format";
 import { ActionMenu } from "../keys/ActionMenu";
 import { showFolder } from "./place-nav";
-import { openOnDoubleClick } from "./double-click";
+import { openOnClick } from "./open-on-click";
+import { useSingleClick } from "../files/view-settings";
 import { VOLUME_MENU } from "./volume-menu";
 import { useCurrentPlace } from "./use-current-place";
 import { identityNote, volumeErrorText } from "./volume-text";
 import { useVolumes, type Volume } from "./volumes-store";
+import { RepeatFlash } from "../ops/repeat-flash";
 
 // The Volumes group of the strip. Mounted volumes first,
 // then the filesystems UDisks knows that are not mounted, each with a Mount
@@ -32,6 +34,7 @@ const deviceText = (d: Device) =>
 
 export function VolumesList() {
   const s = useVolumes();
+  const single = useSingleClick("left");
   const currentKey = useCurrentPlace();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -68,6 +71,7 @@ export function VolumesList() {
       {s.loadError && (
         <div role="alert" className="kern-places-error">
           <span>The volumes could not be listed: {errorText(s.loadError)}</span>{" "}
+          <RepeatFlash watch={s.loadError} />
           <button type="button" className="kern-button" onClick={() => void s.refresh()}>
             Retry
           </button>
@@ -76,11 +80,13 @@ export function VolumesList() {
       {s.watchError && (
         <div role="alert" className="kern-places-error">
           The volume list will not follow changes: {errorText(s.watchError)}
+          <RepeatFlash watch={s.watchError} />
         </div>
       )}
       {s.kept.map((k) => (
         <div key={k.id} role="alert" className="kern-places-error">
           <span>{errorText(k.error)}</span>
+          <RepeatFlash watch={k.error} />
           <button
             type="button"
             className="kern-icon-button"
@@ -115,7 +121,7 @@ export function VolumesList() {
                   aria-busy={busy ? true : undefined}
                   aria-current={currentKey === v.key ? "page" : undefined}
                   title={`${label(v)} (${displayPath(v.mount.mount_point)})`}
-                  {...openOnDoubleClick(() => showFolder(v.mount.mount_point))}
+                  {...openOnClick(() => showFolder(v.mount.mount_point), single)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     if (manage) openMenu(v, { x: e.clientX, y: e.clientY }, e.currentTarget);
@@ -167,6 +173,7 @@ export function VolumesList() {
               {error && (
                 <div role="alert" className="kern-places-error">
                   <span>{errorText(error)}</span>
+                  <RepeatFlash watch={error} />
                   <button
                     type="button"
                     className="kern-icon-button"

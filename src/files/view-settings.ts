@@ -8,13 +8,17 @@ import {
   settingsGet,
   settingsSet,
   toWireError,
+  type FolderMenu,
   type NewTabDefault,
+  type Panel,
   type Settings,
   type SettingsPatch,
+  type TimeFormat,
   type ViewMode,
   type WireError,
   type WirePath,
 } from "../ipc";
+import { DEFAULT_EDITOR_PANEL_ORDER, DEFAULT_PANEL_ORDER } from "../shell/panel-order";
 import { DEFAULT_INTERFACE_SIZE } from "../theme/interface-size";
 
 // The settings the folder view follows: whether hidden files show,
@@ -25,7 +29,16 @@ import { DEFAULT_INTERFACE_SIZE } from "../theme/interface-size";
 interface ViewSettingsState {
   loaded: boolean;
   showHidden: boolean;
+  /** Per area, a single click opens an entry; off means a double-click does. */
+  singleClickLeft: boolean;
+  singleClickRight: boolean;
+  singleClickCentre: boolean;
+  singleClickEditor: boolean;
   viewMode: ViewMode;
+  /** The clock the time of day is shown in. */
+  timeFormat: TimeFormat;
+  /** The shape of the folder view's right-click menu. */
+  folderMenu: FolderMenu;
   /** The interface size in percent. */
   interfaceSize: number;
   /** What the Library walks: the Documents and Downloads folders when on, and these. */
@@ -39,6 +52,9 @@ interface ViewSettingsState {
   newTabFolder: WirePath | null;
   /** Which of the two new tabs Ctrl+T opens. */
   newTabDefault: NewTabDefault;
+  /** The file manager's three columns, and the editor layout's two panels, left to right. */
+  panelOrder: Panel[];
+  editorPanelOrder: Panel[];
   /** The last read or write that failed, until the next one succeeds. */
   error: WireError | null;
 }
@@ -46,7 +62,13 @@ interface ViewSettingsState {
 export const useViewSettings = create<ViewSettingsState>()(() => ({
   loaded: false,
   showHidden: false,
+  singleClickLeft: true,
+  singleClickRight: false,
+  singleClickCentre: false,
+  singleClickEditor: false,
   viewMode: "list",
+  timeFormat: "system",
+  folderMenu: "standard",
   interfaceSize: DEFAULT_INTERFACE_SIZE,
   scanDocuments: true,
   scanDownloads: true,
@@ -55,6 +77,8 @@ export const useViewSettings = create<ViewSettingsState>()(() => ({
   editorZoom: 1,
   newTabFolder: null,
   newTabDefault: "folder",
+  panelOrder: DEFAULT_PANEL_ORDER,
+  editorPanelOrder: DEFAULT_EDITOR_PANEL_ORDER,
   error: null,
 }));
 
@@ -62,7 +86,13 @@ function apply(s: Settings): void {
   useViewSettings.setState({
     loaded: true,
     showHidden: s.show_hidden,
+    singleClickLeft: s.single_click_left,
+    singleClickRight: s.single_click_right,
+    singleClickCentre: s.single_click_centre,
+    singleClickEditor: s.single_click_editor,
     viewMode: s.view_mode,
+    timeFormat: s.time_format,
+    folderMenu: s.folder_menu,
     interfaceSize: s.interface_size,
     scanDocuments: s.scan_documents,
     scanDownloads: s.scan_downloads,
@@ -71,6 +101,8 @@ function apply(s: Settings): void {
     editorZoom: s.editor_zoom,
     newTabFolder: s.new_tab_folder,
     newTabDefault: s.new_tab_default,
+    panelOrder: s.panel_order,
+    editorPanelOrder: s.editor_panel_order,
     error: null,
   });
 }
@@ -112,4 +144,33 @@ export function useViewSettingsSync(): void {
       unlisten?.();
     };
   }, []);
+}
+
+/** The parts of a window that each have their own click setting. */
+export type ClickArea = "left" | "right" | "centre" | "editor";
+
+/** Whether a single click opens an entry in `area`; off means a double-click does. */
+export function useSingleClick(area: ClickArea): boolean {
+  return useViewSettings((v) => {
+    switch (area) {
+      case "left":
+        return v.singleClickLeft;
+      case "right":
+        return v.singleClickRight;
+      case "centre":
+        return v.singleClickCentre;
+      case "editor":
+        return v.singleClickEditor;
+    }
+  });
+}
+
+/** The file manager's three columns, left to right. */
+export function usePanelOrder(): Panel[] {
+  return useViewSettings((v) => v.panelOrder);
+}
+
+/** The editor layout's two panels, left to right around the editor. */
+export function useEditorPanelOrder(): Panel[] {
+  return useViewSettings((v) => v.editorPanelOrder);
 }

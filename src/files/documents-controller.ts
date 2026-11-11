@@ -6,6 +6,8 @@
 export interface DocumentsController {
   /** Walks the folders again. */
   refresh(): void;
+  /** Opens the name filter, or closes it when it is open. */
+  toggleFilter(): void;
 }
 
 let current: DocumentsController | null = null;

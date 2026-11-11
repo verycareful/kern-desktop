@@ -137,6 +137,20 @@ test("a_trash_that_cannot_be_listed_says_why_and_retries", async () => {
   await waitFor(() => expect(rows()).toHaveLength(1));
 });
 
+test("a_retry_that_fails_the_same_way_flashes_the_banner_that_is_showing", async () => {
+  const failure = () =>
+    Promise.reject({ kind: "Io", message: "cannot read the trash", path: null, details: null });
+  ipc.trashList.mockImplementationOnce(failure);
+  render(<Host />);
+  const alert = await screen.findByRole("alert");
+  expect(alert.querySelector(".kern-repeat-flash")).toBeNull();
+  ipc.trashList.mockImplementationOnce(failure);
+  fireEvent.click(within(alert).getByRole("button", { name: /retry/i }));
+  await waitFor(() =>
+    expect(screen.getByRole("alert").querySelector(".kern-repeat-flash")).not.toBeNull()
+  );
+});
+
 test("items_the_trash_could_not_read_are_listed_with_the_reason", async () => {
   await shown(
     [item("a.txt")],

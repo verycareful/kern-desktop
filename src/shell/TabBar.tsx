@@ -21,7 +21,8 @@ import {
   menuSections,
   runAction,
 } from "../keys/actions";
-import { useViewSettings } from "../files/view-settings";
+import { useEditorPanelOrder, usePanelOrder, useViewSettings } from "../files/view-settings";
+import { editorSide, overlaySide } from "./panel-order";
 import { useLayout } from "../store/layout";
 import { ActionButton } from "./ActionButton";
 import { PanelToggle } from "./PanelToggle";
@@ -57,6 +58,14 @@ export function TabBar(props: { allow?: (a: Action) => boolean }) {
   const editorLayout = useLayout((s) => s.layout === "editor");
   // The side panels fold away beside a document and in the editor layout; a folder tab shows them.
   const folding = editorLayout || active?.kind === "doc";
+  // A panel's button is at the end of the row its panel is on. The buttons are named for the
+  // panels (left is the places panel, right is Pinned and Recent), not for where they sit.
+  const order = usePanelOrder();
+  const editorOrder = useEditorPanelOrder();
+  const placesAtStart =
+    (editorLayout ? editorSide(editorOrder, "places") : overlaySide(order, "places")) === "left";
+  const startToggle = placesAtStart ? "left" : "right";
+  const endToggle = placesAtStart ? "right" : "left";
   // The new tab buttons show their keys, which Settings can swap, and New tab waits for the settings.
   useViewSettings((s) => s.newTabDefault);
   useViewSettings((s) => s.loaded);
@@ -78,9 +87,13 @@ export function TabBar(props: { allow?: (a: Action) => boolean }) {
 
   return (
     <header className="kern-tabbar" data-testid="tab-bar" {...{ [FILE_KEYS_ATTR]: "" }}>
-      {folding && has("panel.left.toggle") && (
-        <div className="kern-nav" role="toolbar" aria-label="Left panel">
-          <PanelToggle side="left" />
+      {folding && has(`panel.${startToggle}.toggle`) && (
+        <div
+          className="kern-nav"
+          role="toolbar"
+          aria-label={startToggle === "left" ? "Left panel" : "Pinned and Recent"}
+        >
+          <PanelToggle side={startToggle} />
         </div>
       )}
       <div
@@ -103,7 +116,6 @@ export function TabBar(props: { allow?: (a: Action) => boolean }) {
             <div
               key={t.id}
               className={isActive ? "kern-tab kern-tab-active" : "kern-tab"}
-              onAuxClick={(e) => e.button === 1 && close(t.id)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 setMenu({ kind: "tab", x: e.clientX, y: e.clientY, targetId: t.id });
@@ -143,7 +155,7 @@ export function TabBar(props: { allow?: (a: Action) => boolean }) {
       </div>
       <div className="kern-nav-fill" />
       <div className="kern-nav" role="toolbar" aria-label="Window">
-        {folding && has("panel.right.toggle") && <PanelToggle side="right" />}
+        {folding && has(`panel.${endToggle}.toggle`) && <PanelToggle side={endToggle} />}
         {has("place.settings") && <ActionButton id="place.settings" icon={Settings} />}
         <button
           type="button"

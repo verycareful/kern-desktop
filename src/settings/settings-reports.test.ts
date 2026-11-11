@@ -36,3 +36,15 @@ test("a_report_already_there_is_said_and_other_files_are_not", () => {
   act(() => useStoreErrors.setState((s) => ({ reports: [...s.reports, pins] })));
   expect(useOps.getState().notice).toBeNull();
 });
+
+test("an_unreadable_binds_file_is_said_in_the_main_window_too", () => {
+  const binds: CorruptReport = {
+    file: "binds.json",
+    moved_to: { k: "Utf8", v: "/c/kern/binds.json.corrupt-1" },
+    field: null,
+    reason: "not an object",
+  };
+  renderHook(() => useSettingsReportNotice());
+  act(() => useStoreErrors.setState({ reports: [binds] }));
+  expect(useOps.getState().notice?.text).toBe(corruptText(binds));
+});

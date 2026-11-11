@@ -36,6 +36,8 @@ const COMMON = {
     new_tab_folder: null,
     new_tab_default: "folder",
     interface_size: 90,
+    panel_order: ["places", "folder", "pinned"],
+    editor_panel_order: ["places", "pinned"],
     ...(args.patch as object),
   }),
   "plugin:kernkraft-tauri|volumes_list": { mounted: [], unmounted: [], problems: [] },
@@ -344,7 +346,10 @@ test("the_tab_row_has_no_vertical_scroll_and_the_close_button_owns_its_box", asy
   });
 });
 
-test("the_first_row_is_spaced_from_the_path_bar", async ({ page, mockTauri }) => {
+test("the_list_header_is_flush_with_the_path_bar_and_the_first_card_is_spaced_from_it", async ({
+  page,
+  mockTauri,
+}) => {
   await mockTauri({
     ...COMMON,
     "plugin:kernkraft-tauri|list_dir": [
@@ -367,8 +372,9 @@ test("the_first_row_is_spaced_from_the_path_bar", async ({ page, mockTauri }) =>
     const next = await page.locator(below).first().boundingBox();
     return next!.y - (bar!.y + bar!.height);
   };
-  // The column header is the first thing under the bar in the list.
-  expect(await gap(".kern-list-head")).toBeGreaterThanOrEqual(12);
+  // The column header is the first thing under the bar in the list and touches it, so rows that
+  // scroll up pass under the header and never show in a gap above it.
+  expect(await gap(".kern-list-head")).toBe(0);
   await page.getByRole("button", { name: /grid view/i }).click();
   await expect(page.getByTestId("file-card")).toHaveCount(1);
   expect(await gap('[data-testid="file-card"]')).toBeGreaterThanOrEqual(12);

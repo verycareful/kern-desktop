@@ -11,6 +11,7 @@ import { useViewSettings } from "../files/view-settings";
 import { useOps } from "../ops/useOps";
 import { useTabs } from "../store/tabs";
 import { errorText } from "../ops/error-text";
+import { FlashSpan, RepeatFlash } from "../ops/repeat-flash";
 import { baseName } from "../ops/labels";
 import { KEYS } from "./editor-keys";
 import { ChangedOnDiskBanner } from "./ChangedOnDiskBanner";
@@ -269,11 +270,12 @@ export function TextEditor(props: {
         />
       )}
       {ready && doc.watchError && (
-        <div className="kern-doc-banner" role="alert" data-testid="watch-banner">
+        <div className="kern-doc-banner kern-flash-host" role="alert" data-testid="watch-banner">
           <p>
             Kern cannot watch the folder of this file, so it will not notice if the file changes or
             is deleted ({errorText(doc.watchError)}).
           </p>
+          <RepeatFlash watch={doc.watchError} />
         </div>
       )}
       {ready && doc.moving && (
@@ -282,8 +284,9 @@ export function TextEditor(props: {
         </div>
       )}
       {doc.problem && (
-        <div className="kern-doc-banner" role="alert" data-testid="doc-problem">
+        <div className="kern-doc-banner kern-flash-host" role="alert" data-testid="doc-problem">
           <p>{doc.problem}</p>
+          <FlashSpan count={doc.problemRepeats} />
         </div>
       )}
       {body}

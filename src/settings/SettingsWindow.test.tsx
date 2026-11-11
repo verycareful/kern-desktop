@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { Queued, Settings } from "../ipc";
+import type { CorruptReport, Queued, Settings } from "../ipc";
 import { SETTINGS } from "./test-settings";
 
 // The Settings window as the app mounts it (App in a window labelled "settings"), with the one
@@ -47,9 +47,13 @@ import { useSettingsNav } from "./settings-nav";
 const KERNKRAFT = "plugin:kernkraft-tauri|";
 
 let stored: Settings;
+/** The binds the backend holds. */
+let storedBinds: Record<string, string[]>;
 let queued: Queued[];
 /** The next settings_set fails with this, once. */
 let failSet: unknown = null;
+/** The next pins_clear or recents_clear fails with this, once. */
+let failClear: unknown = null;
 
 function answer(cmd: string, args: Record<string, unknown>): unknown {
   const name = cmd.startsWith(KERNKRAFT) ? cmd.slice(KERNKRAFT.length) : cmd;
@@ -78,6 +82,27 @@ function answer(cmd: string, args: Record<string, unknown>): unknown {
       return { is_default: true, current: "io.github.verycareful.kern.desktop" };
     case "fm1_status":
       return { owned: true, owner: null, reason: null };
+    case "pins_clear":
+    case "recents_clear": {
+      if (failClear) {
+        const e = failClear;
+        failClear = null;
+        throw e;
+      }
+      return { entries: [] };
+    }
+    case "binds_get":
+      return { binds: storedBinds };
+    case "binds_set": {
+      for (const [id, list] of Object.entries(args.patch as Record<string, string[] | null>)) {
+        if (list === null) delete storedBinds[id];
+        else storedBinds[id] = list;
+      }
+      return { binds: storedBinds };
+    }
+    case "binds_clear":
+      storedBinds = {};
+      return { binds: storedBinds };
     case "store_errors_take":
       return [];
     default:
@@ -93,8 +118,10 @@ beforeEach(() => {
     metadata: { currentWindow: { label: "settings" } },
   };
   stored = { ...SETTINGS, follow: { ...SETTINGS.follow } };
+  storedBinds = {};
   queued = [];
   failSet = null;
+  failClear = null;
   wire.sent = [];
   wire.handlers = {};
   wire.answer = answer;
@@ -153,6 +180,28 @@ test("every_command_the_settings_window_sends_is_granted_to_it", async () => {
   await waitFor(() => expect(make).toBeEnabled());
   fireEvent.click(make);
   await waitFor(() => expect(sent("make_default_fm")).toHaveLength(1));
+  // The pins and the recents are cleared at once, after the question.
+  for (const [button, cmd] of [
+    ["Clear pins", "pins_clear"],
+    ["Clear recents", "recents_clear"],
+  ] as const) {
+    fireEvent.click(screen.getByRole("button", { name: button }));
+    const asked = await screen.findByRole("alertdialog");
+    fireEvent.click(within(asked).getByRole("button", { name: button }));
+    await waitFor(() => expect(sent(cmd)).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  }
+  // Keys and mouse: a bind is added and the binds are reset, both at once.
+  nav("Keys and mouse");
+  fireEvent.click(await screen.findByRole("button", { name: "Add a bind to Close tab" }));
+  fireEvent.keyDown(window, { key: "q", ctrlKey: true });
+  await waitFor(() => expect(sent("binds_set")).toHaveLength(1));
+  fireEvent.click(screen.getByRole("button", { name: "Reset all binds" }));
+  fireEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Reset all binds" })
+  );
+  await waitFor(() => expect(sent("binds_clear")).toHaveLength(1));
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   // Library: a folder typed with ~ asks for Home.
   nav("Library");
   fireEvent.change(screen.getByLabelText("Add a folder"), { target: { value: "~/Projects" } });
@@ -185,6 +234,11 @@ test("every_command_the_settings_window_sends_is_granted_to_it", async () => {
     `${KERNKRAFT}user_dirs`,
     `${KERNKRAFT}open_url`,
     "make_default_fm",
+    "pins_clear",
+    "recents_clear",
+    "binds_get",
+    "binds_set",
+    "binds_clear",
     "restart_request",
     "restart_abandon",
     "confirm_close",
@@ -489,6 +543,101 @@ test("about_shows_the_licence_in_a_dialog_and_each_link_opens_its_address", asyn
   expect(screen.queryByTestId("licence-dialog")).not.toBeInTheDocument();
 });
 
+test("the_error_log_switch_is_on_by_default_says_where_the_file_is_and_is_saved_at_save", async () => {
+  await mount();
+  nav("About");
+  const toggle = screen.getByRole("switch", { name: "Write an error log" });
+  expect(toggle).toHaveAttribute("aria-checked", "true");
+  expect(screen.getByText(/kern\.log in \$XDG_STATE_HOME\/kern/)).toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute("aria-checked", "false");
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ error_log: false }]);
+  expect(stored.error_log).toBe(false);
+});
+
+const CLICK_GROUPS = [
+  { name: "Left panel opens with", key: "single_click_left", single: true },
+  { name: "Right panel opens with", key: "single_click_right", single: false },
+  { name: "File manager opens with", key: "single_click_centre", single: false },
+  { name: "Editor window opens with", key: "single_click_editor", single: false },
+] as const;
+
+test("the_left_panel_opens_on_a_single_click_by_default_and_the_other_areas_on_a_double_click", async () => {
+  await mount();
+  nav("Files");
+  for (const g of CLICK_GROUPS) {
+    const group = within(screen.getByRole("group", { name: g.name }));
+    expect(group.getByRole("button", { name: "Single click" })).toHaveAttribute(
+      "aria-pressed",
+      String(g.single)
+    );
+    expect(group.getByRole("button", { name: "Double click" })).toHaveAttribute(
+      "aria-pressed",
+      String(!g.single)
+    );
+  }
+});
+
+test("each_click_choice_is_saved_at_save_on_its_own_key", async () => {
+  await mount();
+  nav("Files");
+  const pick = (group: string, label: string) =>
+    fireEvent.click(
+      within(screen.getByRole("group", { name: group })).getByRole("button", { name: label })
+    );
+  pick("Left panel opens with", "Double click");
+  pick("Right panel opens with", "Single click");
+  pick("File manager opens with", "Single click");
+  pick("Editor window opens with", "Single click");
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([
+    {
+      single_click_left: false,
+      single_click_right: true,
+      single_click_centre: true,
+      single_click_editor: true,
+    },
+  ]);
+  expect(stored.single_click_left).toBe(false);
+  expect(stored.single_click_right).toBe(true);
+  expect(stored.single_click_centre).toBe(true);
+  expect(stored.single_click_editor).toBe(true);
+});
+
+test("a_click_choice_changed_in_one_area_leaves_the_other_three_as_they_were", async () => {
+  await mount();
+  nav("Files");
+  fireEvent.click(
+    within(screen.getByRole("group", { name: "Editor window opens with" })).getByRole("button", {
+      name: "Single click",
+    })
+  );
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ single_click_editor: true }]);
+});
+
+test("the_click_choices_are_found_by_searching_for_double_click", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "double click" } });
+  for (const g of CLICK_GROUPS) {
+    expect(screen.getByRole("group", { name: g.name })).toBeInTheDocument();
+  }
+});
+
+test("a_search_for_the_editor_window_finds_only_its_click_choice", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "editor window" } });
+  expect(screen.getByRole("group", { name: "Editor window opens with" })).toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "Right panel opens with" })).toBeNull();
+});
+
+test("the_error_log_switch_is_found_by_searching_for_a_crash_log", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "crash" } });
+  expect(screen.getByRole("switch", { name: "Write an error log" })).toBeInTheDocument();
+});
+
 test("a_link_that_cannot_be_opened_says_why", async () => {
   await mount();
   nav("About");
@@ -543,4 +692,178 @@ test("ctrl_t_opens_the_new_tab_folder_or_the_current_folder", async () => {
   fireEvent.click(pressed("Ctrl+T opens", "Current folder"));
   await save();
   expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ new_tab_default: "current" }]);
+});
+
+test("the_time_of_day_in_dates_follows_the_system_or_is_set_to_12_or_24_hours", async () => {
+  await mount();
+  nav("Files");
+  expect(pressed("Time of day in dates", "System default")).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(pressed("Time of day in dates", "24-hour"));
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ time_format: "24" }]);
+});
+
+test("the_right_click_menu_is_standard_collapsed_or_expanded", async () => {
+  await mount();
+  nav("Files");
+  const label = "Right-click menu of the file manager";
+  expect(pressed(label, "Standard")).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(pressed(label, "Collapsed"));
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ folder_menu: "collapsed" }]);
+});
+
+test("a_search_for_submenu_finds_the_right_click_menu_row", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "submenu" } });
+  expect(screen.getByText("Right-click menu of the file manager")).toBeInTheDocument();
+});
+
+test("clear_pins_and_clear_recents_buttons_share_one_sizing_class", async () => {
+  await mount();
+  nav("Files");
+  // jsdom does no layout, so this checks the shared class that the stylesheet sizes, not the pixels.
+  for (const name of ["Clear pins", "Clear recents"]) {
+    expect(screen.getByRole("button", { name })).toHaveClass("kern-settings-clear");
+  }
+});
+
+test("clear_pins_asks_first_and_cancel_clears_nothing", async () => {
+  await mount();
+  nav("Files");
+  fireEvent.click(screen.getByRole("button", { name: "Clear pins" }));
+  const asked = await screen.findByRole("alertdialog", { name: "Clear all pins?" });
+  // The safe answer has the focus.
+  expect(within(asked).getByRole("button", { name: "Cancel" })).toHaveFocus();
+  fireEvent.click(within(asked).getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  // Escape is no too.
+  fireEvent.click(screen.getByRole("button", { name: "Clear pins" }));
+  await screen.findByRole("alertdialog");
+  fireEvent.keyDown(screen.getByRole("button", { name: "Cancel" }), { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  expect(sent("pins_clear")).toHaveLength(0);
+  expect(screen.queryByText("The pins are cleared.")).toBeNull();
+});
+
+test("clear_pins_and_clear_recents_each_clear_their_own_list_and_say_so", async () => {
+  await mount();
+  nav("Files");
+  fireEvent.click(screen.getByRole("button", { name: "Clear pins" }));
+  fireEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Clear pins" })
+  );
+  expect(await screen.findByText("The pins are cleared.")).toBeInTheDocument();
+  expect(sent("pins_clear")).toHaveLength(1);
+  expect(sent("recents_clear")).toHaveLength(0);
+  // Settings are not touched by it: nothing is waiting to be saved.
+  expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Clear recents" }));
+  const asked = await screen.findByRole("alertdialog", { name: "Clear all recents?" });
+  fireEvent.click(within(asked).getByRole("button", { name: "Clear recents" }));
+  expect(await screen.findByText("The recents are cleared.")).toBeInTheDocument();
+  expect(sent("recents_clear")).toHaveLength(1);
+  expect(sent("pins_clear")).toHaveLength(1);
+});
+
+test("a_clear_that_fails_says_why_and_asking_again_wipes_the_old_answer", async () => {
+  await mount();
+  nav("Files");
+  failClear = { kind: "Io", message: "disk full", path: null, details: null };
+  fireEvent.click(screen.getByRole("button", { name: "Clear recents" }));
+  fireEvent.click(
+    within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Clear recents" })
+  );
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("The recents could not be cleared");
+  expect(alert).toHaveTextContent("disk full");
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  // The next question starts clean, and a yes this time works.
+  fireEvent.click(screen.getByRole("button", { name: "Clear recents" }));
+  await screen.findByRole("alertdialog");
+  expect(screen.queryByText(/could not be cleared/)).toBeNull();
+  fireEvent.click(
+    within(screen.getByRole("alertdialog")).getByRole("button", { name: "Clear recents" })
+  );
+  expect(await screen.findByText("The recents are cleared.")).toBeInTheDocument();
+});
+
+test("the_clear_rows_are_found_by_searching_for_unpin_and_history", async () => {
+  await mount();
+  const search = screen.getByRole("searchbox");
+  fireEvent.change(search, { target: { value: "unpin" } });
+  expect(await screen.findByRole("button", { name: "Clear pins" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Clear recents" })).toBeNull();
+  fireEvent.change(search, { target: { value: "history" } });
+  expect(await screen.findByRole("button", { name: "Clear recents" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Clear pins" })).toBeNull();
+});
+
+test("the_keys_category_is_found_by_search_and_an_unreadable_binds_file_is_reported_in_it", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
+    target: { value: "middle click" },
+  });
+  expect(await screen.findByRole("heading", { name: "Keys and mouse" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Appearance" })).toBeNull();
+  const report: CorruptReport = {
+    file: "binds.json",
+    moved_to: { k: "Utf8", v: "/c/kern/binds.json.corrupt-1" },
+    field: null,
+    reason: "not an object",
+  };
+  act(() => useStoreErrors.setState({ reports: [report] }));
+  expect(await screen.findByText(/binds\.json could not be read/)).toBeInTheDocument();
+});
+
+test("the_panel_orders_start_as_the_layout_has_always_been", async () => {
+  await mount();
+  nav("Files");
+  const order = (name: string) =>
+    [...screen.getByRole("group", { name }).querySelectorAll("[data-panel]")].map((c) =>
+      c.getAttribute("data-panel")
+    );
+  expect(order("File manager panel order")).toEqual(["places", "folder", "pinned"]);
+  expect(order("Editor window panel order")).toEqual(["places", "pinned"]);
+});
+
+test("a_moved_panel_is_saved_at_save_as_the_whole_order_on_its_own_key", async () => {
+  await mount();
+  nav("Files");
+  const group = within(screen.getByRole("group", { name: "File manager panel order" }));
+  fireEvent.click(group.getByRole("button", { name: "Move Pinned and Recent left" }));
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([
+    { panel_order: ["places", "pinned", "folder"] },
+  ]);
+  expect(stored.panel_order).toEqual(["places", "pinned", "folder"]);
+});
+
+test("the_editor_panels_swap_sides_and_the_other_order_is_left_alone", async () => {
+  await mount();
+  nav("Files");
+  const group = within(screen.getByRole("group", { name: "Editor window panel order" }));
+  fireEvent.click(group.getByRole("button", { name: "Move Places and folders right" }));
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([
+    { editor_panel_order: ["pinned", "places"] },
+  ]);
+});
+
+test("a_moved_panel_can_be_reverted_before_save", async () => {
+  await mount();
+  nav("Files");
+  fireEvent.click(screen.getByRole("button", { name: "Move Files right" }));
+  fireEvent.click(screen.getByRole("button", { name: "Move Files left" }));
+  await save();
+  expect(sent("settings_set")).toEqual([]);
+});
+
+test("the_panel_orders_are_found_by_searching_for_panels", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "panel order" } });
+  expect(screen.getByRole("group", { name: "File manager panel order" })).toBeInTheDocument();
+  expect(screen.getByRole("group", { name: "Editor window panel order" })).toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "Left panel opens with" })).toBeNull();
 });

@@ -17,21 +17,24 @@ import { isFolder } from "../files/file-type";
 import { openFiles } from "../files/open-entries";
 import { SearchView } from "../files/SearchView";
 import { openTerminalIn } from "../files/use-folder-tools";
-import { toggleHidden } from "../files/view-settings";
-import { errorText } from "../ops/error-text";
+import { toggleHidden, useEditorPanelOrder } from "../files/view-settings";
 import { treeMenu } from "../files/tree-menu";
 import { TreeOps } from "../files/TreeOps";
+import { TreeSortButton } from "../files/TreeSortButton";
 import { useTreeMenu } from "../files/tree-menu-store";
 import { useViewSettings } from "../files/view-settings";
 import { ActionMenu } from "../keys/ActionMenu";
 import { currentContext, getAction, runAction, type Action } from "../keys/actions";
 import { DROP_DOCS_ATTR } from "../ops/dnd";
+import { showOpenErrors } from "../ops/open-error-store";
 import { useOps } from "../ops/useOps";
 import { LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, useLayout } from "../store/layout";
 import { usePanels } from "../store/panels";
 import type { DocTab, Tab } from "../store/tabs";
 import { FolderArea, PlacesStrip } from "./PlacesPanel";
+import { OpenError } from "./OpenError";
 import { PinnedRecentPanel } from "./PinnedRecentPanel";
+import { editorSide, type Side } from "./panel-order";
 import { Splitter } from "./Splitter";
 import { TabBar } from "./TabBar";
 import { WelcomePane } from "./WelcomePane";
@@ -45,7 +48,7 @@ import { ensureTreeRoot } from "./layout-switch";
 // when its layout is the editor; an editor window (`editor-<n>`) always does.
 
 /** The divider between the column and the centre. */
-function ColumnSplitter() {
+function ColumnSplitter(props: { side: Side }) {
   const width = useLayout((s) => s.leftWidth);
   const setWidth = useLayout((s) => s.setLeftWidth);
   return (
@@ -54,7 +57,7 @@ function ColumnSplitter() {
       min={LEFT_WIDTH_MIN}
       max={LEFT_WIDTH_MAX}
       setWidth={setWidth}
-      grows="right"
+      grows={props.side === "left" ? "right" : "left"}
       label="Resize the folder column"
       className="kern-splitter"
       testId="column-splitter"
@@ -72,13 +75,16 @@ function treeNote(text: string): void {
 /**
  * The buttons of the tree's heading: the name search in the window's folder, a terminal at the
  * root, in an editor window the folder opened in the file manager, hidden items shown or not (the
- * window's choice, which folder tabs follow too), and every folder closed or opened.
+ * window's choice, which folder tabs follow too), the order of the tree, and one button that closes
+ * every folder while one is open and opens them all while none is.
  */
 function TreeTools(props: {
   root: WirePath;
   tree: React.RefObject<FolderTreeHandle | null>;
   searching: boolean;
   onSearch(): void;
+  /** Whether any folder below the root is open: the last button then closes them, else opens them. */
+  anyOpen: boolean;
 }) {
   const hidden = useViewSettings((s) => s.showHidden);
   const button = (label: string, Icon: typeof Search, onClick: () => void, pressed?: boolean) => (
@@ -106,20 +112,23 @@ function TreeTools(props: {
           runAction(getAction("editor.openInFileManager"), currentContext())
         )}
       {button("Show hidden files", hidden ? Eye : EyeOff, () => void toggleHidden(), hidden)}
-      {button("Collapse all", ChevronsDownUp, () => props.tree.current?.collapseAll())}
-      {button("Expand all", ChevronsUpDown, () => props.tree.current?.expandAll())}
+      <TreeSortButton />
+      {props.anyOpen
+        ? button("Collapse all", ChevronsDownUp, () => props.tree.current?.collapseAll())
+        : button("Expand all", ChevronsUpDown, () => props.tree.current?.expandAll())}
     </span>
   );
 }
 
 /** The left column: the places strip on top, the folder tree below it. */
-function LeftColumn() {
+function LeftColumn(props: { side: Side }) {
   const root = useLayout((s) => s.treeRoot);
   const hidden = useViewSettings((s) => s.showHidden);
   const [menu, setMenu] = useState<{ x: number; y: number; entry: WireEntry | null } | null>(null);
   const column = useRef<HTMLElement>(null);
   const tree = useRef<FolderTreeHandle>(null);
   const [searching, setSearching] = useState(false);
+  const [anyOpen, setAnyOpen] = useState(false);
   // A new root ends a search of the old one.
   const [searchedRoot, setSearchedRoot] = useState(root);
   if (searchedRoot !== root) {
@@ -138,9 +147,7 @@ function LeftColumn() {
       tree.current?.reveal(entry.path);
       return;
     }
-    void openFiles([entry.path], newWindow).then((errors) =>
-      errors.forEach((e) => treeNote(`${entry.name} was not opened: ${errorText(e)}`))
-    );
+    void openFiles([entry.path], newWindow).then((errors) => showOpenErrors(entry.name, errors));
   }, []);
 
   // The empty part below the rows stands for the root.
@@ -171,7 +178,7 @@ function LeftColumn() {
   return (
     <aside
       ref={column}
-      className="kern-editor-left"
+      className={props.side === "right" ? "kern-editor-left kern-side-right" : "kern-editor-left"}
       aria-label="Places and folders"
       data-testid="editor-left"
     >
@@ -180,7 +187,9 @@ function LeftColumn() {
       <div className="kern-editor-tree">
         {root ? (
           <>
-            {searching && <SearchView root={root} onClose={closeSearch} onOpen={onFound} />}
+            {searching && (
+              <SearchView root={root} area="editor" onClose={closeSearch} onOpen={onFound} />
+            )}
             {/* Kept while the search is on show, so the folders open in it stay open. */}
             <div className="kern-editor-tree-body" hidden={searching}>
               <FolderTree
@@ -189,12 +198,14 @@ function LeftColumn() {
                 onRootGone={onRootGone}
                 onContextMenu={onContextMenu}
                 handle={tree}
+                onOpenChange={setAnyOpen}
                 tools={
                   <TreeTools
                     root={root}
                     tree={tree}
                     searching={searching}
                     onSearch={() => setSearching((on) => !on)}
+                    anyOpen={anyOpen}
                   />
                 }
               />
@@ -265,6 +276,21 @@ export function EditorLayout(props: {
   const width = useLayout((s) => s.leftWidth);
   const { rightOpen } = usePanels();
   const rightWidth = useLayout((s) => s.rightWidth);
+  const order = useEditorPanelOrder();
+  const placesSide = editorSide(order, "places");
+  // The divider is on the column's edge that faces the editor.
+  const column =
+    placesSide === "left" ? (
+      <>
+        <LeftColumn side="left" />
+        <ColumnSplitter side="left" />
+      </>
+    ) : (
+      <>
+        <ColumnSplitter side="right" />
+        <LeftColumn side="right" />
+      </>
+    );
   const style = {
     "--editor-left-width": `${width}px`,
     "--shell-right-width": `${rightWidth}px`,
@@ -283,12 +309,7 @@ export function EditorLayout(props: {
       data-testid="main-grid"
       style={style}
     >
-      {leftOpen && (
-        <>
-          <LeftColumn />
-          <ColumnSplitter />
-        </>
-      )}
+      {leftOpen && placesSide === "left" && column}
       <div
         className="kern-editor-centre"
         // Files dropped from another program on an editor window's documents are opened there.
@@ -298,9 +319,11 @@ export function EditorLayout(props: {
         {/* Pinned and Recent slide in over what is under the tab row, so the row's buttons stay. */}
         <div className="kern-editor-body">
           {props.children}
-          {rightOpen && <PinnedRecentPanel overlay />}
+          <OpenError />
+          {rightOpen && <PinnedRecentPanel overlay side={editorSide(order, "pinned")} />}
         </div>
       </div>
+      {leftOpen && placesSide === "right" && column}
     </div>
   );
 }

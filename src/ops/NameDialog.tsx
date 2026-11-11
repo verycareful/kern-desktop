@@ -5,6 +5,8 @@ import { toWireError } from "../ipc";
 import { editErrorText } from "./edit-error";
 import { Modal } from "./Modal";
 import { nameProblem } from "./names";
+import { useRaisedText } from "./raised-text";
+import { FlashSpan } from "./repeat-flash";
 
 // A name typed for something new (a folder, an empty file) or for an item
 // being renamed. A name that cannot be one is refused here; whatever the backend refuses (the
@@ -23,7 +25,7 @@ export function NameDialog(props: {
   onCancel(): void;
 }) {
   const [text, setText] = useState(props.initial);
-  const [error, setError] = useState<string | null>(null);
+  const { text: error, repeats, raise, clear } = useRaisedText();
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
@@ -44,16 +46,16 @@ export function NameDialog(props: {
     if (busy) return;
     const problem = nameProblem(text) ?? props.check?.(text) ?? null;
     if (problem) {
-      setError(problem);
+      raise(problem);
       return;
     }
-    setError(null);
     setBusy(true);
     try {
       await props.onSubmit(text);
+      if (alive.current) clear();
     } catch (e) {
       const err = toWireError(e);
-      if (alive.current) setError(editErrorText(err));
+      if (alive.current) raise(editErrorText(err));
     } finally {
       if (alive.current) setBusy(false);
     }
@@ -90,8 +92,9 @@ export function NameDialog(props: {
         }}
       />
       {error && (
-        <p id={`${id}-error`} role="alert" className="kern-modal-error">
+        <p id={`${id}-error`} role="alert" className="kern-modal-error kern-flash-host">
           {error}
+          <FlashSpan count={repeats} />
         </p>
       )}
       <div className="kern-modal-actions">

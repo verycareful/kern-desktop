@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { actions as table, type Action } from "../keys/actions";
+import { keysOf } from "../keys/binds";
 
 // The keyboard tips of the welcome pane, read from the action table (keys/actions.ts), never listed
 // by hand: a key that changes or goes changes here with it.
@@ -29,7 +30,7 @@ export function tipsFromActions(list: readonly Action[] = table): Tip[] {
   const tips: Tip[] = [];
   for (const a of list) {
     if (!TIP_KINDS.includes(a.when)) continue;
-    const key = a.keys.find((k) => /^(Ctrl|Alt)\+|^F\d+$/.test(k));
+    const key = keysOf(a).find((k) => /^(Ctrl|Alt)\+|^F\d+$/.test(k));
     if (!key || seen.has(key)) continue;
     seen.add(key);
     tips.push({ id: a.id, label: a.label, key });

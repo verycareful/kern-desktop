@@ -47,8 +47,26 @@ export function treeMenu(entry: WireEntry | null): MenuSection[] {
   ];
 }
 
-/** Every action any form of the tree's menu lists. */
+const SORT_FIELDS = ["tree.sort.name", "tree.sort.size", "tree.sort.modified", "tree.sort.type"];
+const SORT_ORDERS = ["tree.sort.asc", "tree.sort.desc"];
+
+/** The menu of the sort button in the tree's heading: the field, then the order. */
+export function treeSortMenu(): MenuSection[] {
+  return [
+    { title: "Sort by", actions: pick(SORT_FIELDS) },
+    { title: "Order", actions: pick(SORT_ORDERS) },
+  ];
+}
+
+/** Every action any form of the tree's menus lists. */
 export function everyTreeAction(): Action[] {
   const all = [...CREATE, ...EDIT, ...REMOVE, "tree.paste", "tree.terminal", "tree.open"];
-  return pick([...all, "tree.openInFileManager", "tree.openAsEditor", "tree.pinAsEditor"]);
+  return pick([
+    ...all,
+    "tree.openInFileManager",
+    "tree.openAsEditor",
+    "tree.pinAsEditor",
+    ...SORT_FIELDS,
+    ...SORT_ORDERS,
+  ]);
 }

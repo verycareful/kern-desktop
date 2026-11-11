@@ -14,8 +14,10 @@ import {
 } from "lucide-react";
 import type { WirePath } from "../ipc";
 import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
+import { RepeatFlash } from "../ops/repeat-flash";
 import { showFolder } from "./place-nav";
-import { openOnDoubleClick } from "./double-click";
+import { openOnClick } from "./open-on-click";
+import { useSingleClick } from "../files/view-settings";
 import { placeKey, useCurrentPlace } from "./use-current-place";
 import { useUserDirs } from "./user-dirs-store";
 
@@ -62,6 +64,7 @@ function order(home: WirePath, dirs: { name: string; path: WirePath }[]): Place[
 }
 
 export function PlacesList() {
+  const single = useSingleClick("left");
   const dirs = useUserDirs((s) => s.dirs);
   const error = useUserDirs((s) => s.error);
   const current = useCurrentPlace();
@@ -92,6 +95,7 @@ export function PlacesList() {
           <span>
             The places could not be {dirs ? "read again" : "listed"}: {error.kind}: {error.message}
           </span>{" "}
+          <RepeatFlash watch={error} />
           <button
             type="button"
             className="kern-button"
@@ -114,7 +118,7 @@ export function PlacesList() {
               className="kern-place"
               aria-current={current === placeKey(key) ? "page" : undefined}
               title={label}
-              {...openOnDoubleClick(() => showFolder(path))}
+              {...openOnClick(() => showFolder(path), single)}
             >
               <Icon size={16} strokeWidth={2} aria-hidden />
               <span className="kern-place-label">{label}</span>

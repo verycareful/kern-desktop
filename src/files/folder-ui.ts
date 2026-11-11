@@ -14,11 +14,12 @@ export const DEFAULT_SORT: SortSpec = { by: "name", dir: "asc" };
 // Handoff README, Interactions, Sort: choosing a field applies its sensible
 // direction (Date and Size newest and largest first, Name and Type A to Z);
 // choosing the active field again flips it.
-const FIRST_DIR: Record<SortBy, SortDir> = {
+export const FIRST_DIR: Record<SortBy, SortDir> = {
   name: "asc",
   size: "desc",
   modified: "desc",
   type: "asc",
+  location: "asc",
 };
 
 // What a folder tab remembers while it is open and not shown: how it is sorted.

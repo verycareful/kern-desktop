@@ -59,13 +59,23 @@ Kern Desktop is in alpha.
 - **Places, pins and recents.** The strip on the left lists Home, your user
   folders, Volumes (mount, unmount, eject), the Trash (restore, delete
   permanently, empty) and the Library, which gathers your documents from the
-  folders you choose in Settings. A double-click opens an entry, and so do
-  Enter and Space. Pinned folders and files and your recent files sit in a
-  panel on the right that you can resize. Pin a folder as an editor and it
-  opens in an editor window.
+  folders you choose in Settings. A single click opens an entry in the strip;
+  in the right panel, the folder view and the editor's file tree it takes a
+  double-click. Settings > Files sets single or double click for each of the
+  four, and Enter and Space open in all of them. Pinned
+  folders and files and your recent files sit in a panel on the right that you
+  can resize. Settings > Files > Panels puts the three columns in any order
+  you like, and the two panels of an editor window on either side of the
+  editor. Pin a folder as an editor and it opens in an editor window.
 - **Finding and inspecting.** Search by name under a folder, open Properties
   (size, item counts, permissions), copy a path, open a file with any installed
-  application, or open a terminal in the folder.
+  application, or open a terminal in the folder. Search results and the Library
+  list each file with its type, size, time and the folder it is in, and once the
+  walk has finished a click on a column header sorts them. The Library has a
+  filter by name, a list or card view, and a switch for hidden items.
+  The right-click menu of a folder keeps the most used entries on top and folds
+  the rest into submenus; Settings > Files can fold every group or list
+  everything at once.
 - **Text editor.** A text file opens in a tab with line numbers, find and
   replace, and undo. Saving keeps the file's line endings and byte order mark.
   If another program changed or deleted the file, Kern asks before it writes.
@@ -74,8 +84,10 @@ Kern Desktop is in alpha.
   own, and its Home button moves it into the main window.
 - **Editor windows.** Open as editor gives a folder its own window, with a
   folder tree beside your documents. The tree's menu carries the file
-  operations, and its heading holds search, the terminal, hidden files and
-  collapse or expand all. Each folder has one editor window:
+  operations, and its heading holds search, the terminal, hidden files, the
+  sort order (name, size, date modified or type, either way round) and
+  collapse or expand all. F4 opens a terminal in the tree's folder, or in the
+  folder of the row the pointer is over. Each folder has one editor window:
   open the folder again and that window comes forward. A file opened from
   inside an editor window moves into it, from whichever window held it. A file
   opened any other way (from a folder, the command line or another app) brings
@@ -87,6 +99,13 @@ Kern Desktop is in alpha.
   them.
 - **Settings.** Settings opens in a window of its own, with a search field.
   Changes wait for Save, and Revert drops them.
+- **Keys and mouse.** Settings > Keys and mouse lists every action with the
+  keys and mouse buttons that run it. Any action can take any key, or a mouse
+  button (middle click, back, forward, or a click with Ctrl, Alt, Shift or Meta
+  held), and one that another action holds is moved only after you agree. A
+  change applies at once in every window. The binds are kept in `binds.json`
+  in Kern's config folder, apart from the settings, and Reset all binds
+  deletes it.
 - **Desktop integration.** Kern follows the system theme: colours, accent,
   fonts and corner radius from Hyprland, the desktop portal, GTK and
   fontconfig, each with its own switch in Settings. It installs a desktop
@@ -115,12 +134,15 @@ installing anything. The installer is the only part that uses the network;
 Kern itself never does.
 
 Run it again when Kern is installed to update to a newer release (your
-settings, pins and recents stay as they are) or to reinstall from scratch,
-choosing whether to keep your settings and whether to clear pins and recents.
-Anything a reinstall replaces is moved to a `.backup-<time>` file beside it.
+settings, binds, pins and recents stay as they are) or to reinstall from
+scratch, choosing whether to keep your settings and whether to clear pins and
+recents. When you have set key or mouse binds, an install, update or reinstall
+also asks whether to keep or clear them. Anything the installer replaces or
+clears is moved to a `.backup-<time>` file beside it.
 
 - `--defaults` installs for you alone with the default settings and asks
-  nothing; on an installed Kern it updates when a newer release exists.
+  nothing; on an installed Kern it updates when a newer release exists and
+  keeps your settings, binds, pins and recents.
 - `--from DIR` installs from release files you have already downloaded
   (`SHA256SUMS`, the deb, the AppImage and `uninstall.sh`), with no network.
 
@@ -135,7 +157,7 @@ To remove Kern:
 bash ~/.local/lib/kern/uninstall.sh   # or /opt/kern/uninstall.sh
 ```
 
-It asks whether to keep Kern's settings, pins and recents or delete them, and
+It asks whether to keep Kern's settings, binds, pins and recents or delete them, and
 gives the default file manager back to the one Kern replaced.
 
 ## Building

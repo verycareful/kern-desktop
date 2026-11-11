@@ -13,7 +13,7 @@ use std::time::Duration;
 use kern_lib::cli::{self, parse_args, parse_args_report, Plan};
 use kern_lib::instance::{pack_args, unpack};
 use kern_lib::open::{
-    route, FileId, Gesture, Held, Kind, Location, OpenRegistry, Origin, Stat, Target,
+    route, FileId, Gesture, Held, Kind, Location, Moved, OpenRegistry, Origin, Stat, Target,
 };
 use kern_lib::prelaunch::{needs_window, status, Class};
 use kern_lib::windows::{next_doc_label, next_editor_label, window_kind, WindowKind};
@@ -659,6 +659,72 @@ fn a_hold_for_a_window_is_a_place_found_by_identity_and_goes_with_the_window() {
 // ---- the generation, the survey and what does not answer ----
 
 #[test]
+fn a_window_losing_its_tabs_keeps_its_own_place_and_what_other_windows_hold() {
+    let reg = OpenRegistry::new();
+    let (a, b, c, d, e, f) = (
+        Path::new("/a"),
+        Path::new("/b"),
+        Path::new("/c"),
+        Path::new("/d"),
+        Path::new("/e"),
+        Path::new("/f"),
+    );
+    reg.insert(a, tab("editor-1", "t1"));
+    // A Save As target held at a tab goes with the tab.
+    reg.reserve(b, tab("editor-1", "t2"));
+    // Not tabs of the window: its own place, a path held for a tab that has not
+    // registered, another window's tab, and a document window.
+    reg.insert(
+        c,
+        Location::Window {
+            label: "editor-1".to_owned(),
+        },
+    );
+    reg.insert(
+        d,
+        Location::Opening {
+            window: "editor-1".to_owned(),
+        },
+    );
+    reg.insert(e, tab("main", "t1"));
+    reg.insert(
+        f,
+        Location::Window {
+            label: "doc-1".to_owned(),
+        },
+    );
+    let before = reg.generation();
+    reg.remove_tabs_of("editor-1");
+    assert!(reg.generation() > before);
+    let at = |p: &Path| get(&reg, p, &FileId::of(p));
+    assert_eq!(at(a), None);
+    assert_eq!(at(b), None);
+    assert!(matches!(at(c), Some(Location::Window { .. })));
+    assert!(matches!(at(d), Some(Location::Opening { .. })));
+    assert_eq!(at(e), Some(tab("main", "t1")));
+    assert!(matches!(at(f), Some(Location::Window { .. })));
+}
+
+#[test]
+fn a_window_with_no_tabs_losing_them_changes_nothing_and_says_nothing() {
+    let reg = OpenRegistry::new();
+    let told = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = Arc::clone(&told);
+    reg.on_release(Arc::new(move || {
+        seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }));
+    reg.insert(Path::new("/a"), tab("main", "t1"));
+    let g = reg.generation();
+    reg.remove_tabs_of("editor-1");
+    reg.remove_tabs_of("nobody");
+    assert_eq!(reg.generation(), g);
+    assert_eq!(told.load(std::sync::atomic::Ordering::SeqCst), 0);
+    // A window that did hold tabs lets go, and the places waiting to retry are told.
+    reg.remove_tabs_of("main");
+    assert_eq!(told.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[test]
 fn every_change_to_the_registry_moves_its_generation_and_a_no_op_does_not() {
     let reg = OpenRegistry::new();
     let g = |reg: &OpenRegistry| reg.generation();
@@ -1102,4 +1168,127 @@ fn every_way_of_letting_go_is_announced_once_and_a_no_op_is_not() {
     reg.insert(a, tab("editor-2", "t3"));
     reg.remove_window("editor-2");
     assert_eq!(n.load(SeqCst), 4);
+}
+
+// ---- a rename or a move of an open document ----
+
+/// Where the registry holds `path`, by its name alone.
+fn at(reg: &OpenRegistry, path: &str) -> Option<Location> {
+    get(reg, Path::new(path), &FileId::default())
+}
+
+fn moved(from: &str, to: &str, location: Location) -> Moved {
+    Moved {
+        from: PathBuf::from(from),
+        to: PathBuf::from(to),
+        location,
+    }
+}
+
+#[test]
+fn a_renamed_file_is_registered_under_its_new_name_at_the_same_place() {
+    let reg = OpenRegistry::new();
+    reg.insert(Path::new("/w/a.txt"), tab("main", "t1"));
+    let out = reg.retarget(Path::new("/w/a.txt"), Path::new("/w/b.txt"));
+    assert_eq!(
+        out.moved,
+        vec![moved("/w/a.txt", "/w/b.txt", tab("main", "t1"))]
+    );
+    assert!(out.kept.is_empty());
+    assert_eq!(at(&reg, "/w/b.txt"), Some(tab("main", "t1")));
+    assert_eq!(at(&reg, "/w/a.txt"), None);
+}
+
+#[test]
+fn a_renamed_folder_moves_every_document_under_it_and_no_sibling_with_the_same_start() {
+    let reg = OpenRegistry::new();
+    reg.insert(Path::new("/w/dir/a.txt"), tab("main", "t1"));
+    reg.insert(Path::new("/w/dir/sub/b.txt"), tab("editor-1", "t2"));
+    let win = Location::Window {
+        label: "doc-1".to_owned(),
+    };
+    reg.insert(Path::new("/w/dir/c.txt"), win.clone());
+    reg.insert(Path::new("/w/dir2/d.txt"), tab("main", "t3"));
+    let out = reg.retarget(Path::new("/w/dir"), Path::new("/w/other"));
+    let mut got = out.moved;
+    got.sort_by(|x, y| x.from.cmp(&y.from));
+    assert_eq!(
+        got,
+        vec![
+            moved("/w/dir/a.txt", "/w/other/a.txt", tab("main", "t1")),
+            moved("/w/dir/c.txt", "/w/other/c.txt", win),
+            moved(
+                "/w/dir/sub/b.txt",
+                "/w/other/sub/b.txt",
+                tab("editor-1", "t2")
+            ),
+        ]
+    );
+    assert_eq!(at(&reg, "/w/other/sub/b.txt"), Some(tab("editor-1", "t2")));
+    assert_eq!(at(&reg, "/w/dir/a.txt"), None);
+    assert_eq!(at(&reg, "/w/dir2/d.txt"), Some(tab("main", "t3")));
+}
+
+#[test]
+fn a_move_onto_an_open_document_leaves_both_registered_and_names_the_one_not_moved() {
+    let reg = OpenRegistry::new();
+    reg.insert(Path::new("/w/a.txt"), tab("main", "t1"));
+    reg.insert(Path::new("/x/a.txt"), tab("main", "t2"));
+    let out = reg.retarget(Path::new("/w/a.txt"), Path::new("/x/a.txt"));
+    assert!(out.moved.is_empty());
+    assert_eq!(out.kept, vec![PathBuf::from("/w/a.txt")]);
+    assert_eq!(at(&reg, "/w/a.txt"), Some(tab("main", "t1")));
+    assert_eq!(at(&reg, "/x/a.txt"), Some(tab("main", "t2")));
+}
+
+#[test]
+fn a_folder_move_with_one_collision_moves_the_rest_and_names_the_one_kept() {
+    let reg = OpenRegistry::new();
+    reg.insert(Path::new("/w/dir/a.txt"), tab("main", "t1"));
+    reg.insert(Path::new("/w/dir/b.txt"), tab("main", "t2"));
+    reg.insert(Path::new("/x/dir/b.txt"), tab("main", "t3"));
+    let out = reg.retarget(Path::new("/w/dir"), Path::new("/x/dir"));
+    assert_eq!(
+        out.moved,
+        vec![moved("/w/dir/a.txt", "/x/dir/a.txt", tab("main", "t1"))]
+    );
+    assert_eq!(out.kept, vec![PathBuf::from("/w/dir/b.txt")]);
+    assert_eq!(at(&reg, "/w/dir/b.txt"), Some(tab("main", "t2")));
+    assert_eq!(at(&reg, "/x/dir/b.txt"), Some(tab("main", "t3")));
+}
+
+#[test]
+fn a_save_as_hold_and_a_routed_path_are_not_retargeted() {
+    let reg = OpenRegistry::new();
+    reg.reserve(Path::new("/w/held.txt"), tab("main", "t1"));
+    reg.insert(
+        Path::new("/w/routed.txt"),
+        Location::Opening {
+            window: "main".to_owned(),
+        },
+    );
+    let out = reg.retarget(Path::new("/w"), Path::new("/v"));
+    assert!(out.moved.is_empty());
+    assert!(out.kept.is_empty());
+    assert_eq!(at(&reg, "/w/held.txt"), Some(tab("main", "t1")));
+    assert!(at(&reg, "/w/routed.txt").is_some());
+}
+
+#[test]
+fn a_retarget_counts_as_a_change_and_lets_the_old_path_go_only_when_something_moved() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let reg = Arc::new(OpenRegistry::new());
+    let n = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let count = Arc::clone(&n);
+    reg.on_release(Arc::new(move || {
+        count.fetch_add(1, SeqCst);
+    }));
+    reg.insert(Path::new("/w/a.txt"), tab("main", "t1"));
+    let before = reg.generation();
+    reg.retarget(Path::new("/nothing"), Path::new("/else"));
+    assert_eq!(reg.generation(), before, "nothing moved, nothing changed");
+    assert_eq!(n.load(SeqCst), 0);
+    reg.retarget(Path::new("/w/a.txt"), Path::new("/w/b.txt"));
+    assert_ne!(reg.generation(), before);
+    assert_eq!(n.load(SeqCst), 1, "the old name is let go");
 }

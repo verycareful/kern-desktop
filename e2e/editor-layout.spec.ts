@@ -132,6 +132,129 @@ test("tree_keyboard_navigation", async ({ page, mockTauri, invokeCalls }) => {
   });
 });
 
+test("the_tree_buttons_drop_below_the_name_in_a_narrow_column_and_stay_clear_of_its_edge", async ({
+  page,
+  mockTauri,
+}) => {
+  await mockTauri({
+    ...COMMON,
+    layout_get: { ...COMMON.layout_get, left_width: 180 },
+    "plugin:kernkraft-tauri|list_dir": SMALL_TREE,
+  });
+  await page.goto("/");
+  const tools = page.getByRole("toolbar", { name: "Folder tree" });
+  await expect(tools).toBeVisible();
+  const column = (await page.getByTestId("editor-left").boundingBox())!;
+  expect(column.width).toBe(180);
+  const name = (await page.locator(".kern-tree-head-name").boundingBox())!;
+  const bar = (await tools.boundingBox())!;
+  // The buttons are on a row of their own under the name.
+  expect(bar.y).toBeGreaterThanOrEqual(name.y + name.height);
+  // Every button is inside the column's padding, so the divider never reaches one.
+  const buttons = tools.getByRole("button");
+  for (const box of await buttons.evaluateAll((els) =>
+    els.map((el) => el.getBoundingClientRect().toJSON() as DOMRect)
+  )) {
+    expect(box.left).toBeGreaterThanOrEqual(column.x + 12);
+    expect(box.right).toBeLessThanOrEqual(column.x + column.width - 12);
+  }
+  // The last one is reachable: nothing else is over it.
+  await buttons.last().click();
+});
+
+test("the_tree_buttons_share_the_row_of_the_name_in_a_wide_column", async ({ page, mockTauri }) => {
+  await mockTauri({ ...COMMON, "plugin:kernkraft-tauri|list_dir": SMALL_TREE });
+  await page.goto("/");
+  const tools = page.getByRole("toolbar", { name: "Folder tree" });
+  await expect(tools).toBeVisible();
+  const name = (await page.locator(".kern-tree-head-name").boundingBox())!;
+  const bar = (await tools.boundingBox())!;
+  expect(bar.y).toBeLessThan(name.y + name.height);
+  const widths = await tools
+    .getByRole("button")
+    .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().width));
+  expect(widths.every((w) => w === 26)).toBe(true);
+});
+
+test("f4_opens_a_terminal_in_the_tree_root_or_in_the_row_the_pointer_is_over", async ({
+  page,
+  mockTauri,
+  invokeCalls,
+}) => {
+  await mockTauri({
+    ...COMMON,
+    "plugin:kernkraft-tauri|list_dir": SMALL_TREE,
+    "plugin:kernkraft-tauri|open_terminal": null,
+  });
+  await page.goto("/");
+  await expect(page.getByRole("treeitem")).toHaveCount(4);
+  const terminals = async () =>
+    (await invokeCalls())
+      .filter((c) => c.cmd.endsWith("open_terminal"))
+      .map((c) => (c.args as { dir: { v: string } }).dir.v);
+
+  // No document and the pointer off the tree: the root.
+  await page.mouse.move(700, 400);
+  await page.keyboard.press("F4");
+  await expect.poll(terminals).toEqual(["/home/tester"]);
+
+  // The pointer over a folder row: that folder.
+  await page.getByRole("treeitem", { name: /^docs/ }).hover();
+  await page.keyboard.press("F4");
+  await expect.poll(terminals).toEqual(["/home/tester", "/home/tester/docs"]);
+
+  // Over a file row: its folder.
+  await page.getByRole("treeitem", { name: /^readme\.md/ }).hover();
+  await page.keyboard.press("F4");
+  await expect.poll(terminals).toEqual(["/home/tester", "/home/tester/docs", "/home/tester"]);
+});
+
+test("the_tree_sort_menu_orders_the_tree_in_the_browser", async ({ page, mockTauri }) => {
+  await mockTauri({
+    ...COMMON,
+    "plugin:kernkraft-tauri|list_dir": (args: Record<string, unknown>) => {
+      const at = (args.path as { v: string }).v;
+      const e = (name: string, folder: boolean, len: number) => ({
+        path: { k: "Utf8", v: `${at}/${name}` },
+        name,
+        kind: folder ? "dir" : "file",
+        target_is_dir: folder,
+        len,
+        modified_ms: null,
+        hidden: false,
+        mime: "text/plain",
+        mode: 0o644,
+      });
+      return at === "/home/tester"
+        ? [e("docs", true, 0), e("apple.txt", false, 1), e("zebra.txt", false, 99)]
+        : [];
+    },
+  });
+  await page.goto("/");
+  const names = () =>
+    page.getByRole("treeitem").evaluateAll((els) => els.map((el) => el.getAttribute("data-name")));
+  await expect.poll(names).toEqual(["docs", "apple.txt", "zebra.txt"]);
+
+  await page.getByRole("button", { name: "Sort the tree" }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitemradio", { name: "Name" })).toHaveAttribute(
+    "aria-checked",
+    "true"
+  );
+  await menu.getByRole("menuitemradio", { name: "Size" }).click();
+  await expect(menu).toHaveCount(0);
+  await expect.poll(names).toEqual(["docs", "zebra.txt", "apple.txt"]);
+
+  await page.getByRole("button", { name: "Sort the tree" }).click();
+  await expect(page.getByRole("menuitemradio", { name: "Largest first" })).toHaveAttribute(
+    "aria-checked",
+    "true"
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sort the tree" })).toBeFocused();
+});
+
 test("ctrl_b_hides_and_shows_the_left_column_and_the_welcome_pane_fills_the_centre", async ({
   page,
   mockTauri,

@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use kernkraft_tauri::{KernkraftExt, WireError, WireOpened, WirePath};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{
     webview::{PageLoadEvent, PageLoadPayload},
@@ -47,6 +47,9 @@ pub const EVENT_OPEN: &str = "kern://open";
 /// window is told, so a tab that was refused because that place had the file open can register
 /// again. No payload; the tab asks the backend, which still knows who holds what.
 pub const EVENT_DOC_RELEASED: &str = "kern://doc-released";
+/// A document open in this window was renamed or moved inside Kern: `{ from, to }`, the paths it
+/// had and has. Sent to the window that holds the document, which makes the tab follow the file.
+pub const EVENT_DOC_MOVED: &str = "kern://doc-moved";
 pub const EVENT_ADOPT_DOC: &str = "kern://adopt-doc";
 pub const EVENT_ADOPT_CANCELLED: &str = "kern://adopt-cancelled";
 pub const EVENT_OPEN_ERROR: &str = "kern://open-error";
@@ -468,7 +471,39 @@ pub fn focus<R: Runtime>(app: &AppHandle<R>, label: &str, token: &str) -> Result
 }
 
 /// Makes sure `main` exists. True when it was created now.
+///
+/// Callers can arrive together: this process's own launch and a request that came in on the bus
+/// while it started both want `main`. Tauri refuses a second window of a label only once the
+/// first is registered, which happens after its native window exists, so two builds that overlap
+/// both pass that check and the label ends up registered to one webview while two pages use it;
+/// the page that lost it can call no command. The check and the build are therefore one task on
+/// the main thread, which runs tasks one after the other: the second caller finds `main` made.
 pub fn ensure_main<R: Runtime>(app: &AppHandle<R>) -> Result<bool, WireError> {
+    if app.get_webview_window(MAIN).is_some() {
+        return Ok(false);
+    }
+    let (answer, answered) = mpsc::channel();
+    let task_app = app.clone();
+    app.run_on_main_thread(move || {
+        // The receiver is waiting for this one answer.
+        let _ = answer.send(build_main_once(&task_app));
+    })
+    .map_err(window_error)?;
+    answered.recv().map_err(|_| {
+        wire_error(
+            "Internal",
+            "the main thread did not answer the request to create main",
+            None,
+        )
+    })?
+}
+
+/// Builds `main` unless it exists. Runs on the main thread, where tasks are already one at a
+/// time; the lock does the same where a task runs on its caller's thread (a runtime without an
+/// event loop of its own, as the tests use), and nothing waits on another thread while holding it.
+fn build_main_once<R: Runtime>(app: &AppHandle<R>) -> Result<bool, WireError> {
+    static BUILDING: Mutex<()> = Mutex::new(());
+    let _one_at_a_time = BUILDING.lock().unwrap_or_else(PoisonError::into_inner);
     if app.get_webview_window(MAIN).is_some() {
         return Ok(false);
     }
@@ -482,7 +517,11 @@ pub fn ensure_main<R: Runtime>(app: &AppHandle<R>) -> Result<bool, WireError> {
     crate::session::opening(app, MAIN);
     WebviewWindowBuilder::from_config(app, cfg)
         .and_then(|b| b.build())
-        .map_err(window_error)?;
+        .map_err(|e| {
+            // Written here as well: the window that would show the error does not exist.
+            crate::error_log::record("window", &format!("main could not be created: {e}"));
+            window_error(e)
+        })?;
     Ok(true)
 }
 
@@ -1424,6 +1463,54 @@ pub fn doc_closed<R: Runtime>(
     Ok(())
 }
 
+/// A rename or a move done inside Kern: the path a file had and the path it has.
+#[derive(Deserialize)]
+pub struct MovedPair {
+    from: WirePath,
+    to: WirePath,
+}
+
+/// What `doc_moved` did not do: the documents whose new path is open already.
+#[derive(Serialize)]
+pub struct DocsMoved {
+    kept: Vec<WirePath>,
+}
+
+/// Files were renamed or moved inside Kern. Every open document at a `from`, or under it when it
+/// is a folder, is registered under its new path at the same place, and the window that holds it
+/// is told (`EVENT_DOC_MOVED`) so the tab follows the file. A document whose new path is open
+/// already stays as it is and is returned in `kept`: the caller says so, since that tab goes on
+/// showing the path it had, which holds no file.
+#[tauri::command]
+pub fn doc_moved<R: Runtime>(
+    app: AppHandle<R>,
+    pairs: Vec<MovedPair>,
+) -> Result<DocsMoved, WireError> {
+    let st = state(&app)?;
+    let mut kept = Vec::new();
+    let mut unsent = None;
+    for pair in pairs {
+        let (from, to) = (pair.from.to_path_buf()?, pair.to.to_path_buf()?);
+        let done = st.open.retarget(&from, &to);
+        for m in &done.moved {
+            let told = send(
+                &app,
+                m.location.window(),
+                EVENT_DOC_MOVED,
+                json!({ "from": WirePath::from(m.from.as_path()), "to": WirePath::from(m.to.as_path()) }),
+            );
+            if let Err(e) = told {
+                unsent.get_or_insert(e);
+            }
+        }
+        kept.extend(done.kept.iter().map(|p| WirePath::from(p.as_path())));
+    }
+    match unsent {
+        Some(e) => Err(e),
+        None => Ok(DocsMoved { kept }),
+    }
+}
+
 fn registry_busy() -> WireError {
     wire_error("Internal", "the open registry could not be read", None)
 }
@@ -2098,10 +2185,14 @@ pub fn ask_to_close<R: Runtime>(window: &Window<R>) {
 }
 
 /// A page (re)load in a window: whatever it had registered as ready is gone
-/// with the page, so directives queue again until it asks.
+/// with the page, so directives queue again until it asks. The tabs it had
+/// registered as open documents are gone with it too: the page makes its tabs
+/// afresh and registers them again, and a stale entry would send a later open
+/// of the file to a tab that does not exist.
 pub fn on_page_load<R: Runtime>(webview: &Webview<R>, payload: &PageLoadPayload<'_>) {
     if payload.event() == PageLoadEvent::Started {
         page_reloading(webview.app_handle(), webview.label());
+        crate::error_log::watch_web_process(webview);
     }
 }
 
@@ -2109,6 +2200,7 @@ pub fn on_page_load<R: Runtime>(webview: &Webview<R>, payload: &PageLoadPayload<
 pub fn page_reloading<R: Runtime>(app: &AppHandle<R>, label: &str) {
     if let Some(st) = app.try_state::<WindowState>() {
         st.lock().ready.remove(label);
+        st.open.remove_tabs_of(label);
     }
 }
 
@@ -2123,6 +2215,7 @@ pub fn on_window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
         WindowEvent::Destroyed => {
             let app = window.app_handle();
             crate::zoom::forget(app, window.label());
+            crate::error_log::forget_webview(window.label());
             crate::session::window_gone(app, window.label());
             if let Some(st) = app.try_state::<WindowState>() {
                 // Its own document and its tabs; other windows' tabs stay.

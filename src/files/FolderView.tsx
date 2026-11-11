@@ -28,8 +28,7 @@ import {
   type WireError,
   type WirePath,
 } from "../ipc";
-import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
-import { actions } from "../keys/actions";
+import { ActionMenu } from "../keys/ActionMenu";
 import { ActionButton } from "../shell/ActionButton";
 import { FILE_KEYS_ATTR } from "../keys/file-keys";
 import {
@@ -40,6 +39,9 @@ import {
   modsOf,
   type DragModifiers,
 } from "../ops/dnd";
+import { logError } from "../ops/error-log";
+import { errorText } from "../ops/error-text";
+import { ErrorBanner } from "../ops/ErrorBanner";
 import { useTabs, type FolderTab, type FolderViewState } from "../store/tabs";
 import { Breadcrumb } from "./Breadcrumb";
 import { OpenWithDialog } from "./OpenWithDialog";
@@ -53,6 +55,7 @@ import { ROW_HEIGHT } from "./grid-layout";
 import { useFolderUi, DEFAULT_SORT } from "./folder-ui";
 import { registerFolder, type MoveTo } from "./folder-controller";
 import { useFolderStatus } from "./folder-status";
+import { folderMenu } from "./folder-menu";
 import { GoneBanner } from "./GoneBanner";
 import { LocationBar } from "./LocationBar";
 import { useFileOps } from "./use-file-ops";
@@ -71,19 +74,16 @@ import {
   type Sel,
 } from "./selection";
 import { isFolder } from "./file-type";
-import { loadViewSettings, useViewSettings, useViewSettingsSync } from "./view-settings";
+import {
+  loadViewSettings,
+  useSingleClick,
+  useViewSettings,
+  useViewSettingsSync,
+} from "./view-settings";
 import { useFolder } from "./useFolder";
+import { FlashSpan, RepeatFlash } from "../ops/repeat-flash";
 import "../ops/ops.css";
 import "./files.css";
-
-// The right-click menu is the folder actions of the table, grouped as the
-// main menu groups them (keyboard and right-click parity).
-const CONTEXT_MENU: MenuSection[] = (
-  ["Open", "Pinned", "Edit", "Create", "Selection", "View"] as const
-).map((area) => ({
-  title: area,
-  actions: actions.filter((a) => a.when === "folder" && a.area === area),
-}));
 
 function ErrorText(props: { error: WireError }) {
   return (
@@ -106,6 +106,7 @@ export function FolderView(props: { tab: FolderTab }) {
             <span>
               Settings could not be read: <ErrorText error={error} />
             </span>
+            <RepeatFlash watch={error} />
             <button type="button" className="kern-button" onClick={() => void loadViewSettings()}>
               Retry
             </button>
@@ -122,7 +123,8 @@ export function FolderView(props: { tab: FolderTab }) {
 }
 
 function LoadedFolder({ tab }: { tab: FolderTab }) {
-  const { showHidden, viewMode, error: settingsError } = useViewSettings();
+  const { showHidden, viewMode, folderMenu: menuShape, error: settingsError } = useViewSettings();
+  const singleClick = useSingleClick("centre");
   const sort = useFolderUi((s) => s.sort[tab.id] ?? DEFAULT_SORT);
   const key = pathKey(tab.path);
   const isActive = useTabs((s) => s.activeId === tab.id);
@@ -178,14 +180,11 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         !showHidden && displayPath(p).split("/").pop()!.startsWith(".");
       const describe = (p: WirePath) =>
         `${displayPath(p)} (${hidden(p) ? "hidden, Ctrl+H shows hidden files" : "not in this folder"})`;
+      const message = `Not selected: ${missing.map(describe).join(", ")}`;
+      logError("select", message);
       setSelectNotes((notes) => [
         ...notes,
-        {
-          kind: "NotFound",
-          message: `Not selected: ${missing.map(describe).join(", ")}`,
-          path: null,
-          details: null,
-        },
+        { kind: "NotFound", message, path: null, details: null },
       ]);
     }
   }, [selectRequest, folder.phase, entries, selectKeys, tab.id, showHidden, searching]);
@@ -294,9 +293,24 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
         toWireError(e),
       ]);
       if (alive.current) setOpenErrors(errors);
+      errors.forEach((e) => logError("open", errorText(e)));
     },
     [tab.id]
   );
+
+  // What the banners below say is also written to the error log, once for each time it appears.
+  useEffect(() => {
+    if (folder.sortError)
+      logError("folder", `The list could not be sorted: ${errorText(folder.sortError)}`);
+  }, [folder.sortError]);
+  useEffect(() => {
+    if (folder.watchError) {
+      logError(
+        "folder",
+        `Changes to this folder will not appear by themselves: ${errorText(folder.watchError)}`
+      );
+    }
+  }, [folder.watchError]);
   const openOrAsk = useCallback(
     (list: typeof entries, newWindow: boolean) => {
       if (list.length > OPEN_CONFIRM_ABOVE) setAsking({ list, newWindow });
@@ -488,13 +502,20 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     setToolsDrawnFor(`${folder.phase}\n${searching}`);
   }, [folder.phase, searching]);
 
+  // With single-click opening, a plain click selects the item and opens it; a click with Ctrl,
+  // Meta or Shift only selects, so a selection can still be built with the mouse. The second
+  // click of a double-click (`detail` 2 or more) selects and does not open again.
   const onItemClick = useCallback(
     (i: number, e: React.MouseEvent) => {
       if (e.ctrlKey || e.metaKey) dispatch((s) => ctrlClick(s, i));
       else if (e.shiftKey) dispatch((s) => shiftClick(s, i));
-      else dispatch((s) => click(s, i));
+      else {
+        dispatch((s) => click(s, i));
+        const entry = latest.current.entries[i];
+        if (singleClick && e.detail <= 1 && entry) openOrAsk([entry], false);
+      }
     },
-    [dispatch]
+    [dispatch, openOrAsk, singleClick]
   );
   // The keyboard goes back to the list once it has been navigated or re-sorted.
   useEffect(() => {
@@ -505,12 +526,13 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
 
   const onItemDoubleClick = useCallback(
     (i: number, e: React.MouseEvent) => {
+      if (singleClick) return;
       const entry = latest.current.entries[i];
       if (!entry) return;
       dispatch((s) => click(s, i));
       openOrAsk([entry], e.ctrlKey || e.metaKey);
     },
-    [dispatch, openOrAsk]
+    [dispatch, openOrAsk, singleClick]
   );
   const onContextMenu = useCallback(
     (i: number | null, e: React.MouseEvent) => {
@@ -540,6 +562,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
     onBand,
     onBackgroundClick,
     onSeedCursor,
+    cutFolder: tab.path,
     rename: fileOps.renaming
       ? {
           state: fileOps.renaming,
@@ -697,6 +720,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
           <span>
             Settings: <ErrorText error={settingsError} />
           </span>
+          <RepeatFlash watch={settingsError} />
         </div>
       )}
       {folder.sortError && (
@@ -705,6 +729,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
             The list could not be sorted, so it is in the order the folder gave it. Choosing a sort
             tries again. <ErrorText error={folder.sortError} />
           </span>
+          <RepeatFlash watch={folder.sortError} />
         </div>
       )}
       {folder.watchError && (
@@ -713,10 +738,11 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
             Changes to this folder will not appear by themselves (press F5 to refresh):{" "}
             <ErrorText error={folder.watchError} />
           </span>
+          <RepeatFlash watch={folder.watchError} />
         </div>
       )}
       {selectNotes.length > 0 && (
-        <div role="alert" className="kern-banner">
+        <ErrorBanner onDismiss={() => setSelectNotes([])} watch={selectNotes}>
           <ul>
             {selectNotes.map((e, i) => (
               <li key={i}>
@@ -724,18 +750,10 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
               </li>
             ))}
           </ul>
-          <button
-            type="button"
-            className="kern-icon-button"
-            aria-label="Dismiss"
-            onClick={() => setSelectNotes([])}
-          >
-            <X size={16} strokeWidth={2} aria-hidden />
-          </button>
-        </div>
+        </ErrorBanner>
       )}
       {openErrors.length > 0 && (
-        <div role="alert" className="kern-banner">
+        <ErrorBanner onDismiss={() => setOpenErrors([])} watch={openErrors}>
           <ul>
             {openErrors.map((e, i) => (
               <li key={i}>
@@ -743,15 +761,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
               </li>
             ))}
           </ul>
-          <button
-            type="button"
-            className="kern-icon-button"
-            aria-label="Dismiss"
-            onClick={() => setOpenErrors([])}
-          >
-            <X size={16} strokeWidth={2} aria-hidden />
-          </button>
-        </div>
+        </ErrorBanner>
       )}
       {asking && (
         <ConfirmBanner
@@ -775,6 +785,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
               <li key={n}>{n}</li>
             ))}
           </ul>
+          <FlashSpan count={tools.noteRepeats} />
           <button
             type="button"
             className="kern-icon-button"
@@ -795,6 +806,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       {searching ? (
         <SearchView
           root={tab.path}
+          area="centre"
           onClose={() => {
             focusSoon.current = true;
             setSearching(false);
@@ -819,7 +831,7 @@ function LoadedFolder({ tab }: { tab: FolderTab }) {
       <div ref={drag.ghost} className="kern-drag-ghost" aria-hidden hidden />
       {menu && (
         <ActionMenu
-          sections={CONTEXT_MENU}
+          sections={folderMenu(menuShape)}
           x={menu.x}
           y={menu.y}
           targetId={tab.id}

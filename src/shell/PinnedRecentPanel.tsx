@@ -7,10 +7,13 @@ import { ActionMenu } from "../keys/ActionMenu";
 import { ITEM_DRAG_THRESHOLD } from "../ops/dnd";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
+import { FlashSpan, RepeatFlash } from "../ops/repeat-flash";
 import { RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN, useLayout } from "../store/layout";
 import { entryMenu } from "./entry-menu";
+import type { Side } from "./panel-order";
 import { Splitter } from "./Splitter";
-import { openOnDoubleClick } from "./double-click";
+import { openOnClick } from "./open-on-click";
+import { useSingleClick } from "../files/view-settings";
 import { isEditorPin, moveItem, usePinnedRecent, type EntryList } from "./pinned-recent-store";
 import { homeRelative } from "./home-relative";
 import { RELATIVE_TIME_TICK_MS, relativeTime } from "./relative-time";
@@ -50,8 +53,12 @@ function useNow(tick: number): number {
   return now;
 }
 
-export function PinnedRecentPanel(props: { overlay?: boolean }) {
+export function PinnedRecentPanel(props: { overlay?: boolean; side?: Side }) {
+  // The panel is on the right of the window unless the panel order puts it on the left; its
+  // divider is on the edge that faces the rest of the window.
+  const side = props.side ?? "right";
   const s = usePinnedRecent();
+  const single = useSingleClick("right");
   const home = useUserDirs((u) => u.dirs?.home ?? null);
   const now = useNow(RELATIVE_TIME_TICK_MS);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -185,9 +192,13 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
 
   return (
     <aside
-      className={
-        props.overlay ? "kern-panel kern-panel-right kern-overlay" : "kern-panel kern-panel-right"
-      }
+      className={[
+        "kern-panel kern-panel-right",
+        props.overlay && "kern-overlay",
+        side === "left" && "kern-side-left",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       aria-label="Pinned and Recent"
       data-testid="side-panel"
     >
@@ -196,7 +207,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
         min={RIGHT_WIDTH_MIN}
         max={RIGHT_WIDTH_MAX}
         setWidth={setWidth}
-        grows="left"
+        grows={side === "left" ? "right" : "left"}
         label="Resize Pinned and Recent"
         className="kern-splitter kern-edge-splitter"
         testId="side-panel-splitter"
@@ -206,6 +217,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
           {s.loadError && (
             <div role="alert" className="kern-places-error">
               <span>Pinned and Recent could not be read: {errorText(s.loadError)}</span>
+              <RepeatFlash watch={s.loadError} />
               <button
                 type="button"
                 className="kern-button"
@@ -218,6 +230,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
           {s.notices.map((n) => (
             <div key={n.id} role="alert" className="kern-places-error">
               <span>{n.text}</span>
+              <FlashSpan count={n.repeats} />
               <button
                 type="button"
                 className="kern-icon-button"
@@ -253,7 +266,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
                   type="button"
                   className="kern-place"
                   title={title(p)}
-                  {...openOnDoubleClick(() => void s.openEntry("pinned", p))}
+                  {...openOnClick(() => void s.openEntry("pinned", p), single)}
                   onPointerDown={onPinPointerDown(key)}
                   {...menuHandlers("pinned", p)}
                 >
@@ -282,7 +295,7 @@ export function PinnedRecentPanel(props: { overlay?: boolean }) {
                 type="button"
                 className="kern-place"
                 title={title(r.path)}
-                {...openOnDoubleClick(() => void s.openEntry("recent", r.path))}
+                {...openOnClick(() => void s.openEntry("recent", r.path), single)}
                 {...menuHandlers("recent", r.path)}
               >
                 {r.as_editor ? <SquarePen size={16} strokeWidth={2} aria-hidden /> : icon(r.path)}

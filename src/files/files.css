@@ -163,6 +163,19 @@
   padding-left: 16px;
 }
 
+/*
+ * A banner with a dismiss button in its top right corner: the same 8px above the button as to its
+ * right, and the text lined up with the button's top.
+ */
+.kern-banner-dismissible {
+  align-items: flex-start;
+  padding: 8px 8px 8px var(--kern-density-gap);
+}
+
+.kern-banner-dismissible > :first-child {
+  padding-block: 2px;
+}
+
 .kern-button {
   flex: none;
   padding: 6px 12px;
@@ -213,9 +226,11 @@
 }
 
 /*
- * The space between the path bar and the first row or card is the theme's
- * gap for the density in use (--kern-density-gap, theme base.css), the same
- * space the bar and the rows keep from the sides.
+ * The space between the path bar and the first card is the theme's gap for
+ * the density in use (--kern-density-gap, theme base.css), the same space the
+ * bar and the cards keep from the sides. A list has no such space: its column
+ * header is sticky and sits flush under the bar, so rows that scroll up pass
+ * under the header and never show above it.
  */
 .kern-list,
 .kern-grid {
@@ -223,6 +238,9 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
+}
+
+.kern-grid {
   padding-top: var(--kern-density-gap);
 }
 
@@ -343,7 +361,8 @@
 }
 
 .kern-col-modified {
-  width: 104px;
+  /* The longest text is a day and a time: "6 days ago 11:45 PM". */
+  width: 156px;
   padding-left: 16px;
 }
 
@@ -410,6 +429,16 @@
 .kern-card.kern-selected {
   background: var(--kern-accent-soft);
   border-color: var(--kern-accent);
+}
+
+/*
+ * An item the clipboard holds as a cut is dimmed until it is pasted or the cut is cancelled. The
+ * row or card keeps its own background, so a cut item that is selected is still seen as selected.
+ */
+.kern-row.kern-cut > *,
+.kern-card.kern-cut > *,
+.kern-tree-row.kern-cut > * {
+  opacity: 0.5;
 }
 
 .kern-card-pic {
@@ -581,6 +610,30 @@
   flex: 1;
 }
 
+/*
+ * In the editor's folder column the one row of label, input and close button leaves the input a
+ * few characters wide. There the label and the close button share the first row and the input
+ * takes the full width of the second.
+ */
+.kern-editor-tree .kern-search-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 8px;
+}
+
+.kern-editor-tree .kern-search-bar .kern-label {
+  grid-area: 1 / 1;
+  overflow-wrap: anywhere;
+}
+
+.kern-editor-tree .kern-search-bar .kern-icon-button {
+  grid-area: 1 / 2;
+}
+
+.kern-editor-tree .kern-search-bar .kern-search-input {
+  grid-area: 2 / 1 / 3 / 3;
+}
+
 .kern-search-results {
   display: flex;
   min-height: 0;
@@ -594,7 +647,7 @@
   overflow: auto;
 }
 
-.kern-hits:focus-visible {
+.kern-hits-body:focus-visible {
   outline: 2px solid var(--kern-accent);
   outline-offset: -2px;
 }
@@ -603,9 +656,29 @@
   gap: 8px;
 }
 
-.kern-hit .kern-name {
+/* In the narrow editor column a hit is the name, the folder and the time on one row. */
+.kern-hit > .kern-name {
   min-width: 0;
   flex: 1 1 40%;
+}
+
+/* In the centre it has the columns of a file manager row, and the folder it is in. */
+.kern-col-location {
+  flex: none;
+  width: 240px;
+  padding-left: 16px;
+  font-size: 11.5px;
+  color: var(--kern-text-dim);
+}
+
+.kern-hit .kern-col-name {
+  min-width: 0;
+}
+
+/* The column buttons wait for the end of the walk: a list still growing cannot be put in order. */
+.kern-list-head-busy button {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .kern-hit-where {
@@ -643,30 +716,41 @@
 
 .kern-tree-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   padding: 6px var(--kern-density-gap);
   font-weight: 600;
   border-bottom: 1px solid var(--kern-border);
 }
 
+/* The name keeps room for six characters; when that and the buttons do not fit, the buttons drop below. */
 .kern-tree-head-name {
-  min-width: 0;
-  flex: 1;
+  min-width: 6ch;
+  flex: 1 1 6ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The tree's buttons, at the end of its heading; the name gives way to them. */
+/*
+ * The tree's buttons, at the end of its heading; the name gives way to them first, then they
+ * drop to a row of their own under it, kept to the right. On that row they may shrink, down to
+ * 20px, so they stay inside the column's padding however narrow it is.
+ */
 .kern-tree-tools {
   display: flex;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
   gap: 2px;
   font-weight: normal;
 }
 
 .kern-tree-tools .kern-tree-tool {
+  flex: 0 1 26px;
+  min-width: 20px;
   width: 26px;
   height: 26px;
 }
@@ -685,11 +769,17 @@
 }
 
 .kern-tree-notes li {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 4px;
   overflow-wrap: anywhere;
+}
+
+/* The negative block margin keeps a one-line note as tall as its text. */
+.kern-tree-notes .kern-dismiss {
+  margin-block: -3px;
 }
 
 .kern-tree {
@@ -752,4 +842,12 @@
 .kern-tree-note span {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The Library as cards: the grid fills the area under the toolbar and takes the keyboard. */
+.kern-hits-grid {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
 }

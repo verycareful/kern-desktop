@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-//! Persistent settings, pins and recents.
+//! Persistent settings, binds, pins and recents.
 //!
-//! Six JSON files: `settings.json` under `$XDG_CONFIG_HOME/kern/`, and
+//! Seven JSON files: `settings.json` and `binds.json` (the keys and mouse buttons bound to
+//! actions) under `$XDG_CONFIG_HOME/kern/`, and
 //! `pins.json`, `recents.json`, `layout.json` (how the main window is laid
 //! out: its column widths and tree root), `session.json` (the windows open
 //! and their tabs) and `closed-session.json` (the windows of the last run,
@@ -33,7 +34,7 @@
 //!
 //! Paths are stored as [`WirePath`], so a name that is not UTF-8 survives.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::{self, ErrorKind};
 use std::marker::PhantomData;
@@ -70,15 +71,17 @@ pub const THEME_DENSITY: Density = Density::Cozy;
 
 /// Keys of `settings.json` Kern does not keep: dropped when the file is
 /// read, so the next write leaves them out. `density` is fixed at
-/// [`THEME_DENSITY`].
-const DROPPED_SETTINGS: [&str; 1] = ["density"];
+/// [`THEME_DENSITY`]. `single_click` is not a setting: the click mode is kept
+/// per area (`single_click_left` and the three after it), and a stray copy
+/// would otherwise be carried in `extra` and written back for good.
+const DROPPED_SETTINGS: [&str; 2] = ["density", "single_click"];
 
 /// Keys of `layout.json` Kern does not keep, dropped the same way. `layout`:
 /// the main window's layout is [`Settings::default_layout`] alone.
 const DROPPED_LAYOUT: [&str; 1] = ["layout"];
 
 /// Directory name under the XDG config and state homes.
-const APP_DIR: &str = "kern";
+pub(crate) const APP_DIR: &str = "kern";
 
 /// Where removable volumes are mounted, as (base directory, number of path
 /// components below it that name the mount directory). UDisks mounts at
@@ -134,6 +137,31 @@ pub enum NewTabDefault {
     Current,
 }
 
+/// How the time of day is written in the Modified column and beside dates: the locale's own way,
+/// or a 12-hour or 24-hour clock.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TimeFormat {
+    #[default]
+    #[serde(rename = "system")]
+    System,
+    #[serde(rename = "12")]
+    Hour12,
+    #[serde(rename = "24")]
+    Hour24,
+}
+
+/// The shape of the right-click menu of the file manager's folder view: the most used entries on
+/// top with the rest folded into submenus (`Standard`), every group folded (`Collapsed`), or every
+/// entry listed at once (`Expanded`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FolderMenu {
+    #[default]
+    Standard,
+    Collapsed,
+    Expanded,
+}
+
 /// The Files view mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -141,6 +169,29 @@ pub enum ViewMode {
     #[default]
     List,
     Grid,
+}
+
+/// A column of the file manager layout, or a panel of the editor layout. Places is the left
+/// panel (places, volumes, Trash, Library; in the editor layout the strip over the folder tree),
+/// Folder is the folder area, Pinned is Pinned and Recent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Panel {
+    Places,
+    Folder,
+    Pinned,
+}
+
+/// The file manager layout's columns, left to right, before the user reorders them: every panel
+/// exactly once.
+pub fn default_panel_order() -> Vec<Panel> {
+    vec![Panel::Places, Panel::Folder, Panel::Pinned]
+}
+
+/// The editor layout's two panels, left to right: the editor itself stays in the middle, so the
+/// order names the panel on its left and the panel on its right. Places and Pinned, each once.
+pub fn default_editor_panel_order() -> Vec<Panel> {
+    vec![Panel::Places, Panel::Pinned]
 }
 
 /// `settings.json`. Theme types are kernkraft-theme's, so the stored values
@@ -171,6 +222,30 @@ pub struct Settings {
     pub new_tab_folder: Option<WirePath>,
     /// Which of the two new tabs Ctrl+T opens.
     pub new_tab_default: NewTabDefault,
+    /// The clock the time of day is shown in (see [`TimeFormat`]).
+    pub time_format: TimeFormat,
+    /// The shape of the folder view's right-click menu (see [`FolderMenu`]).
+    pub folder_menu: FolderMenu,
+    /// Whether Kern writes the error log (`error_log.rs`). Off stops all writing and leaves a file
+    /// already there as it is.
+    pub error_log: bool,
+    /// Left panel (places, volumes, Trash, Library, and the strip of the other layout): whether a
+    /// single click opens an entry; off means a double-click does.
+    pub single_click_left: bool,
+    /// Right panel (pinned and recent): whether a single click opens an entry.
+    pub single_click_right: bool,
+    /// Centre of the file manager (list and grid, and search hits shown there): whether a single
+    /// click opens an item.
+    pub single_click_centre: bool,
+    /// Editor window (file rows of the tree, and search hits shown there): whether a single click
+    /// opens a file. Folder rows always expand on one click.
+    pub single_click_editor: bool,
+    /// The file manager layout's columns, left to right: a permutation of [`Panel`]'s three
+    /// values (see [`default_panel_order`]).
+    pub panel_order: Vec<Panel>,
+    /// The editor layout's two panels, left to right (see [`default_editor_panel_order`]): a
+    /// permutation of Places and Pinned.
+    pub editor_panel_order: Vec<Panel>,
     /// Keys inside `follow` this version does not define.
     #[serde(skip)]
     pub follow_extra: Map<String, Value>,
@@ -199,6 +274,15 @@ impl Default for Settings {
             default_layout: LayoutKind::default(),
             new_tab_folder: None,
             new_tab_default: NewTabDefault::default(),
+            time_format: TimeFormat::default(),
+            folder_menu: FolderMenu::default(),
+            error_log: true,
+            single_click_left: true,
+            single_click_right: false,
+            single_click_centre: false,
+            single_click_editor: false,
+            panel_order: default_panel_order(),
+            editor_panel_order: default_editor_panel_order(),
             follow_extra: Map::new(),
             extra: Map::new(),
         }
@@ -281,6 +365,45 @@ pub struct Recents {
     pub entries: Vec<RecentEntry>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+/// `binds.json`: the keys and mouse buttons the user has bound to actions, apart from the settings so
+/// that clearing one leaves the other.
+///
+/// `binds` maps an action id to the binds that trigger it, replacing the action's defaults. An
+/// action with no entry keeps its defaults; an empty list is an action deliberately left unbound.
+/// The text of a bind and what an id names are the interface's: a bind this file holds for an
+/// action that no longer exists is kept as it is.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Binds {
+    pub binds: BTreeMap<String, Vec<String>>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+/// A change to the binds: an action id to its new list of binds, or to `None` to give the action
+/// back its defaults.
+pub type BindsPatch = BTreeMap<String, Option<Vec<String>>>;
+
+/// An action id that is not empty, and binds that are not empty and appear once each.
+fn check_binds_patch(patch: &BindsPatch) -> Result<(), WireError> {
+    for (id, binds) in patch {
+        if id.is_empty() {
+            return Err(invalid("binds", "an action id is empty"));
+        }
+        let Some(binds) = binds else { continue };
+        let mut seen = HashSet::new();
+        for bind in binds {
+            if bind.is_empty() {
+                return Err(invalid("binds", format!("{id}: a bind is empty")));
+            }
+            if !seen.insert(bind) {
+                return Err(invalid("binds", format!("{id}: {bind} is listed twice")));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// A tab of a window kept in `session.json`.
@@ -519,6 +642,7 @@ macro_rules! stored_by_serde {
 }
 stored_by_serde!(Pins);
 stored_by_serde!(Recents);
+stored_by_serde!(Binds);
 
 /// Reads `key` of `obj` into `slot`. A value that does not parse, or that
 /// `check` refuses, is a problem: the raw value goes to `keep` and `slot`
@@ -595,6 +719,29 @@ fn check_interface_size(size: &u32) -> Result<(), String> {
             "interface size {size} is not one of {INTERFACE_SIZES:?}"
         ))
     }
+}
+
+/// `order` names each panel of `expected` exactly once and no other.
+fn check_panel_set(order: &[Panel], expected: &[Panel], what: &str) -> Result<(), String> {
+    let each_once = order.len() == expected.len()
+        && expected
+            .iter()
+            .all(|p| order.iter().filter(|o| *o == p).count() == 1);
+    if each_once {
+        Ok(())
+    } else {
+        Err(format!(
+            "{what} must name {expected:?} once each, not {order:?}"
+        ))
+    }
+}
+
+fn check_panel_order(order: &[Panel]) -> Result<(), String> {
+    check_panel_set(order, &default_panel_order(), "panel order")
+}
+
+fn check_editor_panel_order(order: &[Panel]) -> Result<(), String> {
+    check_panel_set(order, &default_editor_panel_order(), "editor panel order")
 }
 
 fn check_left_width(w: &u32) -> Result<(), String> {
@@ -753,6 +900,78 @@ impl Stored for Settings {
             &mut problems,
             any_value,
         );
+        take(
+            &mut obj,
+            "time_format",
+            &mut s.time_format,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "folder_menu",
+            &mut s.folder_menu,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "error_log",
+            &mut s.error_log,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "single_click_left",
+            &mut s.single_click_left,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "single_click_right",
+            &mut s.single_click_right,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "single_click_centre",
+            &mut s.single_click_centre,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "single_click_editor",
+            &mut s.single_click_editor,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "panel_order",
+            &mut s.panel_order,
+            &mut keep,
+            &mut problems,
+            |o: &Vec<Panel>| check_panel_order(o),
+        );
+        take(
+            &mut obj,
+            "editor_panel_order",
+            &mut s.editor_panel_order,
+            &mut keep,
+            &mut problems,
+            |o: &Vec<Panel>| check_editor_panel_order(o),
+        );
         for key in DROPPED_SETTINGS {
             obj.remove(key);
         }
@@ -905,8 +1124,10 @@ impl Stored for Session {
 struct JsonFile<T> {
     path: PathBuf,
     guard: Mutex<()>,
-    /// Fields already reported this run; cleared by a write, which may fix
-    /// them. Only touched under `guard`.
+    /// Fields already reported this run. A write forgets the ones that read
+    /// well in what it wrote (a patch that names a field replaces its bad
+    /// value) and keeps the ones still unreadable, whose raw value is written
+    /// back as it was. Only touched under `guard`.
     reported: Mutex<HashSet<String>>,
     marker: PhantomData<fn() -> T>,
 }
@@ -989,7 +1210,10 @@ impl<T: Stored> JsonFile<T> {
         bytes.push(b'\n');
         // Only Kern writes its settings files, so what is at the name is the copy to replace.
         write_bytes_atomic(&self.path, Expect::Anything, &bytes)?;
-        lock(&self.reported).clear();
+        let unreadable: HashSet<String> = T::parse(json)
+            .map(|(_, problems)| problems.into_iter().map(|p| p.field).collect())
+            .unwrap_or_default();
+        lock(&self.reported).retain(|field| unreadable.contains(field));
         Ok(())
     }
 
@@ -1029,6 +1253,7 @@ pub struct Store {
     settings: JsonFile<Settings>,
     pins: JsonFile<Pins>,
     recents: JsonFile<Recents>,
+    binds: JsonFile<Binds>,
     layout: JsonFile<WindowLayout>,
     session: JsonFile<Session>,
     closed: JsonFile<Session>,
@@ -1042,6 +1267,7 @@ impl Store {
             settings: JsonFile::new(config_dir.join("settings.json")),
             pins: JsonFile::new(state_dir.join("pins.json")),
             recents: JsonFile::new(state_dir.join("recents.json")),
+            binds: JsonFile::new(config_dir.join("binds.json")),
             layout: JsonFile::new(state_dir.join("layout.json")),
             session: JsonFile::new(state_dir.join("session.json")),
             closed: JsonFile::new(state_dir.join("closed-session.json")),
@@ -1112,7 +1338,8 @@ impl Store {
     /// Merges `patch` (field name to new value) into the settings. A field
     /// this version does not define, a value of the wrong type, an
     /// `editor_zoom` outside [`ZOOM_MIN`] to [`ZOOM_MAX`], an `interface_size`
-    /// that is not one of [`INTERFACE_SIZES`] or a scan root
+    /// that is not one of [`INTERFACE_SIZES`], a `panel_order` or
+    /// `editor_panel_order` that is not a permutation of its panels or a scan root
     /// that is not an absolute path refuses the whole patch and writes
     /// nothing. A `null` clears `terminal`.
     ///
@@ -1261,6 +1488,16 @@ impl Store {
         })
     }
 
+    /// Unpins everything, with the editor marks. No pins changes nothing.
+    pub fn pins_clear(&self) -> Result<Loaded<Pins>, WireError> {
+        self.pins.update(|pins| {
+            let changed = !pins.entries.is_empty() || !pins.editors.is_empty();
+            pins.entries.clear();
+            pins.keep_editors_pinned();
+            Ok(changed)
+        })
+    }
+
     /// Puts the pins in the order of `paths`. A pin the request omits keeps
     /// its place after the named ones (another window may have pinned it
     /// meanwhile), and a path that is not pinned (unpinned meanwhile) is
@@ -1340,6 +1577,51 @@ impl Store {
             let before = recents.entries.len();
             recents.entries.retain(|e| !same_path(&e.path, &key));
             Ok(recents.entries.len() != before)
+        })
+    }
+
+    /// Empties the recents. No recents changes nothing.
+    pub fn recents_clear(&self) -> Result<Loaded<Recents>, WireError> {
+        self.recents.update(|recents| {
+            let changed = !recents.entries.is_empty();
+            recents.entries.clear();
+            Ok(changed)
+        })
+    }
+
+    pub fn binds_get(&self) -> Result<Loaded<Binds>, WireError> {
+        self.binds.get()
+    }
+
+    /// Applies `patch` to the binds: an action named with a list gets exactly those binds, one
+    /// named with `None` goes back to its defaults, the others are untouched. An empty action id, an
+    /// empty bind or a bind listed twice for one action refuses the whole patch and writes nothing.
+    pub fn binds_set(&self, patch: BindsPatch) -> Result<Loaded<Binds>, WireError> {
+        check_binds_patch(&patch)?;
+        self.binds.update(|current| {
+            let mut changed = false;
+            for (id, binds) in patch {
+                changed |= match binds {
+                    Some(list) => current.binds.insert(id, list.clone()) != Some(list),
+                    None => current.binds.remove(&id).is_some(),
+                };
+            }
+            Ok(changed)
+        })
+    }
+
+    /// Deletes `binds.json`, so every action is back on its defaults. No file changes nothing.
+    pub fn binds_clear(&self) -> Result<Loaded<Binds>, WireError> {
+        let _held = lock(&self.binds.guard);
+        let existed = match fs::remove_file(&self.binds.path) {
+            Ok(()) => true,
+            Err(e) if e.kind() == ErrorKind::NotFound => false,
+            Err(e) => return Err(io_err(&self.binds.path, &e)),
+        };
+        Ok(Loaded {
+            value: Binds::default(),
+            corrupt: Vec::new(),
+            changed: existed,
         })
     }
 

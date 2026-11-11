@@ -44,11 +44,16 @@ fn env(label: &str) -> Env {
             kern_lib::store_cmds::settings_set,
             kern_lib::store_cmds::layout_get,
             kern_lib::store_cmds::layout_set,
+            kern_lib::store_cmds::binds_get,
+            kern_lib::store_cmds::binds_set,
+            kern_lib::store_cmds::binds_clear,
+            kern_lib::error_log::log_error,
             kern_lib::windows::open_pending_take,
             kern_lib::identity::file_identity,
             kern_lib::identity::link_target,
             kern_lib::windows::doc_opened,
             kern_lib::windows::doc_closed,
+            kern_lib::windows::doc_moved,
             kern_lib::windows::doc_open_elsewhere,
             kern_lib::windows::detach_doc,
             kern_lib::windows::detached,
@@ -112,6 +117,33 @@ fn a_kernkraft_command_is_allowed_by_the_main_capability() {
 fn a_kern_command_is_allowed_by_the_main_capability() {
     let e = env("main");
     invoke(&e, "settings_get", json!({})).unwrap();
+}
+
+#[test]
+fn every_window_kind_may_write_the_error_log_and_the_line_is_kept() {
+    // The log is one per process, so this test starts it and the windows below share it.
+    let log_dir = tempfile::tempdir().unwrap();
+    assert!(kern_lib::error_log::init_at(log_dir.path().to_path_buf()));
+    for (n, label) in ["main", "doc-1", "editor-1", "settings"]
+        .into_iter()
+        .enumerate()
+    {
+        let e = env(label);
+        invoke(
+            &e,
+            "log_error",
+            json!({"source": "open", "message": format!("window {n} said this")}),
+        )
+        .unwrap();
+    }
+    let text = fs::read_to_string(log_dir.path().join("kern.log")).unwrap();
+    assert_eq!(text.lines().count(), 4);
+    for n in 0..4 {
+        assert!(
+            text.contains(&format!("[open] window {n} said this")),
+            "window {n}"
+        );
+    }
 }
 
 #[test]
@@ -251,7 +283,9 @@ fn granted(name: &str, windows: &str) -> (Vec<String>, Vec<String>) {
 /// Every command of Kern's own that only the main window (or a document window) needs, each
 /// refused to an editor window by its capability: moving a document Home, answering for a
 /// document window, drags out of the file manager, the default file manager, the stored layout.
-const NOT_FOR_EDITORS: [&str; 8] = [
+const NOT_FOR_EDITORS: [&str; 10] = [
+    "binds_set",
+    "binds_clear",
     "detached",
     "refuse_detach",
     "move_doc_to_main",
@@ -579,6 +613,138 @@ fn an_editor_window_registers_its_own_tabs_and_not_another_windows() {
 }
 
 #[test]
+fn every_window_that_holds_documents_may_report_a_rename_and_a_stranger_may_not() {
+    let pairs = json!({"pairs": [{"from": {"k": "Utf8", "v": "/no/a.txt"}, "to": {"k": "Utf8", "v": "/no/b.txt"}}]});
+    for label in ["main", "editor-1", "doc-1"] {
+        let e = env(label);
+        let out = invoke(&e, "doc_moved", pairs.clone()).unwrap();
+        assert_eq!(out, json!({"kept": []}), "{label}");
+    }
+    let e = env("stranger");
+    let err = invoke(&e, "doc_moved", pairs).unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+}
+
+/// What a document window's page has no use for, each refused to it by its capability: the layout,
+/// the settings' writes and window, the file manager's own commands (drags out, the clipboard of
+/// files, drops, the default file manager), moving a tab to a window or taking a document in, and
+/// the files of other places.
+const NOT_FOR_DOCUMENT_WINDOWS: [&str; 24] = [
+    "binds_set",
+    "binds_clear",
+    "layout_get",
+    "layout_set",
+    "settings_set",
+    "pins_clear",
+    "recents_clear",
+    "open_settings",
+    "restart_request",
+    "detach_doc",
+    "adopted",
+    "refuse_adoption",
+    "open_editor",
+    "file_identity",
+    "drag_out",
+    "dnd_target",
+    "drop_start_op",
+    "remove_start_op",
+    "clip_get",
+    "clip_set",
+    "clip_text",
+    "fm1_status",
+    "default_fm_status",
+    "make_default_fm",
+];
+
+/// The kernkraft commands a document window's page does not send: every file operation, the
+/// Trash, the volumes, applications and the listing of folders. `start_op` takes the kind of
+/// operation as a string, which a capability cannot look at, so granting it would let the page
+/// empty the Trash.
+const KERNKRAFT_NOT_FOR_DOCUMENT_WINDOWS: [&str; 14] = [
+    "start_op",
+    "list_dir",
+    "rename",
+    "create_dir",
+    "create_file",
+    "search",
+    "trash_purge",
+    "trash_list",
+    "undo",
+    "volume_mount",
+    "launch_app",
+    "set_default_app",
+    "documents",
+    "open_terminal",
+];
+
+#[test]
+fn a_document_window_is_granted_every_command_its_capability_names() {
+    let e = env("doc-1");
+    let (kernkraft_cmds, kern_cmds) = granted("doc.json", "doc-*");
+    // The page needs at least its document's text, its registration, and the hand-over.
+    for needed in ["text_open", "text_save", "text_check", "watch_dir"] {
+        assert!(kernkraft_cmds.iter().any(|c| c == needed), "{needed}");
+    }
+    for needed in [
+        "doc_opened",
+        "doc_closed",
+        "doc_moved",
+        "detached",
+        "refuse_detach",
+        "move_doc_to_main",
+        "hand_doc",
+        "hand_refused",
+        "confirm_close",
+        "log_error",
+    ] {
+        assert!(kern_cmds.iter().any(|c| c == needed), "{needed}");
+    }
+    for cmd in &kern_cmds {
+        // Reached or refused by the command itself, never by the access control.
+        if let Err(err) = invoke(&e, cmd, json!({"path": {"k": "Utf8", "v": "/a"}})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "{cmd}: {err}"
+            );
+        }
+    }
+    for cmd in &kernkraft_cmds {
+        if let Err(err) = invoke(&e, &kernkraft(cmd), json!({})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "{cmd}: {err}"
+            );
+        }
+    }
+    // What is refused is not among the grants.
+    for cmd in KERNKRAFT_NOT_FOR_DOCUMENT_WINDOWS {
+        assert!(!kernkraft_cmds.iter().any(|c| c == cmd), "{cmd}");
+    }
+    for cmd in NOT_FOR_DOCUMENT_WINDOWS {
+        assert!(!kern_cmds.iter().any(|c| c == cmd), "{cmd}");
+    }
+}
+
+#[test]
+fn a_document_window_is_refused_what_only_the_main_window_needs() {
+    let e = env("doc-1");
+    for cmd in NOT_FOR_DOCUMENT_WINDOWS {
+        let err = invoke(&e, cmd, json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{cmd}: {err}"
+        );
+    }
+    for cmd in KERNKRAFT_NOT_FOR_DOCUMENT_WINDOWS {
+        let err = invoke(&e, &kernkraft(cmd), json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{cmd}: {err}"
+        );
+    }
+}
+
+#[test]
 fn the_main_and_editor_windows_may_ask_for_a_files_identity_and_a_stranger_may_not() {
     for label in ["main", "editor-1"] {
         let e = env(label);
@@ -606,12 +772,15 @@ fn only_the_main_window_stores_its_layout_and_every_window_that_has_one_may_read
     assert!(invoke(&editor, "layout_get", json!({})).is_ok());
     let err = invoke(&editor, "layout_set", patch.clone()).unwrap_err();
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
-    // A document window shares the main window's capability, so the write is the command's to refuse.
+    // A document window has no layout of its own: its capability grants neither the read nor the write.
     let doc = env("doc-1");
-    assert_eq!(
-        invoke(&doc, "layout_set", patch).unwrap_err()["kind"],
-        "Denied"
-    );
+    for cmd in ["layout_get", "layout_set"] {
+        let err = invoke(&doc, cmd, patch.clone()).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{cmd}: {err}"
+        );
+    }
     let stranger = env("stranger");
     let err = invoke(&stranger, "layout_get", json!({})).unwrap_err();
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
@@ -651,6 +820,11 @@ fn the_settings_window_is_granted_what_its_capability_names_and_nothing_of_the_f
     for needed in [
         "settings_get",
         "settings_set",
+        "binds_get",
+        "binds_set",
+        "binds_clear",
+        "pins_clear",
+        "recents_clear",
         "restart_request",
         "confirm_close",
     ] {
@@ -690,8 +864,8 @@ fn the_settings_window_is_granted_what_its_capability_names_and_nothing_of_the_f
 }
 
 #[test]
-fn every_kind_of_window_may_open_settings_and_only_the_settings_window_asks_a_restart() {
-    for label in ["main", "doc-1", "editor-1"] {
+fn the_main_and_editor_windows_may_open_settings_and_a_document_window_may_not() {
+    for label in ["main", "editor-1"] {
         let e = env(label);
         if let Err(err) = invoke(&e, "open_settings", json!({"section": null})) {
             assert!(
@@ -699,6 +873,16 @@ fn every_kind_of_window_may_open_settings_and_only_the_settings_window_asks_a_re
                 "{label}: {err}"
             );
         }
+    }
+    let doc = env("doc-1");
+    let err = invoke(&doc, "open_settings", json!({"section": null})).unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+}
+
+#[test]
+fn only_the_settings_window_asks_a_restart_and_every_window_that_may_be_closed_calls_it_off() {
+    for label in ["main", "doc-1", "editor-1"] {
+        let e = env(label);
         let err = invoke(&e, "restart_request", json!({})).unwrap_err();
         assert!(
             err.as_str().unwrap().contains("not allowed"),
@@ -707,4 +891,32 @@ fn every_kind_of_window_may_open_settings_and_only_the_settings_window_asks_a_re
         // A window kept open when a restart asked it to close calls the restart off.
         invoke(&e, "restart_abandon", json!({})).unwrap();
     }
+}
+
+#[test]
+fn every_window_reads_the_binds_and_only_the_settings_window_changes_them() {
+    for label in ["main", "editor-1", "doc-1", "settings"] {
+        let e = env(label);
+        assert_eq!(
+            invoke(&e, "binds_get", json!({})).unwrap()["binds"],
+            json!({}),
+            "{label}"
+        );
+    }
+    for label in ["main", "editor-1", "doc-1"] {
+        let e = env(label);
+        for (cmd, args) in [
+            ("binds_set", json!({"patch": {"tab.close": ["Middle"]}})),
+            ("binds_clear", json!({})),
+        ] {
+            let err = invoke(&e, cmd, args).unwrap_err();
+            assert!(
+                err.as_str().unwrap().contains("not allowed"),
+                "{label} {cmd}: {err}"
+            );
+        }
+    }
+    let e = env("stranger");
+    let err = invoke(&e, "binds_get", json!({})).unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
 }

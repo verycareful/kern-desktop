@@ -3,7 +3,7 @@
 
 [package]
 name = "kern"
-version = "0.1.1+4"
+version = "0.1.1+4.39"
 description = "Kern for Linux: a file manager and document viewer"
 license = "AGPL-3.0-or-later"
 publish = false
@@ -21,16 +21,19 @@ tauri = { version = "2", features = ["protocol-asset"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-kernkraft-tauri = { git = "https://github.com/verycareful/kernkraft", tag = "0.1.1.0" }
-kernkraft-fs = { git = "https://github.com/verycareful/kernkraft", tag = "0.1.1.0" }
-kernkraft-theme = { git = "https://github.com/verycareful/kernkraft", tag = "0.1.1.0" }
-kernkraft-bus = { git = "https://github.com/verycareful/kernkraft", tag = "0.1.1.0" }
-kernkraft-xdg-apps = { git = "https://github.com/verycareful/kernkraft", tag = "0.1.1.0" }
+kernkraft-tauri = { git = "https://github.com/verycareful/kernkraft", tag = "0.1.3.1" }
+kernkraft-fs = { git = "https://github.com/verycareful/kernkraft", tag = "0.1.3.1" }
+kernkraft-theme = { git = "https://github.com/verycareful/kernkraft", tag = "0.1.3.1" }
+kernkraft-bus = { git = "https://github.com/verycareful/kernkraft", tag = "0.1.3.1" }
+kernkraft-xdg-apps = { git = "https://github.com/verycareful/kernkraft", tag = "0.1.3.1" }
 tauri-plugin-window-state = "2"
 # Only for the interface macro and message types; connections come from kernkraft-bus.
 zbus = "5"
 # Must be the gtk that tauri-runtime-wry uses: one GTK binding per process.
 gtk = "=0.18.2"
+# Must be the webkit2gtk that wry uses. `v2_20` is the `web-process-terminated` signal, which the
+# error log listens to (error_log.rs).
+webkit2gtk = { version = "=2.0.2", features = ["v2_20"] }
 
 [dev-dependencies]
 tempfile = "3"

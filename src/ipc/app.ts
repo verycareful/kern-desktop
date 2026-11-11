@@ -16,8 +16,24 @@ export type ViewMode = "list" | "grid";
 /** Which of the two new tabs Ctrl+T opens; the other is on Ctrl+Shift+T. */
 export type NewTabDefault = "folder" | "current";
 
+/** How the time of day is written in dates (store.rs TimeFormat): the system's way, 12-hour or 24-hour. */
+export type TimeFormat = "system" | "12" | "24";
+
+/**
+ * The shape of the folder view's right-click menu (store.rs FolderMenu): the most used entries on
+ * top with the rest in submenus, every group in a submenu, or every entry listed at once.
+ */
+export type FolderMenu = "standard" | "collapsed" | "expanded";
+
 /** The two layouts of a window (store.rs LayoutKind). */
 export type LayoutKind = "file_manager" | "editor";
+
+/**
+ * A column of the file manager layout, or a panel of the editor layout (store.rs Panel): `places`
+ * is the left panel (in the editor layout the strip over the folder tree), `folder` the folder
+ * area, `pinned` Pinned and Recent.
+ */
+export type Panel = "places" | "folder" | "pinned";
 
 export interface Settings {
   theme_mode: ThemeMode;
@@ -33,14 +49,32 @@ export interface Settings {
   editor_zoom: number;
   view_mode: ViewMode;
   show_hidden: boolean;
+  /** Whether a single click opens an entry of the left panel; off means a double-click does (store.rs Settings::single_click_left). */
+  single_click_left: boolean;
+  /** The same for the right panel (pinned and recent). */
+  single_click_right: boolean;
+  /** The same for the centre of the file manager, list and grid. */
+  single_click_centre: boolean;
+  /** The same for the file rows of the tree in an editor window. */
+  single_click_editor: boolean;
   /** Interface size in percent: 80, 90, 100, 110 or 125 (store.rs INTERFACE_SIZES). */
   interface_size: number;
   /** The layout of a window that has none remembered yet. */
   default_layout: LayoutKind;
+  /** The file manager's three columns, left to right: each panel once (store.rs Settings::panel_order). */
+  panel_order: Panel[];
+  /** The editor layout's two panels, left to right around the editor: Places and Pinned, each once. */
+  editor_panel_order: Panel[];
   /** The folder a new tab opens; null is Home. */
   new_tab_folder: WirePath | null;
   /** What Ctrl+T opens: the new tab folder, or the folder of the tab in front (store.rs NewTabDefault). */
   new_tab_default: NewTabDefault;
+  /** The clock the time of day is shown in (store.rs Settings::time_format). */
+  time_format: TimeFormat;
+  /** The shape of the folder view's right-click menu (store.rs Settings::folder_menu). */
+  folder_menu: FolderMenu;
+  /** Whether Kern writes the error log (store.rs Settings::error_log). */
+  error_log: boolean;
 }
 
 /** The row density handed to the theme: Kern has one row height (store.rs THEME_DENSITY). */
@@ -114,13 +148,34 @@ export const pinEditorSet = (path: WirePath, on: boolean) =>
   invoke<Pins>("pin_editor_set", { path, on });
 export const unpin = (path: WirePath) => invoke<Pins>("unpin", { path });
 export const pinsReorder = (paths: WirePath[]) => invoke<Pins>("pins_reorder", { paths });
+/** Unpins everything; only the Settings window may. */
+export const pinsClear = () => invoke<Pins>("pins_clear");
+/** The keys and mouse buttons the user bound to actions (store.rs Binds, binds.json). */
+export interface Binds {
+  /** An action id to its binds, replacing the action's defaults; an empty list leaves it unbound. */
+  binds: Record<string, string[]>;
+}
+
+/** An action id to its new list of binds, or null to give the action back its defaults. */
+export type BindsPatch = Record<string, string[] | null>;
+
+export const bindsGet = () => invoke<Binds>("binds_get");
+/** Sets the binds of some actions and resets others; only the Settings window may. */
+export const bindsSet = (patch: BindsPatch) => invoke<Binds>("binds_set", { patch });
+/** Deletes every bind of the user's; only the Settings window may. */
+export const bindsClear = () => invoke<Binds>("binds_clear");
 export const recentsGet = () => invoke<Recents>("recents_get");
 /** Records `path` as opened now; `asEditor` for a folder open as an editor window. */
 export const recentTouch = (path: WirePath, asEditor = false) =>
   invoke<Recents>("recent_touch", { path, asEditor });
 export const recentRemove = (path: WirePath) => invoke<Recents>("recent_remove", { path });
+/** Empties the recents; only the Settings window may. */
+export const recentsClear = () => invoke<Recents>("recents_clear");
 export const prune = () => invoke<PruneReport>("prune");
 export const storeErrorsTake = () => invoke<CorruptReport[]>("store_errors_take");
+/** Adds a line to the error log (error_log.rs): `source` is a short name for where it came from. */
+export const errorLogAppend = (source: string, message: string) =>
+  invoke<void>("log_error", { source, message });
 
 // ---- which file a path leads to (identity.rs) ----
 
@@ -248,6 +303,21 @@ export const docOpened = (path: WirePath, location: Location, adoptingFrom?: str
  */
 export const docClosed = (path: WirePath, location: Location, tabClosed?: boolean) =>
   invoke<void>("doc_closed", { path, location, tabClosed: tabClosed ?? null });
+
+/** A file renamed or moved inside Kern: the path it had and the path it has. */
+export interface MovedPair {
+  from: WirePath;
+  to: WirePath;
+}
+
+/**
+ * Tells the backend that files were renamed or moved inside Kern. Every open document at a `from`,
+ * or under it for a folder, is registered under its new path and its window is told
+ * (`EVENT_DOC_MOVED`). `kept` lists the documents not moved because their new path is open
+ * already; their tabs still show the old file.
+ */
+export const docMoved = (pairs: MovedPair[]) =>
+  invoke<{ kept: WirePath[] }>("doc_moved", { pairs });
 
 /**
  * Whether `path`, by any name, is open in a place other than `own`; Save As asks before it writes.

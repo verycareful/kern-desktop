@@ -31,10 +31,11 @@ pub const QUIET: Duration = Duration::from_millis(300);
 /// The window [`Env::run`] makes after a driver panics; no test uses it.
 const TEARDOWN: &str = "harness-teardown";
 
-pub const COMMANDS: [&str; 22] = [
+pub const COMMANDS: [&str; 23] = [
     "open_paths",
     "doc_opened",
     "doc_closed",
+    "doc_moved",
     "doc_open_elsewhere",
     "open_pending_take",
     "detach_doc",
@@ -223,6 +224,7 @@ pub fn env_state(
             kern_lib::windows::open_paths,
             kern_lib::windows::doc_opened,
             kern_lib::windows::doc_closed,
+            kern_lib::windows::doc_moved,
             kern_lib::windows::doc_open_elsewhere,
             kern_lib::windows::open_pending_take,
             kern_lib::windows::detach_doc,

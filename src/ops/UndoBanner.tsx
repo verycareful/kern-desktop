@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useState } from "react";
+import { RepeatFlash } from "./repeat-flash";
 import { useOps } from "./useOps";
 
 // Shown while the undo history cannot be read: Undo and Redo may then be
@@ -23,6 +24,7 @@ export function UndoBanner() {
         The undo history could not be read, so Undo and Redo may be missing or wrong. {error.kind}:{" "}
         {error.message}
       </span>
+      <RepeatFlash watch={error} />
       <button type="button" className="kern-button" disabled={busy} onClick={retry}>
         Retry
       </button>

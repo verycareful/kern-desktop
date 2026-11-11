@@ -6,11 +6,15 @@ import {
   displayPath,
   fm1Status,
   makeDefaultFm,
+  pinsClear,
+  recentsClear,
   toWireError,
   type DefaultFm,
   type Fm1Status,
+  type FolderMenu,
   type LayoutKind,
   type NewTabDefault,
+  type TimeFormat,
   type Settings,
   type ViewMode,
   type WireError,
@@ -19,13 +23,16 @@ import { parseLocation } from "../files/path-input";
 import { errorText } from "../ops/error-text";
 import { useUserDirs } from "../shell/user-dirs-store";
 import { useSettingsDraft } from "./settings-draft";
+import { ClearList } from "./ClearList";
+import { PanelOrder } from "./PanelOrder";
 import { Choices, Group, Row, Toggle } from "./settings-ui";
 
 // Files: the main window's layout, what a new tab opens and which of the
 // two new tabs Ctrl+T opens, list or grid and hidden items in a new folder view, the Terminal program, and whether Kern is the default file manager (default_fm.rs:
 // the inode/directory default, and the org.freedesktop.FileManager1 name other programs ask to
 // show folders). Making Kern the default is an action on the system, not a setting: it happens
-// when its button is pressed, not at Save.
+// when its button is pressed, not at Save. Clearing the pins or the recents is an action too,
+// asked about first: the lists are empty in every window at once and nothing brings them back.
 
 const VIEWS: readonly { value: ViewMode; label: string }[] = [
   { value: "list", label: "List" },
@@ -42,6 +49,64 @@ const LAYOUTS: readonly { value: LayoutKind; label: string; disabled?: boolean }
 const NEW_TAB_DEFAULTS: readonly { value: NewTabDefault; label: string }[] = [
   { value: "folder", label: "New tab folder" },
   { value: "current", label: "Current folder" },
+];
+
+const FOLDER_MENUS: readonly { value: FolderMenu; label: string }[] = [
+  { value: "standard", label: "Standard" },
+  { value: "collapsed", label: "Collapsed" },
+  { value: "expanded", label: "Expanded" },
+];
+
+const TIME_FORMATS: readonly { value: TimeFormat; label: string }[] = [
+  { value: "system", label: "System default" },
+  { value: "12", label: "12-hour" },
+  { value: "24", label: "24-hour" },
+];
+
+// What the panels are called in the order rows. The file manager's columns are its places panel,
+// the folder area and Pinned and Recent; the editor layout's places panel is the column with the
+// folder tree under it.
+const FILE_MANAGER_PANEL_NAMES = {
+  places: "Places",
+  folder: "Files",
+  pinned: "Pinned and Recent",
+} as const;
+
+const EDITOR_PANEL_NAMES = { places: "Places and folders", pinned: "Pinned and Recent" } as const;
+
+type Click = "double" | "single";
+
+const CLICKS: readonly { value: Click; label: string }[] = [
+  { value: "double", label: "Double click" },
+  { value: "single", label: "Single click" },
+];
+
+type ClickKey =
+  "single_click_left" | "single_click_right" | "single_click_centre" | "single_click_editor";
+
+// One row per area. Enter and Space open in every area whatever the choice; the top bar buttons
+// always open on one click, and a folder row of the editor tree always expands on one click.
+const CLICK_ROWS: readonly { key: ClickKey; label: string; note: string }[] = [
+  {
+    key: "single_click_left",
+    label: "Left panel opens with",
+    note: "Places, volumes, Trash and Library, and the strip of the other layout. Enter always opens.",
+  },
+  {
+    key: "single_click_right",
+    label: "Right panel opens with",
+    note: "Pinned and recent entries.",
+  },
+  {
+    key: "single_click_centre",
+    label: "File manager opens with",
+    note: "List and grid, and search hits shown there. Ctrl, Shift or Meta with a click only selects.",
+  },
+  {
+    key: "single_click_editor",
+    label: "Editor window opens with",
+    note: "File rows of the tree, and search hits shown there. A folder row always opens on one click.",
+  },
 ];
 
 type NewTabPlace = "home" | "other";
@@ -145,7 +210,7 @@ function Terminal(props: { settings: Settings }) {
       id="terminal"
       htmlFor={`${id}-term`}
       wide
-      note="Kern opens a terminal with xdg-terminal-exec when it is installed, else with $TERMINAL, else with this program. It is one program, not a command line: Kern adds -e and the command when there is one to run."
+      note="Kern opens a terminal with this program when one is set, else with the first terminal your xdg-terminals.list files name, else with $TERMINAL, else with any installed terminal. It is one program, not a command line: Kern adds -e and the command when there is one to run."
     >
       <input
         id={`${id}-term`}
@@ -267,6 +332,33 @@ export function FilesSection(props: { settings: Settings }) {
           />
         </Row>
       </Group>
+      <Group rows={["panel_order", "editor_panel_order"]}>
+        <Row
+          id="panel_order"
+          wide
+          note="The three columns of the file manager, left to right. Applies at once in every window."
+        >
+          <PanelOrder
+            label="File manager panel order"
+            order={settings.panel_order}
+            names={FILE_MANAGER_PANEL_NAMES}
+            onChange={(panel_order) => edit({ panel_order })}
+          />
+        </Row>
+        <Row
+          id="editor_panel_order"
+          wide
+          note="The two panels either side of the editor in an editor window, left to right."
+        >
+          <PanelOrder
+            label="Editor window panel order"
+            order={settings.editor_panel_order}
+            names={EDITOR_PANEL_NAMES}
+            between="Editor"
+            onChange={(editor_panel_order) => edit({ editor_panel_order })}
+          />
+        </Row>
+      </Group>
       <Group rows={["new_tab_folder", "new_tab_default"]}>
         <NewTabFolder settings={settings} />
         <Row
@@ -298,9 +390,69 @@ export function FilesSection(props: { settings: Settings }) {
           />
         </Row>
       </Group>
+      <Group rows={CLICK_ROWS.map((r) => r.key)}>
+        {CLICK_ROWS.map((r) => (
+          <Row key={r.key} id={r.key} note={r.note}>
+            <Choices
+              label={r.label}
+              value={settings[r.key] ? "single" : "double"}
+              options={CLICKS}
+              onChange={(click) => edit({ [r.key]: click === "single" })}
+            />
+          </Row>
+        ))}
+      </Group>
+      <Group rows={["time_format"]}>
+        <Row
+          id="time_format"
+          note="The time beside the date in the Modified column. System default follows the locale."
+        >
+          <Choices
+            label="Time of day in dates"
+            value={settings.time_format}
+            options={TIME_FORMATS}
+            onChange={(time_format) => edit({ time_format })}
+          />
+        </Row>
+      </Group>
+      <Group rows={["folder_menu"]}>
+        <Row
+          id="folder_menu"
+          note="Standard keeps the most used entries on top and folds the rest into submenus. Collapsed folds every group. Expanded lists everything at once."
+        >
+          <Choices
+            label="Right-click menu of the file manager"
+            value={settings.folder_menu}
+            options={FOLDER_MENUS}
+            onChange={(folder_menu) => edit({ folder_menu })}
+          />
+        </Row>
+      </Group>
       <Group rows={["terminal", "default_fm"]}>
         <Terminal settings={settings} />
         <DefaultFileManager />
+      </Group>
+      <Group rows={["clear_pins", "clear_recents"]}>
+        <ClearList
+          id="clear_pins"
+          note="Unpins every pinned folder and file in every window. The pinned items themselves are not touched."
+          button="Clear pins"
+          title="Clear all pins?"
+          text="Every pin is removed from the right panel of every window. The folders and files stay where they are, and you can pin them again."
+          done="The pins are cleared."
+          failed="The pins could not be cleared"
+          clear={pinsClear}
+        />
+        <ClearList
+          id="clear_recents"
+          note="Empties the list of recently opened folders and files in every window. The items themselves are not touched."
+          button="Clear recents"
+          title="Clear all recents?"
+          text="The list of recent folders and files is emptied in every window. The folders and files stay where they are; opening them again fills the list."
+          done="The recents are cleared."
+          failed="The recents could not be cleared"
+          clear={recentsClear}
+        />
       </Group>
     </>
   );

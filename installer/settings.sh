@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-# The settings walk. Every key of settings.json but default_layout (the main
-# window offers one layout) has a question here; a Rust test compares this
-# list with the settings Kern defines; nothing in the scripts reads it.
+# The settings walk. Every key of settings.json has a question here but
+# default_layout (the main window offers one layout), panel_order and
+# editor_panel_order (arranged in Settings once the windows are on screen); a
+# Rust test compares this list with the settings Kern defines; nothing in the
+# scripts reads it.
 # shellcheck disable=SC2034
-SETTING_KEYS="theme_mode accent follow scan_roots scan_documents scan_downloads terminal word_wrap editor_zoom view_mode show_hidden interface_size new_tab_folder new_tab_default"
+SETTING_KEYS="theme_mode accent follow scan_roots scan_documents scan_downloads terminal word_wrap editor_zoom view_mode show_hidden interface_size new_tab_folder new_tab_default single_click_left single_click_right single_click_centre single_click_editor time_format error_log"
 
 # The questions follow the Settings window: its sections, its order and its
 # labels. The answers become one JSON object, which `kern --apply-settings`
@@ -97,11 +99,16 @@ zoom_factor() {
     fi
 }
 
+# click_answer INDEX: y for the "Single click" choice (index 1), n for "Double click".
+click_answer() {
+    if (($1 == 1)); then printf 'y'; else printf 'n'; fi
+}
+
 # settings_walk FILE: asks every setting and writes the JSON object to FILE.
 settings_walk() {
     local out=$1 pick text folder p
     local theme size accent f_colours f_accent f_fonts f_radius
-    local tab_folder tab_default view hidden terminal docs downloads wrap zoom
+    local tab_folder tab_default view hidden click_left click_right click_centre click_editor time_format terminal docs downloads wrap zoom error_log
     local -a sizes=() zooms=() roots=()
     local roots_json="" root
 
@@ -137,6 +144,20 @@ settings_walk() {
     ui_menu pick 0 "View of new folder views" List Grid
     if ((pick == 0)); then view=list; else view=grid; fi
     ui_yesno hidden n "Show hidden items?"
+    ui_menu pick 1 "Left panel opens with" "Double click" "Single click"
+    click_left=$pick
+    ui_menu pick 0 "Right panel opens with" "Double click" "Single click"
+    click_right=$pick
+    ui_menu pick 0 "File manager list and grid open with" "Double click" "Single click"
+    click_centre=$pick
+    ui_menu pick 0 "Editor window file tree opens with" "Double click" "Single click"
+    click_editor=$pick
+    ui_menu pick 0 "Time of day in dates" "System default" "12-hour" "24-hour"
+    case $pick in
+    1) time_format=12 ;;
+    2) time_format=24 ;;
+    *) time_format=system ;;
+    esac
     ui_text text "" "Terminal (one program; Enter lets Kern pick one)"
     if [[ -z $text ]]; then terminal=null; else terminal=$(json_str "$text"); fi
 
@@ -164,6 +185,10 @@ settings_walk() {
     ui_menu pick $(((SETTINGS_ZOOM_DEFAULT - SETTINGS_ZOOM_MIN) / SETTINGS_ZOOM_STEP)) "Text size" "${zooms[@]}"
     zoom=$(zoom_factor $((SETTINGS_ZOOM_MIN + pick * SETTINGS_ZOOM_STEP)))
 
+    ui_say ""
+    ui_say "About"
+    ui_yesno error_log y "Write an error log?"
+
     {
         printf '{'
         printf '"theme_mode":"%s",' "$theme"
@@ -175,11 +200,17 @@ settings_walk() {
         printf '"new_tab_default":"%s",' "$tab_default"
         printf '"view_mode":"%s",' "$view"
         printf '"show_hidden":%s,' "$(json_bool "$hidden")"
+        printf '"single_click_left":%s,' "$(json_bool "$(click_answer "$click_left")")"
+        printf '"single_click_right":%s,' "$(json_bool "$(click_answer "$click_right")")"
+        printf '"single_click_centre":%s,' "$(json_bool "$(click_answer "$click_centre")")"
+        printf '"single_click_editor":%s,' "$(json_bool "$(click_answer "$click_editor")")"
+        printf '"time_format":"%s",' "$time_format"
         printf '"terminal":%s,' "$terminal"
         printf '"scan_documents":%s,' "$(json_bool "$docs")"
         printf '"scan_downloads":%s,' "$(json_bool "$downloads")"
         printf '"scan_roots":[%s],' "$roots_json"
         printf '"word_wrap":%s,' "$(json_bool "$wrap")"
+        printf '"error_log":%s,' "$(json_bool "$error_log")"
         printf '"editor_zoom":%s' "$zoom"
         printf '}\n'
     } >"$out"

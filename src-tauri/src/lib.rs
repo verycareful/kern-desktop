@@ -6,6 +6,7 @@ pub mod clipboard;
 pub mod default_fm;
 pub mod dnd;
 pub mod drop_rule;
+pub mod error_log;
 pub mod filemanager1;
 pub mod guard;
 pub mod identity;
@@ -29,6 +30,11 @@ use tauri_plugin_window_state::StateFlags;
 ///
 /// Panics if the Tauri runtime cannot start, which leaves nothing to recover.
 pub fn run() {
+    // First, so a panic anywhere after this is logged.
+    if let Err(why) = error_log::init_from_env() {
+        eprintln!("kern: {why}");
+    }
+    error_log::install_panic_hook();
     // Before anything creates a window: a second launch forwards and exits.
     let own = instance::own_invocation();
     // A launch that needs no window is finished here, before the bus name
@@ -120,16 +126,23 @@ pub fn run() {
             store_cmds::unpin,
             store_cmds::pin_editor_set,
             store_cmds::pins_reorder,
+            store_cmds::pins_clear,
             store_cmds::recents_get,
             store_cmds::recent_touch,
             store_cmds::recent_remove,
+            store_cmds::recents_clear,
+            store_cmds::binds_get,
+            store_cmds::binds_set,
+            store_cmds::binds_clear,
             store_cmds::prune,
             store_cmds::store_errors_take,
+            error_log::log_error,
             identity::file_identity,
             identity::link_target,
             windows::open_paths,
             windows::doc_opened,
             windows::doc_closed,
+            windows::doc_moved,
             windows::open_pending_take,
             windows::doc_open_elsewhere,
             windows::detach_doc,

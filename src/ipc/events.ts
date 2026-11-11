@@ -15,6 +15,7 @@ import type {
   WireTheme,
 } from "./kernkraft";
 import type {
+  Binds,
   CorruptReport,
   DragFiles,
   DragLeave,
@@ -44,6 +45,7 @@ export const EVENT_VOLUMES_CHANGED = "kernkraft://volumes-changed";
 // Kern's own events (src-tauri: store_cmds.rs, windows.rs, dnd.rs).
 export const EVENT_SETTINGS_CHANGED = "kern://settings-changed";
 export const EVENT_PINS_CHANGED = "kern://pins-changed";
+export const EVENT_BINDS_CHANGED = "kern://binds-changed";
 export const EVENT_RECENTS_CHANGED = "kern://recents-changed";
 export const EVENT_STORE_ERROR = "kern://store-error";
 export const EVENT_DROP = "kern://drop";
@@ -60,6 +62,7 @@ export const EVENT_CLOSE_REQUESTED = "kern://close-requested";
 export const EVENT_SELECT = "kern://select";
 export const EVENT_PROPERTIES = "kern://properties";
 export const EVENT_DOC_RELEASED = "kern://doc-released";
+export const EVENT_DOC_MOVED = "kern://doc-moved";
 
 // Event name to payload. `kern://close-requested` is emitted with the unit
 // value, which arrives as null. `kern://select` and `kern://properties` are
@@ -77,6 +80,7 @@ export interface EventPayloads {
   "kern://settings-changed": Settings;
   "kern://pins-changed": Pins;
   "kern://recents-changed": Recents;
+  "kern://binds-changed": Binds;
   "kern://store-error": CorruptReport;
   "kern://drop": DropPayload;
   "kern://drop-refused": DropRefused;
@@ -91,6 +95,8 @@ export interface EventPayloads {
   "kern://close-requested": null;
   /** A place let go of a document: a tab refused because of it may register again. */
   "kern://doc-released": null;
+  /** A document open in this window was renamed or moved inside Kern: its tab follows the file. */
+  "kern://doc-moved": { from: WirePath; to: WirePath };
   "kern://select": { tab: WirePath; paths: WirePath[] };
   "kern://properties": { paths: WirePath[] };
 }

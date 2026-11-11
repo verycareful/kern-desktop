@@ -20,6 +20,7 @@ vi.mock("../ipc", async (orig) => ({
   volumesList: () => Promise.resolve({ mounted: [], unmounted: [], problems: [] }),
   volumesProblemsTake: () => Promise.resolve([]),
   on: () => Promise.resolve(() => undefined),
+  bindsGet: () => Promise.resolve({ binds: {} }),
   undoState: () => Promise.resolve({ undo: null, redo: null }),
   prune: async () => (await import("./test-pinned-recent")).EMPTY_PRUNE,
   pinsGet: async () => ({ entries: [] }),

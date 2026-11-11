@@ -6,7 +6,7 @@
 //!
 //! Events go to all windows: `kern://settings-changed` (the new
 //! [`Settings`]), `kern://pins-changed` ([`Pins`]), `kern://recents-changed`
-//! ([`Recents`]) and `kern://store-error` ([`CorruptReport`]). A corrupt
+//! ([`Recents`]), `kern://binds-changed` ([`Binds`]) and `kern://store-error` ([`CorruptReport`]). A corrupt
 //! file is reported once; because a window may not be listening yet when it
 //! is found (the settings are read at startup), the report is also queued
 //! and `store_errors_take` hands the queue over. A report reaches a window
@@ -25,12 +25,14 @@ use serde_json::{Map, Value};
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindow};
 
 use crate::store::{
-    CorruptReport, Loaded, Pins, PruneReport, Recents, Settings, Store, WindowLayout,
+    Binds, BindsPatch, CorruptReport, Loaded, Pins, PruneReport, Recents, Settings, Store,
+    WindowLayout,
 };
 
 pub const EVENT_SETTINGS_CHANGED: &str = "kern://settings-changed";
 pub const EVENT_PINS_CHANGED: &str = "kern://pins-changed";
 pub const EVENT_RECENTS_CHANGED: &str = "kern://recents-changed";
+pub const EVENT_BINDS_CHANGED: &str = "kern://binds-changed";
 pub const EVENT_STORE_ERROR: &str = "kern://store-error";
 
 /// The managed state: the store, or why there is none (no usable `HOME`).
@@ -135,6 +137,7 @@ pub fn load_startup_settings<R: Runtime>(app: &AppHandle<R>) -> Option<Settings>
         Ok(loaded) => {
             let settings = finish(app, loaded, EVENT_SETTINGS_CHANGED);
             crate::zoom::apply(app, settings.interface_size);
+            crate::error_log::set_enabled(settings.error_log);
             Some(settings)
         }
         Err(e) => {
@@ -184,6 +187,7 @@ pub async fn settings_set<R: Runtime>(
     let loaded = blocking(move || store.settings_set(patch)).await?;
     let settings = finish(&app, loaded, EVENT_SETTINGS_CHANGED);
     crate::zoom::apply(&app, settings.interface_size);
+    crate::error_log::set_enabled(settings.error_log);
     Ok(settings)
 }
 
@@ -255,6 +259,14 @@ pub async fn unpin<R: Runtime>(app: AppHandle<R>, path: WirePath) -> Result<Pins
     Ok(finish(&app, loaded, EVENT_PINS_CHANGED))
 }
 
+/// Unpins everything: the Settings window's Clear pins.
+#[tauri::command]
+pub async fn pins_clear<R: Runtime>(app: AppHandle<R>) -> Result<Pins, WireError> {
+    let store = app.state::<StoreState>().store()?;
+    let loaded = blocking(move || store.pins_clear()).await?;
+    Ok(finish(&app, loaded, EVENT_PINS_CHANGED))
+}
+
 #[tauri::command]
 pub async fn pins_reorder<R: Runtime>(
     app: AppHandle<R>,
@@ -291,6 +303,42 @@ pub async fn recent_remove<R: Runtime>(
     let store = app.state::<StoreState>().store()?;
     let loaded = blocking(move || store.recent_remove(&path)).await?;
     Ok(finish(&app, loaded, EVENT_RECENTS_CHANGED))
+}
+
+/// Empties the recents: the Settings window's Clear recents.
+#[tauri::command]
+pub async fn recents_clear<R: Runtime>(app: AppHandle<R>) -> Result<Recents, WireError> {
+    let store = app.state::<StoreState>().store()?;
+    let loaded = blocking(move || store.recents_clear()).await?;
+    Ok(finish(&app, loaded, EVENT_RECENTS_CHANGED))
+}
+
+/// The keys and mouse buttons bound to actions, for every window's shortcuts and menus.
+#[tauri::command]
+pub async fn binds_get<R: Runtime>(app: AppHandle<R>) -> Result<Binds, WireError> {
+    let store = app.state::<StoreState>().store()?;
+    let loaded = blocking(move || store.binds_get()).await?;
+    Ok(finish(&app, loaded, EVENT_BINDS_CHANGED))
+}
+
+/// Sets the binds of some actions and gives others back their defaults: the Settings window's
+/// Keys section.
+#[tauri::command]
+pub async fn binds_set<R: Runtime>(
+    app: AppHandle<R>,
+    patch: BindsPatch,
+) -> Result<Binds, WireError> {
+    let store = app.state::<StoreState>().store()?;
+    let loaded = blocking(move || store.binds_set(patch)).await?;
+    Ok(finish(&app, loaded, EVENT_BINDS_CHANGED))
+}
+
+/// Deletes every bind of the user's: the Settings window's Reset all binds.
+#[tauri::command]
+pub async fn binds_clear<R: Runtime>(app: AppHandle<R>) -> Result<Binds, WireError> {
+    let store = app.state::<StoreState>().store()?;
+    let loaded = blocking(move || store.binds_clear()).await?;
+    Ok(finish(&app, loaded, EVENT_BINDS_CHANGED))
 }
 
 #[tauri::command]

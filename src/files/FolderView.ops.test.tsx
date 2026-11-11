@@ -12,9 +12,11 @@ import type {
   WireReport,
   WireSame,
 } from "../ipc";
+import { pathKey } from "../ipc";
 import { currentContext, getAction, isEnabled, runAction } from "../keys/actions";
 import { useShortcuts } from "../keys/useShortcuts";
 import { OpsHost } from "../ops/OpsHost";
+import { clearCut, setCut, useCut } from "../ops/cut-store";
 import { forgetSpentCuts } from "../ops/spent-cut";
 import { useOps } from "../ops/useOps";
 import { activeTab, useTabs, type FolderTab } from "../store/tabs";
@@ -35,6 +37,7 @@ const ipc = vi.hoisted(() => ({
   unwatchDir: vi.fn(),
   on: vi.fn(),
   settingsGet: vi.fn(),
+  bindsGet: vi.fn(),
   settingsSet: vi.fn(),
   openPaths: vi.fn(),
   thumbRequest: vi.fn(),
@@ -49,6 +52,7 @@ const ipc = vi.hoisted(() => ({
   createDir: vi.fn(),
   createFile: vi.fn(),
   rename: vi.fn(),
+  docMoved: vi.fn(),
   clipSet: vi.fn(),
   clipGet: vi.fn(),
   dragOut: vi.fn(),
@@ -65,7 +69,15 @@ vi.mock("../ipc", async (orig) => ({
 import { FolderView } from "./FolderView";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
-const SETTINGS = { show_hidden: false, view_mode: "list" } as Settings;
+const SETTINGS = {
+  show_hidden: false,
+  view_mode: "list",
+  folder_menu: "standard",
+} as Settings;
+
+/** The shape of the right-click menu for the folder mounted next. */
+const menuShape = (folder_menu: Settings["folder_menu"]) =>
+  ipc.settingsGet.mockResolvedValue({ ...SETTINGS, folder_menu });
 const err = (kind: string, message = kind): WireError => ({
   kind,
   message,
@@ -154,6 +166,7 @@ beforeEach(() => {
   ipc.watchDir.mockResolvedValue(undefined);
   ipc.unwatchDir.mockResolvedValue(undefined);
   ipc.settingsGet.mockResolvedValue(SETTINGS);
+  ipc.bindsGet.mockResolvedValue({ binds: {} });
   ipc.settingsSet.mockImplementation((patch: Partial<Settings>) =>
     Promise.resolve({ ...SETTINGS, ...patch })
   );
@@ -167,11 +180,13 @@ beforeEach(() => {
   ipc.clipClearIf.mockResolvedValue(true);
   ipc.answerConflict.mockResolvedValue(undefined);
   ipc.cancelOp.mockResolvedValue(undefined);
+  ipc.docMoved.mockResolvedValue({ kept: [] });
   // Everything on one filesystem unless a test says otherwise.
   ipc.sameFilesystem.mockImplementation((sources: WirePath[]) =>
     Promise.resolve(sources.map((): WireSame => ({ state: "checked", same: true })))
   );
   forgetSpentCuts();
+  clearCut();
   useViewSettings.setState({ loaded: false, error: null });
   useFolderUi.setState({ sort: {} });
   useFolderStatus.setState({ byTab: {} });
@@ -208,6 +223,7 @@ test("keys_that_act_on_files_do_nothing_when_an_item_is_only_outlined", async ()
 });
 
 test("the_file_actions_are_greyed_in_the_menu_when_only_an_item_is_outlined", async () => {
+  menuShape("expanded");
   await mount([entry("a")]);
   act(() => screen.getByTestId("folder-list").focus());
   fireEvent.contextMenu(screen.getByTestId("folder-scroll"));
@@ -248,6 +264,7 @@ test("the_toolbar_buttons_are_live_in_an_empty_folder", async () => {
 });
 
 test("a_right_click_in_an_empty_folder_opens_the_folder_menu", async () => {
+  menuShape("expanded");
   await mount([]);
   const shown = fireEvent.contextMenu(screen.getByTestId("folder-empty"));
   // false: the web view's own menu is kept out.
@@ -255,6 +272,68 @@ test("a_right_click_in_an_empty_folder_opens_the_folder_menu", async () => {
   const menu = await screen.findByTestId("action-menu");
   for (const name of [/^New folder/, /^New file/, /^Paste/, /^Copy path/, /^Open terminal here/]) {
     expect(within(menu).getByRole("menuitem", { name })).toBeEnabled();
+  }
+});
+
+test("the_standard_menu_has_the_most_used_on_top_and_the_rest_in_submenus", async () => {
+  await mount([entry("a")]);
+  fireEvent.contextMenu(screen.getByTestId("folder-scroll"));
+  const menu = await screen.findByTestId("action-menu");
+  for (const name of [
+    /^Open\s*Enter$/,
+    /^Cut/,
+    /^Copy\s*Ctrl\+C$/,
+    /^Paste/,
+    /^Rename/,
+    /^New folder/,
+  ]) {
+    expect(within(menu).getByRole("menuitem", { name })).toBeInTheDocument();
+  }
+  // What is folded is not in the menu until its row is opened.
+  expect(within(menu).queryByRole("menuitem", { name: /^Copy path/ })).toBeNull();
+  const more = within(menu).getByRole("menuitem", { name: "More edit actions" });
+  expect(more).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(more);
+  const sub = screen.getByRole("menu", { name: "More edit actions" });
+  expect(within(sub).getByRole("menuitem", { name: /^Copy path/ })).toBeEnabled();
+  expect(within(sub).getByRole("menuitem", { name: /^Undo/ })).toBeInTheDocument();
+});
+
+test("an_action_from_a_submenu_runs_on_the_folder", async () => {
+  await mount([entry("a")]);
+  fireEvent.contextMenu(screen.getByTestId("folder-scroll"));
+  const menu = await screen.findByTestId("action-menu");
+  fireEvent.click(within(menu).getByRole("menuitem", { name: "View" }));
+  fireEvent.click(
+    within(screen.getByRole("menu", { name: "View" })).getByRole("menuitem", { name: /^Grid view/ })
+  );
+  await waitFor(() => expect(ipc.settingsSet).toHaveBeenCalledWith({ view_mode: "grid" }));
+  expect(screen.queryByTestId("action-menu")).toBeNull();
+});
+
+test("the_collapsed_menu_is_six_rows_and_each_opens_its_group", async () => {
+  menuShape("collapsed");
+  await mount([entry("a")]);
+  fireEvent.contextMenu(screen.getByTestId("folder-scroll"));
+  const menu = await screen.findByTestId("action-menu");
+  const top = within(menu)
+    .getAllByRole("menuitem")
+    .map((i) => i.textContent);
+  expect(top).toEqual(["Open", "Pinned", "Edit", "Create", "Selection", "View"]);
+  fireEvent.click(within(menu).getByRole("menuitem", { name: "Create" }));
+  const sub = screen.getByRole("menu", { name: "Create" });
+  expect(within(sub).getByRole("menuitem", { name: /^New folder/ })).toBeEnabled();
+  expect(within(sub).getByRole("menuitem", { name: /^New file/ })).toBeEnabled();
+});
+
+test("the_expanded_menu_lists_every_action_with_no_submenu", async () => {
+  menuShape("expanded");
+  await mount([entry("a")]);
+  fireEvent.contextMenu(screen.getByTestId("folder-scroll"));
+  const menu = await screen.findByTestId("action-menu");
+  expect(within(menu).queryByRole("menuitem", { name: "More edit actions" })).toBeNull();
+  for (const name of [/^Copy path/, /^Select all/, /^Grid view/, /^Pin\s*Ctrl\+D$/]) {
+    expect(within(menu).getByRole("menuitem", { name })).toBeInTheDocument();
   }
 });
 
@@ -401,6 +480,10 @@ test("f2_edits_the_name_in_place_and_renames_the_item_by_its_path", async () => 
   );
   await waitFor(() => expect(screen.queryByRole("textbox", { name: /rename/i })).toBeNull());
   await waitFor(() => expect(rowNamed("todo.md")).toHaveAttribute("aria-selected", "true"));
+  // A tab open on the file follows it.
+  expect(ipc.docMoved).toHaveBeenCalledExactlyOnceWith([
+    { from: p("/d/notes.md"), to: p("/d/todo.md") },
+  ]);
 });
 
 test("a_rename_refused_as_busy_names_the_operation_that_runs_here", async () => {
@@ -421,6 +504,37 @@ test("a_rename_refused_as_busy_names_the_operation_that_runs_here", async () => 
   expect(alert).toHaveTextContent(/listed above the status bar/);
   // The editor stays open for another try.
   expect(screen.getByRole("textbox", { name: /rename/i })).toBeInTheDocument();
+});
+
+test("a_rename_refused_again_with_the_same_words_flashes_the_banner", async () => {
+  await mount([entry("notes.md"), entry("b")], "/d", { ops: true });
+  select("notes.md");
+  key("F2");
+  const input = await screen.findByRole("textbox", { name: "Rename notes.md" });
+  const banner = () => screen.getByText(/^Rename:/).closest("[role=alert]")!;
+  fireEvent.change(input, { target: { value: "a/b" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await screen.findByText(/^Rename:/);
+  expect(banner().querySelector(".kern-repeat-flash")).toBeNull();
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(banner().querySelector(".kern-repeat-flash")).not.toBeNull());
+  expect(ipc.rename).not.toHaveBeenCalled();
+});
+
+test("a_rename_the_backend_refuses_again_with_the_same_words_flashes_the_banner", async () => {
+  await mount([entry("notes.md"), entry("b")], "/d", { ops: true });
+  select("notes.md");
+  key("F2");
+  const input = await screen.findByRole("textbox", { name: "Rename notes.md" });
+  ipc.rename.mockRejectedValue(err("Exists", "todo.md already exists"));
+  const banner = () => screen.getByText(/^Rename:/).closest("[role=alert]")!;
+  fireEvent.change(input, { target: { value: "todo.md" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  await screen.findByText(/^Rename:/);
+  expect(banner().querySelector(".kern-repeat-flash")).toBeNull();
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(banner().querySelector(".kern-repeat-flash")).not.toBeNull());
+  expect(ipc.rename).toHaveBeenCalledTimes(2);
 });
 
 test("a_folder_is_renamed_with_its_whole_name_selected", async () => {
@@ -648,6 +762,7 @@ test("with_nothing_to_undo_the_keys_do_nothing", async () => {
 });
 
 test("the_edit_menu_names_what_undo_and_redo_would_do", async () => {
+  menuShape("expanded");
   await mount([entry("a")]);
   useOps.setState({ undoLabel: "Undo rename of notes.md", redoLabel: null });
   fireEvent.contextMenu(screen.getByTestId("folder-scroll"));
@@ -1553,4 +1668,86 @@ test("a_search_closes_a_question_about_the_selection_and_rename_stays_off", asyn
   expect(screen.queryByRole("textbox", { name: /rename/i })).toBeNull();
   expect(ipc.startOp).not.toHaveBeenCalled();
   expect(useFolderStatus.getState().byTab[tab.id]?.selected).toBe(0);
+});
+
+// ---- a cut item is greyed until it is pasted or the clipboard holds something else ----
+
+test("a_cut_greys_the_cut_items_and_a_copy_after_it_greys_nothing", async () => {
+  await mount([entry("a"), entry("b"), entry("c")]);
+  select("a", "b");
+  key("x", { ctrlKey: true });
+  await waitFor(() =>
+    expect([...useCut.getState().keys].sort()).toEqual([pathKey(p("/d/a")), pathKey(p("/d/b"))])
+  );
+  expect(
+    screen.getAllByTestId("file-row").map((r) => [r.dataset.name, r.classList.contains("kern-cut")])
+  ).toEqual([
+    ["a", true],
+    ["b", true],
+    ["c", false],
+  ]);
+  key("c", { ctrlKey: true });
+  await waitFor(() => expect(useCut.getState().keys.size).toBe(0));
+  expect(document.querySelector(".kern-cut")).toBeNull();
+});
+
+test("a_folder_view_inside_a_cut_folder_greys_every_row", async () => {
+  await mount([entry("a"), entry("b")]);
+  act(() => setCut([p("/")]));
+  expect(screen.getAllByTestId("file-row").map((r) => r.classList.contains("kern-cut"))).toEqual([
+    true,
+    true,
+  ]);
+  act(() => clearCut());
+});
+
+test("a_cut_that_failed_to_reach_the_clipboard_greys_nothing", async () => {
+  await mount([entry("a")]);
+  select("a");
+  ipc.clipSet.mockRejectedValue(err("NoFocus", "Kern's window does not have focus"));
+  key("x", { ctrlKey: true });
+  await screen.findByRole("alert");
+  expect(useCut.getState().keys.size).toBe(0);
+});
+
+test("pasting_a_cut_that_moved_everything_ungreys_it_at_once", async () => {
+  const paths = [p("/d/a")];
+  await mount([entry("a")]);
+  select("a");
+  key("x", { ctrlKey: true });
+  await waitFor(() => expect(useCut.getState().keys.size).toBe(1));
+  ipc.clipGet.mockResolvedValue({ op: "cut", paths });
+  key("v", { ctrlKey: true });
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalled());
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  act(() =>
+    handlers["kernkraft://op-done"]!(done(1, { done: [{ source: paths[0]!, dest: p("/d/b") }] }))
+  );
+  await waitFor(() => expect(useCut.getState().keys.size).toBe(0));
+});
+
+test("a_cut_that_left_an_item_behind_stays_greyed", async () => {
+  const paths = [p("/d/a"), p("/d/c")];
+  await mount([entry("a"), entry("c")]);
+  select("a", "c");
+  key("x", { ctrlKey: true });
+  await waitFor(() => expect(useCut.getState().keys.size).toBe(2));
+  ipc.clipGet.mockResolvedValue({ op: "cut", paths });
+  key("v", { ctrlKey: true });
+  await waitFor(() => expect(ipc.startOp).toHaveBeenCalled());
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+  act(() =>
+    handlers["kernkraft://op-done"]!(
+      done(1, {
+        done: [{ source: paths[0]!, dest: p("/e/a") }],
+        failed: [{ path: paths[1]!, error: err("Io", "no") }],
+      })
+    )
+  );
+  await act(async () => {});
+  expect(useCut.getState().keys.size).toBe(2);
 });

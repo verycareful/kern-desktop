@@ -18,6 +18,7 @@ vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()),
 
 import { VolumesList } from "./VolumesList";
 import { useVolumes } from "./volumes-store";
+import { useViewSettings } from "../files/view-settings";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 
@@ -39,6 +40,12 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  useViewSettings.setState({
+    singleClickLeft: true,
+    singleClickRight: false,
+    singleClickCentre: false,
+    singleClickEditor: false,
+  });
 });
 
 async function openMenu(name: string) {
@@ -161,6 +168,30 @@ test("clicking_a_volume_navigates_the_current_folder_tab_to_its_mount_point", as
   fireEvent.click(await screen.findByRole("button", { name: "STICK" }));
   expect(useTabs.getState().tabs[0]).toMatchObject({ path: p("/run/media/t/STICK") });
   expect(screen.getByRole("button", { name: "STICK" })).toHaveAttribute("aria-current", "page");
+});
+
+async function volumeWithATab() {
+  ipc.volumesList.mockResolvedValue(volumes({ mounted: [mount("STICK")] }));
+  useTabs.getState().openFolder(p("/home/t"), false);
+  render(<VolumesList />);
+  return screen.findByRole("button", { name: "STICK" });
+}
+const shownPath = () => (useTabs.getState().tabs[0] as { path: WirePath }).path;
+
+test("one_mouse_click_opens_a_volume_while_the_left_setting_is_on", async () => {
+  useViewSettings.setState({ singleClickLeft: true });
+  fireEvent.click(await volumeWithATab(), { detail: 1 });
+  expect(shownPath()).toEqual(p("/run/media/t/STICK"));
+});
+
+test("with_the_left_setting_off_one_mouse_click_does_not_open_a_volume_and_a_double_click_does", async () => {
+  useViewSettings.setState({ singleClickLeft: false });
+  const stick = await volumeWithATab();
+  fireEvent.click(stick, { detail: 1 });
+  expect(shownPath()).toEqual(p("/home/t"));
+  fireEvent.click(stick, { detail: 2 });
+  fireEvent.doubleClick(stick);
+  expect(shownPath()).toEqual(p("/run/media/t/STICK"));
 });
 
 test("the_menu_key_opens_the_volume_menu_and_its_actions_run_on_that_volume", async () => {

@@ -13,9 +13,16 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Repeat, X } from "lucide-react";
 import { displayPath, pathKey, toWireError, type WireEntry, type WirePath } from "../ipc";
 import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
-import { errorText } from "../ops/error-text";
+import { useCut } from "../ops/cut-store";
 import { baseName } from "../ops/labels";
+import { FlashSpan } from "../ops/repeat-flash";
+import { showOpenErrors } from "../ops/open-error-store";
+import { cutRowKeys } from "./cut-rows";
 import { openFiles } from "./open-entries";
+import { useTreeHover } from "./tree-hover";
+import { useTreeMenu } from "./tree-menu-store";
+import { useTreeSort } from "./tree-sort";
+import { useSingleClick } from "./view-settings";
 import {
   INDENT,
   ROW_HEIGHT,
@@ -70,13 +77,17 @@ export function FolderTree(props: {
   onContextMenu?(entry: WireEntry | null, x: number, y: number): void;
   /** Buttons shown at the end of the tree's heading. */
   tools?: React.ReactNode;
+  /** Whether any folder below the root is open: said once the tree is shown, and when that changes. */
+  onOpenChange?(anyOpen: boolean): void;
   handle?: React.Ref<FolderTreeHandle>;
 }) {
   const { root } = props;
   const uid = useId();
+  const sort = useTreeSort((s) => s.sort);
   const tree = useTree({
     root,
     hidden: props.hidden,
+    sort,
     treeId: props.treeId,
     onRootGone: props.onRootGone,
   });
@@ -84,7 +95,36 @@ export function FolderTree(props: {
   const at = useMemo(() => indexByKey(rows), [rows]);
   const [active, setActive] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
+  const cutKeys = useCut((s) => s.keys);
+  const cutPaths = useCut((s) => s.paths);
+  const cut = useMemo(
+    () => cutRowKeys(rows, root, cutKeys, cutPaths),
+    [rows, root, cutKeys, cutPaths]
+  );
+  const anyOpen = useMemo(() => rows.some((r) => r.kind === "entry" && r.expanded), [rows]);
+  const onOpenChange = useRef(props.onOpenChange);
+  useEffect(() => {
+    onOpenChange.current = props.onOpenChange;
+  });
+  useEffect(() => {
+    onOpenChange.current?.(anyOpen);
+  }, [anyOpen]);
+  // The row under the pointer is let go when it leaves the tree (a folder closed under a pointer
+  // that did not move, the tree going), since no pointer event says so.
+  useEffect(() => {
+    const held = useTreeHover.getState().key;
+    if (held !== null && !at.has(held)) useTreeHover.getState().set(null);
+  }, [at]);
+  useEffect(() => () => useTreeHover.getState().set(null), []);
   const scroller = useRef<HTMLDivElement>(null);
+  const hasMenu = props.onContextMenu !== undefined;
+  // While the tree has the keyboard its file operations are aimed at the current row, as a menu
+  // opened on that row aims them (tree-menu-store.ts); no current row stands for the root.
+  const cursorRow = active !== null ? rows[at.get(active) ?? -1] : undefined;
+  const cursorEntry = cursorRow?.kind === "entry" ? cursorRow.entry : null;
+  useEffect(() => {
+    if (focused && hasMenu) useTreeMenu.getState().setCurrent(cursorEntry, root);
+  }, [focused, hasMenu, cursorEntry, root]);
   const typed = useRef({ text: "", at: 0 });
   const activeIndex = active !== null ? (at.get(active) ?? -1) : -1;
   // The row a reveal asked for, made current once its folder has listed it.
@@ -141,15 +181,12 @@ export function FolderTree(props: {
     scroller.current?.focus();
   }, [revealing, at, virtual]);
 
-  const openFile = useCallback(
-    (entry: WireEntry) => {
-      openFiles([entry.path], false).then(
-        (errors) => errors.forEach((e) => tree.notify(`${baseName(entry.path)}: ${errorText(e)}`)),
-        (e: unknown) => tree.notify(`${baseName(entry.path)}: ${errorText(toWireError(e))}`)
-      );
-    },
-    [tree]
-  );
+  const openFile = useCallback((entry: WireEntry) => {
+    openFiles([entry.path], false).then(
+      (errors) => showOpenErrors(baseName(entry.path), errors),
+      (e: unknown) => showOpenErrors(baseName(entry.path), [toWireError(e)])
+    );
+  }, []);
 
   const toggle = useCallback(
     (row: EntryRow) => {
@@ -211,10 +248,17 @@ export function FolderTree(props: {
     }
   };
 
-  const onRowClick = (row: EntryRow) => {
+  // A folder row expands or collapses on a single click whatever the setting. A file row opens
+  // on a double-click, or on a single click when the setting is on; the second click of a
+  // double-click does not open it again in that mode.
+  const singleClick = useSingleClick("editor");
+  const onRowClick = (row: EntryRow, e: React.MouseEvent) => {
     setActive(row.key);
     scroller.current?.focus();
-    activate(row);
+    if (row.folder || (singleClick && e.detail <= 1)) activate(row);
+  };
+  const onRowDoubleClick = (row: EntryRow) => {
+    if (!row.folder && !singleClick) openFile(row.entry);
   };
 
   const onContextMenu = (e: React.MouseEvent) => {
@@ -230,7 +274,11 @@ export function FolderTree(props: {
 
   const rowId = (i: number) => `${uid}-row-${i}`;
   return (
-    <div className="kern-tree-wrap" data-testid="folder-tree">
+    <div
+      className="kern-tree-wrap"
+      data-testid="folder-tree"
+      onPointerLeave={() => useTreeHover.getState().set(null)}
+    >
       <div className="kern-tree-head" title={displayPath(root)}>
         <FolderOpen size={16} strokeWidth={2} aria-hidden />
         <span className="kern-tree-head-name">{baseName(root)}</span>
@@ -241,9 +289,10 @@ export function FolderTree(props: {
           {tree.notes.map((n) => (
             <li key={n.id}>
               <span>{n.text}</span>
+              <FlashSpan count={n.repeats} />
               <button
                 type="button"
-                className="kern-icon-button"
+                className="kern-icon-button kern-dismiss"
                 aria-label="Dismiss"
                 onClick={() => tree.dismissNote(n.id)}
               >
@@ -299,6 +348,7 @@ export function FolderTree(props: {
                 className={
                   "kern-tree-row" +
                   (isActive ? " kern-selected" : "") +
+                  (cut.has(row.key) ? " kern-cut" : "") +
                   (isActive && focused ? " kern-cursor" : "")
                 }
                 style={style}
@@ -315,7 +365,10 @@ export function FolderTree(props: {
                 data-row-index={v.index}
                 data-active={isActive ? "true" : undefined}
                 title={displayPath(row.entry.path)}
-                onClick={() => onRowClick(row)}
+                onPointerEnter={() => useTreeHover.getState().set(row.key, row.entry)}
+                onPointerLeave={() => useTreeHover.getState().leave(row.key)}
+                onClick={(e) => onRowClick(row, e)}
+                onDoubleClick={() => onRowDoubleClick(row)}
               >
                 <span className="kern-tree-twist" aria-hidden>
                   {row.folder && !row.loop ? (

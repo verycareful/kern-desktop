@@ -12,10 +12,12 @@ import { DocumentsView } from "../files/DocumentsView";
 import { TrashView } from "../files/TrashView";
 import { currentContext, getAction, runAction } from "../keys/actions";
 import { activeTab, recentFolderTab, useTabs, type TabsState } from "../store/tabs";
+import type { Side } from "./panel-order";
 import { KernLogo } from "./KernLogo";
 import { PlacesList } from "./PlacesList";
 import { documentsShown, trashShown } from "./place-nav";
-import { openOnDoubleClick } from "./double-click";
+import { openOnClick } from "./open-on-click";
+import { useSingleClick } from "../files/view-settings";
 import { VolumesList } from "./VolumesList";
 
 /** A place of Kern's own in the strip (the Trash, the Library): one entry that opens its tab. */
@@ -26,6 +28,7 @@ function OwnPlace(props: {
   shown(s: TabsState): boolean;
 }) {
   const current = useTabs(props.shown);
+  const single = useSingleClick("left");
   const action = getAction(props.action);
   const { Icon } = props;
   return (
@@ -36,7 +39,7 @@ function OwnPlace(props: {
             type="button"
             className="kern-place"
             aria-current={current ? "page" : undefined}
-            {...openOnDoubleClick(() => runAction(action, currentContext()))}
+            {...openOnClick(() => runAction(action, currentContext()), single)}
           >
             <Icon size={16} strokeWidth={2} aria-hidden />
             <span className="kern-place-label">{props.label}</span>
@@ -53,14 +56,13 @@ function OwnPlace(props: {
  * moves the folder tree's root away from the folder being edited. The Trash and the Library are
  * tabs of the main window, so an editor window's strip has neither.
  */
-export function PlacesStrip(props: { column?: boolean }) {
+export function PlacesStrip(props: { column?: boolean; side?: Side }) {
   const main = isMainWindow();
+  const classes = ["kern-places"];
+  if (props.column) classes.push("kern-places-column");
+  if (props.side === "right") classes.push("kern-side-right");
   return (
-    <nav
-      className={props.column ? "kern-places kern-places-column" : "kern-places"}
-      aria-label="Places and volumes"
-      data-testid="places-strip"
-    >
+    <nav className={classes.join(" ")} aria-label="Places and volumes" data-testid="places-strip">
       <div className="kern-places-slot">
         <KernLogo onOpen={() => runAction(getAction("place.about"), currentContext())} />
       </div>
@@ -90,7 +92,7 @@ export function FolderArea(props: { docked?: boolean }) {
       {active?.kind === "trash" ? (
         <TrashView key={active.id} tab={active} />
       ) : active?.kind === "documents" ? (
-        <DocumentsView key={active.id} />
+        <DocumentsView key={active.id} tabId={active.id} />
       ) : (
         tab && <FolderView key={tab.id} tab={tab} />
       )}
@@ -98,18 +100,22 @@ export function FolderArea(props: { docked?: boolean }) {
   );
 }
 
-export function PlacesPanel(props: { overlay?: boolean }) {
+export function PlacesPanel(props: { overlay?: boolean; side?: Side }) {
   if (!props.overlay) {
     return (
       <>
-        <PlacesStrip />
+        <PlacesStrip side={props.side} />
         <FolderArea docked />
       </>
     );
   }
   return (
     <section
-      className="kern-panel kern-panel-left kern-overlay"
+      className={
+        props.side === "right"
+          ? "kern-panel kern-panel-left kern-overlay kern-side-right"
+          : "kern-panel kern-panel-left kern-overlay"
+      }
       aria-label="File manager"
       data-testid="places-panel"
     >

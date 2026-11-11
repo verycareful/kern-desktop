@@ -402,9 +402,30 @@ as_scope() {
     "${L_SUDO[@]}" "$@"
 }
 
-# Whether a Kern instance owns its bus name on the session bus.
+# Whether a Kern instance owns its bus name on the session bus. busctl comes
+# with systemd; without it gdbus (GLib) or dbus-send asks the bus daemon the
+# same question, NameHasOwner. With none of the three the answer is unknown:
+# it is reported once and taken as "not running".
+KERN_BUS_TOOL_WARNED=0
 kern_running() {
-    busctl --user status "$KERN_BUS_NAME" >/dev/null 2>&1
+    local reply
+    if command -v busctl >/dev/null 2>&1; then
+        busctl --user status "$KERN_BUS_NAME" >/dev/null 2>&1
+    elif command -v gdbus >/dev/null 2>&1; then
+        reply=$(gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.NameHasOwner "$KERN_BUS_NAME" 2>/dev/null) || return 1
+        [[ $reply == *true* ]]
+    elif command -v dbus-send >/dev/null 2>&1; then
+        reply=$(dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus \
+            org.freedesktop.DBus.NameHasOwner "string:$KERN_BUS_NAME" 2>/dev/null) || return 1
+        [[ $reply == *"boolean true"* ]]
+    else
+        if ((KERN_BUS_TOOL_WARNED == 0)); then
+            KERN_BUS_TOOL_WARNED=1
+            ui_warn "Cannot tell whether Kern is running: none of busctl, gdbus or dbus-send is installed. Close every Kern window before going on."
+        fi
+        return 1
+    fi
 }
 
 # record_write SCOPE FORMAT VERSION PREV_FM
@@ -575,11 +596,13 @@ layout_remove() {
     [[ $KERN_FORMAT == deb ]] || refresh_caches
 }
 
-# The settings walk. Every key of settings.json but default_layout (the main
-# window offers one layout) has a question here; a Rust test compares this
-# list with the settings Kern defines; nothing in the scripts reads it.
+# The settings walk. Every key of settings.json has a question here but
+# default_layout (the main window offers one layout), panel_order and
+# editor_panel_order (arranged in Settings once the windows are on screen); a
+# Rust test compares this list with the settings Kern defines; nothing in the
+# scripts reads it.
 # shellcheck disable=SC2034
-SETTING_KEYS="theme_mode accent follow scan_roots scan_documents scan_downloads terminal word_wrap editor_zoom view_mode show_hidden interface_size new_tab_folder new_tab_default"
+SETTING_KEYS="theme_mode accent follow scan_roots scan_documents scan_downloads terminal word_wrap editor_zoom view_mode show_hidden interface_size new_tab_folder new_tab_default single_click_left single_click_right single_click_centre single_click_editor time_format error_log"
 
 # The questions follow the Settings window: its sections, its order and its
 # labels. The answers become one JSON object, which `kern --apply-settings`
@@ -671,11 +694,16 @@ zoom_factor() {
     fi
 }
 
+# click_answer INDEX: y for the "Single click" choice (index 1), n for "Double click".
+click_answer() {
+    if (($1 == 1)); then printf 'y'; else printf 'n'; fi
+}
+
 # settings_walk FILE: asks every setting and writes the JSON object to FILE.
 settings_walk() {
     local out=$1 pick text folder p
     local theme size accent f_colours f_accent f_fonts f_radius
-    local tab_folder tab_default view hidden terminal docs downloads wrap zoom
+    local tab_folder tab_default view hidden click_left click_right click_centre click_editor time_format terminal docs downloads wrap zoom error_log
     local -a sizes=() zooms=() roots=()
     local roots_json="" root
 
@@ -711,6 +739,20 @@ settings_walk() {
     ui_menu pick 0 "View of new folder views" List Grid
     if ((pick == 0)); then view=list; else view=grid; fi
     ui_yesno hidden n "Show hidden items?"
+    ui_menu pick 1 "Left panel opens with" "Double click" "Single click"
+    click_left=$pick
+    ui_menu pick 0 "Right panel opens with" "Double click" "Single click"
+    click_right=$pick
+    ui_menu pick 0 "File manager list and grid open with" "Double click" "Single click"
+    click_centre=$pick
+    ui_menu pick 0 "Editor window file tree opens with" "Double click" "Single click"
+    click_editor=$pick
+    ui_menu pick 0 "Time of day in dates" "System default" "12-hour" "24-hour"
+    case $pick in
+    1) time_format=12 ;;
+    2) time_format=24 ;;
+    *) time_format=system ;;
+    esac
     ui_text text "" "Terminal (one program; Enter lets Kern pick one)"
     if [[ -z $text ]]; then terminal=null; else terminal=$(json_str "$text"); fi
 
@@ -738,6 +780,10 @@ settings_walk() {
     ui_menu pick $(((SETTINGS_ZOOM_DEFAULT - SETTINGS_ZOOM_MIN) / SETTINGS_ZOOM_STEP)) "Text size" "${zooms[@]}"
     zoom=$(zoom_factor $((SETTINGS_ZOOM_MIN + pick * SETTINGS_ZOOM_STEP)))
 
+    ui_say ""
+    ui_say "About"
+    ui_yesno error_log y "Write an error log?"
+
     {
         printf '{'
         printf '"theme_mode":"%s",' "$theme"
@@ -749,11 +795,17 @@ settings_walk() {
         printf '"new_tab_default":"%s",' "$tab_default"
         printf '"view_mode":"%s",' "$view"
         printf '"show_hidden":%s,' "$(json_bool "$hidden")"
+        printf '"single_click_left":%s,' "$(json_bool "$(click_answer "$click_left")")"
+        printf '"single_click_right":%s,' "$(json_bool "$(click_answer "$click_right")")"
+        printf '"single_click_centre":%s,' "$(json_bool "$(click_answer "$click_centre")")"
+        printf '"single_click_editor":%s,' "$(json_bool "$(click_answer "$click_editor")")"
+        printf '"time_format":"%s",' "$time_format"
         printf '"terminal":%s,' "$terminal"
         printf '"scan_documents":%s,' "$(json_bool "$docs")"
         printf '"scan_downloads":%s,' "$(json_bool "$downloads")"
         printf '"scan_roots":[%s],' "$roots_json"
         printf '"word_wrap":%s,' "$(json_bool "$wrap")"
+        printf '"error_log":%s,' "$(json_bool "$error_log")"
         printf '"editor_zoom":%s' "$zoom"
         printf '}\n'
     } >"$out"
@@ -772,7 +824,7 @@ reinstalls it when it is already installed.
 
   --defaults   Ask nothing. A new install is for you alone, with Kern's
                default settings; an existing one is updated when a newer
-               release exists.
+               release exists, keeping its settings, binds, pins and recents.
   --from DIR   Install from release files already downloaded to DIR
                (SHA256SUMS, the deb, the AppImage and uninstall.sh). Nothing
                is downloaded.
@@ -879,6 +931,18 @@ backup_aside() {
     BACKUPS+=("$dest")
 }
 
+# Asks whether to clear the key and mouse binds, when there are some to clear (binds.json in
+# the config folder). Clear queues the file to be moved aside with the others, so nothing
+# changes until the install is in place. --defaults asks nothing and keeps them.
+ask_binds() {
+    local choice=0
+    ((OPT_DEFAULTS)) && return 0
+    [[ -f $CONFIG_DIR/binds.json ]] || return 0
+    ui_menu choice 0 "Key and mouse binds" Keep Clear
+    ((choice == 1)) && PENDING_ASIDE+=("$CONFIG_DIR/binds.json")
+    return 0
+}
+
 # Waits until Kern is closed, or the user cancels.
 wait_for_kern_closed() {
     local pick
@@ -919,8 +983,21 @@ Q_SCOPE=user
 Q_CUSTOMISE=n
 Q_FM=n
 Q_LAUNCH=n
+running_as_root() {
+    ((EUID == 0))
+}
+
 ask_install_questions() {
     local walk=$1 pick
+    # Just me is the account running the script, which as root is root, not
+    # the user who ran sudo.
+    if running_as_root; then
+        if ((OPT_DEFAULTS)); then
+            ui_warn "This is running as root, so Kern is installed for root ($HOME) and no other user sees it. Run without --defaults and choose \"Everyone on this computer\" to install it for all users."
+        else
+            ui_warn "This is running as root, so \"Just me\" installs Kern for root ($HOME) and no other user sees it. Choose \"Everyone on this computer\" to install it for all users."
+        fi
+    fi
     ((OPT_DEFAULTS)) && return 0
     ui_menu pick 0 "Install Kern for" "Just me (no administrator password)" "Everyone on this computer (uses sudo)"
     if ((pick == 0)); then Q_SCOPE=user; else Q_SCOPE=system; fi
@@ -992,13 +1069,14 @@ summary() {
 fresh_install() {
     welcome
     find_release
+    ask_binds
     ask_install_questions ask
     do_install ""
 }
 
 existing_install() {
     local installed=$KERN_VERSION scope=$KERN_SCOPE format=$KERN_FORMAT prev_fm=$KERN_PREV_FM
-    local pick newer=0 settings_choice=0 pins_choice=0
+    local pick newer=0 settings_choice=0 pins_choice=0 moved
     local -a options=()
     ui_say "Kern $installed is installed ($(scope_words "$scope"))."
     find_release
@@ -1018,17 +1096,29 @@ existing_install() {
     fi
     case $pick in
     0)
+        ask_binds
         wait_for_kern_closed
         fetch_release
         ui_say "Updating Kern $installed to $REL_VERSION..."
         layout_install "$scope" "$format" "$REL_VERSION" "$REL_APPIMAGE" "$REL_DEB" "$REL_UNINSTALL"
+        for moved in "${PENDING_ASIDE[@]}"; do
+            backup_aside "$moved"
+        done
         record_write "$scope" "$format" "$REL_VERSION" "$prev_fm"
-        ui_say "Kern is updated to $REL_VERSION. Settings, pins and recents are as they were."
+        if ((${#BACKUPS[@]} > 0)); then
+            ui_say "Kern is updated to $REL_VERSION. Settings, pins and recents are as they were."
+            for moved in "${BACKUPS[@]}"; do
+                ui_say "  Moved aside: $moved"
+            done
+        else
+            ui_say "Kern is updated to $REL_VERSION. Settings, binds, pins and recents are as they were."
+        fi
         ;;
     1)
         welcome
         ui_menu settings_choice 0 "Settings" "Keep current settings" "Choose new settings" "Restore defaults"
         ui_menu pins_choice 0 "Pins and recents" Keep Clear
+        ask_binds
         if ((settings_choice == 1)); then
             ask_install_questions y
         else

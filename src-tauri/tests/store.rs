@@ -10,9 +10,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use kern_lib::store::{
-    move_aside, volume_online, LayoutKind, NewTabDefault, SessionTab, SessionWindow, Store,
-    ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES, LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX,
-    LEFT_WIDTH_MIN, MAIN_LAYOUTS, RECENTS_CAP, RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN,
+    move_aside, volume_online, FolderMenu, LayoutKind, NewTabDefault, Panel, SessionTab,
+    SessionWindow, Settings, Store, TimeFormat, ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES,
+    LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, MAIN_LAYOUTS, RECENTS_CAP, RIGHT_WIDTH_MAX,
+    RIGHT_WIDTH_MIN,
 };
 use kernkraft_tauri::WirePath;
 use serde_json::{json, Map, Value};
@@ -275,6 +276,50 @@ fn recent_remove_takes_one_entry_off() {
     let again = s.recent_remove(&wp(&a)).unwrap();
     assert!(!again.changed);
     assert_eq!(again.value.entries.len(), 1);
+}
+
+#[test]
+fn clearing_the_pins_drops_every_pin_and_editor_mark_and_an_empty_list_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    assert!(!s.pins_clear().unwrap().changed);
+    let (a, b) = (e.files.join("a"), e.files.join("b"));
+    s.pin(&wp(&a), false).unwrap();
+    s.pin(&wp(&b), true).unwrap();
+    let cleared = s.pins_clear().unwrap();
+    assert!(cleared.changed);
+    assert!(cleared.value.entries.is_empty() && cleared.value.editors.is_empty());
+    // It is on disk, not only in the answer, and clearing again changes nothing.
+    let read = store(&e).pins_get().unwrap().value;
+    assert!(read.entries.is_empty() && read.editors.is_empty());
+    assert!(!s.pins_clear().unwrap().changed);
+    // A pin made after the clear is kept: nothing about the clear lingers.
+    assert_eq!(s.pin(&wp(&a), false).unwrap().value.entries, vec![wp(&a)]);
+}
+
+#[test]
+fn clearing_the_recents_empties_them_and_an_empty_list_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    assert!(!s.recents_clear().unwrap().changed);
+    for (i, name) in ["a", "b", "c"].iter().enumerate() {
+        s.recent_touch_at(&wp(&e.files.join(name)), i as u64 + 1, false)
+            .unwrap();
+    }
+    let cleared = s.recents_clear().unwrap();
+    assert!(cleared.changed);
+    assert!(cleared.value.entries.is_empty());
+    assert!(store(&e).recents_get().unwrap().value.entries.is_empty());
+    assert!(!s.recents_clear().unwrap().changed);
+    // Clearing the recents leaves the pins alone, and the other way round.
+    let a = e.files.join("a");
+    s.pin(&wp(&a), false).unwrap();
+    s.recent_touch_at(&wp(&a), 9, false).unwrap();
+    s.recents_clear().unwrap();
+    assert_eq!(s.pins_get().unwrap().value.entries, vec![wp(&a)]);
+    s.recent_touch_at(&wp(&a), 10, false).unwrap();
+    s.pins_clear().unwrap();
+    assert_eq!(s.recents_get().unwrap().value.entries.len(), 1);
 }
 
 #[test]
@@ -578,6 +623,56 @@ fn newer_settings_values_are_kept_and_reported_once() {
 }
 
 #[test]
+fn an_unreadable_field_is_not_reported_again_by_a_write_that_leaves_it_alone() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    let file = e.config.join("settings.json");
+    fs::write(
+        &file,
+        r#"{"accent":"teal-from-the-future","word_wrap":true}"#,
+    )
+    .unwrap();
+    let s = store(&e);
+    assert_eq!(s.settings_get().unwrap().corrupt.len(), 1);
+    // The patch changes another field, writes the bad value back as it was and reports
+    // nothing, then and on every later read and write.
+    let out = s.settings_set(patch(json!({"show_hidden": true}))).unwrap();
+    assert!(out.corrupt.is_empty(), "{:?}", out.corrupt);
+    assert!(s.settings_get().unwrap().corrupt.is_empty());
+    let out = s.settings_set(patch(json!({"word_wrap": false}))).unwrap();
+    assert!(out.corrupt.is_empty(), "{:?}", out.corrupt);
+    assert_eq!(read_json(&file)["accent"], json!("teal-from-the-future"));
+    // A patch that names the field replaces the bad value, and the field is reported again
+    // if something later makes it unreadable again.
+    s.settings_set(patch(json!({"accent": "teal"}))).unwrap();
+    assert!(s.settings_get().unwrap().corrupt.is_empty());
+    let mut v = read_json(&file);
+    v["accent"] = json!("teal-from-the-future");
+    fs::write(&file, serde_json::to_vec(&v).unwrap()).unwrap();
+    let again = s.settings_get().unwrap();
+    assert_eq!(again.corrupt.len(), 1);
+    assert_eq!(again.corrupt[0].field.as_deref(), Some("accent"));
+}
+
+#[test]
+fn a_layout_field_left_unreadable_is_reported_once_across_writes() {
+    let e = env();
+    fs::create_dir_all(&e.state).unwrap();
+    fs::write(
+        e.state.join("layout.json"),
+        r#"{"left_width": 9999, "left_open": false}"#,
+    )
+    .unwrap();
+    let s = store(&e);
+    assert_eq!(s.layout_get().unwrap().corrupt.len(), 1);
+    let out = s.layout_set(patch(json!({"left_open": true}))).unwrap();
+    assert!(out.corrupt.is_empty(), "{:?}", out.corrupt);
+    let out = s.layout_set(patch(json!({"left_open": false}))).unwrap();
+    assert!(out.corrupt.is_empty(), "{:?}", out.corrupt);
+    assert!(s.layout_get().unwrap().corrupt.is_empty());
+}
+
+#[test]
 fn follow_patch_may_be_partial_and_keeps_unknown_keys() {
     let e = env();
     fs::create_dir_all(&e.config).unwrap();
@@ -711,6 +806,133 @@ fn a_bad_stored_interface_size_is_reported_kept_and_replaced_by_the_next_choice(
     let got = store(&e).settings_get().unwrap();
     assert_eq!(got.value.interface_size, 90);
     assert_eq!(got.corrupt[0].field.as_deref(), Some("interface_size"));
+}
+
+// ---- the panel order settings ----
+
+#[test]
+fn the_panels_default_to_places_folder_pinned_and_places_pinned_in_the_editor() {
+    let e = env();
+    let v = store(&e).settings_get().unwrap().value;
+    assert_eq!(
+        v.panel_order,
+        vec![Panel::Places, Panel::Folder, Panel::Pinned]
+    );
+    assert_eq!(v.editor_panel_order, vec![Panel::Places, Panel::Pinned]);
+    // The wire form is the snake_case names.
+    assert_eq!(
+        serde_json::to_value(&v).unwrap()["panel_order"],
+        json!(["places", "folder", "pinned"])
+    );
+}
+
+#[test]
+fn every_order_of_the_three_panels_is_kept_across_a_restart() {
+    let e = env();
+    // The default comes last: setting what is already stored writes nothing.
+    let all = [
+        ["places", "pinned", "folder"],
+        ["folder", "places", "pinned"],
+        ["folder", "pinned", "places"],
+        ["pinned", "places", "folder"],
+        ["pinned", "folder", "places"],
+        ["places", "folder", "pinned"],
+    ];
+    for order in all {
+        store(&e)
+            .settings_set(patch(json!({ "panel_order": order })))
+            .unwrap();
+        assert_eq!(
+            read_json(&e.config.join("settings.json"))["panel_order"],
+            json!(order)
+        );
+        let again = serde_json::to_value(store(&e).settings_get().unwrap().value).unwrap();
+        assert_eq!(again["panel_order"], json!(order));
+    }
+}
+
+#[test]
+fn both_orders_of_the_editor_panels_are_kept_across_a_restart() {
+    let e = env();
+    for order in [["pinned", "places"], ["places", "pinned"]] {
+        store(&e)
+            .settings_set(patch(json!({ "editor_panel_order": order })))
+            .unwrap();
+        let again = serde_json::to_value(store(&e).settings_get().unwrap().value).unwrap();
+        assert_eq!(again["editor_panel_order"], json!(order));
+    }
+}
+
+#[test]
+fn an_order_that_is_not_a_permutation_of_its_panels_is_refused_and_writes_nothing() {
+    let e = env();
+    let s = store(&e);
+    for bad in [
+        json!([]),
+        json!(["places", "folder"]),
+        json!(["places", "places", "folder"]),
+        json!(["places", "folder", "pinned", "places"]),
+        json!(["places", "folder", "recent"]),
+        json!(["places", "folder", null]),
+        json!("places"),
+        json!(null),
+    ] {
+        let err = s
+            .settings_set(patch(json!({"panel_order": bad.clone()})))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument", "{bad}");
+    }
+    for bad in [
+        json!([]),
+        json!(["places"]),
+        json!(["places", "places"]),
+        json!(["places", "folder"]),
+        json!(["places", "pinned", "folder"]),
+        json!(null),
+    ] {
+        let err = s
+            .settings_set(patch(json!({"editor_panel_order": bad.clone()})))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument", "{bad}");
+    }
+    assert!(!e.config.join("settings.json").exists());
+}
+
+#[test]
+fn a_bad_stored_panel_order_is_reported_kept_and_replaced_by_the_next_choice() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    fs::write(
+        e.config.join("settings.json"),
+        r#"{"panel_order": ["places", "places", "folder"], "editor_panel_order": ["pinned"]}"#,
+    )
+    .unwrap();
+    let got = store(&e).settings_get().unwrap();
+    assert_eq!(
+        got.value.panel_order,
+        vec![Panel::Places, Panel::Folder, Panel::Pinned]
+    );
+    assert_eq!(
+        got.value.editor_panel_order,
+        vec![Panel::Places, Panel::Pinned]
+    );
+    let mut fields: Vec<_> = got.corrupt.iter().filter_map(|c| c.field.clone()).collect();
+    fields.sort();
+    assert_eq!(fields, ["editor_panel_order", "panel_order"]);
+    // The file is left as it was until the user chooses an order.
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["panel_order"],
+        json!(["places", "places", "folder"])
+    );
+    let set = store(&e)
+        .settings_set(patch(
+            json!({"panel_order": ["pinned", "folder", "places"]}),
+        ))
+        .unwrap();
+    assert_eq!(
+        set.value.panel_order,
+        vec![Panel::Pinned, Panel::Folder, Panel::Places]
+    );
 }
 
 // ---- the window layout and the default layout setting ----
@@ -1193,4 +1415,336 @@ fn a_session_file_that_is_not_a_session_is_moved_aside() {
     assert_eq!(got.corrupt.len(), 1);
     assert!(got.corrupt[0].moved_to.is_some());
     assert!(!e.state.join("session.json").exists());
+}
+
+#[test]
+fn the_error_log_is_on_by_default_and_the_switch_is_stored() {
+    let e = env();
+    let s = store(&e);
+    assert!(s.settings_get().unwrap().value.error_log);
+    let off = s.settings_set(patch(json!({"error_log": false}))).unwrap();
+    assert!(off.changed);
+    assert!(!off.value.error_log);
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["error_log"],
+        json!(false)
+    );
+    assert!(!store(&e).settings_get().unwrap().value.error_log);
+    let on = s.settings_set(patch(json!({"error_log": true}))).unwrap();
+    assert!(on.value.error_log);
+}
+
+#[test]
+fn an_error_log_switch_that_is_not_a_boolean_is_refused_and_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    s.settings_set(patch(json!({"word_wrap": true}))).unwrap();
+    let before = fs::read(e.config.join("settings.json")).unwrap();
+    for bad in [json!("no"), json!(0), json!(null)] {
+        let err = s
+            .settings_set(patch(json!({"error_log": bad.clone()})))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument", "{bad}");
+    }
+    assert_eq!(fs::read(e.config.join("settings.json")).unwrap(), before);
+    assert!(s.settings_get().unwrap().value.error_log);
+}
+
+/// The four click settings, in the order of the fields of `Settings`.
+const CLICK_KEYS: [&str; 4] = [
+    "single_click_left",
+    "single_click_right",
+    "single_click_centre",
+    "single_click_editor",
+];
+
+fn click_values(v: &Settings) -> [bool; 4] {
+    [
+        v.single_click_left,
+        v.single_click_right,
+        v.single_click_centre,
+        v.single_click_editor,
+    ]
+}
+
+#[test]
+fn the_left_panel_opens_on_a_single_click_by_default_and_the_other_areas_on_a_double_click() {
+    let e = env();
+    let s = store(&e);
+    assert_eq!(
+        click_values(&s.settings_get().unwrap().value),
+        [true, false, false, false]
+    );
+}
+
+#[test]
+fn each_click_setting_is_stored_on_its_own() {
+    let e = env();
+    let s = store(&e);
+    for (i, key) in CLICK_KEYS.iter().enumerate() {
+        let before = click_values(&s.settings_get().unwrap().value);
+        let flipped = !before[i];
+        let r = s.settings_set(patch(json!({ *key: flipped }))).unwrap();
+        assert!(r.changed, "{key}");
+        let mut want = before;
+        want[i] = flipped;
+        assert_eq!(click_values(&r.value), want, "{key}");
+        assert_eq!(
+            read_json(&e.config.join("settings.json"))[*key],
+            json!(flipped),
+            "{key}"
+        );
+        assert_eq!(click_values(&store(&e).settings_get().unwrap().value), want);
+        let back = s.settings_set(patch(json!({ *key: before[i] }))).unwrap();
+        assert_eq!(click_values(&back.value), before, "{key}");
+    }
+}
+
+#[test]
+fn a_click_setting_that_is_not_a_boolean_is_refused_and_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    s.settings_set(patch(json!({"word_wrap": true}))).unwrap();
+    let before = fs::read(e.config.join("settings.json")).unwrap();
+    for key in CLICK_KEYS {
+        for bad in [json!("yes"), json!(1), json!(null)] {
+            let err = s
+                .settings_set(patch(json!({ key: bad.clone() })))
+                .unwrap_err();
+            assert_eq!(err.kind, "InvalidArgument", "{key} {bad}");
+        }
+    }
+    assert_eq!(fs::read(e.config.join("settings.json")).unwrap(), before);
+    assert_eq!(
+        click_values(&s.settings_get().unwrap().value),
+        [true, false, false, false]
+    );
+}
+
+#[test]
+fn a_stored_single_click_is_dropped_by_the_next_write_and_refused_in_a_patch() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    fs::write(
+        e.config.join("settings.json"),
+        r#"{"single_click":true,"word_wrap":true}"#,
+    )
+    .unwrap();
+    let s = store(&e);
+    let read = s.settings_get().unwrap();
+    assert!(read.corrupt.is_empty());
+    assert!(read.value.word_wrap);
+    assert_eq!(
+        click_values(&read.value),
+        [true, false, false, false],
+        "the old key sets no area"
+    );
+
+    s.settings_set(patch(json!({"show_hidden": true}))).unwrap();
+    let v = read_json(&e.config.join("settings.json"));
+    assert!(v.get("single_click").is_none(), "{v}");
+    assert_eq!(v["word_wrap"], json!(true));
+
+    let err = s
+        .settings_set(patch(json!({"single_click": true})))
+        .unwrap_err();
+    assert_eq!(err.kind, "InvalidArgument");
+}
+
+#[test]
+fn the_time_format_defaults_to_the_system_and_is_stored_as_system_12_or_24() {
+    let e = env();
+    let s = store(&e);
+    assert_eq!(
+        s.settings_get().unwrap().value.time_format,
+        TimeFormat::System
+    );
+    for (text, want) in [
+        ("12", TimeFormat::Hour12),
+        ("24", TimeFormat::Hour24),
+        ("system", TimeFormat::System),
+    ] {
+        let out = s
+            .settings_set(patch(json!({ "time_format": text })))
+            .unwrap();
+        assert_eq!(out.value.time_format, want);
+        assert_eq!(
+            read_json(&e.config.join("settings.json"))["time_format"],
+            json!(text)
+        );
+        assert_eq!(store(&e).settings_get().unwrap().value.time_format, want);
+    }
+}
+
+#[test]
+fn an_unknown_time_format_is_refused_and_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    s.settings_set(patch(json!({"time_format": "24"}))).unwrap();
+    for bad in [json!("13"), json!(24), json!("AM"), json!(null)] {
+        let err = s
+            .settings_set(patch(json!({ "time_format": bad })))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument");
+    }
+    assert_eq!(
+        s.settings_get().unwrap().value.time_format,
+        TimeFormat::Hour24
+    );
+}
+
+#[test]
+fn the_folder_menu_defaults_to_standard_and_is_stored_as_standard_collapsed_or_expanded() {
+    let e = env();
+    let s = store(&e);
+    assert_eq!(
+        s.settings_get().unwrap().value.folder_menu,
+        FolderMenu::Standard
+    );
+    for (text, want) in [
+        ("collapsed", FolderMenu::Collapsed),
+        ("expanded", FolderMenu::Expanded),
+        ("standard", FolderMenu::Standard),
+    ] {
+        let out = s
+            .settings_set(patch(json!({ "folder_menu": text })))
+            .unwrap();
+        assert_eq!(out.value.folder_menu, want);
+        assert_eq!(
+            read_json(&e.config.join("settings.json"))["folder_menu"],
+            json!(text)
+        );
+        assert_eq!(store(&e).settings_get().unwrap().value.folder_menu, want);
+    }
+}
+
+#[test]
+fn an_unknown_folder_menu_is_refused_and_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    s.settings_set(patch(json!({"folder_menu": "collapsed"})))
+        .unwrap();
+    for bad in [json!("folded"), json!(1), json!("Standard"), json!(null)] {
+        let err = s
+            .settings_set(patch(json!({ "folder_menu": bad })))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument");
+    }
+    assert_eq!(
+        s.settings_get().unwrap().value.folder_menu,
+        FolderMenu::Collapsed
+    );
+}
+
+fn bind_patch(v: Value) -> std::collections::BTreeMap<String, Option<Vec<String>>> {
+    serde_json::from_value(v).unwrap()
+}
+
+#[test]
+fn binds_are_kept_in_their_own_file_beside_the_settings_and_nothing_is_there_by_default() {
+    let e = env();
+    let s = store(&e);
+    assert!(s.binds_get().unwrap().value.binds.is_empty());
+    assert!(!e.config.join("binds.json").exists());
+    let set = s
+        .binds_set(bind_patch(
+            json!({"tab.close": ["Ctrl+W", "Middle"], "tab.new": []}),
+        ))
+        .unwrap();
+    assert!(set.changed);
+    assert_eq!(set.value.binds["tab.close"], vec!["Ctrl+W", "Middle"]);
+    // An empty list is a deliberate "no bind", and is kept.
+    assert!(set.value.binds["tab.new"].is_empty());
+    assert_eq!(
+        read_json(&e.config.join("binds.json")),
+        json!({"binds": {"tab.close": ["Ctrl+W", "Middle"], "tab.new": []}})
+    );
+    // The settings file was not made, and a second store reads the same.
+    assert!(!e.config.join("settings.json").exists());
+    assert_eq!(store(&e).binds_get().unwrap().value, set.value);
+}
+
+#[test]
+fn a_bind_patch_sets_some_actions_and_returns_others_to_their_defaults_and_says_when_nothing_changed(
+) {
+    let e = env();
+    let s = store(&e);
+    s.binds_set(bind_patch(json!({"a": ["F1"], "b": ["F2"]})))
+        .unwrap();
+    // null takes the override away (the action is back on its defaults); the others stay.
+    let patched = s
+        .binds_set(bind_patch(json!({"a": null, "c": ["F3"]})))
+        .unwrap();
+    assert!(patched.changed);
+    let keys: Vec<&String> = patched.value.binds.keys().collect();
+    assert_eq!(keys, ["b", "c"]);
+    // The same patch again, and a null for an action with no override, change nothing.
+    assert!(
+        !s.binds_set(bind_patch(json!({"c": ["F3"]})))
+            .unwrap()
+            .changed
+    );
+    assert!(!s.binds_set(bind_patch(json!({"a": null}))).unwrap().changed);
+}
+
+#[test]
+fn a_bind_patch_with_one_bad_entry_is_refused_whole_and_writes_nothing() {
+    let e = env();
+    let s = store(&e);
+    s.binds_set(bind_patch(json!({"keep": ["F1"]}))).unwrap();
+    for bad in [
+        json!({"ok": ["F2"], "": ["F3"]}),
+        json!({"ok": ["F2"], "x": [""]}),
+        json!({"ok": ["F2"], "x": ["F3", "F3"]}),
+    ] {
+        let err = s.binds_set(bind_patch(bad)).unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument");
+    }
+    assert_eq!(
+        read_json(&e.config.join("binds.json")),
+        json!({"binds": {"keep": ["F1"]}})
+    );
+}
+
+#[test]
+fn clearing_the_binds_deletes_the_file_and_leaves_the_settings_alone() {
+    let e = env();
+    let s = store(&e);
+    assert!(!s.binds_clear().unwrap().changed);
+    s.settings_set(patch(json!({"word_wrap": true}))).unwrap();
+    s.binds_set(bind_patch(json!({"a": ["F1"]}))).unwrap();
+    let cleared = s.binds_clear().unwrap();
+    assert!(cleared.changed);
+    assert!(cleared.value.binds.is_empty());
+    assert!(!e.config.join("binds.json").exists());
+    assert!(s.settings_get().unwrap().value.word_wrap);
+    assert!(!s.binds_clear().unwrap().changed);
+    // A bind made after the clear is kept: nothing about the clear lingers.
+    s.binds_set(bind_patch(json!({"a": ["F2"]}))).unwrap();
+    assert_eq!(s.binds_get().unwrap().value.binds["a"], vec!["F2"]);
+}
+
+#[test]
+fn a_binds_file_that_is_not_a_binds_document_is_moved_aside_and_reported_and_extra_keys_survive() {
+    let e = env();
+    let s = store(&e);
+    fs::create_dir_all(&e.config).unwrap();
+    fs::write(e.config.join("binds.json"), r#"{"binds": {"a": "F1"}}"#).unwrap();
+    let loaded = s.binds_get().unwrap();
+    assert!(loaded.value.binds.is_empty());
+    assert_eq!(loaded.corrupt.len(), 1);
+    assert_eq!(loaded.corrupt[0].file, "binds.json");
+    assert!(loaded.corrupt[0].moved_to.is_some());
+    assert!(!e.config.join("binds.json").exists());
+
+    fs::write(
+        e.config.join("binds.json"),
+        r#"{"binds": {"a": ["F1"]}, "future": 7}"#,
+    )
+    .unwrap();
+    s.binds_set(bind_patch(json!({"b": ["F2"]}))).unwrap();
+    assert_eq!(
+        read_json(&e.config.join("binds.json")),
+        json!({"binds": {"a": ["F1"], "b": ["F2"]}, "future": 7})
+    );
 }

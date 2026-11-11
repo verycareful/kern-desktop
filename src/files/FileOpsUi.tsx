@@ -5,6 +5,7 @@ import { NameDialog } from "../ops/NameDialog";
 import { errorText } from "../ops/error-text";
 import { NAMED_UP_TO, namesText, plural } from "../ops/labels";
 import { Paged } from "../ops/ReportPanel";
+import { FlashSpan } from "../ops/repeat-flash";
 import { useState } from "react";
 import { ConfirmBanner } from "./ConfirmBanner";
 import type { FileOps } from "./use-file-ops";
@@ -60,6 +61,7 @@ export function FileOpsUi(props: {
       {ops.renaming?.error && (
         <div role="alert" className="kern-banner">
           <span>Rename: {ops.renaming.error}</span>
+          <FlashSpan count={ops.renaming.errorRepeats} />
         </div>
       )}
       {q?.kind === "delete" && (

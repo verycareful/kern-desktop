@@ -6,6 +6,9 @@ import { FileList } from "./FileList";
 import { empty } from "./selection";
 import { entry } from "./test-entries";
 import { stubLayout } from "./test-layout";
+import { clearCut, setCut } from "../ops/cut-store";
+import type { WirePath } from "../ipc";
+import { useViewSettings } from "./view-settings";
 
 let restore: () => void;
 beforeEach(() => {
@@ -16,10 +19,11 @@ afterEach(() => {
   restore();
 });
 
-function list(sortFailed: boolean) {
+function list(sortFailed: boolean, entries = [entry("a"), entry("b")], cutFolder?: WirePath) {
   render(
     <FileList
-      entries={[entry("a"), entry("b")]}
+      entries={entries}
+      {...(cutFolder ? { cutFolder } : {})}
       sel={empty}
       onItemClick={vi.fn()}
       onItemDoubleClick={vi.fn()}
@@ -58,4 +62,61 @@ test("every_row_carries_the_key_of_its_item", () => {
   list(false);
   const keys = screen.getAllByTestId("file-row").map((r) => r.getAttribute("data-key"));
   expect(keys).toEqual(["Utf8:/d/a", "Utf8:/d/b"]);
+});
+
+test("the_modified_column_shows_the_time_in_the_chosen_clock", () => {
+  // A moment on a past day, so the day part is a date and the test does not depend on today.
+  const modified_ms = new Date(2020, 2, 4, 14, 5).getTime();
+  const row = (format: "12" | "24") => {
+    cleanup();
+    useViewSettings.setState({ timeFormat: format });
+    list(false, [{ ...entry("a"), modified_ms }]);
+    return screen.getAllByRole("gridcell").find((c) => c.className.includes("kern-col-modified"))!
+      .textContent!;
+  };
+  expect(row("24")).toBe("Mar 4, 2020 14:05");
+  expect(row("12").toLowerCase()).toBe("mar 4, 2020 2:05 pm");
+  useViewSettings.setState({ timeFormat: "system" });
+});
+
+test("a_row_the_clipboard_holds_as_a_cut_is_marked_and_the_others_are_not", () => {
+  setCut([entry("b").path]);
+  list(false);
+  const rows = screen.getAllByTestId("file-row");
+  expect(rows.map((r) => r.classList.contains("kern-cut"))).toEqual([false, true]);
+  clearCut();
+});
+
+test("every_row_is_cut_when_the_folder_listed_is_cut_or_lies_inside_a_cut_folder", () => {
+  const rows = () => screen.getAllByTestId("file-row").map((r) => r.classList.contains("kern-cut"));
+  setCut([{ k: "Utf8", v: "/d" }]);
+  list(false, undefined, { k: "Utf8", v: "/d" });
+  expect(rows()).toEqual([true, true]);
+  cleanup();
+  setCut([{ k: "Utf8", v: "/" }]);
+  list(false, undefined, { k: "Utf8", v: "/d" });
+  expect(rows()).toEqual([true, true]);
+  clearCut();
+});
+
+test("no_row_is_cut_for_the_folder_when_a_sibling_or_a_child_is_the_one_cut", () => {
+  const rows = () => screen.getAllByTestId("file-row").map((r) => r.classList.contains("kern-cut"));
+  setCut([{ k: "Utf8", v: "/d2" }]);
+  list(false, undefined, { k: "Utf8", v: "/d" });
+  expect(rows()).toEqual([false, false]);
+  cleanup();
+  setCut([{ k: "Utf8", v: "/d/sub" }]);
+  list(false, undefined, { k: "Utf8", v: "/d" });
+  expect(rows()).toEqual([false, false]);
+  clearCut();
+});
+
+test("rows_of_many_folders_are_cut_only_for_their_own_paths_when_no_folder_is_given", () => {
+  setCut([{ k: "Utf8", v: "/d" }]);
+  list(false);
+  expect(screen.getAllByTestId("file-row").map((r) => r.classList.contains("kern-cut"))).toEqual([
+    false,
+    false,
+  ]);
+  clearCut();
 });

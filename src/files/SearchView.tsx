@@ -9,7 +9,7 @@ import { baseName, plural } from "../ops/labels";
 import { useUserDirs } from "../shell/user-dirs-store";
 import { ScanResults } from "./ScanResults";
 import { useScan } from "./use-scan";
-import { useViewSettings } from "./view-settings";
+import { useViewSettings, type ClickArea } from "./view-settings";
 
 // Name search (Ctrl+F): every name under the folder on show that
 // contains what is typed, case aside, found as the folder tree is walked and
@@ -27,6 +27,8 @@ const SEARCH_DELAY_MS = 250;
 
 export function SearchView(props: {
   root: WirePath;
+  /** The part of the window the search is shown in. */
+  area: ClickArea;
   onClose(): void;
   onOpen(entry: WireEntry, newWindow: boolean): void;
 }) {
@@ -153,6 +155,8 @@ export function SearchView(props: {
           count={scan.count}
           home={home}
           label={`Found in ${where}`}
+          area={props.area}
+          complete={scan.phase === "done"}
           onOpen={props.onOpen}
         />
       </div>

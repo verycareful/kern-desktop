@@ -10,7 +10,8 @@ import { useVolumes } from "../shell/volumes-store";
 import { useOps } from "../ops/useOps";
 import { VOLUME_MENU } from "../shell/volume-menu";
 import { entryMenu, everyEntryAction } from "../shell/entry-menu";
-import { everyTreeAction } from "../files/tree-menu";
+import { everyTreeAction, treeSortMenu } from "../files/tree-menu";
+import { DEFAULT_TREE_SORT, useTreeSort } from "../files/tree-sort";
 import { usePinnedRecent } from "../shell/pinned-recent-store";
 import { useProperties } from "../files/properties-store";
 import { registerFolder, type FolderController } from "../files/folder-controller";
@@ -508,4 +509,45 @@ test("the_actions_with_a_button_of_the_top_bar_are_not_in_the_main_menu", () => 
   // Open as editor has no key, so it is in the menu as well as on its button.
   expect(shown).toContain("folder.openAsEditor");
   expect(actions.some((a) => a.id.startsWith("view.size."))).toBe(false);
+});
+
+test("the_tree_sort_actions_set_the_field_and_the_order_and_mark_what_is_chosen", () => {
+  useTreeSort.setState({ sort: DEFAULT_TREE_SORT });
+  const run = (id: string) => runAction(getAction(id), currentContext());
+  const checked = (id: string) => getAction(id).checked?.();
+  expect(checked("tree.sort.name")).toBe(true);
+  expect(checked("tree.sort.size")).toBe(false);
+  expect(checked("tree.sort.asc")).toBe(true);
+  expect(checked("tree.sort.desc")).toBe(false);
+
+  run("tree.sort.size");
+  expect(useTreeSort.getState().sort).toEqual({ by: "size", dir: "desc" });
+  expect(checked("tree.sort.size")).toBe(true);
+  expect(checked("tree.sort.name")).toBe(false);
+  expect(checked("tree.sort.desc")).toBe(true);
+  // The order is named in the words of the field now chosen.
+  expect(getAction("tree.sort.asc").menuLabel?.()).toBe("Smallest first");
+  expect(getAction("tree.sort.desc").menuLabel?.()).toBe("Largest first");
+
+  run("tree.sort.asc");
+  expect(useTreeSort.getState().sort).toEqual({ by: "size", dir: "asc" });
+  run("tree.sort.modified");
+  run("tree.sort.type");
+  expect(useTreeSort.getState().sort).toEqual({ by: "type", dir: "asc" });
+  useTreeSort.setState({ sort: DEFAULT_TREE_SORT });
+});
+
+test("the_tree_sort_menu_lists_the_four_fields_and_the_two_orders_and_is_among_the_tree_actions", () => {
+  const sections = treeSortMenu();
+  expect(sections.map((s) => s.title)).toEqual(["Sort by", "Order"]);
+  expect(sections.map((s) => s.actions.map((a) => a.id))).toEqual([
+    ["tree.sort.name", "tree.sort.size", "tree.sort.modified", "tree.sort.type"],
+    ["tree.sort.asc", "tree.sort.desc"],
+  ]);
+  const every = everyTreeAction();
+  for (const a of sections.flatMap((s) => s.actions)) {
+    expect(every, a.id).toContain(a);
+    expect(a.when).toBe("tree");
+    expect(isEnabled(a, currentContext()), a.id).toBe(true);
+  }
 });

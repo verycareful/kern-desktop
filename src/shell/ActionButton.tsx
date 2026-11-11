@@ -2,13 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import type { LucideIcon } from "lucide-react";
 import { currentContext, getAction, isEnabled, runAction } from "../keys/actions";
-
-/** The tooltip of an action's button: its label, and its first key when it has one. */
-function actionTitle(id: string): string {
-  const action = getAction(id);
-  const key = action.keys[0];
-  return key ? `${action.label} (${key})` : action.label;
-}
+import { useBindLabel } from "../keys/binds";
 
 /**
  * An icon button that runs an action of the table, named by the action's label and showing its
@@ -26,6 +20,7 @@ export function ActionButton(props: {
   after?: () => void;
 }) {
   const action = getAction(props.id);
+  const key = useBindLabel(action);
   const Icon = props.icon;
   return (
     <button
@@ -33,7 +28,7 @@ export function ActionButton(props: {
       className="kern-icon-button"
       aria-label={action.label}
       aria-pressed={props.pressed}
-      title={actionTitle(props.id)}
+      title={key ? `${action.label} (${key})` : action.label}
       disabled={!(props.enabled ?? isEnabled(action, currentContext(props.targetId)))}
       onClick={() => {
         runAction(action, currentContext(props.targetId));

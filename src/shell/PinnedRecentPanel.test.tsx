@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Pins, PruneReport, Recents, WirePath } from "../ipc";
 import { useTabs } from "../store/tabs";
+import { useViewSettings } from "../files/view-settings";
 
 const ipc = vi.hoisted(() => ({
   on: vi.fn(),
@@ -72,6 +73,12 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  useViewSettings.setState({
+    singleClickLeft: true,
+    singleClickRight: false,
+    singleClickCentre: false,
+    singleClickEditor: false,
+  });
   vi.useRealTimers();
   vi.clearAllMocks();
 });
@@ -199,6 +206,42 @@ test("a_folder_open_as_an_editor_is_marked_and_reopens_as_an_editor", async () =
   // Opened as an editor, it is never shown in a folder tab.
   expect(ipc.openPaths).not.toHaveBeenCalled();
   expect(useTabs.getState().tabs).toHaveLength(0);
+});
+
+test("the_settings_of_the_other_areas_do_not_make_one_click_open_a_recent_entry", async () => {
+  useViewSettings.setState({
+    singleClickLeft: true,
+    singleClickRight: false,
+    singleClickCentre: true,
+    singleClickEditor: true,
+  });
+  ipc.prune.mockResolvedValue({
+    ...report([]),
+    recents: { entries: [{ path: p("/home/t/Work"), opened_ms: NOW, as_editor: true }] },
+  });
+  render(<PinnedRecentPanel />);
+  const row = (await within(screen.getByTestId("recent")).findByText("Work")).closest("button")!;
+  fireEvent.click(row, { detail: 1 });
+  await act(async () => {});
+  expect(ipc.openEditor).not.toHaveBeenCalled();
+});
+
+test("with_single_click_on_one_click_opens_a_recent_entry_once", async () => {
+  useViewSettings.setState({ singleClickRight: true });
+  ipc.openEditor.mockResolvedValue("editor-2");
+  ipc.prune.mockResolvedValue({
+    ...report([]),
+    recents: { entries: [{ path: p("/home/t/Work"), opened_ms: NOW, as_editor: true }] },
+  });
+  render(<PinnedRecentPanel />);
+  const recent = screen.getByTestId("recent");
+  const row = (await within(recent).findByText("Work")).closest("button")!;
+  fireEvent.click(row, { detail: 1 });
+  await waitFor(() => expect(ipc.openEditor).toHaveBeenCalledExactlyOnceWith(p("/home/t/Work")));
+  fireEvent.click(row, { detail: 2 });
+  fireEvent.doubleClick(row);
+  await act(async () => {});
+  expect(ipc.openEditor).toHaveBeenCalledTimes(1);
 });
 
 test("a_folder_pinned_as_an_editor_is_marked_and_opens_as_an_editor", async () => {
@@ -537,4 +580,23 @@ test("a_reset_while_subscribing_leaves_nothing_subscribed", async () => {
   // The next follower subscribes afresh.
   await usePinnedRecent.getState().follow({ prune: false });
   expect(usePinnedRecent.getState().pins).toEqual([p("/home/t/Work")]);
+});
+
+test("the_same_notice_raised_again_stays_one_notice_and_flashes", async () => {
+  await shown([]);
+  const notices = () => document.querySelectorAll(".kern-side-notices .kern-places-error");
+  const flashes = () => document.querySelectorAll(".kern-side-notices .kern-repeat-flash");
+  act(() => usePinnedRecent.getState().notify("Pinned and Recent could not be checked: no way"));
+  expect(notices()).toHaveLength(1);
+  expect(flashes()).toHaveLength(0);
+  act(() => usePinnedRecent.getState().notify("Pinned and Recent could not be checked: no way"));
+  expect(notices()).toHaveLength(1);
+  expect(flashes()).toHaveLength(1);
+  const first = flashes()[0];
+  act(() => usePinnedRecent.getState().notify("Pinned and Recent could not be checked: no way"));
+  expect(notices()).toHaveLength(1);
+  expect(flashes()[0]).not.toBe(first);
+  // Other words are a second notice, not a repeat of the first.
+  act(() => usePinnedRecent.getState().notify("Something else"));
+  expect(notices()).toHaveLength(2);
 });

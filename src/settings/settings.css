@@ -161,6 +161,7 @@ h2.kern-settings-heading {
 
 /* Choices and swatches keep their own width under the label, never the row's. */
 .kern-settings-row-wide > .kern-settings-choices,
+.kern-settings-row-wide > .kern-settings-panel-order,
 .kern-settings-row-wide > .kern-settings-swatches {
   align-self: flex-start;
 }
@@ -216,6 +217,44 @@ h2.kern-settings-heading {
   color: var(--kern-text);
   background: var(--kern-surface);
   border-color: var(--kern-border);
+}
+
+/* The panels in their order on the screen, each with its two move buttons. */
+.kern-settings-panel-order {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.kern-settings-panel-order-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.kern-settings-panel-order-chip,
+.kern-settings-panel-order-fixed {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 4px;
+  background: var(--kern-sunken);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-settings-panel-order-chip > span {
+  padding: 0 4px;
+}
+
+/* The piece that does not move: drawn as a gap in the order, not as a panel. */
+.kern-settings-panel-order-fixed {
+  padding: 0 12px;
+  color: var(--kern-text-dim);
+  background: none;
+  border-style: dashed;
 }
 
 .kern-settings-switch {
@@ -298,6 +337,17 @@ h2.kern-settings-heading {
 
 .kern-settings-inline .kern-modal-input {
   flex: 1 1 200px;
+}
+
+/* The Clear pins and Clear recents buttons sit in separate rows, so each would
+   size to its own text. One shared content width, wider than the longer label
+   ("Clear recents"), makes them the same size with the text centred. The
+   content-box sizing keeps the width a content width whatever the global
+   box-sizing is, so the padding never eats into it. */
+.kern-settings-clear {
+  box-sizing: content-box;
+  min-width: 14ch;
+  text-align: center;
 }
 
 .kern-settings-hidden-label {
@@ -443,4 +493,75 @@ h2.kern-settings-heading {
   .kern-settings-nav {
     flex-basis: 180px;
   }
+}
+
+/* The Keys and mouse category: an action's binds as small keys with a remove button, then Add and
+   Reset. The row's messages (waiting for a bind, a bind that is taken) run the full width below. */
+.kern-bind-row {
+  align-items: flex-start;
+}
+
+.kern-bind-controls {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.kern-bind-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kern-bind {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 2px 2px 8px;
+  background: var(--kern-bg);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+}
+
+.kern-bind kbd {
+  font-family: var(--kern-font-mono);
+  font-size: 12px;
+}
+
+.kern-bind-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: var(--kern-text-dim);
+  background: none;
+  border: 0;
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-bind-remove:hover {
+  color: var(--kern-text);
+  background: var(--kern-surface);
+}
+
+.kern-bind-changed {
+  font-family: var(--kern-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kern-text-dim);
+}
+
+.kern-bind-say {
+  flex: 1 0 100%;
+  margin: 0;
 }

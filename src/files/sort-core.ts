@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import type { WireEntry } from "../ipc";
+import { displayPath, parent, type WireEntry } from "../ipc";
 import { fileType, isFolder } from "./file-type";
 
 // The one implementation of the display order, run on the main thread for small
 // folders and in a Web Worker (sort.worker.ts) for large ones. It works on
 // plain arrays, not entries, so a worker needs only what the comparison reads.
 
-export type SortBy = "name" | "size" | "modified" | "type";
+export type SortBy = "name" | "size" | "modified" | "type" | "location";
 export type SortDir = "asc" | "desc";
 
 /** What the comparison reads, as flat arrays (the typed ones are transferred to the worker). */
@@ -21,6 +21,8 @@ export interface SortInput {
   modified: Float64Array;
   /** Present for sort by type. */
   types: string[];
+  /** Present for sort by location: the folder each entry is in, as text. */
+  places: string[];
 }
 
 export function prepareSortInput(entries: readonly WireEntry[], by: SortBy): SortInput {
@@ -30,6 +32,7 @@ export function prepareSortInput(entries: readonly WireEntry[], by: SortBy): Sor
   const len = new Float64Array(by === "size" ? n : 0);
   const modified = new Float64Array(by === "modified" ? n : 0);
   const types = by === "type" ? new Array<string>(n) : [];
+  const places = by === "location" ? new Array<string>(n) : [];
   for (let i = 0; i < n; i++) {
     const e = entries[i]!;
     names[i] = e.name;
@@ -37,8 +40,12 @@ export function prepareSortInput(entries: readonly WireEntry[], by: SortBy): Sor
     if (by === "size") len[i] = e.len;
     else if (by === "modified") modified[i] = e.modified_ms ?? -Infinity;
     else if (by === "type") types[i] = fileType(e).mono.toLowerCase();
+    else if (by === "location") {
+      const where = parent(e.path);
+      places[i] = where ? displayPath(where) : "";
+    }
   }
-  return { names, folder, len, modified, types };
+  return { names, folder, len, modified, types, places };
 }
 
 const collators = new Map<string, Intl.Collator>();
@@ -69,7 +76,7 @@ export function sortPermutation(
   dir: SortDir,
   locale?: string
 ): Uint32Array {
-  const { names, folder, len, modified, types } = input;
+  const { names, folder, len, modified, types, places } = input;
   const collator = collatorFor(locale);
   const sign = dir === "asc" ? 1 : -1;
   const byName = (i: number, j: number): number => {
@@ -95,6 +102,11 @@ export function sortPermutation(
         const a = types[i]!;
         const b = types[j]!;
         return (a < b ? -sign : a > b ? sign : 0) || byName(i, j);
+      }
+      case "location": {
+        const a = places[i]!;
+        const b = places[j]!;
+        return sign * (collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0)) || byName(i, j);
       }
     }
   });

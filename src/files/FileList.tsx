@@ -3,20 +3,22 @@
 import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, ArrowUp, Folder, Link2 } from "lucide-react";
-import { pathKey, type WireEntry } from "../ipc";
+import { pathKey, type WirePath, type WireEntry } from "../ipc";
 import { DROP_TARGET_ATTR, dropTargetValue } from "../ops/dnd";
 import type { Layout } from "./band";
 import { fileType, isFolder } from "./file-type";
 import { formatDate, formatSize } from "./format";
+import { LIST_HEADER_HEIGHT } from "./grid-layout";
 import type { Sel } from "./selection";
 import type { SortBy, SortDir } from "./sort";
 import { useRestoredScroll } from "./restore-scroll";
 import { useRubberBand } from "./useRubberBand";
 import { useCurrentItem } from "./use-current-item";
+import { useCut } from "../ops/cut-store";
+import { folderIsCut } from "./cut-rows";
+import { useViewSettings } from "./view-settings";
 import { RenameInput, type RenameProps } from "./RenameInput";
 
-/** The column header's height. */
-const HEADER_HEIGHT = 32;
 /** Rows drawn beyond the visible ones on each side, so a fast scroll does not show blanks. */
 const OVERSCAN = 12;
 
@@ -40,6 +42,11 @@ export interface ItemsProps {
   onSeedCursor(): void;
   /** The item whose name is being edited in place, if any. */
   rename?: RenameProps | null;
+  /**
+   * The folder every entry is listed from. When it is cut, or lies inside a cut folder, all of
+   * its entries are drawn cut. Left out where the entries come from many folders (search hits).
+   */
+  cutFolder?: WirePath;
 }
 
 export function FileBadge(props: { entry: WireEntry; size: number }) {
@@ -88,7 +95,7 @@ export function FileList(
     getScrollElement: () => scroller.current,
     estimateSize: () => rowHeight,
     overscan: OVERSCAN,
-    scrollMargin: HEADER_HEIGHT,
+    scrollMargin: LIST_HEADER_HEIGHT,
     initialRect: { width: 600, height: 400 },
   });
   useRestoredScroll(scroller, props.initialScroll);
@@ -104,6 +111,10 @@ export function FileList(
   }, [revealTick, virtual]);
 
   const item = useCurrentItem(entries.length, sel.cursor, props.onSeedCursor);
+  const timeFormat = useViewSettings((s) => s.timeFormat);
+  const cut = useCut((s) => s.keys);
+  const cutPaths = useCut((s) => s.paths);
+  const allCut = props.cutFolder !== undefined && folderIsCut(props.cutFolder, cutPaths);
 
   const layout: Layout = { kind: "list", rowHeight, count: entries.length };
   const { onPointerDown, band } = useRubberBand({
@@ -137,7 +148,7 @@ export function FileList(
           !(e.target as Element).closest("[data-item]") && props.onContextMenu(null, e)
         }
       >
-        <div role="row" className="kern-list-head" style={{ height: HEADER_HEIGHT }}>
+        <div role="row" className="kern-list-head" style={{ height: LIST_HEADER_HEIGHT }}>
           {COLUMNS.map((c) => {
             const active = !props.sortFailed && props.sortBy === c.by;
             const Arrow = props.sortDir === "asc" ? ArrowUp : ArrowDown;
@@ -182,11 +193,12 @@ export function FileList(
                 className={
                   "kern-row" +
                   (selected ? " kern-selected" : "") +
+                  (allCut || cut.has(pathKey(e.path)) ? " kern-cut" : "") +
                   (item.outlined === v.index ? " kern-cursor" : "")
                 }
                 style={{
                   height: rowHeight,
-                  transform: `translateY(${v.start - HEADER_HEIGHT}px)`,
+                  transform: `translateY(${v.start - LIST_HEADER_HEIGHT}px)`,
                 }}
                 onClick={(ev) => props.onItemClick(v.index, ev)}
                 onDoubleClick={(ev) => props.onItemDoubleClick(v.index, ev)}
@@ -209,7 +221,7 @@ export function FileList(
                   {isFolder(e) ? "" : formatSize(e.len)}
                 </div>
                 <div role="gridcell" className="kern-col kern-col-modified">
-                  {formatDate(e.modified_ms)}
+                  {formatDate(e.modified_ms, undefined, timeFormat)}
                 </div>
               </div>
             );

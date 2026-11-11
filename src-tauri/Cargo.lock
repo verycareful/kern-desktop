@@ -2038,7 +2038,7 @@ dependencies = [
 
 [[package]]
 name = "kern"
-version = "0.1.1+4"
+version = "0.1.1+4.39"
 dependencies = [
  "gtk",
  "kernkraft-bus",
@@ -2053,13 +2053,14 @@ dependencies = [
  "tauri-plugin-window-state",
  "tempfile",
  "thiserror 2.0.21",
+ "webkit2gtk",
  "zbus",
 ]
 
 [[package]]
 name = "kernkraft-bus"
-version = "0.1.1+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.1.1.0#dee7c3e1191f312a50898038f1a46450fe7b1ed4"
+version = "0.1.3+1"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.1.3.1#e5c2d7cd4f36eab7ed6a1fc63e5dbdf23b2559be"
 dependencies = [
  "thiserror 2.0.21",
  "zbus",
@@ -2067,8 +2068,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-fs"
-version = "0.1.1+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.1.1.0#dee7c3e1191f312a50898038f1a46450fe7b1ed4"
+version = "0.1.3+1"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.1.3.1#e5c2d7cd4f36eab7ed6a1fc63e5dbdf23b2559be"
 dependencies = [
  "chrono",
  "percent-encoding",
@@ -2079,8 +2080,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-tauri"
-version = "0.1.1+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.1.1.0#dee7c3e1191f312a50898038f1a46450fe7b1ed4"
+version = "0.1.3+1"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.1.3.1#e5c2d7cd4f36eab7ed6a1fc63e5dbdf23b2559be"
 dependencies = [
  "base64 0.22.1",
  "inotify",
@@ -2100,8 +2101,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-text"
-version = "0.1.1+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.1.1.0#dee7c3e1191f312a50898038f1a46450fe7b1ed4"
+version = "0.1.3+1"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.1.3.1#e5c2d7cd4f36eab7ed6a1fc63e5dbdf23b2559be"
 dependencies = [
  "kernkraft-fs",
  "rustix",
@@ -2110,8 +2111,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-theme"
-version = "0.1.1+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.1.1.0#dee7c3e1191f312a50898038f1a46450fe7b1ed4"
+version = "0.1.3+1"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.1.3.1#e5c2d7cd4f36eab7ed6a1fc63e5dbdf23b2559be"
 dependencies = [
  "inotify",
  "kernkraft-bus",
@@ -2124,8 +2125,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-thumb"
-version = "0.1.1+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.1.1.0#dee7c3e1191f312a50898038f1a46450fe7b1ed4"
+version = "0.1.3+1"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.1.3.1#e5c2d7cd4f36eab7ed6a1fc63e5dbdf23b2559be"
 dependencies = [
  "image",
  "kernkraft-fs",
@@ -2139,8 +2140,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-volumes"
-version = "0.1.1+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.1.1.0#dee7c3e1191f312a50898038f1a46450fe7b1ed4"
+version = "0.1.3+1"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.1.3.1#e5c2d7cd4f36eab7ed6a1fc63e5dbdf23b2559be"
 dependencies = [
  "kernkraft-bus",
  "rustix",
@@ -2151,8 +2152,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-xdg-apps"
-version = "0.1.1+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.1.1.0#dee7c3e1191f312a50898038f1a46450fe7b1ed4"
+version = "0.1.3+1"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.1.3.1#e5c2d7cd4f36eab7ed6a1fc63e5dbdf23b2559be"
 dependencies = [
  "kernkraft-fs",
  "percent-encoding",

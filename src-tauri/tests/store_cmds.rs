@@ -11,8 +11,8 @@ use std::time::Duration;
 
 use kern_lib::store::Store;
 use kern_lib::store_cmds::{
-    StoreState, EVENT_PINS_CHANGED, EVENT_RECENTS_CHANGED, EVENT_SETTINGS_CHANGED,
-    EVENT_STORE_ERROR,
+    StoreState, EVENT_BINDS_CHANGED, EVENT_PINS_CHANGED, EVENT_RECENTS_CHANGED,
+    EVENT_SETTINGS_CHANGED, EVENT_STORE_ERROR,
 };
 use kernkraft_tauri::WirePath;
 use serde_json::{json, Value};
@@ -29,15 +29,20 @@ const WAIT: Duration = Duration::from_secs(30);
 /// How long a test waits to be sure an event does not arrive.
 const QUIET: Duration = Duration::from_millis(300);
 
-const COMMANDS: [&str; 10] = [
+const COMMANDS: [&str; 15] = [
     "settings_get",
     "settings_set",
     "pins_get",
     "pin",
     "unpin",
     "pins_reorder",
+    "pins_clear",
     "recents_get",
     "recent_touch",
+    "recents_clear",
+    "binds_get",
+    "binds_set",
+    "binds_clear",
     "prune",
     "store_errors_take",
 ];
@@ -72,8 +77,13 @@ fn env() -> Env {
             kern_lib::store_cmds::pin,
             kern_lib::store_cmds::unpin,
             kern_lib::store_cmds::pins_reorder,
+            kern_lib::store_cmds::pins_clear,
             kern_lib::store_cmds::recents_get,
             kern_lib::store_cmds::recent_touch,
+            kern_lib::store_cmds::recents_clear,
+            kern_lib::store_cmds::binds_get,
+            kern_lib::store_cmds::binds_set,
+            kern_lib::store_cmds::binds_clear,
             kern_lib::store_cmds::prune,
             kern_lib::store_cmds::store_errors_take,
         ])
@@ -84,6 +94,7 @@ fn env() -> Env {
         EVENT_SETTINGS_CHANGED,
         EVENT_PINS_CHANGED,
         EVENT_RECENTS_CHANGED,
+        EVENT_BINDS_CHANGED,
         EVENT_STORE_ERROR,
     ] {
         let tx = tx.clone();
@@ -181,6 +192,38 @@ fn settings_and_recents_emit_their_events() {
 }
 
 #[test]
+fn clearing_the_pins_and_the_recents_tells_every_window_once_and_only_on_change() {
+    let e = env();
+    // Nothing to clear: nothing to tell.
+    e.call("pins_clear", json!({})).unwrap();
+    e.call("recents_clear", json!({})).unwrap();
+    e.expect_quiet();
+
+    let p = e.files.join("a");
+    e.call("pin", json!({"path": wp(&p), "asEditor": false}))
+        .unwrap();
+    e.expect(EVENT_PINS_CHANGED);
+    e.call("recent_touch", json!({"path": wp(&p), "asEditor": false}))
+        .unwrap();
+    e.expect(EVENT_RECENTS_CHANGED);
+
+    let out = e.call("pins_clear", json!({})).unwrap();
+    assert_eq!(out["entries"], json!([]));
+    assert_eq!(e.expect(EVENT_PINS_CHANGED)["entries"], json!([]));
+    e.expect_quiet();
+    let out = e.call("recents_clear", json!({})).unwrap();
+    assert_eq!(out["entries"], json!([]));
+    assert_eq!(e.expect(EVENT_RECENTS_CHANGED)["entries"], json!([]));
+    e.expect_quiet();
+    // Cleared for good: the next read finds nothing.
+    assert_eq!(e.call("pins_get", json!({})).unwrap()["entries"], json!([]));
+    assert_eq!(
+        e.call("recents_get", json!({})).unwrap()["entries"],
+        json!([])
+    );
+}
+
+#[test]
 fn corrupt_file_is_emitted_queued_and_taken_once() {
     let e = env();
     fs::create_dir_all(&e.state).unwrap();
@@ -248,4 +291,54 @@ fn prune_reports_a_corrupt_file_it_met() {
     assert_eq!(e.expect(EVENT_STORE_ERROR)["file"], json!("recents.json"));
     assert_eq!(e.expect(EVENT_PINS_CHANGED)["entries"], json!([]));
     assert_eq!(e.expect(EVENT_RECENTS_CHANGED)["entries"], json!([]));
+}
+
+#[test]
+fn setting_and_clearing_the_binds_tells_every_window_once_and_only_on_change() {
+    let e = env();
+    // Nothing to read, nothing to clear: nothing to tell.
+    assert_eq!(e.call("binds_get", json!({})).unwrap()["binds"], json!({}));
+    e.call("binds_clear", json!({})).unwrap();
+    e.expect_quiet();
+
+    let out = e
+        .call("binds_set", json!({"patch": {"tab.close": ["Middle"]}}))
+        .unwrap();
+    assert_eq!(out["binds"], json!({"tab.close": ["Middle"]}));
+    assert_eq!(
+        e.expect(EVENT_BINDS_CHANGED)["binds"],
+        json!({"tab.close": ["Middle"]})
+    );
+    // The same patch again changes nothing.
+    e.call("binds_set", json!({"patch": {"tab.close": ["Middle"]}}))
+        .unwrap();
+    e.expect_quiet();
+    assert!(e.config.join("binds.json").exists());
+
+    let out = e.call("binds_clear", json!({})).unwrap();
+    assert_eq!(out["binds"], json!({}));
+    assert_eq!(e.expect(EVENT_BINDS_CHANGED)["binds"], json!({}));
+    e.expect_quiet();
+    assert!(!e.config.join("binds.json").exists());
+}
+
+#[test]
+fn a_refused_bind_patch_is_an_error_and_tells_nobody() {
+    let e = env();
+    let err = e
+        .call("binds_set", json!({"patch": {"tab.close": [""]}}))
+        .unwrap_err();
+    assert_eq!(err["kind"], json!("InvalidArgument"));
+    e.expect_quiet();
+}
+
+#[test]
+fn a_damaged_binds_file_is_reported_and_the_default_is_announced() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    fs::write(e.config.join("binds.json"), "{ broken").unwrap();
+    assert_eq!(e.call("binds_get", json!({})).unwrap()["binds"], json!({}));
+    let report = e.expect(EVENT_STORE_ERROR);
+    assert_eq!(report["file"], json!("binds.json"));
+    assert_eq!(e.expect(EVENT_BINDS_CHANGED)["binds"], json!({}));
 }

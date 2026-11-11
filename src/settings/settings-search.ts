@@ -5,7 +5,7 @@
 // when each word typed is part of its label, its group, its category or its other words (case
 // does not matter), so "dark" finds the theme and "hidden" the hidden items.
 
-export type Category = "appearance" | "files" | "library" | "editor" | "about";
+export type Category = "appearance" | "files" | "library" | "editor" | "keys" | "about";
 
 export const CATEGORIES: readonly { id: Category; label: string; blurb: string }[] = [
   { id: "appearance", label: "Appearance", blurb: "How Kern looks in every window." },
@@ -17,9 +17,16 @@ export const CATEGORIES: readonly { id: Category; label: string; blurb: string }
   { id: "library", label: "Library", blurb: "The folders the Library walks for documents." },
   { id: "editor", label: "Editor", blurb: "The text editor." },
   {
+    id: "keys",
+    label: "Keys and mouse",
+    blurb:
+      "The keys and mouse buttons that run each action. A change applies at once, in every window.",
+  },
+  {
     id: "about",
     label: "About",
-    blurb: "The version, what Kern does with your network, the licence and where the source lives.",
+    blurb:
+      "The version, the error log, what Kern does with your network, the licence and where the source lives.",
   },
 ];
 
@@ -81,6 +88,20 @@ export const ROWS = {
     label: "Main window layout",
     words: "layout file manager editor",
   },
+  panel_order: {
+    category: "files",
+    group: "Panels",
+    label: "File manager panel order",
+    words:
+      "panels columns order move left right swap places pinned recent folders sidebar layout arrange",
+  },
+  editor_panel_order: {
+    category: "files",
+    group: "Panels",
+    label: "Editor window panel order",
+    words:
+      "panels columns order move left right swap places folders tree pinned recent sidebar layout arrange",
+  },
   new_tab_folder: {
     category: "files",
     group: "New tabs",
@@ -100,6 +121,46 @@ export const ROWS = {
     label: "Show hidden items",
     words: "dotfiles hidden files",
   },
+  single_click_left: {
+    category: "files",
+    group: "Opening",
+    label: "Left panel opens with",
+    words:
+      "double click single click mouse open files folders pointer left panel places volumes trash library sidebar",
+  },
+  single_click_right: {
+    category: "files",
+    group: "Opening",
+    label: "Right panel opens with",
+    words: "double click single click mouse open files folders pointer right panel pinned recent",
+  },
+  single_click_centre: {
+    category: "files",
+    group: "Opening",
+    label: "File manager opens with",
+    words:
+      "double click single click mouse open files folders pointer file manager centre list grid search",
+  },
+  single_click_editor: {
+    category: "files",
+    group: "Opening",
+    label: "Editor window opens with",
+    words:
+      "double click single click mouse open files folders pointer editor window tree files search",
+  },
+  time_format: {
+    category: "files",
+    group: "Time",
+    label: "Time of day in dates",
+    words: "clock 12 hour 24 hour am pm modified date time format locale",
+  },
+  folder_menu: {
+    category: "files",
+    group: "Menus",
+    label: "Right-click menu of the file manager",
+    words:
+      "context menu submenu sub menu folded fold collapsed expanded standard options entries centre panel",
+  },
   terminal: {
     category: "files",
     group: "Programs",
@@ -111,6 +172,18 @@ export const ROWS = {
     group: "Programs",
     label: "Default file manager",
     words: "inode directory filemanager1 folders open",
+  },
+  clear_pins: {
+    category: "files",
+    group: "Pinned and recent",
+    label: "Clear pins",
+    words: "unpin remove forget right panel pinned",
+  },
+  clear_recents: {
+    category: "files",
+    group: "Pinned and recent",
+    label: "Clear recents",
+    words: "remove forget history right panel recent opened",
   },
   scan_documents: { category: "library", group: "Folders", label: "Documents", words: "walk scan" },
   scan_downloads: { category: "library", group: "Folders", label: "Downloads", words: "walk scan" },
@@ -131,6 +204,19 @@ export const ROWS = {
     group: "Text",
     label: "Text size",
     words: "zoom font bigger smaller",
+  },
+  keys_list: {
+    category: "keys",
+    group: "Binds",
+    label: "Keys and mouse buttons",
+    words:
+      "shortcut shortcuts keyboard hotkey binding bindings bind rebind remap middle click mouse button back forward",
+  },
+  reset_binds: {
+    category: "keys",
+    group: "Reset",
+    label: "Reset all binds",
+    words: "default defaults restore clear shortcuts keyboard mouse remove",
   },
   version: { category: "about", group: "Kern", label: "Version", words: "alpha release" },
   network: {
@@ -162,6 +248,12 @@ export const ROWS = {
     group: "Kern",
     label: "Kern for Android",
     words: "github repository link phone app",
+  },
+  error_log: {
+    category: "about",
+    group: "Error log",
+    label: "Write an error log",
+    words: "errors crash panic diagnostics file kern.log troubleshooting report",
   },
 } as const satisfies Record<string, RowInfo>;
 

@@ -41,12 +41,23 @@ export type InvokeCall = { cmd: string; args: Record<string, unknown> };
  * resolves to null and logs a warning.
  */
 export async function installTauriMocks(page: Page, handlers: MockResponses = {}): Promise<void> {
-  // Every window reads its stored layout once; a test that cares overrides it.
-  const literals: Record<string, unknown> = { layout_get: NO_LAYOUT };
+  // Every window reads its stored layout and binds once; a test that cares overrides them.
+  const literals: Record<string, unknown> = { layout_get: NO_LAYOUT, binds_get: { binds: {} } };
   const fns: Record<string, string> = {};
   for (const [name, value] of Object.entries(handlers)) {
     if (typeof value === "function") fns[name] = `(${value.toString()})`;
     else literals[name] = value;
+  }
+  // The backend always answers with both panel orders and the menu shape; a test's partial settings
+  // get the defaults.
+  const settings = literals["settings_get"];
+  if (settings !== null && typeof settings === "object") {
+    literals["settings_get"] = {
+      panel_order: ["places", "folder", "pinned"],
+      editor_panel_order: ["places", "pinned"],
+      folder_menu: "standard",
+      ...settings,
+    };
   }
 
   await page.addInitScript(

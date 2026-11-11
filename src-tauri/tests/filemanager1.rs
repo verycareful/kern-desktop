@@ -443,6 +443,20 @@ fn properties_with_no_main_window_open_the_items_folder_first() {
     assert_eq!(q[1]["event"], json!(EVENT_PROPERTIES));
 }
 
+#[test]
+fn properties_are_not_shown_over_a_main_window_whose_folder_did_not_open() {
+    let e = env(Duration::from_secs(5));
+    assert!(!e.exists("main"));
+    // The item exists, but its folder (the empty path before the name) cannot be opened.
+    // Cargo runs the tests in the package folder, where Cargo.toml is.
+    let item = PathBuf::from("Cargo.toml");
+    assert!(item.exists());
+    let errors = run_block(&e, request(Call::ShowItemProperties, vec![item]));
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    // No main window was made for a dialog with nothing behind it, and none was told to show it.
+    assert!(!e.exists("main"));
+}
+
 // ---- default file manager ----
 
 struct Home {

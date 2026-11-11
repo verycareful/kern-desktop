@@ -200,3 +200,28 @@ test("a_permutation_is_a_complete_reordering", () => {
   expect([...perm].sort()).toEqual([0, 1, 2, 3]);
   expect(applyPermutation(list, perm).map((e) => e.name)).toEqual(["d", "a", "b", "c"]);
 });
+
+test("location_sorts_by_the_folder_then_by_name", () => {
+  const inDir = (dir: string, name: string) => ({
+    ...entry(name),
+    path: { k: "Utf8" as const, v: `${dir}/${name}` },
+  });
+  const list = [
+    inDir("/b", "x.txt"),
+    inDir("/a/zz", "y.txt"),
+    inDir("/a", "z.txt"),
+    inDir("/a", "m.txt"),
+  ];
+  expect(sortEntries(list, "location", "asc").map((e) => e.path.v)).toEqual([
+    "/a/m.txt",
+    "/a/z.txt",
+    "/a/zz/y.txt",
+    "/b/x.txt",
+  ]);
+  expect(sortEntries(list, "location", "desc").map((e) => e.path.v)).toEqual([
+    "/b/x.txt",
+    "/a/zz/y.txt",
+    "/a/m.txt",
+    "/a/z.txt",
+  ]);
+});

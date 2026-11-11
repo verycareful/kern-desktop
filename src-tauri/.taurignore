@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+
+# tauri dev restarts the app on any change under src-tauri. The integration
+# tests are never part of the app, so editing one must not restart it.
+/tests/

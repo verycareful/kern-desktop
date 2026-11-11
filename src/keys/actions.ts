@@ -13,13 +13,16 @@ import {
   type WirePath,
 } from "../ipc";
 import { copyPaths, copyProblem, openTerminalIn } from "../files/use-folder-tools";
+import { clearCut } from "../ops/cut-store";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
+import { showOpenErrors } from "../ops/open-error-store";
 import { activeTab, tabTitle, useTabs, type Tab, type TabsState } from "../store/tabs";
 import { usePanelsStore } from "../store/panels";
 import { folderController, type MoveTo } from "../files/folder-controller";
 import { useFolderUi } from "../files/folder-ui";
-import type { SortBy } from "../files/sort";
+import type { SortBy, SortDir } from "../files/sort";
+import { orderWords, useTreeSort, type TreeSortBy } from "../files/tree-sort";
 import { setViewMode, toggleHidden, useViewSettings } from "../files/view-settings";
 import { trashController, type TrashMove } from "../files/trash-controller";
 import { useVolumes } from "../shell/volumes-store";
@@ -34,9 +37,11 @@ import { closeTab } from "../shell/useCloseGuard";
 import { openAsEditor } from "../shell/layout-switch";
 import { isEditorLayout, useLayout } from "../store/layout";
 import { treeMenuFolder, useTreeMenu } from "../files/tree-menu-store";
+import { terminalFolder } from "../files/tree-hover";
 import { openFiles, openFolderTab, showFileInFolder } from "../files/open-entries";
 import { isFolder } from "../files/file-type";
 import { useUserDirs } from "../shell/user-dirs-store";
+import { withModifiers } from "./binds";
 
 // The single table of user-visible actions. Shortcuts (useShortcuts), the
 // main menu and the tab context menu (ActionMenu) all read it, so keyboard and
@@ -93,6 +98,8 @@ export type Action = {
   keys: string[];
   /** The tab kind the action applies to. */
   when: ActionContextKind | "any";
+  /** Other tab kinds it applies to as well (the Library has a view, hidden items and a name filter of its own). */
+  alsoWhen?: readonly ActionContextKind[];
   /**
    * False keeps the action out of the main menu: a button of the top bar and its shortcut reach
    * it, so the menu holds what has no button.
@@ -100,8 +107,22 @@ export type Action = {
   menu?: false;
   /** True when the shortcut also fires while focus is in an editable field. */
   inEditable?: boolean;
-  /** "view": the shortcut acts only while the keyboard is in the folder view or the tab row (keys/file-keys.ts). Menus are not limited. */
-  scope?: "view";
+  /**
+   * "view": the shortcut acts only while the keyboard is in the folder view or the tab row
+   * (keys/file-keys.ts). "tree": only while it is in the folder tree, aimed at the tree's current
+   * row (the pointer's row for a mouse button). Menus are not limited.
+   */
+  scope?: "view" | "tree";
+  /**
+   * "tab": the action's mouse binds answer only over a tab of the tab strip, and aim it at that
+   * tab, not the one in front (Close tab).
+   */
+  mouseOn?: "tab";
+  /**
+   * Present for an action that is one choice among several (a sort field): a menu draws it as a
+   * radio item and marks it while this is true.
+   */
+  checked?(): boolean;
   /** Absent means always enabled where `when` holds. A disabled menu entry is shown greyed. */
   enabled?(ctx: ActionContext): boolean;
   /**
@@ -181,14 +202,16 @@ async function openNewTabFolder(): Promise<void> {
 export const actions: Action[] = [
   // Ctrl+W and Ctrl+Tab are the tab keys of browsers and editors. Both also work inside an editor, where
   // focus sits in an editable field. Shift+Tab reversal is the usual partner of Ctrl+Tab.
-  // Every way to close a tab (shortcut, x button, middle click, menus) runs this one action.
+  // Every way to close a tab (shortcut, x button, middle click, menus) runs this one action. The middle
+  // click is a default bind like the key: the user can move it to another button or take it away.
   // A document that would lose something (unsaved changes, a file deleted on disk) asks first
   // (shell/useCloseGuard.ts).
   {
     id: "tab.close",
     label: "Close tab",
     area: "Tabs",
-    keys: ["Ctrl+W"],
+    keys: ["Ctrl+W", "MiddleClick"],
+    mouseOn: "tab",
     when: "any",
     inEditable: true,
     enabled: (c) => c.target !== null,
@@ -634,6 +657,7 @@ const folderActions: Action[] = [
     area: "View",
     keys: ["Ctrl+H"],
     when: "folder",
+    alsoWhen: ["documents"],
     run: () => void toggleHidden(),
   },
   // Ctrl+1 and Ctrl+2 are Dolphin's keys for its view modes.
@@ -644,6 +668,7 @@ const folderActions: Action[] = [
     area: "View",
     keys: ["Ctrl+1"],
     when: "folder",
+    alsoWhen: ["documents"],
     enabled: () => useViewSettings.getState().viewMode !== "list",
     run: () => void setViewMode("list"),
   },
@@ -654,6 +679,7 @@ const folderActions: Action[] = [
     area: "View",
     keys: ["Ctrl+2"],
     when: "folder",
+    alsoWhen: ["documents"],
     enabled: () => useViewSettings.getState().viewMode !== "grid",
     run: () => void setViewMode("grid"),
   },
@@ -676,6 +702,12 @@ const treeFolderEntry = () => {
 };
 const treeOps = () => useTreeMenu.getState().ops;
 const treeNote = (text: string) => treeOps()?.note(text);
+/** Says `text` where the tree shows its problems, else in the status bar (the tree may not be on show). */
+const editorNote = (text: string) => {
+  const ops = treeOps();
+  if (ops) ops.note(text);
+  else useOps.getState().notify(text);
+};
 
 /** A tree action that runs one of the tree's file operations. */
 function treeOp(
@@ -683,13 +715,15 @@ function treeOp(
   label: string,
   area: Action["area"],
   run: (ops: NonNullable<ReturnType<typeof treeOps>>) => void,
-  enabled: () => boolean = () => true
+  enabled: () => boolean = () => true,
+  keys: string[] = []
 ): Action {
   return {
     id,
     label,
     area,
-    keys: [],
+    keys,
+    scope: "tree",
     when: "tree",
     enabled: () => treeOps() !== null && enabled(),
     run: () => {
@@ -705,14 +739,13 @@ const treeActions: Action[] = [
     label: "Open",
     area: "Open",
     keys: [],
+    scope: "tree",
     when: "tree",
     enabled: () => treeEntry() !== null && treeFolderEntry() === null,
     run: () => {
       const e = treeEntry();
       if (!e) return;
-      void openFiles([e.path], false).then((errors) =>
-        errors.forEach((err) => treeNote(`${e.name} was not opened: ${errorText(err)}`))
-      );
+      void openFiles([e.path], false).then((errors) => showOpenErrors(e.name, errors));
     },
   },
   // In a folder tab of the main window: the folder it was opened on, the folder of the file it
@@ -722,6 +755,7 @@ const treeActions: Action[] = [
     label: "Open in file manager",
     area: "Open",
     keys: [],
+    scope: "tree",
     when: "tree",
     enabled: () => treeMenuFolder() !== null,
     run: () => {
@@ -739,6 +773,7 @@ const treeActions: Action[] = [
     label: "Open as editor",
     area: "Open",
     keys: [],
+    scope: "tree",
     when: "tree",
     enabled: () => treeFolderEntry() !== null,
     run: () => {
@@ -751,6 +786,7 @@ const treeActions: Action[] = [
     label: "Pin as editor",
     area: "Pinned",
     keys: [],
+    scope: "tree",
     when: "tree",
     enabled: () => treeFolderEntry() !== null,
     run: () => {
@@ -764,11 +800,30 @@ const treeActions: Action[] = [
     label: "Open terminal here",
     area: "Open",
     keys: [],
+    scope: "tree",
     when: "tree",
     enabled: () => treeMenuFolder() !== null,
     run: () => {
       const dir = treeMenuFolder();
       if (dir) void openTerminalIn(dir, treeNote);
+    },
+  },
+  // F4 is Dolphin's key for the terminal. The editor layout has no folder view for the folder
+  // action to ask, so this one takes the folder from the tree: the row under the pointer, else
+  // the root. It is "tree" so that it applies with no tab open and does not share F4 with the
+  // folder action; the tree heading has a button for it.
+  {
+    id: "editor.terminal",
+    menu: false,
+    label: "Open terminal here",
+    area: "Open",
+    keys: ["F4"],
+    when: "tree",
+    inEditable: true,
+    enabled: () => (isEditorLayout() || isEditorWindow()) && terminalFolder() !== null,
+    run: () => {
+      const dir = terminalFolder();
+      if (dir) void openTerminalIn(dir, editorNote);
     },
   },
   treeOp(
@@ -790,34 +845,39 @@ const treeActions: Action[] = [
     "Cut",
     "Edit",
     (o) => o.cut(),
-    () => treeEntry() !== null
+    () => treeEntry() !== null,
+    ["Ctrl+X"]
   ),
   treeOp(
     "tree.copy",
     "Copy",
     "Edit",
     (o) => o.copy(),
-    () => treeEntry() !== null
+    () => treeEntry() !== null,
+    ["Ctrl+C"]
   ),
   treeOp(
     "tree.paste",
     "Paste",
     "Edit",
     (o) => o.paste(),
-    () => treeMenuFolder() !== null
+    () => treeMenuFolder() !== null,
+    ["Ctrl+V"]
   ),
   treeOp(
     "tree.rename",
     "Rename",
     "Edit",
     (o) => o.rename(),
-    () => treeEntry() !== null
+    () => treeEntry() !== null,
+    ["F2"]
   ),
   {
     id: "tree.copyPath",
     label: "Copy path",
     area: "Edit",
     keys: [],
+    scope: "tree",
     when: "tree",
     enabled: () => (treeEntry()?.path ?? useTreeMenu.getState().root) !== null,
     run: () => {
@@ -830,17 +890,57 @@ const treeActions: Action[] = [
     "Move to Trash",
     "Edit",
     (o) => o.trash(),
-    () => treeEntry() !== null
+    () => treeEntry() !== null,
+    ["Delete"]
   ),
   treeOp(
     "tree.delete",
     "Delete permanently",
     "Edit",
     (o) => o.askDelete(),
-    () => treeEntry() !== null
+    () => treeEntry() !== null,
+    ["Shift+Delete"]
   ),
 ];
 actions.push(...treeActions);
+
+// ---- the folder tree's sort menu (the sort button of the tree's heading) ----
+// Not aimed at an entry. The field and the order are the window's (files/tree-sort.ts).
+
+function treeSortField(by: TreeSortBy, label: string): Action {
+  return {
+    id: `tree.sort.${by}`,
+    label,
+    area: "View",
+    keys: [],
+    when: "tree",
+    checked: () => useTreeSort.getState().sort.by === by,
+    run: () => useTreeSort.getState().chooseBy(by),
+  };
+}
+
+function treeSortOrder(dir: SortDir, label: string): Action {
+  return {
+    id: `tree.sort.${dir}`,
+    label,
+    // The words that fit the field now chosen: Smallest first, Newest first, A to Z.
+    menuLabel: () => orderWords(useTreeSort.getState().sort.by, dir),
+    area: "View",
+    keys: [],
+    when: "tree",
+    checked: () => useTreeSort.getState().sort.dir === dir,
+    run: () => useTreeSort.getState().chooseDir(dir),
+  };
+}
+
+actions.push(
+  treeSortField("name", "Name"),
+  treeSortField("size", "Size"),
+  treeSortField("modified", "Date modified"),
+  treeSortField("type", "Type"),
+  treeSortOrder("asc", "Ascending"),
+  treeSortOrder("desc", "Descending")
+);
 
 // ---- the Trash ----
 
@@ -983,6 +1083,16 @@ const placeActions: Action[] = [
   },
   // F5 refreshes a folder and the Trash; here it walks the folders again.
   {
+    id: "documents.filter",
+    menu: false,
+    label: "Filter the Library by name",
+    area: "View",
+    keys: ["Ctrl+F"],
+    when: "documents",
+    enabled: () => documentsController() !== null,
+    run: () => documentsController()?.toggleFilter(),
+  },
+  {
     id: "documents.refresh",
     label: "Look again",
     area: "View",
@@ -1059,7 +1169,10 @@ function copyEntryPath(path: WirePath): void {
     return;
   }
   clipText(displayPath(path)).then(
-    () => useOps.getState().notify(`Copied the path of ${baseName(path)}`),
+    () => {
+      clearCut();
+      useOps.getState().notify(`Copied the path of ${baseName(path)}`);
+    },
     (e: unknown) => say(`The path could not be copied: ${errorText(toWireError(e))}`)
   );
 }
@@ -1368,7 +1481,8 @@ export function appliesTo(a: Action, tab: Tab | null): boolean {
     a.when === "volume" ||
     a.when === "entry" ||
     a.when === "tree" ||
-    a.when === tab?.kind
+    a.when === tab?.kind ||
+    (tab !== null && (a.alsoWhen?.includes(tab.kind) ?? false))
   );
 }
 
@@ -1402,7 +1516,7 @@ export function menuSections(tab: Tab | null): { title: string; actions: Action[
 }
 
 /** Two contexts collide when they are equal or either is "any". */
-function overlaps(a: Action["when"], b: Action["when"]): boolean {
+export function overlaps(a: Action["when"], b: Action["when"]): boolean {
   return a === b || a === "any" || b === "any";
 }
 
@@ -1422,11 +1536,7 @@ export function findDuplicateBindings(list: Action[] = actions): string[] {
 
 type KeyEvent = Pick<KeyboardEvent, "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">;
 
-function format(e: KeyEvent, key: string): string {
-  return [e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Meta", key]
-    .filter(Boolean)
-    .join("+");
-}
+const format = withModifiers;
 
 /** The key string for a keyboard event, in the table's format. */
 export function eventToKey(e: KeyEvent): string {

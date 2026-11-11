@@ -21,6 +21,7 @@ const ipc = vi.hoisted(() => ({
   dropStartOp: vi.fn(),
   removeStartOp: vi.fn(),
   isEditorWindow: vi.fn(),
+  docMoved: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
@@ -572,4 +573,86 @@ test("a_report_is_dismissed_by_its_id", async () => {
   const [a, b] = useOps.getState().reports;
   useOps.getState().dismissReport(a!.id);
   expect(useOps.getState().reports.map((r) => r.id)).toEqual([b!.id]);
+});
+
+test("the_same_words_raised_again_replace_the_one_shown_and_are_marked_as_a_repeat", async () => {
+  vi.useFakeTimers();
+  const { notify } = useOps.getState();
+  notify("The path could not be copied");
+  expect(useOps.getState().notice?.again).toBe(false);
+  notify("The path could not be copied");
+  expect(useOps.getState().notice?.again).toBe(true);
+  expect(noticesShown(useOps.getState())).toHaveLength(1);
+  // Other words are new, even beside the repeated ones.
+  notify("Something else");
+  expect(useOps.getState().notice?.again).toBe(false);
+  // The same words after their notice ran out are new as well.
+  vi.advanceTimersByTime(NOTICE_MS);
+  notify("The path could not be copied");
+  expect(useOps.getState().notice?.again).toBe(false);
+});
+
+// ---- documents open in a tab follow a rename or a move ----
+
+const noticeText = () => noticesShown(useOps.getState()).map((n) => n.text);
+
+test("no_renamed_file_means_the_backend_is_not_asked", async () => {
+  await useOps.getState().documentsMoved([]);
+  expect(ipc.docMoved).not.toHaveBeenCalled();
+});
+
+test("renamed_files_are_told_to_the_backend_as_they_were_given", async () => {
+  ipc.docMoved.mockResolvedValue({ kept: [] });
+  const pairs = [{ from: p("/a/x.txt"), to: p("/a/y.txt") }];
+  await useOps.getState().documentsMoved(pairs);
+  expect(ipc.docMoved).toHaveBeenCalledExactlyOnceWith(pairs);
+  expect(noticeText()).toEqual([]);
+});
+
+test("a_document_not_moved_because_its_new_place_is_open_is_said", async () => {
+  ipc.docMoved.mockResolvedValue({ kept: [p("/a/x.txt")] });
+  await useOps.getState().documentsMoved([{ from: p("/a/x.txt"), to: p("/b/x.txt") }]);
+  expect(noticeText()).toEqual([
+    "x.txt was moved, but its tab was not: the new place is open in another tab.",
+  ]);
+});
+
+test("a_failure_to_tell_the_backend_is_said_not_swallowed", async () => {
+  ipc.docMoved.mockRejectedValue(err("Internal", "the open registry could not be read"));
+  await useOps.getState().documentsMoved([{ from: p("/a/x.txt"), to: p("/a/y.txt") }]);
+  expect(noticeText()).toEqual([
+    "Tabs open on the renamed files may not follow them: Internal: the open registry could not be read",
+  ]);
+});
+
+test("a_move_that_ends_tells_the_backend_what_moved_and_where", async () => {
+  ipc.docMoved.mockResolvedValue({ kept: [] });
+  ipc.startOp.mockResolvedValueOnce(7);
+  const done = useOps
+    .getState()
+    .start({ kind: "move", sources: [p("/a/x"), p("/a/y")], dest: p("/b") });
+  await vi.waitFor(() => expect(ipc.startOp).toHaveBeenCalled());
+  await Promise.resolve();
+  // One item moved, one failed, one was skipped: only what has a destination moved.
+  const r = report({
+    done: [{ source: p("/a/x"), dest: p("/b/x") }],
+    skipped: [p("/a/y")],
+  });
+  emit("kernkraft://op-done", end(7, r));
+  await done;
+  expect(ipc.docMoved).toHaveBeenCalledExactlyOnceWith([{ from: p("/a/x"), to: p("/b/x") }]);
+});
+
+test("a_copy_or_a_trash_moves_no_document", async () => {
+  ipc.docMoved.mockResolvedValue({ kept: [] });
+  const { done } = await startCopy(8);
+  emit("kernkraft://op-done", end(8, report({ done: [doneItem("/a/x")] })));
+  await done;
+  ipc.startOp.mockResolvedValueOnce(9);
+  const trashed = useOps.getState().start({ kind: "trash", sources: [p("/a/x")] });
+  await vi.waitFor(() => expect(ipc.startOp).toHaveBeenCalledTimes(2));
+  await Promise.resolve();
+  emit("kernkraft://op-done", end(9, report({ done: [{ source: p("/a/x"), dest: null }] })));
+  await trashed;
+  expect(ipc.docMoved).not.toHaveBeenCalled();
 });

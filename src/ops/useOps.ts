@@ -3,12 +3,14 @@
 import { create } from "zustand";
 import {
   answerConflict,
+  docMoved,
   redo,
   dropStartOp,
   isEditorWindow,
   removeStartOp,
   startOp,
   toWireError,
+  type MovedPair,
   undo,
   undoState,
   type ConflictChoice,
@@ -19,7 +21,9 @@ import {
   type WirePath,
   type WireReport,
 } from "../ipc";
-import { opLabels } from "./labels";
+import { logError } from "./error-log";
+import { errorText } from "./error-text";
+import { baseName, opLabels } from "./labels";
 import { needsAttention, type Outcome } from "./outcome";
 import { runOp, type RunningOp } from "./run-op";
 
@@ -56,6 +60,8 @@ export interface Notice {
   text: string;
   /** When it was raised (ms since the epoch). */
   at: number;
+  /** The same words were on show when this one replaced them: the status bar flashes it. */
+  again: boolean;
 }
 
 /**
@@ -144,6 +150,11 @@ interface OpsState {
   changes: number;
   /** Runs an operation; settles once it has ended and been reported. */
   start(spec: OpSpec): Promise<void>;
+  /**
+   * Files were renamed or moved inside Kern: the tabs open on them follow. What cannot be
+   * followed, and a failure to tell the backend, is said.
+   */
+  documentsMoved(pairs: MovedPair[]): Promise<void>;
   answer(key: number, choice: ConflictChoice, applyToAll: boolean): void;
   cancel(key: number): void;
   report(outcome: Outcome): void;
@@ -227,7 +238,29 @@ export const useOps = create<OpsState>()((set, get) => ({
     if (needsAttention(outcome)) get().report(outcome);
     else get().notify(labels.done(outcome.report));
     void get().refreshUndo();
+    if (spec.kind === "move" && outcome.report) {
+      // Also for a move that was cancelled or left items behind: what has a destination moved.
+      await get().documentsMoved(
+        outcome.report.done.flatMap((d) => (d.dest ? [{ from: d.source, to: d.dest }] : []))
+      );
+    }
     spec.onEnd?.({ report: outcome.report, error: outcome.error });
+  },
+
+  async documentsMoved(pairs) {
+    if (pairs.length === 0) return;
+    try {
+      const { kept } = await docMoved(pairs);
+      for (const path of kept) {
+        get().notify(
+          `${baseName(path)} was moved, but its tab was not: the new place is open in another tab.`
+        );
+      }
+    } catch (e) {
+      get().notify(
+        `Tabs open on the renamed files may not follow them: ${errorText(toWireError(e))}`
+      );
+    }
   },
 
   answer(key, choice, applyToAll) {
@@ -271,6 +304,10 @@ export const useOps = create<OpsState>()((set, get) => ({
   },
 
   report(outcome) {
+    logError(
+      "operation",
+      `${outcome.title}: ${outcome.error ? errorText(outcome.error) : "some items failed, were skipped or were not reached"}`
+    );
     set((s) => ({ reports: [...s.reports, { id: nextReport++, outcome }] }));
   },
 
@@ -283,13 +320,14 @@ export const useOps = create<OpsState>()((set, get) => ({
     set((s) => {
       // The same words are shown once, from the newest; the oldest gives way when full.
       const now = Date.now();
+      const again = noticesShown(s).some((n) => n.text === text);
       const shown = noticesShown(s).filter((n) => {
         if (n.text !== text && now - n.at < NOTICE_TOGETHER_MS) return true;
         stopNotice(n.id);
         return false;
       });
       while (shown.length >= MAX_NOTICES) stopNotice(shown.shift()!.id);
-      return { notice: { id, text, at: now }, earlier: shown };
+      return { notice: { id, text, at: now, again }, earlier: shown };
     });
     noticeTimers.set(
       id,
