@@ -617,12 +617,31 @@ test("the_main_windows_tree_heading_has_no_open_in_file_manager", async () => {
   expect(tools().queryByRole("button", { name: "Open in file manager" })).toBeNull();
 });
 
-test("collapse_all_and_expand_all_close_and_open_the_folders_of_the_tree", async () => {
+test("one_button_expands_all_when_no_folder_is_open_and_collapses_all_when_one_is", async () => {
   await editorWindow();
-  fireEvent.click(tools().getByRole("button", { name: "Expand all" }));
+  // Nothing is open: the button opens everything, and there is no second button for closing.
+  const expand = tools().getByRole("button", { name: "Expand all" });
+  expect(tools().queryByRole("button", { name: "Collapse all" })).toBeNull();
+  fireEvent.click(expand);
   expect(await screen.findByRole("treeitem", { name: /^todo/ })).toBeInTheDocument();
-  fireEvent.click(tools().getByRole("button", { name: "Collapse all" }));
+  // A folder is open: the same button now closes them all.
+  const collapse = await tools().findByRole("button", { name: "Collapse all" });
+  expect(tools().queryByRole("button", { name: "Expand all" })).toBeNull();
+  expect(collapse).toBe(expand);
+  fireEvent.click(collapse);
   await waitFor(() => expect(screen.queryByRole("treeitem", { name: /^todo/ })).toBeNull());
+  expect(await tools().findByRole("button", { name: "Expand all" })).toBeInTheDocument();
+});
+
+test("opening_a_folder_by_hand_turns_the_button_into_collapse_all", async () => {
+  await editorWindow();
+  expect(tools().getByRole("button", { name: "Expand all" })).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("treeitem", { name: /^work/ }));
+  expect(await tools().findByRole("button", { name: "Collapse all" })).toBeInTheDocument();
+  expect(tools().queryByRole("button", { name: "Expand all" })).toBeNull();
+  fireEvent.click(screen.getByRole("treeitem", { name: /^work/ }));
+  expect(await tools().findByRole("button", { name: "Expand all" })).toBeInTheDocument();
+  expect(tools().queryByRole("button", { name: "Collapse all" })).toBeNull();
 });
 
 test("the_tree_search_finds_in_the_root_opens_a_file_and_shows_a_folder_in_the_tree", async () => {

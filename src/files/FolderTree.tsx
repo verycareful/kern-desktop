@@ -75,6 +75,8 @@ export function FolderTree(props: {
   onContextMenu?(entry: WireEntry | null, x: number, y: number): void;
   /** Buttons shown at the end of the tree's heading. */
   tools?: React.ReactNode;
+  /** Whether any folder below the root is open: said once the tree is shown, and when that changes. */
+  onOpenChange?(anyOpen: boolean): void;
   handle?: React.Ref<FolderTreeHandle>;
 }) {
   const { root } = props;
@@ -97,6 +99,14 @@ export function FolderTree(props: {
     () => cutRowKeys(rows, root, cutKeys, cutPaths),
     [rows, root, cutKeys, cutPaths]
   );
+  const anyOpen = useMemo(() => rows.some((r) => r.kind === "entry" && r.expanded), [rows]);
+  const onOpenChange = useRef(props.onOpenChange);
+  useEffect(() => {
+    onOpenChange.current = props.onOpenChange;
+  });
+  useEffect(() => {
+    onOpenChange.current?.(anyOpen);
+  }, [anyOpen]);
   const scroller = useRef<HTMLDivElement>(null);
   const typed = useRef({ text: "", at: 0 });
   const activeIndex = active !== null ? (at.get(active) ?? -1) : -1;

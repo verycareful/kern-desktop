@@ -74,14 +74,16 @@ function treeNote(text: string): void {
 /**
  * The buttons of the tree's heading: the name search in the window's folder, a terminal at the
  * root, in an editor window the folder opened in the file manager, hidden items shown or not (the
- * window's choice, which folder tabs follow too), the order of the tree, and every folder closed or
- * opened.
+ * window's choice, which folder tabs follow too), the order of the tree, and one button that closes
+ * every folder while one is open and opens them all while none is.
  */
 function TreeTools(props: {
   root: WirePath;
   tree: React.RefObject<FolderTreeHandle | null>;
   searching: boolean;
   onSearch(): void;
+  /** Whether any folder below the root is open: the last button then closes them, else opens them. */
+  anyOpen: boolean;
 }) {
   const hidden = useViewSettings((s) => s.showHidden);
   const button = (label: string, Icon: typeof Search, onClick: () => void, pressed?: boolean) => (
@@ -110,8 +112,9 @@ function TreeTools(props: {
         )}
       {button("Show hidden files", hidden ? Eye : EyeOff, () => void toggleHidden(), hidden)}
       <TreeSortButton />
-      {button("Collapse all", ChevronsDownUp, () => props.tree.current?.collapseAll())}
-      {button("Expand all", ChevronsUpDown, () => props.tree.current?.expandAll())}
+      {props.anyOpen
+        ? button("Collapse all", ChevronsDownUp, () => props.tree.current?.collapseAll())
+        : button("Expand all", ChevronsUpDown, () => props.tree.current?.expandAll())}
     </span>
   );
 }
@@ -124,6 +127,7 @@ function LeftColumn() {
   const column = useRef<HTMLElement>(null);
   const tree = useRef<FolderTreeHandle>(null);
   const [searching, setSearching] = useState(false);
+  const [anyOpen, setAnyOpen] = useState(false);
   // A new root ends a search of the old one.
   const [searchedRoot, setSearchedRoot] = useState(root);
   if (searchedRoot !== root) {
@@ -193,12 +197,14 @@ function LeftColumn() {
                 onRootGone={onRootGone}
                 onContextMenu={onContextMenu}
                 handle={tree}
+                onOpenChange={setAnyOpen}
                 tools={
                   <TreeTools
                     root={root}
                     tree={tree}
                     searching={searching}
                     onSearch={() => setSearching((on) => !on)}
+                    anyOpen={anyOpen}
                   />
                 }
               />

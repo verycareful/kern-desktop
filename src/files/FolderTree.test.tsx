@@ -813,3 +813,20 @@ test("the_direction_flips_files_and_folders_each_within_their_group", async () =
   act(() => useTreeSort.getState().chooseDir("desc"));
   await waitFor(() => expect(names()).toEqual(["src", "docs", "z.txt", "readme.md", "a.bin"]));
 });
+
+test("the_tree_says_whether_any_folder_is_open_as_that_changes", async () => {
+  const seen: boolean[] = [];
+  const last = () => seen[seen.length - 1];
+  await mount({ onOpenChange: (open) => seen.push(open) });
+  expect(last()).toBe(false);
+  fireEvent.click(row("docs"));
+  await waitFor(() => expect(last()).toBe(true));
+  fireEvent.click(row("src"));
+  await waitFor(() => expect(names()).toContain("main.rs"));
+  // One folder still open: still open.
+  fireEvent.click(row("docs"));
+  await waitFor(() => expect(names()).not.toContain("a.txt"));
+  expect(last()).toBe(true);
+  fireEvent.click(row("src"));
+  await waitFor(() => expect(last()).toBe(false));
+});

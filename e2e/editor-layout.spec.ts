@@ -132,7 +132,10 @@ test("tree_keyboard_navigation", async ({ page, mockTauri, invokeCalls }) => {
   });
 });
 
-test("the_tree_heading_buttons_fit_the_narrowest_column", async ({ page, mockTauri }) => {
+test("the_tree_buttons_drop_below_the_name_in_a_narrow_column_and_stay_clear_of_its_edge", async ({
+  page,
+  mockTauri,
+}) => {
   await mockTauri({
     ...COMMON,
     layout_get: { ...COMMON.layout_get, left_width: 180 },
@@ -143,11 +146,34 @@ test("the_tree_heading_buttons_fit_the_narrowest_column", async ({ page, mockTau
   await expect(tools).toBeVisible();
   const column = (await page.getByTestId("editor-left").boundingBox())!;
   expect(column.width).toBe(180);
+  const name = (await page.locator(".kern-tree-head-name").boundingBox())!;
+  const bar = (await tools.boundingBox())!;
+  // The buttons are on a row of their own under the name.
+  expect(bar.y).toBeGreaterThanOrEqual(name.y + name.height);
+  // Every button is inside the column's padding, so the divider never reaches one.
   const buttons = tools.getByRole("button");
-  const last = (await buttons.last().boundingBox())!;
-  expect(last.x + last.width).toBeLessThanOrEqual(column.x + column.width);
-  const first = (await buttons.first().boundingBox())!;
-  expect(first.x).toBeGreaterThanOrEqual(column.x);
+  for (const box of await buttons.evaluateAll((els) =>
+    els.map((el) => el.getBoundingClientRect().toJSON() as DOMRect)
+  )) {
+    expect(box.left).toBeGreaterThanOrEqual(column.x + 12);
+    expect(box.right).toBeLessThanOrEqual(column.x + column.width - 12);
+  }
+  // The last one is reachable: nothing else is over it.
+  await buttons.last().click();
+});
+
+test("the_tree_buttons_share_the_row_of_the_name_in_a_wide_column", async ({ page, mockTauri }) => {
+  await mockTauri({ ...COMMON, "plugin:kernkraft-tauri|list_dir": SMALL_TREE });
+  await page.goto("/");
+  const tools = page.getByRole("toolbar", { name: "Folder tree" });
+  await expect(tools).toBeVisible();
+  const name = (await page.locator(".kern-tree-head-name").boundingBox())!;
+  const bar = (await tools.boundingBox())!;
+  expect(bar.y).toBeLessThan(name.y + name.height);
+  const widths = await tools
+    .getByRole("button")
+    .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().width));
+  expect(widths.every((w) => w === 26)).toBe(true);
 });
 
 test("the_tree_sort_menu_orders_the_tree_in_the_browser", async ({ page, mockTauri }) => {

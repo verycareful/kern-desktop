@@ -716,29 +716,34 @@
 
 .kern-tree-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   padding: 6px var(--kern-density-gap);
   font-weight: 600;
   border-bottom: 1px solid var(--kern-border);
 }
 
+/* The name keeps room for six characters; when that and the buttons do not fit, the buttons drop below. */
 .kern-tree-head-name {
-  min-width: 0;
-  flex: 1;
+  min-width: 6ch;
+  flex: 1 1 6ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 /*
- * The tree's buttons, at the end of its heading; the name gives way to them first. In the
- * narrowest column the buttons themselves shrink, down to 20px, so the row stays inside it.
+ * The tree's buttons, at the end of its heading; the name gives way to them first, then they
+ * drop to a row of their own under it, kept to the right. On that row they may shrink, down to
+ * 20px, so they stay inside the column's padding however narrow it is.
  */
 .kern-tree-tools {
   display: flex;
   flex: 0 1 auto;
   min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
   gap: 2px;
   font-weight: normal;
 }
