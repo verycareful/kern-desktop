@@ -557,8 +557,12 @@ layout_install() {
         fi
         # The launcher is a script, not a symlink: AppRun finds its hooks
         # through the directory of $0, which for a symlink is the link's own
-        # directory, so launching through a symlink fails.
-        printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$L_LIB/current/AppRun" >"$work/kern.launcher"
+        # directory, so launching through a symlink fails. AppRun starts Kern
+        # inside the bundle, so the script exports the directory it was run
+        # from as OWD, as the AppImage runtime does, and Kern resolves a
+        # relative path argument from there.
+        # shellcheck disable=SC2016 # $PWD is for the launcher to expand when it runs
+        printf '#!/usr/bin/env bash\nexport OWD="$PWD"\nexec %q "$@"\n' "$L_LIB/current/AppRun" >"$work/kern.launcher"
         as_scope rm -f "$L_BIN"
         as_scope install -D -m 0755 "$work/kern.launcher" "$L_BIN"
         placed+=("$L_BIN")

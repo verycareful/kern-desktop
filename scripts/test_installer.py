@@ -54,6 +54,7 @@ if [[ "$1" == --apply-settings ]]; then
     exit 0
 fi
 echo "launch $*" >> "$w/calls.log"
+echo "${OWD-unset}" > "$w/owd.log"
 """
 
 # The fake AppImage: --appimage-extract makes squashfs-root in the working
@@ -385,6 +386,15 @@ class Layout(unittest.TestCase):
         r = subprocess.run([str(launcher), "a b", "c"], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("launch a b c", (self.w.root / "calls.log").read_text())
+
+    def test_launcher_hands_kern_the_directory_it_was_run_from(self) -> None:
+        self.assertEqual(self.install().returncode, 0)
+        launcher = self.w.home / ".local" / "bin" / "kern"
+        here = self.w.root / "run from here"
+        here.mkdir()
+        r = subprocess.run([str(launcher), "CLAUDE.md"], cwd=here, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((self.w.root / "owd.log").read_text().strip(), str(here))
 
     def test_reinstall_replaces_a_symlinked_launcher(self) -> None:
         self.assertEqual(self.install().returncode, 0)

@@ -13,9 +13,9 @@
 //! raise the window. Connections come from `kernkraft-bus`, which opens the
 //! bus over its Unix socket only.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -244,8 +244,35 @@ pub fn forward(conn: &Connection, name: &str, inv: &Invocation) -> Result<(), In
     Ok(())
 }
 
-/// This process's own launch: its arguments after the program name, its
-/// working directory and its activation token.
+/// The directory the AppImage runtime exports: where the user started the
+/// AppImage from (AppImage specification, "OWD"). The installed launcher
+/// script exports it too.
+const OWD_ENV: &str = "OWD";
+
+/// The directory a launch was made from, which is where its relative
+/// arguments start.
+///
+/// A program started through an AppImage's `AppRun` begins in the bundle's
+/// `usr` directory, with the program itself at `usr/bin/<name>`, and the
+/// directory the user was in is in `owd`. That one is returned when `cwd` is
+/// the `usr` of the bundle `exe` belongs to and `owd` is an absolute path;
+/// anywhere else `cwd` is, so a stray `OWD` in the environment of a program
+/// started normally changes nothing. A `cwd` that could not be read is empty.
+pub fn launch_dir(cwd: Option<PathBuf>, exe: Option<&Path>, owd: Option<&OsStr>) -> PathBuf {
+    let cwd = cwd.unwrap_or_default();
+    let bundle_usr = exe
+        .and_then(Path::parent)
+        .filter(|bin| bin.file_name() == Some(OsStr::new("bin")))
+        .and_then(Path::parent)
+        .filter(|usr| usr.file_name() == Some(OsStr::new("usr")));
+    match (bundle_usr, owd) {
+        (Some(usr), Some(owd)) if cwd == usr && Path::new(owd).is_absolute() => PathBuf::from(owd),
+        _ => cwd,
+    }
+}
+
+/// This process's own launch: its arguments after the program name, the
+/// directory it was launched from ([`launch_dir`]) and its activation token.
 ///
 /// The token is taken out of the environment, as xdg-activation asks of the
 /// process it was meant for, so a program Kern starts does not inherit it.
@@ -256,7 +283,11 @@ pub fn own_invocation() -> Invocation {
     std::env::remove_var("XDG_ACTIVATION_TOKEN");
     Invocation {
         argv: std::env::args_os().skip(1).collect(),
-        cwd: std::env::current_dir().unwrap_or_default(),
+        cwd: launch_dir(
+            std::env::current_dir().ok(),
+            std::env::current_exe().ok().as_deref(),
+            std::env::var_os(OWD_ENV).as_deref(),
+        ),
         activation_token,
     }
 }

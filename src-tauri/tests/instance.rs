@@ -4,12 +4,14 @@
 //! The single-instance service over the live session bus. Skipped, with the
 //! reason printed, when there is no bus.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStringExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use kern_lib::instance::{claim, claim_when_free, forward, Claim, Invocation, Launches};
+use kern_lib::instance::{
+    claim, claim_when_free, forward, launch_dir, Claim, Invocation, Launches,
+};
 
 #[test]
 fn second_open_reaches_the_owner() {
@@ -147,4 +149,64 @@ fn launches_are_accepted_again_after_an_exit_that_did_not_happen() {
     assert!(!launches.begin());
     launches.reopen();
     assert!(launches.begin());
+}
+
+const BUNDLE_EXE: &str = "/opt/kern/squashfs-root/usr/bin/kern";
+const BUNDLE_USR: &str = "/opt/kern/squashfs-root/usr";
+
+#[test]
+fn started_in_its_bundle_the_launch_is_where_the_launcher_was_run() {
+    let dir = launch_dir(
+        Some(PathBuf::from(BUNDLE_USR)),
+        Some(Path::new(BUNDLE_EXE)),
+        Some(OsStr::new("/home/u/dotfiles")),
+    );
+    assert_eq!(dir, PathBuf::from("/home/u/dotfiles"));
+}
+
+#[test]
+fn started_elsewhere_the_working_directory_stands_whatever_owd_says() {
+    let dir = launch_dir(
+        Some(PathBuf::from("/home/u/dotfiles")),
+        Some(Path::new(BUNDLE_EXE)),
+        Some(OsStr::new("/somewhere/else")),
+    );
+    assert_eq!(dir, PathBuf::from("/home/u/dotfiles"));
+}
+
+#[test]
+fn a_program_that_is_not_in_a_bundle_keeps_its_working_directory() {
+    for exe in ["/usr/bin/kern", "/opt/kern/bin/kern", "/opt/kern/usr/kern"] {
+        let dir = launch_dir(
+            Some(PathBuf::from("/opt/kern/usr")),
+            Some(Path::new(exe)),
+            Some(OsStr::new("/home/u")),
+        );
+        assert_eq!(dir, PathBuf::from("/opt/kern/usr"), "{exe}");
+    }
+}
+
+#[test]
+fn in_its_bundle_without_a_usable_owd_the_working_directory_stands() {
+    for owd in [None, Some(OsStr::new("relative/dir")), Some(OsStr::new(""))] {
+        let dir = launch_dir(
+            Some(PathBuf::from(BUNDLE_USR)),
+            Some(Path::new(BUNDLE_EXE)),
+            owd,
+        );
+        assert_eq!(dir, PathBuf::from(BUNDLE_USR));
+    }
+}
+
+#[test]
+fn a_working_directory_that_could_not_be_read_is_empty() {
+    assert_eq!(
+        launch_dir(
+            None,
+            Some(Path::new(BUNDLE_EXE)),
+            Some(OsStr::new("/home/u"))
+        ),
+        PathBuf::new()
+    );
+    assert_eq!(launch_dir(None, None, None), PathBuf::new());
 }

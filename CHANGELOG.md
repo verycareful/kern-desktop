@@ -4,6 +4,25 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.1.2.2] - 2026-11-11 18:55 (IST)
+
+### Changed
+
+- **Installer launcher**: the `kern` launcher the installer writes hands Kern the folder it was run from. A launcher written by an earlier install lacks this, so relative paths are resolved correctly after the next install, update or reinstall.
+
+### Fixed
+
+- **Relative paths from the AppImage**: `kern CLAUDE.md`, run from a folder, looked for the file in the AppImage's own `usr` folder and failed with "No such file or directory", because the AppImage launcher changes into that folder before Kern starts. Kern resolves a relative path from the folder it was run from, whether it is started as an AppImage or through the installed launcher. A path given in full was never affected.
+
+### Tests
+
+- Started inside its bundle, Kern takes the folder the launcher was run from; started anywhere else, or without a usable absolute folder, it keeps its own working directory; an unreadable working directory is sent empty.
+- The installed launcher hands Kern the folder it was run from, including a folder with a space in its name.
+
+### Results
+
+- 2099 tests across 172 suites (the Rust tests, every unit test, the browser tests, the real-app driver tests and the packaging and script suites), all passed (209s, CachyOS x86-64, rustc 1.99.1, Python 3.14.10, Chromium through Playwright).
+
 ## [0.1.2.1] - 2026-11-11 18:40 (IST)
 
 ### Changed
