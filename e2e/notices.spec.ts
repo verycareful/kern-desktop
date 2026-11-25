@@ -18,6 +18,10 @@ const COMMON = {
     new_tab_default: "folder",
     pdf_layout: "scroll",
     pdf_grid_across: 4,
+    pdf_panels: {
+      thumbnails: { side: "left", collapsed: false },
+      tools: { side: "right", collapsed: false },
+    },
   },
   "plugin:kernkraft-tauri|theme_get": { css: ":root{}", tokens: {}, fallbacks: [], problems: [] },
   "plugin:kernkraft-tauri|watch_dir": null,

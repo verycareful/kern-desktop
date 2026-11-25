@@ -17,6 +17,7 @@ import { PAGE_GAP, PAGE_MARGIN, CSS_PX_PER_PT } from "./page-geometry";
 import { PdfPages } from "./PdfPages";
 import { pdfController } from "./pdf-controller";
 import { usePdfView } from "./pdf-view";
+import { usePageSizes } from "./usePageSizes";
 import type { PdfDoc } from "./usePdfDoc";
 
 // jsdom does no layout: the view is given a size, the observers are driven by hand.
@@ -99,8 +100,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// The pages are given their sizes by the viewer that holds them, as `usePageSizes` reads them.
+function Pages(props: { doc: PdfDoc }) {
+  const { handle, pages, revision } = props.doc;
+  const { sizes, error } = usePageSizes(handle, pages, revision);
+  return <PdfPages tabId="t1" doc={props.doc} active sizes={sizes} sizeError={error} />;
+}
+
 const pages = async (over: Partial<PdfDoc> = {}) => {
-  const view = render(<PdfPages tabId="t1" doc={doc(over)} active />);
+  const view = render(<Pages doc={doc(over)} />);
   await screen.findByTestId("pdf-pages");
   return view;
 };
@@ -311,7 +319,7 @@ test("a_failed_measure_is_said_and_not_left_as_a_blank_view", async () => {
     path: null,
     details: null,
   });
-  render(<PdfPages tabId="t1" doc={doc()} active />);
+  render(<Pages doc={doc()} />);
   expect(await screen.findByTestId("pdf-sizes-failed")).toHaveTextContent(
     "UnknownHandle: no such document"
   );

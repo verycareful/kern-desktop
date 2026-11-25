@@ -181,6 +181,45 @@ pub const PDF_GRID_ACROSS_MIN: u32 = 1;
 pub const PDF_GRID_ACROSS_MAX: u32 = 12;
 pub const PDF_GRID_ACROSS_DEFAULT: u32 = 4;
 
+/// The side of the document area a PDF panel sits on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PanelSide {
+    Left,
+    Right,
+    Bottom,
+}
+
+/// Where one PDF panel sits and whether it is folded to its icons.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PanelPlacement {
+    pub side: PanelSide,
+    pub collapsed: bool,
+}
+
+/// The two panels beside an open PDF: the page thumbnails and the tools. Both are always named,
+/// so a stored value that names one only does not parse.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PdfPanels {
+    pub thumbnails: PanelPlacement,
+    pub tools: PanelPlacement,
+}
+
+impl Default for PdfPanels {
+    fn default() -> PdfPanels {
+        PdfPanels {
+            thumbnails: PanelPlacement {
+                side: PanelSide::Left,
+                collapsed: false,
+            },
+            tools: PanelPlacement {
+                side: PanelSide::Right,
+                collapsed: false,
+            },
+        }
+    }
+}
+
 /// The Files view mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -250,6 +289,8 @@ pub struct Settings {
     /// The pages in a row of the PDF grid layout, [`PDF_GRID_ACROSS_MIN`] to
     /// [`PDF_GRID_ACROSS_MAX`].
     pub pdf_grid_across: u32,
+    /// Where the page thumbnails and the tools sit beside every PDF (see [`PdfPanels`]).
+    pub pdf_panels: PdfPanels,
     /// Whether Kern writes the error log (`error_log.rs`). Off stops all writing and leaves a file
     /// already there as it is.
     pub error_log: bool,
@@ -302,6 +343,7 @@ impl Default for Settings {
             folder_menu: FolderMenu::default(),
             pdf_layout: PdfLayout::default(),
             pdf_grid_across: PDF_GRID_ACROSS_DEFAULT,
+            pdf_panels: PdfPanels::default(),
             error_log: true,
             single_click_left: true,
             single_click_right: false,
@@ -973,6 +1015,14 @@ impl Stored for Settings {
         );
         take(
             &mut obj,
+            "pdf_panels",
+            &mut s.pdf_panels,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
             "error_log",
             &mut s.error_log,
             &mut keep,
@@ -1392,7 +1442,7 @@ impl Store {
 
     /// Merges `patch` (field name to new value) into the settings. A field
     /// this version does not define, a value of the wrong type, an
-    /// `editor_zoom` outside [`ZOOM_MIN`] to [`ZOOM_MAX`], a `pdf_grid_across` outside
+    /// `editor_zoom` outside [`ZOOM_MIN`] to [`ZOOM_MAX`], a `pdf_panels` that does not place both panels, a `pdf_grid_across` outside
     /// [`PDF_GRID_ACROSS_MIN`] to [`PDF_GRID_ACROSS_MAX`], an `interface_size`
     /// that is not one of [`INTERFACE_SIZES`], a `panel_order` or
     /// `editor_panel_order` that is not a permutation of its panels or a scan root

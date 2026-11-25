@@ -36,6 +36,10 @@ const settings = (extra: Record<string, unknown>) => ({
   new_tab_default: "folder",
   pdf_layout: "scroll",
   pdf_grid_across: 4,
+  pdf_panels: {
+    thumbnails: { side: "left", collapsed: false },
+    tools: { side: "right", collapsed: false },
+  },
   ...extra,
 });
 

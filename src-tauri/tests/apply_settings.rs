@@ -169,6 +169,7 @@ fn installer_walk_covers_every_setting() {
         "folder_menu",
         "pdf_layout",
         "pdf_grid_across",
+        "pdf_panels",
     ];
     let expected: BTreeSet<String> = known
         .into_iter()

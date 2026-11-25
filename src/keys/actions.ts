@@ -23,7 +23,14 @@ import { folderController, type MoveTo } from "../files/folder-controller";
 import { useFolderUi } from "../files/folder-ui";
 import type { SortBy, SortDir } from "../files/sort";
 import { orderWords, useTreeSort, type TreeSortBy } from "../files/tree-sort";
-import { setPdfLayout, setViewMode, toggleHidden, useViewSettings } from "../files/view-settings";
+import {
+  movePdfPanel,
+  setPdfLayout,
+  setViewMode,
+  toggleHidden,
+  togglePdfPanel,
+  useViewSettings,
+} from "../files/view-settings";
 import { trashController, type TrashMove } from "../files/trash-controller";
 import { useVolumes } from "../shell/volumes-store";
 import { isEditorPin, usePinnedRecent } from "../shell/pinned-recent-store";
@@ -32,6 +39,7 @@ import { showSettings } from "../settings/show-settings";
 import { documentsController } from "../files/documents-controller";
 import { useOps } from "../ops/useOps";
 import { docController } from "../editor/doc-controller";
+import { PANEL_ORDER as PANEL_IDS, PANEL_TITLES, SIDES } from "../pdf/panel-placement";
 import { pdfController } from "../pdf/pdf-controller";
 import { moveTabToWindow } from "../shell/move-doc";
 import { closeTab } from "../shell/useCloseGuard";
@@ -1525,6 +1533,30 @@ const pdfActions: Action[] = [
     enabled: (c) => pdfOf(c) !== undefined,
     run: () => void setPdfLayout(layout),
   })),
+  ...PANEL_IDS.map((id): Action => ({
+    id: `pdf.panel.${id}.toggle`,
+    label: `Collapse or expand ${PANEL_TITLES[id]}`,
+    menuLabel: () =>
+      `${useViewSettings.getState().pdfPanels[id].collapsed ? "Expand" : "Collapse"} ${PANEL_TITLES[id]}`,
+    area: "Panels",
+    keys: [id === "thumbnails" ? "Ctrl+Alt+5" : "Ctrl+Alt+6"],
+    when: "doc",
+    inEditable: true,
+    enabled: (c) => pdfOf(c) !== undefined,
+    run: () => void togglePdfPanel(id),
+  })),
+  ...PANEL_IDS.flatMap((id) =>
+    SIDES.map((side): Action => ({
+      id: `pdf.panel.${id}.move.${side}`,
+      label: `Move ${PANEL_TITLES[id]} to the ${side}`,
+      area: "Panels",
+      keys: [],
+      when: "doc",
+      enabled: (c) =>
+        pdfOf(c) !== undefined && useViewSettings.getState().pdfPanels[id].side !== side,
+      run: () => void movePdfPanel(id, side),
+    }))
+  ),
   {
     id: "pdf.goToPage",
     label: "Go to page…",

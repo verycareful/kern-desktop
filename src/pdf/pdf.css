@@ -55,3 +55,265 @@
   font-size: 13px;
   text-align: center;
 }
+
+/* The pages with the two panels around them. */
+.kern-pdf-dock {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.kern-pdf-dock-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.kern-pdf-dock-centre {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.kern-pdf-dock-column {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kern-pdf-dock-left {
+  border-right: 1px solid var(--kern-border);
+}
+
+.kern-pdf-dock-right {
+  border-left: 1px solid var(--kern-border);
+}
+
+.kern-pdf-dock-bottom {
+  flex: none;
+  display: flex;
+  border-top: 1px solid var(--kern-border);
+}
+
+.kern-pdf-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--kern-surface);
+}
+
+/* A panel on a side is as wide as its thumbnails or its tools; one on the bottom is as tall. */
+.kern-pdf-dock-column .kern-pdf-panel {
+  width: 168px;
+}
+
+.kern-pdf-dock-column .kern-pdf-panel[data-collapsed="true"] {
+  width: auto;
+}
+
+.kern-pdf-dock-column .kern-pdf-panel[data-collapsed="false"]:has(.kern-pdf-thumbs) {
+  flex: 1;
+}
+
+.kern-pdf-dock-bottom .kern-pdf-panel {
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.kern-pdf-dock-bottom .kern-pdf-panel:has(.kern-pdf-thumbs) {
+  flex: 1;
+  height: 176px;
+}
+
+.kern-pdf-dock-bottom .kern-pdf-panel[data-collapsed="true"] {
+  height: auto;
+  flex: none;
+}
+
+.kern-pdf-panel-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+}
+
+.kern-pdf-dock-bottom .kern-pdf-panel-header {
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.kern-pdf-panel-title {
+  flex: 1;
+  margin: 0 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--kern-text);
+}
+
+.kern-pdf-panel-button {
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+
+.kern-pdf-panel-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+/* The thumbnails: a column of pages, or a row along the bottom. */
+.kern-pdf-thumbs {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+  padding: 8px;
+  overflow: auto;
+}
+
+.kern-pdf-thumbs-column {
+  flex-direction: column;
+  align-items: center;
+}
+
+.kern-pdf-thumbs-row {
+  flex-direction: row;
+  align-items: center;
+}
+
+.kern-pdf-thumb-item {
+  flex: none;
+}
+
+.kern-pdf-thumb-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  color: var(--kern-text-dim);
+  background: none;
+  border: 2px solid transparent;
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-pdf-thumb-button:hover {
+  background: var(--kern-accent-soft);
+}
+
+.kern-pdf-thumb-button[aria-current="page"] {
+  color: var(--kern-text);
+  border-color: var(--kern-accent);
+}
+
+/* A thumbnail is paper like a page: white, never themed. */
+.kern-pdf-thumb {
+  position: relative;
+  display: block;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 35%);
+}
+
+.kern-pdf-thumb-pixels {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.kern-pdf-thumb-error {
+  position: absolute;
+  inset: 0;
+  padding: 8px;
+  color: #555;
+  font-size: 11px;
+  text-align: center;
+}
+
+.kern-pdf-thumb-number {
+  font-size: 12px;
+}
+
+/* The tools. */
+.kern-pdf-tools {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 6px 8px;
+  overflow: auto;
+}
+
+.kern-pdf-dock-bottom .kern-pdf-tools {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.kern-pdf-tool-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kern-pdf-dock-bottom .kern-pdf-tool-group {
+  flex-direction: row;
+  align-items: center;
+}
+
+.kern-pdf-tool-group-title {
+  margin: 0 0 2px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--kern-text-dim);
+}
+
+.kern-pdf-tool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 8px;
+  color: var(--kern-text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-pdf-tool[data-collapsed="true"] {
+  justify-content: center;
+  padding: 4px;
+  width: 30px;
+}
+
+.kern-pdf-tool:hover:not(:disabled) {
+  background: var(--kern-accent-soft);
+  color: var(--kern-accent);
+}
+
+.kern-pdf-tool[aria-pressed="true"] {
+  background: var(--kern-accent-soft);
+  color: var(--kern-accent);
+}
+
+.kern-pdf-tool:disabled {
+  color: var(--kern-text-dim);
+  cursor: default;
+}

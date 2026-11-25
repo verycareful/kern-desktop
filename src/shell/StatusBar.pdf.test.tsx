@@ -31,7 +31,13 @@ test("a_pdf_shows_its_page_out_of_its_pages_and_its_zoom", () => {
 test("the_counter_opens_go_to_page", () => {
   const id = openPdf();
   const askGoToPage = vi.fn();
-  registerPdf(id, { zoomIn: vi.fn(), zoomOut: vi.fn(), zoomFit: vi.fn(), askGoToPage });
+  registerPdf(id, {
+    zoomIn: vi.fn(),
+    zoomOut: vi.fn(),
+    zoomFit: vi.fn(),
+    askGoToPage,
+    goToPage: vi.fn(),
+  });
   usePdfView.getState().patch(id, { page: 0, pages: 5, zoom: 1 });
   render(<StatusBar />);
   fireEvent.click(screen.getByTestId("status-page"));

@@ -16,6 +16,16 @@ export type ViewMode = "list" | "grid";
 /** Which of the two new tabs Ctrl+T opens; the other is on Ctrl+Shift+T. */
 export type NewTabDefault = "folder" | "current";
 export type PdfLayout = "scroll" | "single" | "spread" | "grid";
+/** A panel beside an open PDF (store.rs PdfPanels). */
+export type PdfPanelId = "thumbnails" | "tools";
+/** The side of the document area a PDF panel sits on (store.rs PanelSide). */
+export type PanelSide = "left" | "right" | "bottom";
+/** Where one PDF panel sits and whether it is folded to its icons (store.rs PanelPlacement). */
+export interface PanelPlacement {
+  side: PanelSide;
+  collapsed: boolean;
+}
+export type PdfPanels = Record<PdfPanelId, PanelPlacement>;
 
 /** How the time of day is written in dates (store.rs TimeFormat): the system's way, 12-hour or 24-hour. */
 export type TimeFormat = "system" | "12" | "24";
@@ -78,6 +88,8 @@ export interface Settings {
   pdf_layout: PdfLayout;
   /** The pages in a row of the PDF grid layout, 1 to 12 (store.rs Settings::pdf_grid_across). */
   pdf_grid_across: number;
+  /** Where the page thumbnails and the tools sit beside every PDF (store.rs Settings::pdf_panels). */
+  pdf_panels: PdfPanels;
   /** Whether Kern writes the error log (store.rs Settings::error_log). */
   error_log: boolean;
 }

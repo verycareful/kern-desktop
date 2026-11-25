@@ -12,6 +12,7 @@ import {
   type NewTabDefault,
   type Panel,
   type PdfLayout,
+  type PdfPanels,
   type Settings,
   type SettingsPatch,
   type TimeFormat,
@@ -19,6 +20,13 @@ import {
   type WireError,
   type WirePath,
 } from "../ipc";
+import {
+  DEFAULT_PANELS,
+  movePanel,
+  toggleCollapsed,
+  type PanelId,
+  type Side,
+} from "../pdf/panel-placement";
 import { GRID_ACROSS_DEFAULT } from "../pdf/view-layout";
 import { DEFAULT_EDITOR_PANEL_ORDER, DEFAULT_PANEL_ORDER } from "../shell/panel-order";
 import { DEFAULT_INTERFACE_SIZE } from "../theme/interface-size";
@@ -60,6 +68,8 @@ interface ViewSettingsState {
   /** How every PDF is laid out, and the pages in a row of the grid layout. */
   pdfLayout: PdfLayout;
   pdfGridAcross: number;
+  /** Where the page thumbnails and the tools sit beside every PDF, and whether each is folded. */
+  pdfPanels: PdfPanels;
   /** The last read or write that failed, until the next one succeeds. */
   error: WireError | null;
 }
@@ -86,6 +96,7 @@ export const useViewSettings = create<ViewSettingsState>()(() => ({
   editorPanelOrder: DEFAULT_EDITOR_PANEL_ORDER,
   pdfLayout: "scroll",
   pdfGridAcross: GRID_ACROSS_DEFAULT,
+  pdfPanels: DEFAULT_PANELS,
   error: null,
 }));
 
@@ -112,6 +123,7 @@ function apply(s: Settings): void {
     editorPanelOrder: s.editor_panel_order,
     pdfLayout: s.pdf_layout,
     pdfGridAcross: s.pdf_grid_across,
+    pdfPanels: s.pdf_panels,
     error: null,
   });
 }
@@ -137,6 +149,12 @@ export const toggleHidden = () => write({ show_hidden: !useViewSettings.getState
 export const setViewMode = (view_mode: ViewMode) => write({ view_mode });
 /** Sets how every PDF is laid out; a failure is kept in `error`. */
 export const setPdfLayout = (pdf_layout: PdfLayout) => write({ pdf_layout });
+/** Folds PDF panel `id` to its icons, or opens it again; a failure is kept in `error`. */
+export const togglePdfPanel = (id: PanelId) =>
+  write({ pdf_panels: toggleCollapsed(useViewSettings.getState().pdfPanels, id) });
+/** Moves PDF panel `id` to `side`; a failure is kept in `error`. */
+export const movePdfPanel = (id: PanelId, side: Side) =>
+  write({ pdf_panels: movePanel(useViewSettings.getState().pdfPanels, id, side) });
 export const setScanFolder = (folder: "documents" | "downloads", on: boolean) =>
   write(folder === "documents" ? { scan_documents: on } : { scan_downloads: on });
 

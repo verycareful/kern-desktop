@@ -4,11 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { pdfCancelJob, pdfRender, pdfRenderSize, toWireError, type WireError } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { nextJobId } from "./jobs";
+import { paintPixels } from "./pixels";
 import type { PdfDoc } from "./usePdfDoc";
 import type { PageSize } from "./page-geometry";
 import { planRender } from "./render-plan";
-
-const BYTES_PER_PIXEL = 4;
 
 // The pixels of one page, drawn while it is near the view and dropped when it is not. A page is
 // one canvas per tile (render-plan.ts), each a picture of the engine, so none passes what the
@@ -51,21 +50,8 @@ export function PageCanvas(props: {
         if (!live) return;
         const bytes = await pdfRender(handle, page, tile.region, tile.widthPx, job);
         if (!live) return;
-        if (bytes.length !== picture.width * picture.height * BYTES_PER_PIXEL) {
-          throw new Error(
-            `the engine drew ${bytes.length} bytes for a picture of ${picture.width} by ${picture.height} pixels`
-          );
-        }
         const canvas = canvases.current[index];
-        const context = canvas?.getContext("2d");
-        if (!canvas || !context) {
-          if (canvas) throw new Error("this webview gives no 2D canvas to draw a page on");
-          return;
-        }
-        canvas.width = picture.width;
-        canvas.height = picture.height;
-        const pixels = new Uint8ClampedArray(bytes.buffer, bytes.byteOffset, bytes.length);
-        context.putImageData(new ImageData(pixels, picture.width, picture.height), 0, 0);
+        if (canvas) paintPixels(canvas, picture.width, picture.height, bytes);
       } catch (e) {
         // A page that left the view or a tab that closed has no use for its picture, and the
         // render it cancelled answers Cancelled; anything else on a live page is shown.

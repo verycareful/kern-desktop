@@ -544,6 +544,38 @@ test("the_pdf_grid_columns_stop_at_one", async () => {
   expect(screen.getByRole("button", { name: "Fewer columns" })).toBeDisabled();
 });
 
+test("the_pdf_section_saves_the_side_of_each_panel_and_keeps_its_folded_state", async () => {
+  stored = {
+    ...stored,
+    pdf_panels: {
+      thumbnails: { side: "left", collapsed: true },
+      tools: { side: "right", collapsed: false },
+    },
+  };
+  await mount();
+  nav("PDF");
+  expect(pressed("Thumbnails panel", "Left")).toHaveAttribute("aria-pressed", "true");
+  expect(pressed("Tools panel", "Right")).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(pressed("Thumbnails panel", "Bottom"));
+  fireEvent.click(pressed("Tools panel", "Left"));
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([
+    {
+      pdf_panels: {
+        thumbnails: { side: "bottom", collapsed: true },
+        tools: { side: "left", collapsed: false },
+      },
+    },
+  ]);
+});
+
+test("searching_for_sidebar_finds_both_panel_rows", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "sidebar" } });
+  expect(await screen.findByRole("group", { name: "Thumbnails panel" })).toBeInTheDocument();
+  expect(screen.getByRole("group", { name: "Tools panel" })).toBeInTheDocument();
+});
+
 test("searching_for_grid_finds_the_pdf_rows", async () => {
   await mount();
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "grid" } });

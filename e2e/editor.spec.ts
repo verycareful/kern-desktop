@@ -28,6 +28,10 @@ const COMMON = {
     new_tab_default: "folder",
     pdf_layout: "scroll",
     pdf_grid_across: 4,
+    pdf_panels: {
+      thumbnails: { side: "left", collapsed: false },
+      tools: { side: "right", collapsed: false },
+    },
     word_wrap: false,
     editor_zoom: 1,
     interface_size: 90,

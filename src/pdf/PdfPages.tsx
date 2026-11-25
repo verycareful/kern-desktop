@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useViewSettings } from "../files/view-settings";
-import { toWireError, type WireError } from "../ipc";
+import type { WireError } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { GoToPage } from "./GoToPage";
 import { PageCanvas } from "./PageCanvas";
@@ -11,7 +11,6 @@ import {
   PAGE_MARGIN,
   factorOf,
   layoutBoxes,
-  pageSizes,
   rowAtOffset,
   scaleOf,
   stepZoom,
@@ -43,11 +42,17 @@ interface Anchor {
 // view, zoomed to the width of the view or by a factor. The page in view and the zoom are
 // published for the status bar (pdf-view.ts) and the actions reach the zoom through the
 // controller (pdf-controller.ts).
-export function PdfPages(props: { tabId: string; doc: PdfDoc; active: boolean }) {
-  const { tabId, doc, active } = props;
+export function PdfPages(props: {
+  tabId: string;
+  doc: PdfDoc;
+  active: boolean;
+  /** The size of every page, from `usePageSizes`; null until they are read. */
+  sizes: PageSize[] | null;
+  /** Why the sizes could not be read. */
+  sizeError: WireError | null;
+}) {
+  const { tabId, doc, active, sizes, sizeError } = props;
   const scroll = useRef<HTMLDivElement>(null);
-  const [sizes, setSizes] = useState<PageSize[] | null>(null);
-  const [sizeError, setSizeError] = useState<WireError | null>(null);
   const [zoom, setZoom] = useState<Zoom>(FIT_WIDTH);
   const [view, setView] = useState({ width: 0, height: 0 });
   const [near, setNear] = useState<ReadonlySet<number>>(() => new Set());
@@ -61,23 +66,7 @@ export function PdfPages(props: { tabId: string; doc: PdfDoc; active: boolean })
   const patchView = usePdfView((s) => s.patch);
   const clearView = usePdfView((s) => s.clear);
 
-  const { handle, pages, revision } = doc;
-  useEffect(() => {
-    if (handle === undefined) return;
-    let stale = false;
-    setSizeError(null);
-    pageSizes(handle, pages, () => stale).then(
-      (read) => {
-        if (!stale) setSizes(read);
-      },
-      (e) => {
-        if (!stale) setSizeError(toWireError(e));
-      }
-    );
-    return () => {
-      stale = true;
-    };
-  }, [handle, pages, revision]);
+  const { pages } = doc;
 
   useLayoutEffect(() => {
     const el = scroll.current;
@@ -248,8 +237,9 @@ export function PdfPages(props: { tabId: string; doc: PdfDoc; active: boolean })
         zoomOut: () => zoomBy(-1),
         zoomFit: () => setZoom(FIT_WIDTH),
         askGoToPage: () => patchView(tabId, { goTo: true }),
+        goToPage,
       }),
-    [tabId, zoomBy, patchView]
+    [tabId, zoomBy, patchView, goToPage]
   );
 
   // Ctrl and the wheel zoom. React's own wheel handler is passive and could not keep the
