@@ -221,9 +221,13 @@ async function isDanglingLink(path: WirePath, stamp: WireStamp): Promise<boolean
 const READ_ONLY_SAVE = "This file is read-only. Use Save As to keep your changes in another file.";
 
 /** The place a tab of this window is registered under. */
-const tabPlace = (tabId: string): Location => ({ kind: "tab", window: tabWindow(), tab_id: tabId });
+export const tabPlace = (tabId: string): Location => ({
+  kind: "tab",
+  window: tabWindow(),
+  tab_id: tabId,
+});
 
-const placeKey = (l: Location): string =>
+export const placeKey = (l: Location): string =>
   l.kind === "tab"
     ? `tab:${l.window}:${l.tab_id}`
     : l.kind === "window"

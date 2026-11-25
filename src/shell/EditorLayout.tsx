@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { displayPath, isEditorWindow, type WireEntry, type WirePath } from "../ipc";
-import { TextEditor } from "../editor/TextEditor";
+import { DocView } from "../pdf/DocView";
 import {
   ChevronsDownUp,
   ChevronsUpDown,
@@ -245,9 +245,10 @@ export function EditorCentre(props: { tab: Tab | null; docs: DocTab[]; starting?
         hidden={tab?.kind !== "doc"}
       >
         {docs.map((d) => (
-          <TextEditor
+          <DocView
             key={d.id}
             tabId={d.id}
+            format={d.format}
             path={d.path}
             active={d.id === tab?.id}
             handed={d.handed}

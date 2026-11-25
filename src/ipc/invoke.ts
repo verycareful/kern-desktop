@@ -67,3 +67,16 @@ export async function invoke<T>(command: string, args?: Record<string, unknown>)
     throw toWireError(e);
   }
 }
+
+// The same for a command that answers raw bytes (a `tauri::ipc::Response`, as `pdf_render`
+// does): Tauri hands those over as an ArrayBuffer. Anything else is a broken bridge, not bytes.
+export async function invokeBytes(
+  command: string,
+  args?: Record<string, unknown>
+): Promise<Uint8Array> {
+  const answer = await invoke<unknown>(command, args);
+  if (!(answer instanceof ArrayBuffer)) {
+    throw toWireError(`${command} answered something other than bytes`);
+  }
+  return new Uint8Array(answer);
+}

@@ -1,0 +1,20 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (c) 2026 Sricharan Suresh (github.com/verycareful) */
+
+.kern-pdf-viewer {
+  display: flex;
+  flex-direction: column;
+}
+
+.kern-pdf-viewer[hidden] {
+  display: none;
+}
+
+.kern-pdf-status {
+  padding: 12px 16px;
+  color: var(--kern-text-dim);
+}
+
+.kern-pdf-status p {
+  margin: 0;
+}
