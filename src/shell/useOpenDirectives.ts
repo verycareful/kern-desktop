@@ -23,6 +23,7 @@ import {
   toWireError,
   userDirs,
   type Directive,
+  type DocFormat,
   type Queued,
   type SessionTab,
   type UnlistenFn,
@@ -156,7 +157,12 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
     const adoptions = new Map<string, string>();
 
     /** A document window: show the document it was given, from the state handed over if any. */
-    const loadDoc = async (path: WirePath, state: unknown, ack: boolean) => {
+    const loadDoc = async (
+      path: WirePath,
+      format: DocFormat | undefined,
+      state: unknown,
+      ack: boolean
+    ) => {
       const label = currentWindowLabel();
       if (!label) {
         notice(`Kern was asked to show ${displayPath(path)}, but this window has no label.`);
@@ -190,7 +196,7 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
         handed = parsed;
       }
       // The window answers once the document is open and registered (DocumentWindow).
-      if (!tabs().openDocAs(label, path, handed, undefined, ack)) {
+      if (!tabs().openDocAs(label, path, handed, undefined, ack, format)) {
         notice(`This window already shows a document; ${displayPath(path)} was not opened here.`);
         await refuseMove("the new window already shows a document");
       }
@@ -210,8 +216,13 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
      * Take a document handed to this window: in the main window one a document window sends with
      * Home, in an editor window one opened from it while open elsewhere.
      */
-    const adopt = async (payload: { path: WirePath; text_state: unknown; from: string }) => {
-      const { path, text_state, from } = payload;
+    const adopt = async (payload: {
+      path: WirePath;
+      text_state: unknown;
+      format?: DocFormat;
+      from: string;
+    }) => {
+      const { path, text_state, format, from } = payload;
       // Taken now, the document would close with this window unasked.
       if (isClosing()) {
         await refuse(from, "the window it was moving to is closing, so the document stays");
@@ -231,7 +242,7 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
       }
       const id = crypto.randomUUID();
       // Registered here, before it is acknowledged; the tab's editor does not register it again.
-      if (!tabs().openDocAs(id, path, handed, true)) {
+      if (!tabs().openDocAs(id, path, handed, true, undefined, format)) {
         await refuse(
           from,
           `${displayPath(path)} is already open in a tab of the window it was moving to`
@@ -274,8 +285,8 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
      * it already (a tab that has not registered it: refused, or its file did not open) no tab
      * will, so that hold is let go.
      */
-    const openDocTab = (path: WirePath) => {
-      if (tabs().openDoc(path)) return;
+    const openDocTab = (path: WirePath, format?: DocFormat) => {
+      if (tabs().openDoc(path, format)) return;
       docClosed(path, { kind: "opening", window: tabWindow() }).catch((e: unknown) =>
         notice(`${displayPath(path)} could not be let go: ${errorText(toWireError(e))}`)
       );
@@ -295,7 +306,7 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
             tabs().openFolder(t.path, true);
             break;
           case "doc":
-            tabs().openDoc(t.path);
+            tabs().openDoc(t.path, t.format);
             break;
           case "trash":
             tabs().openTrash();
@@ -326,7 +337,8 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
             return;
           }
           if (mode === "doc") {
-            if (d.kind === "load_doc") await loadDoc(d.path, d.text_state, d.ack === true);
+            if (d.kind === "load_doc")
+              await loadDoc(d.path, d.format, d.text_state, d.ack === true);
             else notice(unhandled(EVENT_OPEN, ` (${d.kind})`));
             return;
           }
@@ -339,7 +351,7 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
                 restoreTabs(d.tabs, d.active);
                 return;
               case "doc_tab":
-                openDocTab(d.path);
+                openDocTab(d.path, d.format);
                 return;
               case "focus_tab":
                 if (tabs().tabs.some((t) => t.id === d.tab_id)) tabs().activate(d.tab_id);
@@ -357,7 +369,7 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
               else tabs().focusOrOpenFolder(d.path);
               return;
             case "doc_tab":
-              openDocTab(d.path);
+              openDocTab(d.path, d.format);
               return;
             case "home_tab": {
               const home = (await userDirs()).home;
@@ -392,7 +404,14 @@ export function useOpenDirectives(mode: "main" | "doc" | "editor" | "settings"):
           useProperties.getState().show((item.payload as { paths: WirePath[] }).paths);
           return;
         case EVENT_ADOPT_DOC:
-          await adopt(item.payload as { path: WirePath; text_state: unknown; from: string });
+          await adopt(
+            item.payload as {
+              path: WirePath;
+              text_state: unknown;
+              format?: DocFormat;
+              from: string;
+            }
+          );
           return;
         case EVENT_ADOPT_CANCELLED: {
           const { label } = item.payload as { label: string };

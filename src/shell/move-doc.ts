@@ -10,6 +10,7 @@ import {
   moveDocToMain,
   pathKey,
   toWireError,
+  type DocFormat,
   type WirePath,
 } from "../ipc";
 import { docController, type DocController } from "../editor/doc-controller";
@@ -48,6 +49,12 @@ function stateToHand(doc: DocController | undefined): { state: HandedDoc | null 
   return { state };
 }
 
+/** How document tab `id` shows its file; absent for text. */
+const formatOf = (id: string): DocFormat | undefined => {
+  const tab = useTabs.getState().tabs.find((t) => t.id === id);
+  return tab?.kind === "doc" ? tab.format : undefined;
+};
+
 /** Moves document tab `id` of the main window into a window of its own. */
 export async function moveTabToWindow(id: string): Promise<void> {
   const tab = useTabs.getState().tabs.find((t) => t.id === id);
@@ -61,7 +68,7 @@ export async function moveTabToWindow(id: string): Promise<void> {
   const { state } = ready;
   doc?.setMoving(true);
   try {
-    await detachDoc(id, tab.path, state);
+    await detachDoc(id, tab.path, state, tab.format);
   } catch (e) {
     doc?.setMoving(false);
     say(`${tabTitle(tab)} could not be moved to a new window: ${errorText(toWireError(e))}`);
@@ -94,7 +101,7 @@ export async function moveDocHome(): Promise<string | null> {
   const { state } = ready;
   doc?.setMoving(true);
   try {
-    await moveDocToMain(label, state);
+    await moveDocToMain(label, state, formatOf(label));
     return null;
   } catch (e) {
     doc?.setMoving(false);
@@ -169,7 +176,7 @@ export async function handTo(path: WirePath, to: string): Promise<void> {
   const { state } = ready;
   doc?.setMoving(true);
   try {
-    await handDoc(own ? null : id, path, state, to);
+    await handDoc(own ? null : id, path, state, to, formatOf(id));
   } catch (e) {
     doc?.setMoving(false);
     await refuse(errorText(toWireError(e)));

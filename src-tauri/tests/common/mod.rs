@@ -299,9 +299,25 @@ impl Ctx {
         label: &str,
         answer: Answer,
     ) -> Result<Value, Value> {
+        self.detach_as(from, tab_id, path, state, Value::Null, label, answer)
+    }
+
+    /// [`Env::detach`] for a tab that shows `format` (`null` for text).
+    #[allow(clippy::too_many_arguments)]
+    pub fn detach_as(
+        &self,
+        from: &str,
+        tab_id: &str,
+        path: &Path,
+        state: Value,
+        format: Value,
+        label: &str,
+        answer: Answer,
+    ) -> Result<Value, Value> {
         std::thread::scope(|s| {
             let handle = self.handle.clone();
-            let args = json!({"tabId": tab_id, "path": wp(path), "textState": state});
+            let args =
+                json!({"tabId": tab_id, "path": wp(path), "textState": state, "format": format});
             let from = from.to_owned();
             let call = s.spawn(move || invoke(&handle, &from, "detach_doc", args));
             wait_for("the new window", || self.exists(label));
@@ -347,6 +363,13 @@ impl Ctx {
     pub fn text(&self, name: &str) -> PathBuf {
         let p = self.files.join(name);
         fs::write(&p, "plain text\n").unwrap();
+        p
+    }
+
+    /// A file the MIME database knows as a PDF: the name and the header say so.
+    pub fn pdf(&self, name: &str) -> PathBuf {
+        let p = self.files.join(name);
+        fs::write(&p, b"%PDF-1.4\n%%EOF\n").unwrap();
         p
     }
 }

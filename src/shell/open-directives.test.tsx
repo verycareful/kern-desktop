@@ -218,6 +218,41 @@ test("queued_items_are_applied_in_order", async () => {
   });
 });
 
+test("a_doc_tab_directive_naming_pdf_opens_a_pdf_tab", async () => {
+  queue(open({ kind: "doc_tab", path: p("/d/a.pdf"), format: "pdf" }));
+  render(<App />);
+  await waitFor(() => expect(tabNames()).toEqual(["a.pdf"]));
+  expect(useTabs.getState().tabs[0]).toMatchObject({ kind: "doc", format: "pdf" });
+});
+
+test("a_restore_opens_a_pdf_tab_as_a_pdf_and_reports_it_so", async () => {
+  queue(
+    open({
+      kind: "restore",
+      tabs: [
+        { kind: "doc", path: p("/d/a.pdf"), format: "pdf" },
+        { kind: "doc", path: p("/d/n.md") },
+      ],
+      active: 0,
+    })
+  );
+  render(<App />);
+  await waitFor(() => expect(tabNames()).toEqual(["a.pdf", "n.md"]));
+  const [pdf, text] = useTabs.getState().tabs;
+  expect(pdf).toMatchObject({ format: "pdf" });
+  expect(text).not.toHaveProperty("format");
+  await waitFor(() =>
+    expect(ipc.sessionPut).toHaveBeenLastCalledWith(
+      null,
+      [
+        { kind: "doc", path: p("/d/a.pdf"), format: "pdf" },
+        { kind: "doc", path: p("/d/n.md") },
+      ],
+      0
+    )
+  );
+});
+
 const restore = (tabs: unknown[], active: number | null) => open({ kind: "restore", tabs, active });
 const activeKind = () =>
   useTabs.getState().tabs.find((t) => t.id === useTabs.getState().activeId)?.kind;
@@ -814,6 +849,14 @@ test("a_document_window_shows_the_document_it_is_given", async () => {
   expect(screen.getByRole("button", { name: /^Home/ })).toBeInTheDocument();
 });
 
+test("a_document_window_told_the_document_is_a_pdf_opens_it_as_one", async () => {
+  asDocWindow();
+  queue(open({ kind: "load_doc", path: p("/d/a.pdf"), format: "pdf" }));
+  render(<App />);
+  await waitFor(() => expect(useTabs.getState().tabs).toHaveLength(1));
+  expect(useTabs.getState().tabs[0]).toMatchObject({ id: "doc-1", format: "pdf" });
+});
+
 test("a_document_window_takes_the_text_a_tab_handed_it", async () => {
   asDocWindow();
   const handed = {
@@ -854,14 +897,18 @@ test("home_hands_over_unsaved_text", async () => {
   act(() => view.dispatch({ changes: { from: 0, insert: "mine " } }));
   fireEvent.click(screen.getByRole("button", { name: /^Home/ }));
   await waitFor(() => expect(ipc.moveDocToMain).toHaveBeenCalled());
-  expect(ipc.moveDocToMain).toHaveBeenCalledWith("doc-1", {
-    text: "mine hello",
-    saved: "hello",
-    stamp: "s1:5:0:1:1:0",
-    ending: "lf",
-    bom: false,
-    read_only: null,
-  });
+  expect(ipc.moveDocToMain).toHaveBeenCalledWith(
+    "doc-1",
+    {
+      text: "mine hello",
+      saved: "hello",
+      stamp: "s1:5:0:1:1:0",
+      ending: "lf",
+      bom: false,
+      read_only: null,
+    },
+    undefined
+  );
   // While it moves the text cannot change: an edit now would not go with it.
   expect(await screen.findByTestId("doc-moving")).toBeInTheDocument();
   expect(view.state.readOnly).toBe(true);

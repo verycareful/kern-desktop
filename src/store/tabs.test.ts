@@ -121,6 +121,31 @@ test("tab_titles", () => {
   expect(tabTitle(s().tabs[1]!)).toBe("notes.md");
 });
 
+test("openDoc_keeps_the_format_and_focuses_an_open_pdf", () => {
+  s().openDoc(p("/a/n.md"));
+  expect(s().tabs[0]).not.toHaveProperty("format");
+  s().openDoc(p("/a/b.pdf"), "pdf");
+  expect(s().tabs[1]).toMatchObject({ kind: "doc", path: p("/a/b.pdf"), format: "pdf" });
+  const pdfId = s().activeId;
+  s().activate(ids()[0]!);
+  // Opened again, as either format, it is focused and not opened twice.
+  expect(s().openDoc(p("/a/b.pdf"), "pdf")).toBe(false);
+  expect(s().activeId).toBe(pdfId);
+  s().activate(ids()[0]!);
+  expect(s().openDoc(p("/a/b.pdf"))).toBe(false);
+  expect(s().activeId).toBe(pdfId);
+  expect(s().tabs).toHaveLength(2);
+});
+
+test("openDocAs_keeps_the_format", () => {
+  expect(s().openDocAs("w", p("/a/b.pdf"), undefined, undefined, undefined, "pdf")).toBe(true);
+  expect(s().tabs[0]).toMatchObject({ id: "w", format: "pdf" });
+  expect(s().openDocAs("x", p("/a/n.md"))).toBe(true);
+  expect(s().tabs[1]).not.toHaveProperty("format");
+  // A path already open is refused whatever format is asked for.
+  expect(s().openDocAs("y", p("/a/b.pdf"), undefined, undefined, undefined, "pdf")).toBe(false);
+});
+
 test("navigate_tab_moves_that_tab_whatever_is_active", () => {
   s().openFolder(p("/a"), false);
   const first = s().activeId!;

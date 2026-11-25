@@ -238,6 +238,59 @@ fn a_restart_opens_every_kept_window_again_with_its_tabs() {
     assert_eq!(editor(&e, &fresh), "editor-1");
 }
 
+fn pdf_doc(p: &Path) -> Value {
+    json!({"kind": "doc", "path": wp(p), "format": "pdf"})
+}
+
+#[test]
+fn a_pdf_tab_is_kept_with_its_format_and_a_text_tab_with_none() {
+    let e = quiet_env();
+    e.with_main();
+    let a = e.pdf("a.pdf");
+    let notes = e.text("notes.txt");
+    let ed = editor(&e, &e.files);
+    put(
+        &e,
+        &ed,
+        Some(&e.files),
+        json!([pdf_doc(&a), doc(&notes)]),
+        json!(0),
+    )
+    .unwrap();
+    assert_eq!(
+        session(&e)["windows"][0]["tabs"],
+        json!([pdf_doc(&a), doc(&notes)])
+    );
+}
+
+#[test]
+fn a_pdf_tab_comes_back_as_a_pdf_tab() {
+    let e = quiet_env();
+    let (a, b) = (e.pdf("a.pdf"), e.pdf("b.pdf"));
+    let notes = e.text("notes.txt");
+    write_session(
+        &e,
+        json!([
+            {"label": "doc-4", "tabs": [pdf_doc(&b)], "active": 0},
+            {"label": "editor-3", "root": wp(&e.files), "tabs": [pdf_doc(&a), doc(&notes)], "active": 0},
+            {"label": "main", "tabs": [folder(&e.files)], "active": 0}
+        ]),
+    );
+    let first = tauri::async_runtime::block_on(launch(&e.handle, true));
+    assert_eq!(first.as_deref(), Some("main"));
+    assert_eq!(
+        directives(&e, "doc-4"),
+        [json!({"kind": "load_doc", "path": wp(&b), "format": "pdf"})]
+    );
+    assert_eq!(
+        directives(&e, "editor-3"),
+        [
+            json!({"kind": "editor_root", "path": wp(&e.files)}),
+            json!({"kind": "restore", "tabs": [pdf_doc(&a), doc(&notes)], "active": 0})
+        ]
+    );
+}
+
 #[test]
 fn a_restart_with_a_stored_editor_layout_keeps_the_main_window_s_folder_tabs() {
     // The main window takes the file manager layout whatever is stored, so its folder tabs stay.

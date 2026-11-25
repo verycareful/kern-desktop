@@ -1306,7 +1306,10 @@ fn a_window_put_is_read_back_in_place_of_its_entry() {
         "main",
         vec![
             SessionTab::Folder { path: a.clone() },
-            SessionTab::Doc { path: doc.clone() },
+            SessionTab::Doc {
+                path: doc.clone(),
+                format: None,
+            },
             SessionTab::Trash,
             SessionTab::Documents,
         ],

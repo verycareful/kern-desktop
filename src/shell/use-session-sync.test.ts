@@ -45,6 +45,17 @@ test("a_snapshot_names_each_tab_by_kind_and_the_one_in_front_by_index", () => {
   expect(sessionSnapshot([], null, p("/r"))).toEqual({ root: p("/r"), tabs: [], active: null });
 });
 
+test("a_snapshot_keeps_the_format_of_a_pdf_tab_and_leaves_a_text_tab_without_one", () => {
+  const tabs = [
+    { id: "a", kind: "doc" as const, path: p("/d/n.pdf"), dirty: false, format: "pdf" as const },
+    { id: "b", kind: "doc" as const, path: p("/d/n.md"), dirty: false },
+  ];
+  expect(sessionSnapshot(tabs, "a", null).tabs).toEqual([
+    { kind: "doc", path: p("/d/n.pdf"), format: "pdf" },
+    { kind: "doc", path: p("/d/n.md") },
+  ]);
+});
+
 test("nothing_is_reported_before_the_window_is_ready_or_from_settings", async () => {
   useTabs.getState().openFolder(p("/d"), true);
   const { rerender } = renderHook(({ ready }) => useSessionSync("main", ready), {

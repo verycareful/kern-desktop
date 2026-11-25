@@ -312,7 +312,7 @@ async fn restore_window<R: Runtime>(
             Ok(label)
         }
         WindowKind::Document => {
-            let Some(SessionTab::Doc { path }) = w.tabs.into_iter().next() else {
+            let Some(SessionTab::Doc { path, format }) = w.tabs.into_iter().next() else {
                 return Err(wire_error("Restore", "it showed no document", None));
             };
             let label = windows::build_restored_doc(app, &w.label)?;
@@ -321,6 +321,7 @@ async fn restore_window<R: Runtime>(
                 &label,
                 &Directive::LoadDoc {
                     path,
+                    format,
                     text_state: None,
                     ack: false,
                 },

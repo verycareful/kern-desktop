@@ -45,6 +45,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use kernkraft_fs::{rename_noreplace, write_bytes_atomic, BaseDirs, Expect, FsError};
 use kernkraft_tauri::{WireError, WireItemError, WirePath};
+
+use crate::open::DocFormat;
 use kernkraft_theme::{Density, Follow, KernAccent, Mode};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -415,6 +417,9 @@ pub enum SessionTab {
     },
     Doc {
         path: WirePath,
+        /// How the tab shows the file; none for text.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        format: Option<DocFormat>,
     },
     Trash,
     /// The Library.
@@ -424,7 +429,7 @@ pub enum SessionTab {
 impl SessionTab {
     fn path(&self) -> Option<&WirePath> {
         match self {
-            SessionTab::Folder { path } | SessionTab::Doc { path } => Some(path),
+            SessionTab::Folder { path } | SessionTab::Doc { path, .. } => Some(path),
             SessionTab::Trash | SessionTab::Documents => None,
         }
     }

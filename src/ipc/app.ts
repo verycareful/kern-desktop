@@ -243,11 +243,17 @@ export interface OpenOutcome {
   error: WireError | null;
 }
 
+/**
+ * How a document tab shows its file. Absent means text; the backend names the format when it
+ * routes the file (windows.rs DocFormat) and the session keeps it.
+ */
+export type DocFormat = "pdf";
+
 /** What a window is told to do, on kern://open. */
 export type Directive =
   | { kind: "folder_tab"; path: WirePath }
-  | { kind: "doc_tab"; path: WirePath }
-  | { kind: "load_doc"; path: WirePath; text_state?: unknown; ack?: boolean }
+  | { kind: "doc_tab"; path: WirePath; format?: DocFormat }
+  | { kind: "load_doc"; path: WirePath; format?: DocFormat; text_state?: unknown; ack?: boolean }
   | { kind: "editor_root"; path: WirePath }
   | { kind: "home_tab" }
   | { kind: "focus_tab"; tab_id: string }
@@ -263,7 +269,7 @@ export type Directive =
 /** A tab as session.json keeps it (store.rs SessionTab). */
 export type SessionTab =
   | { kind: "folder"; path: WirePath }
-  | { kind: "doc"; path: WirePath }
+  | { kind: "doc"; path: WirePath; format?: DocFormat }
   | { kind: "trash" }
   | { kind: "documents" };
 
@@ -335,18 +341,23 @@ export const openPendingTake = () => invoke<Queued[]>("open_pending_take");
  * holds the document and has registered it. Rejects (DetachRefused, DetachTimeout) when it does
  * not, and the tab keeps the document.
  */
-export const detachDoc = (tabId: string, path: WirePath, textState?: unknown) =>
-  invoke<string>("detach_doc", { tabId, path, textState: textState ?? null });
+export const detachDoc = (tabId: string, path: WirePath, textState?: unknown, format?: DocFormat) =>
+  invoke<string>("detach_doc", { tabId, path, textState: textState ?? null, format });
 
-export const moveDocToMain = (label: string, textState?: unknown) =>
-  invoke<void>("move_doc_to_main", { label, textState: textState ?? null });
+export const moveDocToMain = (label: string, textState?: unknown, format?: DocFormat) =>
+  invoke<void>("move_doc_to_main", { label, textState: textState ?? null, format });
 
 /**
  * Gives the document this window holds at `path` (tab `tabId`, or a document window's own with
  * null) to editor window `to`; resolves once `to` holds it. A document window is then closed.
  */
-export const handDoc = (tabId: string | null, path: WirePath, textState: unknown, to: string) =>
-  invoke<void>("hand_doc", { tabId, path, textState: textState ?? null, to });
+export const handDoc = (
+  tabId: string | null,
+  path: WirePath,
+  textState: unknown,
+  to: string,
+  format?: DocFormat
+) => invoke<void>("hand_doc", { tabId, path, textState: textState ?? null, to, format });
 
 /** This window could not give `path` to editor window `to`: `to` is told why and this window comes forward. */
 export const handRefused = (path: WirePath, to: string, reason: string) =>
