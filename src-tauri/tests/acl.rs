@@ -920,3 +920,62 @@ fn every_window_reads_the_binds_and_only_the_settings_window_changes_them() {
     let err = invoke(&e, "binds_get", json!({})).unwrap_err();
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
 }
+
+/// The kernkraft PDF commands a window that shows a PDF sends: opening and closing it, a page's
+/// size, picture, text, search hits, links and annotations, an edit with its undo and redo, the
+/// save and the compacted copy, the jobs, and the font list read once at start. Merge, extract and
+/// split are not here: only the window that offers page operations asks for them.
+const PDF_VIEW_COMMANDS: [&str; 17] = [
+    "pdf_open",
+    "pdf_close",
+    "pdf_page_info",
+    "pdf_render_size",
+    "pdf_render",
+    "pdf_text",
+    "pdf_search",
+    "pdf_links",
+    "pdf_annotations",
+    "pdf_apply",
+    "pdf_undo",
+    "pdf_redo",
+    "pdf_save",
+    "pdf_compact",
+    "pdf_cancel_job",
+    "pdf_job_progress",
+    "pdf_set_system_fonts",
+];
+
+#[test]
+fn doc_and_editor_windows_may_open_and_save_a_pdf() {
+    for (file, windows, label) in [
+        ("doc.json", "doc-*", "doc-1"),
+        ("editor.json", "editor-*", "editor-1"),
+    ] {
+        let (kernkraft_cmds, _) = granted(file, windows);
+        for cmd in PDF_VIEW_COMMANDS {
+            assert!(kernkraft_cmds.iter().any(|c| c == cmd), "{file}: {cmd}");
+        }
+        // The access control lets the command through; what the command then says about a handle
+        // nobody opened is its own answer.
+        let e = env(label);
+        for cmd in PDF_VIEW_COMMANDS {
+            if let Err(err) = invoke(&e, &kernkraft(cmd), json!({})) {
+                assert!(
+                    !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                    "{label} {cmd}: {err}"
+                );
+            }
+        }
+    }
+    // The Settings window shows no PDF.
+    let (kernkraft_cmds, _) = granted("settings.json", "settings");
+    let e = env("settings");
+    for cmd in PDF_VIEW_COMMANDS {
+        assert!(!kernkraft_cmds.iter().any(|c| c == cmd), "settings: {cmd}");
+        let err = invoke(&e, &kernkraft(cmd), json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "settings {cmd}: {err}"
+        );
+    }
+}
