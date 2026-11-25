@@ -146,7 +146,8 @@ fn missing_file_is_refused() {
 
 /// The installer's settings walk names every setting but `default_layout`, which offers the main
 /// window one choice, the two panel orders, which are arranged in Settings once the windows are
-/// on screen, and `folder_menu`, the shape of the right-click menu, which is chosen there too. A
+/// on screen, `folder_menu`, the shape of the right-click menu, and the two PDF layout settings, which
+/// are chosen there too. A
 /// setting added without a question in the walk fails here.
 #[test]
 fn installer_walk_covers_every_setting() {
@@ -166,6 +167,8 @@ fn installer_walk_covers_every_setting() {
         "panel_order",
         "editor_panel_order",
         "folder_menu",
+        "pdf_layout",
+        "pdf_grid_across",
     ];
     let expected: BTreeSet<String> = known
         .into_iter()

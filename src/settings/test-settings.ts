@@ -33,6 +33,8 @@ export const SETTINGS: Settings = {
   editor_panel_order: ["places", "pinned"],
   new_tab_folder: null,
   new_tab_default: "folder",
+  pdf_layout: "scroll",
+  pdf_grid_across: 4,
   time_format: "system",
   folder_menu: "standard",
   error_log: true,

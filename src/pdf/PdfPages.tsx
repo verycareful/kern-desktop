@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useViewSettings } from "../files/view-settings";
 import { toWireError, type WireError } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { GoToPage } from "./GoToPage";
@@ -9,9 +10,9 @@ import {
   FIT_WIDTH,
   PAGE_MARGIN,
   factorOf,
-  pageAtOffset,
-  pageBoxes,
+  layoutBoxes,
   pageSizes,
+  rowAtOffset,
   scaleOf,
   stepZoom,
   type PageSize,
@@ -20,6 +21,7 @@ import {
 import { registerPdf } from "./pdf-controller";
 import { usePdfView } from "./pdf-view";
 import type { PdfDoc } from "./usePdfDoc";
+import { acrossOf, layoutOf, layoutRows, rowOfPage } from "./view-layout";
 
 /** A wheel turn of this many pixels with Ctrl held is one zoom step. */
 const WHEEL_PER_STEP = 100;
@@ -28,15 +30,17 @@ const WHEEL_LINE_PX = 16;
 const DOM_DELTA_LINE = 1;
 
 interface Anchor {
+  /** The page in view: the first of its row, or the one the reader was last on if it is in the row. */
   page: number;
-  /** How far down the page the top of the view is, as a fraction of its height. */
+  /** How far down the page's row the top of the view is, as a fraction of its height. */
   frac: number;
   /** The view is at the very top of the scroll. */
   top: boolean;
 }
 
-// The pages of an open PDF in one continuous scroll: sized from the engine, drawn while near
-// the view, zoomed to the width of the view or by a factor. The page in view and the zoom are
+// The pages of an open PDF in the layout the settings name (view-layout.ts): a continuous
+// scroll, one page at a time, a spread or a grid. Sized from the engine, drawn while near the
+// view, zoomed to the width of the view or by a factor. The page in view and the zoom are
 // published for the status bar (pdf-view.ts) and the actions reach the zoom through the
 // controller (pdf-controller.ts).
 export function PdfPages(props: { tabId: string; doc: PdfDoc; active: boolean }) {
@@ -49,6 +53,11 @@ export function PdfPages(props: { tabId: string; doc: PdfDoc; active: boolean })
   const [near, setNear] = useState<ReadonlySet<number>>(() => new Set());
   const goTo = usePdfView((s) => s.byTab[tabId]?.goTo ?? false);
   const current = usePdfView((s) => s.byTab[tabId]?.page ?? 0);
+  const layoutKind = useViewSettings((s) => s.pdfLayout);
+  const gridAcross = useViewSettings((s) => s.pdfGridAcross);
+  const layout = useMemo(() => layoutOf(layoutKind, gridAcross), [layoutKind, gridAcross]);
+  const across = acrossOf(layout);
+  const single = layout.kind === "single";
   const patchView = usePdfView((s) => s.patch);
   const clearView = usePdfView((s) => s.clear);
 
@@ -80,50 +89,112 @@ export function PdfPages(props: { tabId: string; doc: PdfDoc; active: boolean })
     return () => watcher.disconnect();
   }, []);
 
-  const scale = sizes ? scaleOf(zoom, sizes, view.width) : 1;
-  const boxes = useMemo(() => (sizes ? pageBoxes(sizes, scale) : null), [sizes, scale]);
+  const count = sizes?.length ?? 0;
+  const shown = Math.min(current, Math.max(0, count - 1));
+  // One page at a time is the page the status bar names, as one row; every other layout sets
+  // out all the pages.
+  const rows = useMemo(
+    () => (single ? (count > 0 ? [[shown]] : []) : layoutRows(layout, count)),
+    [layout, single, count, shown]
+  );
+  const scale = sizes ? scaleOf(zoom, sizes, view.width, across) : 1;
+  const boxes = useMemo(
+    () => (sizes ? layoutBoxes(sizes, rows, scale) : null),
+    [sizes, rows, scale]
+  );
   const factor = factorOf(scale);
-  const widest = boxes ? Math.max(0, ...boxes.pages.map((box) => box.width)) : 0;
-  const contentWidth = Math.max(view.width, widest + 2 * PAGE_MARGIN);
+  const contentWidth = Math.max(view.width, (boxes?.width ?? 0) + 2 * PAGE_MARGIN);
+  const blockLeft = (contentWidth - (boxes?.width ?? 0)) / 2;
 
   // The page the top of the view is on, and how far into it, so a zoom or a resize keeps what
   // the reader is looking at where it was.
   const anchor = useRef<Anchor>({ page: 0, frac: 0, top: true });
   const boxesNow = useRef(boxes);
+  const rowsNow = useRef(rows);
+  const singleNow = useRef(single);
   useLayoutEffect(() => {
     boxesNow.current = boxes;
+    rowsNow.current = rows;
+    singleNow.current = single;
   });
   const onScroll = useCallback(() => {
     const el = scroll.current;
     const b = boxesNow.current;
-    if (!el || !b) return;
-    const page = pageAtOffset(b.pages, el.scrollTop);
-    const box = b.pages[page];
-    if (!box) return;
-    const frac = Math.min(1, Math.max(0, (el.scrollTop - box.top) / box.height));
+    // One page at a time is stepped to, never scrolled to: the page is the one shown.
+    if (!el || !b || singleNow.current) return;
+    const index = rowAtOffset(b.rows, el.scrollTop);
+    const row = b.rows[index];
+    if (!row) return;
+    const page = row.pages.includes(anchor.current.page)
+      ? anchor.current.page
+      : (row.pages[0] ?? 0);
+    const frac =
+      row.height > 0 ? Math.min(1, Math.max(0, (el.scrollTop - row.top) / row.height)) : 0;
     anchor.current = { page, frac, top: el.scrollTop <= 0 };
     patchView(tabId, { page });
   }, [patchView, tabId]);
+  // A zoom, a resize or a new layout puts the view back on the row of the page it was on; a new
+  // layout starts at the top of that row.
+  const layoutKey = `${layout.kind}:${across}`;
+  const layoutNow = useRef(layoutKey);
   useLayoutEffect(() => {
     const el = scroll.current;
     if (!el || !boxes) return;
+    if (layoutNow.current !== layoutKey) {
+      layoutNow.current = layoutKey;
+      const a = anchor.current;
+      anchor.current = { page: a.page, frac: 0, top: a.top && a.page === 0 };
+    }
     const a = anchor.current;
-    const box = boxes.pages[a.page];
-    if (!box) return;
-    el.scrollTop = a.top ? 0 : Math.max(0, box.top + a.frac * box.height);
-  }, [boxes]);
+    const row = boxes.rows[rowOfPage(rowsNow.current, a.page)];
+    if (!row) return;
+    el.scrollTop = a.top ? 0 : Math.max(0, row.top + a.frac * row.height);
+  }, [boxes, layoutKey]);
 
+  const showPage = useCallback(
+    (page: number) => {
+      anchor.current = { page, frac: 0, top: true };
+      patchView(tabId, { page });
+    },
+    [patchView, tabId]
+  );
   const goToPage = useCallback(
     (page: number) => {
       const el = scroll.current;
       const b = boxesNow.current;
-      const box = b?.pages[page];
-      if (!el || !box) return;
-      el.scrollTop = page === 0 ? 0 : box.top;
-      onScroll();
+      if (!el || !b) return;
+      if (singleNow.current) {
+        showPage(page);
+        return;
+      }
+      const index = rowOfPage(rowsNow.current, page);
+      const row = b.rows[index];
+      if (!row) return;
+      el.scrollTop = index === 0 ? 0 : row.top;
+      anchor.current = { page, frac: 0, top: index === 0 };
+      patchView(tabId, { page });
     },
-    [onScroll]
+    [patchView, showPage, tabId]
   );
+  const stepPage = useCallback(
+    (direction: 1 | -1) => {
+      const next = shown + direction;
+      if (next >= 0 && next < count) showPage(next);
+    },
+    [shown, count, showPage]
+  );
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (!single || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+    const direction =
+      e.key === "PageDown" || e.key === "ArrowRight"
+        ? 1
+        : e.key === "PageUp" || e.key === "ArrowLeft"
+          ? -1
+          : 0;
+    if (direction === 0) return;
+    e.preventDefault();
+    stepPage(direction);
+  };
 
   // Which pages are within a screen of the view: only those are drawn.
   const elements = useRef(new Map<Element, number>());
@@ -215,6 +286,7 @@ export function PdfPages(props: { tabId: string; doc: PdfDoc; active: boolean })
         aria-label="Pages"
         data-testid="pdf-scroll"
         onScroll={onScroll}
+        onKeyDown={onKeyDown}
       >
         {sizeError && (
           <div className="kern-doc-note" role="alert" data-testid="pdf-sizes-failed">
@@ -241,7 +313,7 @@ export function PdfPages(props: { tabId: string; doc: PdfDoc; active: boolean })
                 <PageSlot
                   key={page}
                   page={page}
-                  left={(contentWidth - box.width) / 2}
+                  left={blockLeft + box.left}
                   top={box.top}
                   width={box.width}
                   height={box.height}

@@ -15,13 +15,14 @@ import {
   clampZoom,
   factorOf,
   fitScale,
-  pageAtOffset,
-  pageBoxes,
+  layoutBoxes,
+  rowAtOffset,
   pageSizes,
   scaleOf,
   stepZoom,
   type PageSize,
 } from "./page-geometry";
+import { layoutRows } from "./view-layout";
 
 const size = (widthPt: number, heightPt: number): PageSize => ({ widthPt, heightPt, rotate: 0 });
 const info = (width_pt: number, height_pt: number, rotate = 0): PdfPageInfo => ({
@@ -94,19 +95,63 @@ test("a_factor_zoom_is_the_printed_size_times_the_factor", () => {
 });
 
 test("the_boxes_stack_with_a_gap_and_a_margin", () => {
-  const boxes = pageBoxes([size(100, 200), size(50, 100)], 2);
+  const boxes = layoutBoxes([size(100, 200), size(50, 100)], layoutRows({ kind: "scroll" }, 2), 2);
   expect(boxes.pages).toEqual([
-    { top: PAGE_MARGIN, width: 200, height: 400 },
-    { top: PAGE_MARGIN + 400 + PAGE_GAP, width: 100, height: 200 },
+    { left: 0, top: PAGE_MARGIN, width: 200, height: 400 },
+    { left: 50, top: PAGE_MARGIN + 400 + PAGE_GAP, width: 100, height: 200 },
   ]);
+  expect(boxes.rows).toEqual([
+    { top: PAGE_MARGIN, height: 400, pages: [0] },
+    { top: PAGE_MARGIN + 400 + PAGE_GAP, height: 200, pages: [1] },
+  ]);
+  expect(boxes.width).toBe(200);
   expect(boxes.total).toBe(PAGE_MARGIN + 400 + PAGE_GAP + 200 + PAGE_MARGIN);
 });
 
-test("the_page_at_an_offset_is_the_one_above_in_a_gap_and_the_first_above_the_top", () => {
-  const pages = [{ top: 16 }, { top: 100 }, { top: 200 }];
-  expect(pageAtOffset(pages, 0)).toBe(0);
-  expect(pageAtOffset(pages, 99)).toBe(0);
-  expect(pageAtOffset(pages, 100)).toBe(1);
-  expect(pageAtOffset(pages, 5000)).toBe(2);
-  expect(pageAtOffset([], 10)).toBe(0);
+test("a_spread_puts_two_pages_side_by_side_in_cells_of_the_widest_page", () => {
+  const boxes = layoutBoxes(
+    [size(100, 200), size(50, 100), size(100, 200)],
+    layoutRows({ kind: "spread" }, 3),
+    1
+  );
+  expect(boxes.width).toBe(2 * 100 + PAGE_GAP);
+  expect(boxes.pages[0]).toEqual({ left: 0, top: PAGE_MARGIN, width: 100, height: 200 });
+  // Centred in its cell and in the row's height.
+  expect(boxes.pages[1]).toEqual({
+    left: 100 + PAGE_GAP + 25,
+    top: PAGE_MARGIN + 50,
+    width: 50,
+    height: 100,
+  });
+  // The last row's lone page keeps the first column.
+  expect(boxes.pages[2]).toEqual({
+    left: 0,
+    top: PAGE_MARGIN + 200 + PAGE_GAP,
+    width: 100,
+    height: 200,
+  });
+  expect(boxes.rows.map((r) => r.pages)).toEqual([[0, 1], [2]]);
+  expect(boxes.total).toBe(PAGE_MARGIN + 200 + PAGE_GAP + 200 + PAGE_MARGIN);
+});
+
+test("no_rows_is_an_empty_block_with_only_its_margins", () => {
+  const boxes = layoutBoxes([], [], 1);
+  expect(boxes).toEqual({ pages: [], rows: [], width: 0, total: 2 * PAGE_MARGIN });
+});
+
+test("a_fit_leaves_room_for_the_gaps_between_the_pages_of_a_row", () => {
+  const sizes = [size(100, 100)];
+  const view = 2 * PAGE_MARGIN + PAGE_GAP + 400;
+  expect(fitScale(sizes, view, 2)).toBe(2);
+  expect(scaleOf({ fit: true }, sizes, view, 2)).toBe(2);
+  expect(scaleOf({ fit: false, factor: 2 }, sizes, view, 2)).toBeCloseTo(2 * CSS_PX_PER_PT);
+});
+
+test("the_row_at_an_offset_is_the_one_above_in_a_gap_and_the_first_above_the_top", () => {
+  const rows = [{ top: 16 }, { top: 100 }, { top: 200 }];
+  expect(rowAtOffset(rows, 0)).toBe(0);
+  expect(rowAtOffset(rows, 99)).toBe(0);
+  expect(rowAtOffset(rows, 100)).toBe(1);
+  expect(rowAtOffset(rows, 5000)).toBe(2);
+  expect(rowAtOffset([], 10)).toBe(0);
 });

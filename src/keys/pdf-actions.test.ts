@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { beforeEach, expect, test, vi } from "vitest";
-import type { WirePath } from "../ipc";
+
+vi.mock("../ipc", async (orig) => ({
+  ...(await orig<typeof import("../ipc")>()),
+  settingsSet: vi.fn(),
+}));
+import { settingsSet, type WirePath } from "../ipc";
+import { useViewSettings } from "../files/view-settings";
 import { registerPdf, type PdfController } from "../pdf/pdf-controller";
 import { useTabs } from "../store/tabs";
 import {
@@ -22,7 +28,11 @@ const controller = (): PdfController => ({
   askGoToPage: vi.fn(),
 });
 
-beforeEach(() => useTabs.setState({ tabs: [], activeId: null }));
+beforeEach(() => {
+  useTabs.setState({ tabs: [], activeId: null });
+  useViewSettings.setState({ pdfLayout: "scroll", pdfGridAcross: 4 });
+  vi.mocked(settingsSet).mockReset();
+});
 
 const openPdf = () => {
   useTabs.getState().openDoc(p("/a/book.pdf"), "pdf");
@@ -72,4 +82,49 @@ test("ctrl_plus_is_found_on_a_layout_where_plus_is_shifted_and_on_one_where_it_i
 
 test("the_pdf_keys_collide_with_no_other_action", () => {
   expect(findDuplicateBindings()).toEqual([]);
+});
+
+const LAYOUTS = [
+  ["pdf.layout.scroll", "scroll"],
+  ["pdf.layout.single", "single"],
+  ["pdf.layout.spread", "spread"],
+  ["pdf.layout.grid", "grid"],
+] as const;
+
+test("each_layout_action_stores_its_layout_for_every_pdf", () => {
+  const id = openPdf();
+  const off = registerPdf(id, controller());
+  for (const [action, layout] of LAYOUTS) {
+    vi.mocked(settingsSet).mockClear();
+    runAction(getAction(action), currentContext());
+    expect(settingsSet).toHaveBeenCalledWith({ pdf_layout: layout });
+  }
+  off();
+});
+
+test("the_layout_in_use_is_the_one_checked_in_the_menu", () => {
+  for (const [action, layout] of LAYOUTS) {
+    useViewSettings.setState({ pdfLayout: layout });
+    const checked = LAYOUTS.filter(([a]) => getAction(a).checked?.()).map(([a]) => a);
+    expect(checked).toEqual([action]);
+  }
+});
+
+test("the_layout_actions_are_off_for_a_text_document_and_a_pdf_that_is_not_mounted", () => {
+  useTabs.getState().openDoc(p("/a/n.md"));
+  const textId = useTabs.getState().activeId as string;
+  registerPdf(textId, controller());
+  for (const [id] of LAYOUTS) expect(isEnabled(getAction(id), currentContext()), id).toBe(false);
+  openPdf();
+  for (const [id] of LAYOUTS) expect(isEnabled(getAction(id), currentContext()), id).toBe(false);
+});
+
+test("every_layout_has_a_label_a_view_menu_entry_and_a_shortcut_of_its_own", () => {
+  const keys = LAYOUTS.map(([id]) => getAction(id).keys);
+  for (const [id] of LAYOUTS) {
+    expect(getAction(id).area).toBe("View");
+    expect(getAction(id).label).not.toBe("");
+    expect(getAction(id).keys.length).toBeGreaterThan(0);
+  }
+  expect(new Set(keys.flat()).size).toBe(keys.flat().length);
 });

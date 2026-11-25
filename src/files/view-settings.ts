@@ -11,6 +11,7 @@ import {
   type FolderMenu,
   type NewTabDefault,
   type Panel,
+  type PdfLayout,
   type Settings,
   type SettingsPatch,
   type TimeFormat,
@@ -18,6 +19,7 @@ import {
   type WireError,
   type WirePath,
 } from "../ipc";
+import { GRID_ACROSS_DEFAULT } from "../pdf/view-layout";
 import { DEFAULT_EDITOR_PANEL_ORDER, DEFAULT_PANEL_ORDER } from "../shell/panel-order";
 import { DEFAULT_INTERFACE_SIZE } from "../theme/interface-size";
 
@@ -55,6 +57,9 @@ interface ViewSettingsState {
   /** The file manager's three columns, and the editor layout's two panels, left to right. */
   panelOrder: Panel[];
   editorPanelOrder: Panel[];
+  /** How every PDF is laid out, and the pages in a row of the grid layout. */
+  pdfLayout: PdfLayout;
+  pdfGridAcross: number;
   /** The last read or write that failed, until the next one succeeds. */
   error: WireError | null;
 }
@@ -79,6 +84,8 @@ export const useViewSettings = create<ViewSettingsState>()(() => ({
   newTabDefault: "folder",
   panelOrder: DEFAULT_PANEL_ORDER,
   editorPanelOrder: DEFAULT_EDITOR_PANEL_ORDER,
+  pdfLayout: "scroll",
+  pdfGridAcross: GRID_ACROSS_DEFAULT,
   error: null,
 }));
 
@@ -103,6 +110,8 @@ function apply(s: Settings): void {
     newTabDefault: s.new_tab_default,
     panelOrder: s.panel_order,
     editorPanelOrder: s.editor_panel_order,
+    pdfLayout: s.pdf_layout,
+    pdfGridAcross: s.pdf_grid_across,
     error: null,
   });
 }
@@ -126,6 +135,8 @@ async function write(patch: SettingsPatch): Promise<void> {
 
 export const toggleHidden = () => write({ show_hidden: !useViewSettings.getState().showHidden });
 export const setViewMode = (view_mode: ViewMode) => write({ view_mode });
+/** Sets how every PDF is laid out; a failure is kept in `error`. */
+export const setPdfLayout = (pdf_layout: PdfLayout) => write({ pdf_layout });
 export const setScanFolder = (folder: "documents" | "downloads", on: boolean) =>
   write(folder === "documents" ? { scan_documents: on } : { scan_downloads: on });
 

@@ -164,6 +164,23 @@ pub enum FolderMenu {
     Expanded,
 }
 
+/// How the pages of an open PDF are set out: in one continuous column, one at a time, two side
+/// by side, or in rows of [`Settings::pdf_grid_across`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PdfLayout {
+    #[default]
+    Scroll,
+    Single,
+    Spread,
+    Grid,
+}
+
+/// The pages in a row of the PDF grid layout: the smallest, the largest and the default.
+pub const PDF_GRID_ACROSS_MIN: u32 = 1;
+pub const PDF_GRID_ACROSS_MAX: u32 = 12;
+pub const PDF_GRID_ACROSS_DEFAULT: u32 = 4;
+
 /// The Files view mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -228,6 +245,11 @@ pub struct Settings {
     pub time_format: TimeFormat,
     /// The shape of the folder view's right-click menu (see [`FolderMenu`]).
     pub folder_menu: FolderMenu,
+    /// How every PDF is laid out (see [`PdfLayout`]).
+    pub pdf_layout: PdfLayout,
+    /// The pages in a row of the PDF grid layout, [`PDF_GRID_ACROSS_MIN`] to
+    /// [`PDF_GRID_ACROSS_MAX`].
+    pub pdf_grid_across: u32,
     /// Whether Kern writes the error log (`error_log.rs`). Off stops all writing and leaves a file
     /// already there as it is.
     pub error_log: bool,
@@ -278,6 +300,8 @@ impl Default for Settings {
             new_tab_default: NewTabDefault::default(),
             time_format: TimeFormat::default(),
             folder_menu: FolderMenu::default(),
+            pdf_layout: PdfLayout::default(),
+            pdf_grid_across: PDF_GRID_ACROSS_DEFAULT,
             error_log: true,
             single_click_left: true,
             single_click_right: false,
@@ -716,6 +740,16 @@ fn check_zoom(z: &f32) -> Result<(), String> {
     }
 }
 
+fn check_pdf_grid_across(across: &u32) -> Result<(), String> {
+    if (PDF_GRID_ACROSS_MIN..=PDF_GRID_ACROSS_MAX).contains(across) {
+        Ok(())
+    } else {
+        Err(format!(
+            "pdf grid columns {across} is outside {PDF_GRID_ACROSS_MIN} to {PDF_GRID_ACROSS_MAX}"
+        ))
+    }
+}
+
 fn check_interface_size(size: &u32) -> Result<(), String> {
     if INTERFACE_SIZES.contains(size) {
         Ok(())
@@ -920,6 +954,22 @@ impl Stored for Settings {
             &mut keep,
             &mut problems,
             any_value,
+        );
+        take(
+            &mut obj,
+            "pdf_layout",
+            &mut s.pdf_layout,
+            &mut keep,
+            &mut problems,
+            any_value,
+        );
+        take(
+            &mut obj,
+            "pdf_grid_across",
+            &mut s.pdf_grid_across,
+            &mut keep,
+            &mut problems,
+            check_pdf_grid_across,
         );
         take(
             &mut obj,
@@ -1342,7 +1392,8 @@ impl Store {
 
     /// Merges `patch` (field name to new value) into the settings. A field
     /// this version does not define, a value of the wrong type, an
-    /// `editor_zoom` outside [`ZOOM_MIN`] to [`ZOOM_MAX`], an `interface_size`
+    /// `editor_zoom` outside [`ZOOM_MIN`] to [`ZOOM_MAX`], a `pdf_grid_across` outside
+    /// [`PDF_GRID_ACROSS_MIN`] to [`PDF_GRID_ACROSS_MAX`], an `interface_size`
     /// that is not one of [`INTERFACE_SIZES`], a `panel_order` or
     /// `editor_panel_order` that is not a permutation of its panels or a scan root
     /// that is not an absolute path refuses the whole patch and writes

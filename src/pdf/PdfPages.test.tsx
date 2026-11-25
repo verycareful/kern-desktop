@@ -12,6 +12,7 @@ const ipc = vi.hoisted(() => ({
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
+import { useViewSettings } from "../files/view-settings";
 import { PAGE_GAP, PAGE_MARGIN, CSS_PX_PER_PT } from "./page-geometry";
 import { PdfPages } from "./PdfPages";
 import { pdfController } from "./pdf-controller";
@@ -63,6 +64,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   intersections = [];
   usePdfView.setState({ byTab: {} });
+  useViewSettings.setState({ pdfLayout: "scroll", pdfGridAcross: 4 });
   vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
   vi.stubGlobal("ResizeObserver", FakeResizeObserver);
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(VIEW.width);
@@ -320,4 +322,157 @@ test("a_page_wider_than_the_view_is_scrolled_sideways_not_cut", async () => {
   for (let i = 0; i < 6; i += 1) act(() => pdfController("t1")?.zoomIn());
   const content = screen.getByTestId("pdf-pages");
   expect(parseFloat(content.style.width)).toBeGreaterThan(VIEW.width);
+});
+
+// A layout is a setting that every PDF follows: the tests set it as the settings store would.
+const setLayout = (pdfLayout: "scroll" | "single" | "spread" | "grid", pdfGridAcross = 4) =>
+  act(() => useViewSettings.setState({ pdfLayout, pdfGridAcross }));
+
+test("a_spread_sets_two_pages_side_by_side_and_fits_the_pair_to_the_view", async () => {
+  useViewSettings.setState({ pdfLayout: "spread" });
+  await pages();
+  const scale = (VIEW.width - 2 * PAGE_MARGIN - PAGE_GAP) / (2 * 600);
+  const first = screen.getByRole("group", { name: "Page 1" });
+  const second = screen.getByRole("group", { name: "Page 2" });
+  const third = screen.getByRole("group", { name: "Page 3" });
+  expect(parseFloat(first.style.width)).toBeCloseTo(600 * scale, 6);
+  expect(first.style.top).toBe(second.style.top);
+  expect(parseFloat(second.style.left) - parseFloat(first.style.left)).toBeCloseTo(
+    600 * scale + PAGE_GAP,
+    6
+  );
+  expect(parseFloat(third.style.top)).toBeCloseTo(PAGE_MARGIN + 800 * scale + PAGE_GAP, 6);
+  expect(third.style.left).toBe(first.style.left);
+});
+
+test("a_grid_sets_the_pages_in_rows_of_its_columns", async () => {
+  useViewSettings.setState({ pdfLayout: "grid", pdfGridAcross: 3 });
+  await pages({ pages: 5 });
+  const scale = (VIEW.width - 2 * PAGE_MARGIN - 2 * PAGE_GAP) / (3 * 600);
+  const tops = [1, 2, 3, 4, 5].map((n) =>
+    parseFloat(screen.getByRole("group", { name: `Page ${n}` }).style.top)
+  );
+  expect(tops[0]).toBeCloseTo(tops[2] ?? NaN, 6);
+  expect(tops[3]).toBeCloseTo(PAGE_MARGIN + 800 * scale + PAGE_GAP, 6);
+  expect(tops[4]).toBeCloseTo(tops[3] ?? NaN, 6);
+});
+
+test("switching_layout_keeps_the_current_page_in_view", async () => {
+  await pages({ pages: 6 });
+  const scale = (VIEW.width - 2 * PAGE_MARGIN) / 600;
+  scrollTo(PAGE_MARGIN + 2 * (800 * scale + PAGE_GAP) + 5);
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(2);
+
+  setLayout("spread");
+  const spreadScale = (VIEW.width - 2 * PAGE_MARGIN - PAGE_GAP) / (2 * 600);
+  // Page 3 (index 2) opens the second row.
+  expect(screen.getByTestId("pdf-scroll").scrollTop).toBeCloseTo(
+    PAGE_MARGIN + 800 * spreadScale + PAGE_GAP,
+    4
+  );
+  fireEvent.scroll(screen.getByTestId("pdf-scroll"));
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(2);
+
+  setLayout("grid", 3);
+  // Page 3 is the last of the first row of three: the row is in view and the page is kept.
+  expect(screen.getByTestId("pdf-scroll").scrollTop).toBeCloseTo(PAGE_MARGIN, 4);
+  fireEvent.scroll(screen.getByTestId("pdf-scroll"));
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(2);
+
+  setLayout("scroll");
+  const back = Number(screen.getByTestId("pdf-pages").dataset.zoom) * CSS_PX_PER_PT;
+  expect(screen.getByTestId("pdf-scroll").scrollTop).toBeCloseTo(
+    PAGE_MARGIN + 2 * (800 * back + PAGE_GAP),
+    4
+  );
+});
+
+test("a_document_at_the_top_stays_at_the_top_when_the_layout_changes", async () => {
+  await pages();
+  setLayout("spread");
+  expect(screen.getByTestId("pdf-scroll").scrollTop).toBe(0);
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(0);
+});
+
+test("single_shows_one_page_and_the_keys_step_through_the_document", async () => {
+  useViewSettings.setState({ pdfLayout: "single" });
+  await pages();
+  const scroll = screen.getByTestId("pdf-scroll");
+  expect(screen.getAllByRole("group")).toHaveLength(1);
+  expect(screen.getByRole("group", { name: "Page 1" })).toBeInTheDocument();
+
+  fireEvent.keyDown(scroll, { key: "PageDown" });
+  expect(screen.getByRole("group", { name: "Page 2" })).toBeInTheDocument();
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(1);
+  fireEvent.keyDown(scroll, { key: "ArrowRight" });
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(2);
+  fireEvent.keyDown(scroll, { key: "ArrowLeft" });
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(1);
+  fireEvent.keyDown(scroll, { key: "PageUp" });
+  fireEvent.keyDown(scroll, { key: "PageUp" });
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(0);
+  for (let i = 0; i < 9; i += 1) fireEvent.keyDown(scroll, { key: "PageDown" });
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(3);
+  expect(screen.getByRole("group", { name: "Page 4" })).toBeInTheDocument();
+});
+
+test("a_step_in_single_starts_the_new_page_at_its_top", async () => {
+  useViewSettings.setState({ pdfLayout: "single" });
+  await pages();
+  const scroll = screen.getByTestId("pdf-scroll");
+  scroll.scrollTop = 300;
+  fireEvent.scroll(scroll);
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(0);
+  fireEvent.keyDown(scroll, { key: "PageDown" });
+  expect(scroll.scrollTop).toBe(0);
+});
+
+test("the_step_keys_do_nothing_outside_single_and_with_a_modifier_held", async () => {
+  await pages();
+  const scroll = screen.getByTestId("pdf-scroll");
+  const stay = new KeyboardEvent("keydown", { key: "PageDown", bubbles: true, cancelable: true });
+  scroll.dispatchEvent(stay);
+  expect(stay.defaultPrevented).toBe(false);
+  setLayout("single");
+  fireEvent.keyDown(scroll, { key: "ArrowRight", ctrlKey: true });
+  fireEvent.keyDown(scroll, { key: "ArrowRight", altKey: true });
+  expect(usePdfView.getState().byTab["t1"]?.page ?? 0).toBe(0);
+});
+
+test("switching_to_single_shows_the_page_that_was_in_view", async () => {
+  await pages();
+  const scale = (VIEW.width - 2 * PAGE_MARGIN) / 600;
+  scrollTo(PAGE_MARGIN + 2 * (800 * scale + PAGE_GAP) + 5);
+  setLayout("single");
+  expect(screen.getAllByRole("group")).toHaveLength(1);
+  expect(screen.getByRole("group", { name: "Page 3" })).toBeInTheDocument();
+  setLayout("scroll");
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(2);
+  expect(screen.getAllByRole("group")).toHaveLength(4);
+});
+
+test("go_to_page_in_single_shows_that_page", async () => {
+  useViewSettings.setState({ pdfLayout: "single" });
+  await pages();
+  act(() => pdfController("t1")?.askGoToPage());
+  const field = await screen.findByRole("textbox", { name: /^Page \(1 to/ });
+  fireEvent.change(field, { target: { value: "4" } });
+  fireEvent.keyDown(field, { key: "Enter" });
+  expect(screen.getByRole("group", { name: "Page 4" })).toBeInTheDocument();
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(3);
+});
+
+test("go_to_page_in_a_spread_scrolls_to_the_row_that_holds_the_page", async () => {
+  useViewSettings.setState({ pdfLayout: "spread" });
+  await pages();
+  const scale = (VIEW.width - 2 * PAGE_MARGIN - PAGE_GAP) / (2 * 600);
+  act(() => pdfController("t1")?.askGoToPage());
+  const field = await screen.findByRole("textbox", { name: /^Page \(1 to/ });
+  fireEvent.change(field, { target: { value: "4" } });
+  fireEvent.keyDown(field, { key: "Enter" });
+  expect(screen.getByTestId("pdf-scroll").scrollTop).toBeCloseTo(
+    PAGE_MARGIN + 800 * scale + PAGE_GAP,
+    4
+  );
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(3);
 });

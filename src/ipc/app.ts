@@ -15,6 +15,7 @@ export type ViewMode = "list" | "grid";
 
 /** Which of the two new tabs Ctrl+T opens; the other is on Ctrl+Shift+T. */
 export type NewTabDefault = "folder" | "current";
+export type PdfLayout = "scroll" | "single" | "spread" | "grid";
 
 /** How the time of day is written in dates (store.rs TimeFormat): the system's way, 12-hour or 24-hour. */
 export type TimeFormat = "system" | "12" | "24";
@@ -73,6 +74,10 @@ export interface Settings {
   time_format: TimeFormat;
   /** The shape of the folder view's right-click menu (store.rs Settings::folder_menu). */
   folder_menu: FolderMenu;
+  /** How every PDF is laid out (store.rs Settings::pdf_layout). */
+  pdf_layout: PdfLayout;
+  /** The pages in a row of the PDF grid layout, 1 to 12 (store.rs Settings::pdf_grid_across). */
+  pdf_grid_across: number;
   /** Whether Kern writes the error log (store.rs Settings::error_log). */
   error_log: boolean;
 }

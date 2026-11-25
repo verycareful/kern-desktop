@@ -13,6 +13,7 @@ import { corruptText, useStoreErrors } from "../store/store-errors";
 import { AboutSection } from "./AboutSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { EditorSection } from "./EditorSection";
+import { PdfSection } from "./PdfSection";
 import { FilesSection } from "./FilesSection";
 import { KeysSection } from "./KeysSection";
 import { LibrarySection } from "./LibrarySection";
@@ -43,6 +44,7 @@ const SECTIONS: Record<Category, ComponentType<{ settings: Settings }>> = {
   files: FilesSection,
   library: LibrarySection,
   editor: EditorSection,
+  pdf: PdfSection,
   keys: KeysSection,
   about: AboutSection,
 };

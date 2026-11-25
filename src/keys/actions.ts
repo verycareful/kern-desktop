@@ -23,7 +23,7 @@ import { folderController, type MoveTo } from "../files/folder-controller";
 import { useFolderUi } from "../files/folder-ui";
 import type { SortBy, SortDir } from "../files/sort";
 import { orderWords, useTreeSort, type TreeSortBy } from "../files/tree-sort";
-import { setViewMode, toggleHidden, useViewSettings } from "../files/view-settings";
+import { setPdfLayout, setViewMode, toggleHidden, useViewSettings } from "../files/view-settings";
 import { trashController, type TrashMove } from "../files/trash-controller";
 import { useVolumes } from "../shell/volumes-store";
 import { isEditorPin, usePinnedRecent } from "../shell/pinned-recent-store";
@@ -1507,6 +1507,24 @@ const pdfActions: Action[] = [
     enabled: (c) => pdfOf(c) !== undefined,
     run: (c) => pdfOf(c)?.zoomFit(),
   },
+  ...(
+    [
+      ["scroll", "Continuous scroll", "Ctrl+Alt+1"],
+      ["single", "Single page", "Ctrl+Alt+2"],
+      ["spread", "Two pages", "Ctrl+Alt+3"],
+      ["grid", "Grid of pages", "Ctrl+Alt+4"],
+    ] as const
+  ).map(([layout, label, key]): Action => ({
+    id: `pdf.layout.${layout}`,
+    label,
+    area: "View",
+    keys: [key],
+    when: "doc",
+    inEditable: true,
+    checked: () => useViewSettings.getState().pdfLayout === layout,
+    enabled: (c) => pdfOf(c) !== undefined,
+    run: () => void setPdfLayout(layout),
+  })),
   {
     id: "pdf.goToPage",
     label: "Go to page…",

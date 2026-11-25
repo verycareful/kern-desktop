@@ -26,6 +26,8 @@ const COMMON = {
     default_layout: "file_manager",
     new_tab_folder: null,
     new_tab_default: "folder",
+    pdf_layout: "scroll",
+    pdf_grid_across: 4,
     word_wrap: false,
     editor_zoom: 1,
     interface_size: 90,

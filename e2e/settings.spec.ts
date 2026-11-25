@@ -13,6 +13,8 @@ const SETTINGS = {
   default_layout: "file_manager",
   new_tab_folder: null,
   new_tab_default: "folder",
+  pdf_layout: "scroll",
+  pdf_grid_across: 4,
   interface_size: 100,
   terminal: null,
 };

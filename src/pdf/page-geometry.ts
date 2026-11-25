@@ -54,56 +54,107 @@ export function stepZoom(factor: number, direction: 1 | -1): number {
   return clampZoom(next * ZOOM_STEP);
 }
 
-/** CSS pixels to a point that makes the widest page as wide as `viewWidth` leaves room for. */
-export function fitScale(sizes: readonly PageSize[], viewWidth: number): number {
+/**
+ * CSS pixels to a point that makes a row of `across` of the widest page, a gap apart, as wide as
+ * `viewWidth` leaves room for.
+ */
+export function fitScale(sizes: readonly PageSize[], viewWidth: number, across = 1): number {
   const widest = sizes.reduce((w, s) => Math.max(w, s.widthPt), 0);
-  const room = Math.max(1, viewWidth - 2 * PAGE_MARGIN);
-  return widest > 0 ? room / widest : CSS_PX_PER_PT;
+  const room = Math.max(1, viewWidth - 2 * PAGE_MARGIN - (across - 1) * PAGE_GAP);
+  return widest > 0 ? room / (across * widest) : CSS_PX_PER_PT;
 }
 
-/** CSS pixels to a point for `zoom` in a view `viewWidth` wide. */
-export function scaleOf(zoom: Zoom, sizes: readonly PageSize[], viewWidth: number): number {
-  return zoom.fit ? fitScale(sizes, viewWidth) : clampZoom(zoom.factor) * CSS_PX_PER_PT;
+/** CSS pixels to a point for `zoom` in a view `viewWidth` wide, with `across` pages to a row. */
+export function scaleOf(
+  zoom: Zoom,
+  sizes: readonly PageSize[],
+  viewWidth: number,
+  across = 1
+): number {
+  return zoom.fit ? fitScale(sizes, viewWidth, across) : clampZoom(zoom.factor) * CSS_PX_PER_PT;
 }
 
 /** The zoom factor a scale stands for, for showing and for stepping from a fit. */
 export const factorOf = (scale: number): number => scale / CSS_PX_PER_PT;
 
-/** Where a page sits in the scrolled content, in CSS pixels. */
+/**
+ * Where a page sits in the scrolled content, in CSS pixels: `left` is from the left edge of the
+ * block of pages (`PageBoxes.width`), `top` from the top of the content.
+ */
 export interface PageBox {
+  left: number;
   top: number;
   width: number;
   height: number;
 }
 
+/** A row of pages: the band it takes of the scroll. */
+export interface RowBox {
+  top: number;
+  height: number;
+  /** The pages in the row, counted from 0, left to right. */
+  pages: number[];
+}
+
 export interface PageBoxes {
-  pages: PageBox[];
+  /** The box of every page of the document, by page; a page in no row has none. */
+  pages: (PageBox | undefined)[];
+  rows: RowBox[];
+  /** The width of the block of pages, without the margins; the view centres it. */
+  width: number;
   /** The height of the whole scrolled content. */
   total: number;
 }
 
-/** The box of every page at `scale`, one under the other. */
-export function pageBoxes(sizes: readonly PageSize[], scale: number): PageBoxes {
-  const pages: PageBox[] = [];
+/**
+ * The boxes of the pages in `rows` at `scale`. A row is one band: its pages stand side by side,
+ * a gap apart, each in a cell as wide as the widest page of the document so that the columns of
+ * every row line up, centred in the cell and in the row's height. A row of fewer pages than
+ * the widest row (the last one) starts at the left of the block.
+ */
+export function layoutBoxes(
+  sizes: readonly PageSize[],
+  rows: readonly (readonly number[])[],
+  scale: number
+): PageBoxes {
+  const cell = sizes.reduce((w, s) => Math.max(w, s.widthPt * scale), 0);
+  const across = rows.reduce((n, row) => Math.max(n, row.length), 0);
+  const pages: (PageBox | undefined)[] = new Array<PageBox | undefined>(sizes.length);
+  const bands: RowBox[] = [];
   let y = PAGE_MARGIN;
-  for (const size of sizes) {
-    const height = size.heightPt * scale;
-    pages.push({ top: y, width: size.widthPt * scale, height });
+  for (const row of rows) {
+    const heights = row.map((page) => (sizes[page]?.heightPt ?? 0) * scale);
+    const height = Math.max(0, ...heights);
+    row.forEach((page, column) => {
+      const size = sizes[page];
+      if (!size) return;
+      const width = size.widthPt * scale;
+      const h = size.heightPt * scale;
+      pages[page] = {
+        left: column * (cell + PAGE_GAP) + (cell - width) / 2,
+        top: y + (height - h) / 2,
+        width,
+        height: h,
+      };
+    });
+    bands.push({ top: y, height, pages: [...row] });
     y += height + PAGE_GAP;
   }
-  return { pages, total: y - PAGE_GAP + PAGE_MARGIN };
+  const total = bands.length > 0 ? y - PAGE_GAP + PAGE_MARGIN : 2 * PAGE_MARGIN;
+  const width = across > 0 ? across * cell + (across - 1) * PAGE_GAP : 0;
+  return { pages, rows: bands, width, total };
 }
 
 /**
- * The page at `offset` from the top of the content: the page whose box holds it, or the one
- * above when it falls in a gap. 0 for an offset above the first page.
+ * The row at `offset` from the top of the content: the row whose band holds it, or the one
+ * above when it falls in a gap. 0 for an offset above the first row.
  */
-export function pageAtOffset(pages: readonly { top: number }[], offset: number): number {
+export function rowAtOffset(rows: readonly { top: number }[], offset: number): number {
   let low = 0;
-  let high = pages.length - 1;
+  let high = rows.length - 1;
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
-    if ((pages[mid]?.top ?? Infinity) <= offset) low = mid;
+    if ((rows[mid]?.top ?? Infinity) <= offset) low = mid;
     else high = mid - 1;
   }
   return Math.max(0, low);

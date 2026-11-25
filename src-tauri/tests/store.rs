@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use kern_lib::store::{
-    move_aside, volume_online, FolderMenu, LayoutKind, NewTabDefault, Panel, SessionTab,
+    move_aside, volume_online, FolderMenu, LayoutKind, NewTabDefault, Panel, PdfLayout, SessionTab,
     SessionWindow, Settings, Store, TimeFormat, ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES,
-    LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, MAIN_LAYOUTS, RECENTS_CAP, RIGHT_WIDTH_MAX,
-    RIGHT_WIDTH_MIN,
+    LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, MAIN_LAYOUTS, PDF_GRID_ACROSS_DEFAULT,
+    PDF_GRID_ACROSS_MAX, PDF_GRID_ACROSS_MIN, RECENTS_CAP, RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN,
 };
 use kernkraft_tauri::WirePath;
 use serde_json::{json, Map, Value};
@@ -1636,6 +1636,90 @@ fn an_unknown_folder_menu_is_refused_and_changes_nothing() {
     assert_eq!(
         s.settings_get().unwrap().value.folder_menu,
         FolderMenu::Collapsed
+    );
+}
+
+#[test]
+fn pdf_layout_defaults_to_scroll_and_round_trips() {
+    let e = env();
+    let s = store(&e);
+    let got = s.settings_get().unwrap().value;
+    assert_eq!(got.pdf_layout, PdfLayout::Scroll);
+    assert_eq!(got.pdf_grid_across, PDF_GRID_ACROSS_DEFAULT);
+    assert_eq!(PDF_GRID_ACROSS_DEFAULT, 4);
+    for (text, want) in [
+        ("single", PdfLayout::Single),
+        ("spread", PdfLayout::Spread),
+        ("grid", PdfLayout::Grid),
+        ("scroll", PdfLayout::Scroll),
+    ] {
+        let out = s
+            .settings_set(patch(json!({ "pdf_layout": text })))
+            .unwrap();
+        assert_eq!(out.value.pdf_layout, want);
+        assert_eq!(
+            read_json(&e.config.join("settings.json"))["pdf_layout"],
+            json!(text)
+        );
+        assert_eq!(store(&e).settings_get().unwrap().value.pdf_layout, want);
+    }
+    let out = s
+        .settings_set(patch(json!({"pdf_grid_across": 7})))
+        .unwrap();
+    assert_eq!(out.value.pdf_grid_across, 7);
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["pdf_grid_across"],
+        json!(7)
+    );
+    assert_eq!(store(&e).settings_get().unwrap().value.pdf_grid_across, 7);
+}
+
+#[test]
+fn an_unknown_pdf_layout_or_a_grid_outside_1_to_12_is_refused_and_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    s.settings_set(patch(json!({"pdf_layout": "grid", "pdf_grid_across": 6})))
+        .unwrap();
+    for bad in [json!("book"), json!("Grid"), json!(1), json!(null)] {
+        let err = s
+            .settings_set(patch(json!({ "pdf_layout": bad })))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument");
+    }
+    for bad in [
+        json!(0),
+        json!(PDF_GRID_ACROSS_MIN - 1),
+        json!(PDF_GRID_ACROSS_MAX + 1),
+        json!(-1),
+        json!(2.5),
+        json!("4"),
+        json!(null),
+    ] {
+        let err = s
+            .settings_set(patch(json!({ "pdf_grid_across": bad })))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument");
+    }
+    let got = s.settings_get().unwrap().value;
+    assert_eq!(got.pdf_layout, PdfLayout::Grid);
+    assert_eq!(got.pdf_grid_across, 6);
+    assert_eq!((PDF_GRID_ACROSS_MIN, PDF_GRID_ACROSS_MAX), (1, 12));
+}
+
+#[test]
+fn a_stored_pdf_grid_outside_1_to_12_is_reported_and_kept() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    fs::write(e.config.join("settings.json"), r#"{"pdf_grid_across": 40}"#).unwrap();
+    let s = store(&e);
+    let got = s.settings_get().unwrap();
+    assert_eq!(got.value.pdf_grid_across, PDF_GRID_ACROSS_DEFAULT);
+    assert_eq!(got.corrupt.len(), 1);
+    assert_eq!(got.corrupt[0].field.as_deref(), Some("pdf_grid_across"));
+    s.settings_set(patch(json!({"word_wrap": true}))).unwrap();
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["pdf_grid_across"],
+        json!(40)
     );
 }
 
