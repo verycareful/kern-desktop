@@ -6,6 +6,7 @@ import type { WireError, WirePath, WirePdfOpened } from "../ipc";
 
 const ipc = vi.hoisted(() => ({
   pdfOpen: vi.fn(),
+  pdfPageInfo: vi.fn(),
   pdfClose: vi.fn(),
   docOpened: vi.fn(),
   docClosed: vi.fn(),
@@ -16,6 +17,7 @@ vi.mock("./system-fonts", () => ({ ensureSystemFonts: () => Promise.resolve() })
 
 import { useOps } from "../ops/useOps";
 import { useTabs } from "../store/tabs";
+import { usePdfView } from "./pdf-view";
 import { PdfViewer } from "./PdfViewer";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
@@ -38,12 +40,19 @@ const wireError = (kind: string, message = kind): WireError => ({
 beforeEach(() => {
   vi.clearAllMocks();
   useOps.setState({ notice: null });
+  usePdfView.setState({ byTab: {} });
   useTabs.setState({
     tabs: [{ id: "t1", kind: "doc", path: FILE, dirty: false, format: "pdf" }],
     activeId: "t1",
   });
   ipc.pdfOpen.mockResolvedValue(opened());
   ipc.pdfClose.mockResolvedValue(undefined);
+  ipc.pdfPageInfo.mockResolvedValue({
+    width_pt: 612,
+    height_pt: 792,
+    rotate: 0,
+    crop_box: [0, 0, 612, 792],
+  });
   ipc.docOpened.mockResolvedValue(undefined);
   ipc.docClosed.mockResolvedValue(undefined);
   ipc.on.mockResolvedValue(() => undefined);
@@ -52,16 +61,20 @@ beforeEach(() => {
 const viewer = (props: Partial<Parameters<typeof PdfViewer>[0]> = {}) =>
   render(<PdfViewer tabId="t1" path={FILE} active {...props} />);
 
-test("shows_what_it_is_opening_then_the_file_and_its_page_count", async () => {
+test("shows_what_it_is_opening_then_a_page_box_for_every_page", async () => {
   viewer();
   expect(screen.getByTestId("pdf-opening")).toHaveTextContent("Opening book.pdf");
-  expect(await screen.findByTestId("pdf-status")).toHaveTextContent("book.pdf: 3 pages");
+  expect(await screen.findByTestId("pdf-pages")).toBeInTheDocument();
+  expect(screen.getAllByRole("group", { name: /^Page \d$/ })).toHaveLength(3);
+  expect(usePdfView.getState().byTab["t1"]).toMatchObject({ page: 0, pages: 3 });
 });
 
-test("a_one_page_file_says_page_not_pages", async () => {
+test("a_one_page_file_has_one_page_box_and_counts_one_page", async () => {
   ipc.pdfOpen.mockResolvedValue(opened({ pages: 1 }));
   viewer();
-  expect(await screen.findByTestId("pdf-status")).toHaveTextContent("book.pdf: 1 page");
+  expect(await screen.findByTestId("pdf-pages")).toBeInTheDocument();
+  expect(screen.getAllByRole("group", { name: /^Page \d$/ })).toHaveLength(1);
+  expect(usePdfView.getState().byTab["t1"]?.pages).toBe(1);
 });
 
 test("a_file_with_zero_pages_shows_an_empty_state", async () => {
@@ -90,7 +103,7 @@ test("shows_the_password_prompt_for_an_encrypted_file", async () => {
 
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: "right" } });
   fireEvent.click(screen.getByRole("button", { name: "Open" }));
-  expect(await screen.findByTestId("pdf-status")).toBeInTheDocument();
+  expect(await screen.findByTestId("pdf-pages")).toBeInTheDocument();
   expect(screen.queryByTestId("password-prompt")).toBeNull();
 });
 
@@ -143,7 +156,7 @@ test("a_file_open_elsewhere_carries_the_read_only_banner", async () => {
   ipc.docOpened.mockRejectedValue(wireError("AlreadyOpen", "open in editor-2"));
   viewer();
   expect(await screen.findByTestId("read-only-banner")).toBeInTheDocument();
-  expect(screen.getByTestId("pdf-status")).toBeInTheDocument();
+  expect(screen.getByTestId("pdf-pages")).toBeInTheDocument();
 });
 
 test("a_tab_that_is_not_shown_stays_open_and_hidden", async () => {

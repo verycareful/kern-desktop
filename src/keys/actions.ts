@@ -32,6 +32,7 @@ import { showSettings } from "../settings/show-settings";
 import { documentsController } from "../files/documents-controller";
 import { useOps } from "../ops/useOps";
 import { docController } from "../editor/doc-controller";
+import { pdfController } from "../pdf/pdf-controller";
 import { moveTabToWindow } from "../shell/move-doc";
 import { closeTab } from "../shell/useCloseGuard";
 import { openAsEditor } from "../shell/layout-switch";
@@ -1467,7 +1468,57 @@ const docActions: Action[] = [
   },
 ];
 
-actions.push(...docActions, ...trashActions, ...placeActions, ...pinnedActions);
+function pdfOf(c: ActionContext) {
+  return c.target?.kind === "doc" && c.target.format === "pdf"
+    ? pdfController(c.target.id)
+    : undefined;
+}
+
+// The zoom keys: Ctrl+plus is Ctrl+= on a layout whose plus shares a key with =, and Ctrl+Shift
+// plus on one that types it with Shift. The view takes them while a PDF is in front.
+const pdfActions: Action[] = [
+  {
+    id: "pdf.zoomIn",
+    label: "Zoom in",
+    area: "View",
+    keys: ["Ctrl+=", "Ctrl+Plus", "Ctrl+Shift+Plus"],
+    when: "doc",
+    inEditable: true,
+    enabled: (c) => pdfOf(c) !== undefined,
+    run: (c) => pdfOf(c)?.zoomIn(),
+  },
+  {
+    id: "pdf.zoomOut",
+    label: "Zoom out",
+    area: "View",
+    keys: ["Ctrl+-"],
+    when: "doc",
+    inEditable: true,
+    enabled: (c) => pdfOf(c) !== undefined,
+    run: (c) => pdfOf(c)?.zoomOut(),
+  },
+  {
+    id: "pdf.zoomFit",
+    label: "Fit width",
+    area: "View",
+    keys: ["Ctrl+0"],
+    when: "doc",
+    inEditable: true,
+    enabled: (c) => pdfOf(c) !== undefined,
+    run: (c) => pdfOf(c)?.zoomFit(),
+  },
+  {
+    id: "pdf.goToPage",
+    label: "Go to page…",
+    area: "Navigation",
+    keys: ["Ctrl+G"],
+    when: "doc",
+    enabled: (c) => pdfOf(c) !== undefined,
+    run: (c) => pdfOf(c)?.askGoToPage(),
+  },
+];
+
+actions.push(...docActions, ...pdfActions, ...trashActions, ...placeActions, ...pinnedActions);
 
 export function getAction(id: string): Action {
   const a = actions.find((x) => x.id === id);

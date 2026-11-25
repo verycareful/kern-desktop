@@ -657,6 +657,22 @@
   gap: calc(var(--kern-density-gap) * 1.5);
 }
 
+/* The page counter of a PDF is a button that opens Go to page, drawn as the text around it. */
+.kern-status-button {
+  padding: 0 4px;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.kern-status-button:hover {
+  color: var(--kern-text);
+  background: var(--kern-accent-soft);
+}
+
 .kern-status-path {
   overflow: hidden;
   text-overflow: ellipsis;

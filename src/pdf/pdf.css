@@ -18,3 +18,40 @@
 .kern-pdf-status p {
   margin: 0;
 }
+
+.kern-pdf-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.kern-pdf-pages {
+  position: relative;
+}
+
+/* A page is paper: it is white and its pixels are the document's, whatever the theme. */
+.kern-pdf-page {
+  position: absolute;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
+}
+
+.kern-pdf-page-pixels {
+  position: absolute;
+  inset: 0;
+}
+
+.kern-pdf-tile {
+  position: absolute;
+  display: block;
+}
+
+.kern-pdf-page-error {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 16px;
+  color: #555;
+  font-size: 13px;
+  text-align: center;
+}

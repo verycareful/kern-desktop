@@ -6,6 +6,7 @@ import { ReadOnlyBanner } from "../editor/ReadOnlyBanner";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { PasswordPrompt } from "./PasswordPrompt";
+import { PdfPages } from "./PdfPages";
 import { usePdfDoc } from "./usePdfDoc";
 import "./pdf.css";
 
@@ -84,13 +85,7 @@ export function PdfViewer(props: {
       </div>
     );
   } else {
-    body = (
-      <div className="kern-pdf-status" role="status" data-testid="pdf-status">
-        <p>
-          {name}: {doc.pages} {doc.pages === 1 ? "page" : "pages"}
-        </p>
-      </div>
-    );
+    body = <PdfPages tabId={tabId} doc={doc} active={active} />;
   }
 
   return (
