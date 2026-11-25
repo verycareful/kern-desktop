@@ -26,7 +26,7 @@ import { usePageSizes } from "./usePageSizes";
 export function PanelDock(props: { tabId: string; doc: PdfDoc; active: boolean }) {
   const { tabId, doc, active } = props;
   const panels = useViewSettings((s) => s.pdfPanels);
-  const { sizes, error } = usePageSizes(doc.handle, doc.pages, doc.revision);
+  const { sizes, readAt, error } = usePageSizes(doc.handle, doc.pages, doc.revision);
   const arranged = arrangePanels(panels);
 
   // A closed document's thumbnails are of no use to a handle the engine may give out again.
@@ -47,9 +47,15 @@ export function PanelDock(props: { tabId: string; doc: PdfDoc; active: boolean }
         {arranged[side].map((id) => (
           <Panel key={id} id={id} tabId={tabId} placement={panels[id]}>
             {id === "thumbnails" ? (
-              <ThumbnailStrip tabId={tabId} doc={doc} sizes={sizes} horizontal={false} />
+              <ThumbnailStrip
+                tabId={tabId}
+                doc={doc}
+                sizes={sizes}
+                sizesAt={readAt}
+                horizontal={false}
+              />
             ) : (
-              <ToolsPanel tabId={tabId} collapsed={panels[id].collapsed} />
+              <ToolsPanel tabId={tabId} doc={doc} collapsed={panels[id].collapsed} />
             )}
           </Panel>
         ))}
@@ -61,7 +67,14 @@ export function PanelDock(props: { tabId: string; doc: PdfDoc; active: boolean }
       <div className="kern-pdf-dock-main">
         {column("left")}
         <div className="kern-pdf-dock-centre">
-          <PdfPages tabId={tabId} doc={doc} active={active} sizes={sizes} sizeError={error} />
+          <PdfPages
+            tabId={tabId}
+            doc={doc}
+            active={active}
+            sizes={sizes}
+            sizesAt={readAt}
+            sizeError={error}
+          />
         </div>
         {column("right")}
       </div>
@@ -70,9 +83,9 @@ export function PanelDock(props: { tabId: string; doc: PdfDoc; active: boolean }
           {arranged.bottom.map((id) => (
             <Panel key={id} id={id} tabId={tabId} placement={panels[id]}>
               {id === "thumbnails" ? (
-                <ThumbnailStrip tabId={tabId} doc={doc} sizes={sizes} horizontal />
+                <ThumbnailStrip tabId={tabId} doc={doc} sizes={sizes} sizesAt={readAt} horizontal />
               ) : (
-                <ToolsPanel tabId={tabId} collapsed={panels[id].collapsed} />
+                <ToolsPanel tabId={tabId} doc={doc} collapsed={panels[id].collapsed} />
               )}
             </Panel>
           ))}

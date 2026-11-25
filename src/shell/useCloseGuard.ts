@@ -31,6 +31,8 @@ export interface AtRisk {
   deleted: boolean;
   /** It cannot be saved where it is; Save As can keep it. */
   readOnly: boolean;
+  /** It has no way to save yet: closing loses its changes, and the question offers no Save for it. */
+  unsavable: boolean;
 }
 
 export interface CloseQuestion {
@@ -90,7 +92,9 @@ function atRisk(ids: readonly string[]): AtRisk[] {
   return ids.flatMap((id) => {
     const tab = tabs.find((t) => t.id === id);
     const risk = tab?.kind === "doc" ? docController(id)?.closeRisk() : null;
-    return tab && risk ? [{ id, name: tabTitle(tab), ...risk }] : [];
+    return tab && risk
+      ? [{ id, name: tabTitle(tab), ...risk, unsavable: risk.unsavable ?? false }]
+      : [];
   });
 }
 
@@ -112,9 +116,10 @@ async function ask(items: AtRisk[], what: "tab" | "window"): Promise<Outcome> {
   const saving: CloseQuestion = { items, what, saving: true };
   useCloseGuard.setState({ question: saving });
   try {
-    // A document that cannot be saved where it is (read-only) is not written; it stays at risk
-    // and the next look at the window asks about it again, with no Save in the question.
-    for (const item of items.filter((i) => !i.readOnly)) {
+    // A document that cannot be saved where it is (read-only) or at all yet is not written; it
+    // stays at risk and the next look at the window asks about it again, with no Save in the
+    // question.
+    for (const item of items.filter((i) => !i.readOnly && !i.unsavable)) {
       const doc = docController(item.id);
       // A document gone meanwhile (its tab closed) has nothing left to save.
       if (doc && !(await doc.saveForClose())) {
@@ -152,7 +157,14 @@ export function closeTab(id: string): void {
   }
   const items = atRisk([id]);
   if (items.length === 0) closeAndSay(id);
-  else void ask(items, "tab").then((o) => o !== "stop" && closeAndSay(id));
+  else {
+    void ask(items, "tab").then((o) => {
+      if (o === "stop") return;
+      // A document with no way to save yet is still unsaved after a Save: it stays open.
+      if (o === "saved" && items.some((i) => i.unsavable)) return;
+      closeAndSay(id);
+    });
+  }
 }
 
 /**

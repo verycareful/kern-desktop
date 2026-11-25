@@ -10,6 +10,7 @@ import { settingsSet, type WirePath } from "../ipc";
 import { useViewSettings } from "../files/view-settings";
 import { DEFAULT_PANELS } from "../pdf/panel-placement";
 import { registerPdf, type PdfController } from "../pdf/pdf-controller";
+import { testController } from "../pdf/test-doc";
 import { SETTINGS } from "../settings/test-settings";
 import { useTabs } from "../store/tabs";
 import {
@@ -23,13 +24,7 @@ import {
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
 
-const controller = (): PdfController => ({
-  zoomIn: vi.fn(),
-  zoomOut: vi.fn(),
-  zoomFit: vi.fn(),
-  askGoToPage: vi.fn(),
-  goToPage: vi.fn(),
-});
+const controller = (): PdfController => testController();
 
 beforeEach(() => {
   useTabs.setState({ tabs: [], activeId: null });
@@ -177,4 +172,65 @@ test("the_panel_actions_are_off_without_a_mounted_pdf_and_each_toggle_has_a_key"
   }
   expect(getAction("pdf.panel.thumbnails.toggle").keys).toEqual(["Ctrl+Alt+5"]);
   expect(getAction("pdf.panel.tools.toggle").keys).toEqual(["Ctrl+Alt+6"]);
+});
+
+const ROTATIONS = [
+  ["pdf.rotate.cw", 90, "page", ["Ctrl+R"]],
+  ["pdf.rotate.ccw", 270, "page", ["Ctrl+Shift+R"]],
+  ["pdf.rotateAll.cw", 90, "all", []],
+  ["pdf.rotateAll.ccw", 270, "all", []],
+] as const;
+
+test("each_rotate_action_turns_the_pages_it_names_and_has_the_keys_it_should", () => {
+  const id = openPdf();
+  const c = controller();
+  const off = registerPdf(id, c);
+  for (const [action, degrees, scope, keys] of ROTATIONS) {
+    vi.mocked(c.rotate).mockClear();
+    runAction(getAction(action), currentContext());
+    expect(c.rotate, action).toHaveBeenCalledExactlyOnceWith(degrees, scope);
+    expect(getAction(action).keys, action).toEqual(keys);
+    expect(getAction(action).area).toBe("Edit");
+  }
+  off();
+});
+
+test("undo_and_redo_run_on_the_viewer_and_take_the_editors_keys", () => {
+  const id = openPdf();
+  const c = controller();
+  const off = registerPdf(id, c);
+  runAction(getAction("pdf.undo"), currentContext());
+  runAction(getAction("pdf.redo"), currentContext());
+  expect(c.undo).toHaveBeenCalledTimes(1);
+  expect(c.redo).toHaveBeenCalledTimes(1);
+  expect(getAction("pdf.undo").keys).toEqual(["Ctrl+Z"]);
+  expect(getAction("pdf.redo").keys).toEqual(["Ctrl+Y", "Ctrl+Shift+Z"]);
+  off();
+});
+
+test("the_edit_actions_follow_what_the_viewer_says_can_be_done", () => {
+  const id = openPdf();
+  const off = registerPdf(
+    id,
+    testController({ canEdit: () => false, canUndo: () => false, canRedo: () => false })
+  );
+  for (const id of ["pdf.rotate.cw", "pdf.rotateAll.ccw", "pdf.undo", "pdf.redo"]) {
+    expect(isEnabled(getAction(id), currentContext()), id).toBe(false);
+  }
+  off();
+  const onlyUndo = registerPdf(id, testController({ canRedo: () => false }));
+  expect(isEnabled(getAction("pdf.undo"), currentContext())).toBe(true);
+  expect(isEnabled(getAction("pdf.redo"), currentContext())).toBe(false);
+  expect(isEnabled(getAction("pdf.rotate.cw"), currentContext())).toBe(true);
+  onlyUndo();
+});
+
+test("the_edit_actions_are_off_for_a_text_document_and_a_pdf_that_is_not_mounted", () => {
+  useTabs.getState().openDoc(p("/a/n.md"));
+  const textId = useTabs.getState().activeId as string;
+  registerPdf(textId, controller());
+  const ids = ROTATIONS.map(([a]) => a as string).concat(["pdf.undo", "pdf.redo"]);
+  for (const id of ids) expect(isEnabled(getAction(id), currentContext()), id).toBe(false);
+  openPdf();
+  for (const id of ids) expect(isEnabled(getAction(id), currentContext()), id).toBe(false);
 });

@@ -18,6 +18,7 @@ import { PdfPages } from "./PdfPages";
 import { pdfController } from "./pdf-controller";
 import { usePdfView } from "./pdf-view";
 import { usePageSizes } from "./usePageSizes";
+import { testDoc } from "./test-doc";
 import type { PdfDoc } from "./usePdfDoc";
 
 // jsdom does no layout: the view is given a size, the observers are driven by hand.
@@ -58,8 +59,7 @@ const info = (width_pt: number, height_pt: number): PdfPageInfo => ({
   crop_box: [0, 0, width_pt, height_pt],
 });
 
-const doc = (over: Partial<PdfDoc> = {}): PdfDoc =>
-  ({ phase: "ready", handle: 3, pages: 4, revision: 0, readOnly: null, ...over }) as PdfDoc;
+const doc = (over: Partial<PdfDoc> = {}): PdfDoc => testDoc(over);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -103,8 +103,10 @@ afterEach(() => {
 // The pages are given their sizes by the viewer that holds them, as `usePageSizes` reads them.
 function Pages(props: { doc: PdfDoc }) {
   const { handle, pages, revision } = props.doc;
-  const { sizes, error } = usePageSizes(handle, pages, revision);
-  return <PdfPages tabId="t1" doc={props.doc} active sizes={sizes} sizeError={error} />;
+  const { sizes, readAt, error } = usePageSizes(handle, pages, revision);
+  return (
+    <PdfPages tabId="t1" doc={props.doc} active sizes={sizes} sizesAt={readAt} sizeError={error} />
+  );
 }
 
 const pages = async (over: Partial<PdfDoc> = {}) => {
@@ -483,4 +485,43 @@ test("go_to_page_in_a_spread_scrolls_to_the_row_that_holds_the_page", async () =
     4
   );
   expect(usePdfView.getState().byTab["t1"]?.page).toBe(3);
+});
+
+test("rotate_turns_the_page_in_view_or_every_page_through_the_controller", async () => {
+  ipc.pdfPageInfo.mockImplementation(async () => info(600, 800));
+  const apply = vi.fn(() => Promise.resolve());
+  await pages({ apply });
+  act(() => usePdfView.getState().patch("t1", { page: 2 }));
+  pdfController("t1")?.rotate(90, "page");
+  expect(apply).toHaveBeenLastCalledWith({ op: "rotate", pages: [2], degrees: 90 });
+  pdfController("t1")?.rotate(270, "page");
+  expect(apply).toHaveBeenLastCalledWith({ op: "rotate", pages: [2], degrees: 270 });
+  pdfController("t1")?.rotate(180, "all");
+  expect(apply).toHaveBeenLastCalledWith({ op: "rotate", pages: [0, 1, 2, 3], degrees: 180 });
+});
+
+test("the_controller_answers_for_the_document_as_it_is_now", async () => {
+  ipc.pdfPageInfo.mockImplementation(async () => info(600, 800));
+  const { rerender } = await pages({ canUndo: false, canRedo: false });
+  expect(pdfController("t1")?.canEdit()).toBe(true);
+  expect(pdfController("t1")?.canUndo()).toBe(false);
+  rerender(<Pages doc={doc({ canUndo: true, canRedo: true })} />);
+  expect(pdfController("t1")?.canUndo()).toBe(true);
+  expect(pdfController("t1")?.canRedo()).toBe(true);
+  // A document another place holds can be neither changed nor undone here.
+  rerender(<Pages doc={doc({ canUndo: true, canRedo: true, canEdit: false })} />);
+  expect(pdfController("t1")?.canEdit()).toBe(false);
+  expect(pdfController("t1")?.canUndo()).toBe(false);
+  expect(pdfController("t1")?.canRedo()).toBe(false);
+});
+
+test("undo_and_redo_go_to_the_document", async () => {
+  ipc.pdfPageInfo.mockImplementation(async () => info(600, 800));
+  const undo = vi.fn(() => Promise.resolve());
+  const redo = vi.fn(() => Promise.resolve());
+  await pages({ undo, redo, canUndo: true, canRedo: true });
+  pdfController("t1")?.undo();
+  pdfController("t1")?.redo();
+  expect(undo).toHaveBeenCalledTimes(1);
+  expect(redo).toHaveBeenCalledTimes(1);
 });

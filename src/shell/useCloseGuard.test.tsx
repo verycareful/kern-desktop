@@ -188,6 +188,61 @@ test("one_read_only_document_does_not_take_save_from_the_others_in_a_window_clos
   expect(ipc.confirmClose).toHaveBeenCalledTimes(1);
 });
 
+const unsavable = { dirty: true, deleted: false, readOnly: false, unsavable: true };
+
+test("a_document_with_no_way_to_save_yet_offers_no_save_and_says_so", async () => {
+  registerDoc("a", doc({ closeRisk: () => unsavable }));
+  render(<ClosePrompt />);
+  act(() => closeTab("a"));
+  const prompt = await screen.findByTestId("close-prompt");
+  expect(within(prompt).queryByRole("button", { name: /^Save/ })).toBeNull();
+  expect(prompt).toHaveTextContent(/a\.md cannot be saved yet, so closing it loses its changes/);
+  expect(screen.getByRole("heading")).toHaveTextContent(
+    "a.md cannot be saved yet. Close it anyway?"
+  );
+  expect(within(prompt).getByRole("button", { name: "Cancel" })).toHaveFocus();
+});
+
+test("save_chosen_for_a_document_with_no_way_to_save_keeps_its_tab_open_and_saves_nothing", async () => {
+  const save = vi.fn(() => Promise.resolve(true));
+  registerDoc("a", doc({ closeRisk: () => unsavable, saveForClose: save }));
+  render(<ClosePrompt />);
+  act(() => closeTab("a"));
+  await screen.findByTestId("close-prompt");
+  // The question offers no Save, but a Save that arrives all the same must not close the tab.
+  answer("save");
+  await act(async () => {});
+  expect(save).not.toHaveBeenCalled();
+  expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["f", "a", "b"]);
+});
+
+test("a_document_with_no_way_to_save_is_asked_about_again_after_the_others_are_saved", async () => {
+  let savedB = false;
+  const saveB = vi.fn(() => {
+    savedB = true;
+    return Promise.resolve(true);
+  });
+  const saveA = vi.fn(() => Promise.resolve(true));
+  registerDoc("a", doc({ closeRisk: () => unsavable, saveForClose: saveA }));
+  registerDoc("b", doc({ closeRisk: () => (savedB ? null : dirty), saveForClose: saveB }));
+  render(<ClosePrompt />);
+  const closing = closeWindow();
+  const prompt = await screen.findByTestId("close-prompt");
+  expect(prompt).toHaveTextContent(/a\.md cannot be saved yet/);
+  fireEvent.click(within(prompt).getByRole("button", { name: "Save the others" }));
+  await vi.waitFor(() => expect(saveB).toHaveBeenCalledTimes(1));
+  const again = await vi.waitFor(() => {
+    expect(useCloseGuard.getState().question?.items.map((i) => i.id)).toEqual(["a"]);
+    return screen.getByTestId("close-prompt");
+  });
+  expect(within(again).queryByRole("button", { name: /^Save/ })).toBeNull();
+  expect(saveA).not.toHaveBeenCalled();
+  expect(ipc.confirmClose).not.toHaveBeenCalled();
+  answer("discard");
+  await closing;
+  expect(ipc.confirmClose).toHaveBeenCalledTimes(1);
+});
+
 test("escape_is_cancel", async () => {
   registerDoc("a", doc({ closeRisk: () => dirty }));
   render(<ClosePrompt />);

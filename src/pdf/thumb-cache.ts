@@ -52,6 +52,14 @@ export class ThumbCache {
       if (key.startsWith(prefix)) this.entries.delete(key);
   }
 
+  /** Drops every thumbnail of page `page` (from 0) of document `handle`, whatever its revision. */
+  dropPage(handle: number, page: number): void {
+    for (const key of [...this.entries.keys()]) {
+      const [h, , p] = key.split(":");
+      if (h === String(handle) && p === String(page)) this.entries.delete(key);
+    }
+  }
+
   get size(): number {
     return this.entries.size;
   }

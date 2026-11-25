@@ -1566,6 +1566,42 @@ const pdfActions: Action[] = [
     enabled: (c) => pdfOf(c) !== undefined,
     run: (c) => pdfOf(c)?.askGoToPage(),
   },
+  // Rotate turns the page in view; Rotate all turns every page and has no key. The edit keys
+  // leave a field that has the focus (no `inEditable`) its own Ctrl+Z, Ctrl+Y and Ctrl+R.
+  ...(
+    [
+      ["pdf.rotate.cw", "Rotate page clockwise", ["Ctrl+R"], 90, "page"],
+      ["pdf.rotate.ccw", "Rotate page counterclockwise", ["Ctrl+Shift+R"], 270, "page"],
+      ["pdf.rotateAll.cw", "Rotate all pages clockwise", [], 90, "all"],
+      ["pdf.rotateAll.ccw", "Rotate all pages counterclockwise", [], 270, "all"],
+    ] as const
+  ).map(([id, label, keys, degrees, scope]): Action => ({
+    id,
+    label,
+    area: "Edit",
+    keys: [...keys],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canEdit() ?? false,
+    run: (c) => pdfOf(c)?.rotate(degrees, scope),
+  })),
+  {
+    id: "pdf.undo",
+    label: "Undo",
+    area: "Edit",
+    keys: ["Ctrl+Z"],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canUndo() ?? false,
+    run: (c) => pdfOf(c)?.undo(),
+  },
+  {
+    id: "pdf.redo",
+    label: "Redo",
+    area: "Edit",
+    keys: ["Ctrl+Y", "Ctrl+Shift+Z"],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canRedo() ?? false,
+    run: (c) => pdfOf(c)?.redo(),
+  },
 ];
 
 actions.push(...docActions, ...pdfActions, ...trashActions, ...placeActions, ...pinnedActions);

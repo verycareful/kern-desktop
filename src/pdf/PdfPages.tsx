@@ -17,7 +17,7 @@ import {
   type PageSize,
   type Zoom,
 } from "./page-geometry";
-import { registerPdf } from "./pdf-controller";
+import { registerPdf, type RotateScope, type Turn } from "./pdf-controller";
 import { usePdfView } from "./pdf-view";
 import type { PdfDoc } from "./usePdfDoc";
 import { acrossOf, layoutOf, layoutRows, rowOfPage } from "./view-layout";
@@ -48,10 +48,12 @@ export function PdfPages(props: {
   active: boolean;
   /** The size of every page, from `usePageSizes`; null until they are read. */
   sizes: PageSize[] | null;
+  /** The revision of the document `sizes` were read at (`usePageSizes`). */
+  sizesAt: number;
   /** Why the sizes could not be read. */
   sizeError: WireError | null;
 }) {
-  const { tabId, doc, active, sizes, sizeError } = props;
+  const { tabId, doc, active, sizes, sizesAt, sizeError } = props;
   const scroll = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState<Zoom>(FIT_WIDTH);
   const [view, setView] = useState({ width: 0, height: 0 });
@@ -230,6 +232,25 @@ export function PdfPages(props: {
   const zoomBy = useCallback((direction: 1 | -1) => {
     setZoom({ fit: false, factor: stepZoom(factorNow.current, direction) });
   }, []);
+  // The edit commands read the document as it is when they run, not as it was when they were
+  // registered.
+  const docNow = useRef(doc);
+  useLayoutEffect(() => {
+    docNow.current = doc;
+  });
+  const rotate = useCallback(
+    (degrees: Turn, scope: RotateScope) => {
+      const d = docNow.current;
+      // The page in view; the engine reads no pages as every page, so a document with none is
+      // not asked.
+      const last = d.pages - 1;
+      if (last < 0) return;
+      const shownNow = Math.min(usePdfView.getState().byTab[tabId]?.page ?? 0, last);
+      const pages = scope === "all" ? Array.from({ length: d.pages }, (_, i) => i) : [shownNow];
+      void d.apply({ op: "rotate", pages, degrees });
+    },
+    [tabId]
+  );
   useEffect(
     () =>
       registerPdf(tabId, {
@@ -238,8 +259,14 @@ export function PdfPages(props: {
         zoomFit: () => setZoom(FIT_WIDTH),
         askGoToPage: () => patchView(tabId, { goTo: true }),
         goToPage,
+        rotate,
+        undo: () => void docNow.current.undo(),
+        redo: () => void docNow.current.redo(),
+        canEdit: () => docNow.current.canEdit,
+        canUndo: () => docNow.current.canEdit && docNow.current.canUndo,
+        canRedo: () => docNow.current.canEdit && docNow.current.canRedo,
       }),
-    [tabId, zoomBy, patchView, goToPage]
+    [tabId, zoomBy, patchView, goToPage, rotate]
   );
 
   // Ctrl and the wheel zoom. React's own wheel handler is passive and could not keep the
@@ -316,6 +343,7 @@ export function PdfPages(props: {
                     size={size}
                     cssWidth={box.width}
                     visible={near.has(page)}
+                    current={(doc.pageRevisions[page] ?? 0) <= sizesAt}
                   />
                 </PageSlot>
               );

@@ -7,6 +7,8 @@ import { pageSizes, type PageSize } from "./page-geometry";
 export interface PageSizes {
   /** The size of every page, null until they are read; the last answer stays while a new edit is read. */
   sizes: PageSize[] | null;
+  /** The revision of the document the sizes were read at; -1 before they are read. */
+  readAt: number;
   /** Why the sizes could not be read. */
   error: WireError | null;
 }
@@ -18,15 +20,15 @@ export function usePageSizes(
   pages: number,
   revision: number
 ): PageSizes {
-  const [sizes, setSizes] = useState<PageSize[] | null>(null);
+  const [read, setRead] = useState<{ sizes: PageSize[]; at: number } | null>(null);
   const [error, setError] = useState<WireError | null>(null);
   useEffect(() => {
     if (handle === undefined) return;
     let stale = false;
     setError(null);
     pageSizes(handle, pages, () => stale).then(
-      (read) => {
-        if (!stale) setSizes(read);
+      (sizes) => {
+        if (!stale) setRead({ sizes, at: revision });
       },
       (e) => {
         if (!stale) setError(toWireError(e));
@@ -36,5 +38,5 @@ export function usePageSizes(
       stale = true;
     };
   }, [handle, pages, revision]);
-  return { sizes, error };
+  return { sizes: read?.sizes ?? null, readAt: read?.at ?? -1, error };
 }

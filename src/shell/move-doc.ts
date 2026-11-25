@@ -39,6 +39,8 @@ const say = (text: string) => useOps.getState().notify(text);
  */
 function stateToHand(doc: DocController | undefined): { state: HandedDoc | null } | string {
   if (!doc) return { state: null };
+  const why = doc.whyNotMovable?.();
+  if (why) return why;
   if (doc.busy()) return "it is being saved or moved; try again when that has finished";
   const state = doc.snapshot();
   if (state === null) return { state: null };

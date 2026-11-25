@@ -7,6 +7,7 @@ import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { PasswordPrompt } from "./PasswordPrompt";
 import { PanelDock } from "./PanelDock";
+import { usePdfDocController } from "./pdf-doc-controller";
 import { usePdfDoc } from "./usePdfDoc";
 import "./pdf.css";
 
@@ -47,6 +48,7 @@ export function PdfViewer(props: {
           : { ok: false, reason: "the document could not be registered as open in this window" }
       ),
   });
+  usePdfDocController(tabId, doc);
   useEffect(() => {
     if (doc.phase === "failed") {
       settle({

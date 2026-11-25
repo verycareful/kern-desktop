@@ -15,6 +15,7 @@ import { usePdfView } from "./pdf-view";
 import { ThumbnailStrip } from "./ThumbnailStrip";
 import { THUMB_WIDTH, thumbCache } from "./thumb-cache";
 import type { PageSize } from "./page-geometry";
+import { testController, testDoc } from "./test-doc";
 import type { PdfDoc } from "./usePdfDoc";
 
 let intersections: { callback: IntersectionObserverCallback; targets: Set<Element> }[] = [];
@@ -35,18 +36,11 @@ class FakeIntersectionObserver {
   }
 }
 
-const doc = (over: Partial<PdfDoc> = {}): PdfDoc =>
-  ({ phase: "ready", handle: 3, pages: 5, revision: 0, readOnly: null, ...over }) as PdfDoc;
+const doc = (over: Partial<PdfDoc> = {}): PdfDoc => testDoc({ pages: 5, ...over });
 const sizes = (n = 5): PageSize[] =>
   Array.from({ length: n }, () => ({ widthPt: 600, heightPt: 800, rotate: 0 }));
 
-const controller = (goToPage = vi.fn()): PdfController => ({
-  zoomIn: vi.fn(),
-  zoomOut: vi.fn(),
-  zoomFit: vi.fn(),
-  askGoToPage: vi.fn(),
-  goToPage,
-});
+const controller = (goToPage = vi.fn()): PdfController => testController({ goToPage });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -84,7 +78,15 @@ afterEach(() => {
 });
 
 const strip = (over: Partial<PdfDoc> = {}, n = 5, horizontal = false) =>
-  render(<ThumbnailStrip tabId="t1" doc={doc(over)} sizes={sizes(n)} horizontal={horizontal} />);
+  render(
+    <ThumbnailStrip
+      tabId="t1"
+      doc={doc(over)}
+      sizes={sizes(n)}
+      sizesAt={0}
+      horizontal={horizontal}
+    />
+  );
 
 // The strip's observer reports these pages as within reach.
 const reach = (pages: number[], isIntersecting = true) => {
@@ -139,7 +141,7 @@ test("a_thumbnail_that_scrolls_away_mid_draw_is_cancelled_and_its_canvas_dropped
   expect(thumbCache.size).toBe(0);
 });
 
-test("a_thumbnail_drawn_before_comes_from_the_cache_and_a_new_revision_draws_again", async () => {
+test("a_thumbnail_drawn_before_comes_from_the_cache_and_a_new_revision_of_the_page_draws_again", async () => {
   const { rerender } = strip();
   reach([1]);
   await waitFor(() => expect(ipc.pdfRender).toHaveBeenCalledTimes(1));
@@ -150,7 +152,59 @@ test("a_thumbnail_drawn_before_comes_from_the_cache_and_a_new_revision_draws_aga
   expect(ipc.pdfRender).toHaveBeenCalledTimes(1);
   expect(document.querySelectorAll("canvas")).toHaveLength(1);
   rerender(
-    <ThumbnailStrip tabId="t1" doc={doc({ revision: 1 })} sizes={sizes()} horizontal={false} />
+    <ThumbnailStrip
+      tabId="t1"
+      doc={doc({ revision: 1, pageRevisions: [0, 1, 0, 0, 0] })}
+      sizes={sizes()}
+      sizesAt={1}
+      horizontal={false}
+    />
+  );
+  await waitFor(() => expect(ipc.pdfRender).toHaveBeenCalledTimes(2));
+});
+
+test("an_edit_to_one_page_draws_no_other_thumbnail_again", async () => {
+  const { rerender } = strip();
+  reach([0, 1, 2]);
+  await waitFor(() => expect(ipc.pdfRender).toHaveBeenCalledTimes(3));
+  rerender(
+    <ThumbnailStrip
+      tabId="t1"
+      doc={doc({ revision: 1, pageRevisions: [0, 1, 0, 0, 0] })}
+      sizes={sizes()}
+      sizesAt={1}
+      horizontal={false}
+    />
+  );
+  await waitFor(() => expect(ipc.pdfRender).toHaveBeenCalledTimes(4));
+  await act(async () => undefined);
+  expect(ipc.pdfRender).toHaveBeenCalledTimes(4);
+});
+
+test("a_thumbnail_waits_for_the_sizes_of_the_edit_before_it_draws", async () => {
+  const { rerender } = strip();
+  reach([1]);
+  await waitFor(() => expect(ipc.pdfRender).toHaveBeenCalledTimes(1));
+  // The page changed at revision 1 and the sizes are still those of revision 0.
+  rerender(
+    <ThumbnailStrip
+      tabId="t1"
+      doc={doc({ revision: 1, pageRevisions: [0, 1, 0, 0, 0] })}
+      sizes={sizes()}
+      sizesAt={0}
+      horizontal={false}
+    />
+  );
+  await act(async () => undefined);
+  expect(ipc.pdfRender).toHaveBeenCalledTimes(1);
+  rerender(
+    <ThumbnailStrip
+      tabId="t1"
+      doc={doc({ revision: 1, pageRevisions: [0, 1, 0, 0, 0] })}
+      sizes={sizes()}
+      sizesAt={1}
+      horizontal={false}
+    />
   );
   await waitFor(() => expect(ipc.pdfRender).toHaveBeenCalledTimes(2));
 });
@@ -212,6 +266,7 @@ test("a_thumbnail_is_as_tall_as_its_page_is_to_its_width", () => {
       tabId="t1"
       doc={doc()}
       sizes={[{ widthPt: 400, heightPt: 800, rotate: 0 }]}
+      sizesAt={0}
       horizontal={false}
     />
   );
@@ -221,6 +276,6 @@ test("a_thumbnail_is_as_tall_as_its_page_is_to_its_width", () => {
 });
 
 test("a_strip_with_no_sizes_yet_shows_no_thumbnails", () => {
-  render(<ThumbnailStrip tabId="t1" doc={doc()} sizes={null} horizontal={false} />);
+  render(<ThumbnailStrip tabId="t1" doc={doc()} sizes={null} sizesAt={0} horizontal={false} />);
   expect(screen.queryAllByRole("button")).toHaveLength(0);
 });

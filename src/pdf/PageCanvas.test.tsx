@@ -13,11 +13,11 @@ vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()),
 
 import { PageCanvas } from "./PageCanvas";
 import type { PageSize } from "./page-geometry";
+import { testDoc } from "./test-doc";
 import type { PdfDoc } from "./usePdfDoc";
 
 const SIZE: PageSize = { widthPt: 100, heightPt: 200, rotate: 0 };
-const doc = (over: Partial<PdfDoc> = {}): PdfDoc =>
-  ({ phase: "ready", handle: 5, pages: 3, revision: 0, readOnly: null, ...over }) as PdfDoc;
+const doc = (over: Partial<PdfDoc> = {}): PdfDoc => testDoc({ handle: 5, pages: 3, ...over });
 
 const putImageData = vi.fn();
 const images: { width: number; height: number; length: number }[] = [];
@@ -64,7 +64,7 @@ const wireError = (kind: string, message = kind): WireError => ({
 });
 
 const canvas = (props: Partial<Parameters<typeof PageCanvas>[0]> = {}) => (
-  <PageCanvas doc={doc()} page={2} size={SIZE} cssWidth={80} visible {...props} />
+  <PageCanvas doc={doc()} page={2} size={SIZE} cssWidth={80} visible current {...props} />
 );
 
 test("renders_only_while_visible", async () => {
@@ -196,4 +196,43 @@ test("a_canvas_the_webview_will_not_give_is_said", async () => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   render(canvas());
   expect(await screen.findByRole("alert")).toHaveTextContent("no 2D canvas");
+});
+
+test("an_edit_to_another_page_does_not_draw_this_page_again", async () => {
+  const { rerender } = render(canvas({ doc: doc({ pageRevisions: [0, 0, 0] }) }));
+  await waitFor(() => expect(putImageData).toHaveBeenCalledTimes(1));
+  // The document is at a new revision and page 1 changed at it; page 2 did not.
+  rerender(canvas({ doc: doc({ revision: 1, pageRevisions: [0, 1, 0] }) }));
+  await act(async () => undefined);
+  expect(ipc.pdfRender).toHaveBeenCalledTimes(1);
+});
+
+test("an_edit_to_this_page_draws_it_again_and_cancels_the_picture_in_flight", async () => {
+  let finish!: () => void;
+  ipc.pdfRender.mockImplementationOnce(
+    (_h, _p, _r, widthPx: number) =>
+      new Promise<Uint8Array>((r) => (finish = () => r(new Uint8Array(widthPx * widthPx * 8))))
+  );
+  const { rerender } = render(canvas({ doc: doc({ pageRevisions: [0, 0, 0] }) }));
+  await waitFor(() => expect(ipc.pdfRender).toHaveBeenCalledTimes(1));
+  rerender(canvas({ doc: doc({ revision: 1, pageRevisions: [0, 0, 1] }) }));
+  // The first picture is of the page as it was: it is cancelled, never painted, and the page is
+  // asked for again.
+  await waitFor(() => expect(ipc.pdfRender).toHaveBeenCalledTimes(2));
+  expect(ipc.pdfCancelJob).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(putImageData).toHaveBeenCalledTimes(1));
+  await act(async () => finish());
+  expect(putImageData).toHaveBeenCalledTimes(1);
+});
+
+test("a_page_waits_for_its_sizes_before_it_is_drawn_again", async () => {
+  const { rerender } = render(canvas({ doc: doc({ pageRevisions: [0, 0, 0] }) }));
+  await waitFor(() => expect(putImageData).toHaveBeenCalledTimes(1));
+  rerender(canvas({ doc: doc({ revision: 1, pageRevisions: [0, 0, 1] }), current: false }));
+  await act(async () => undefined);
+  expect(ipc.pdfRender).toHaveBeenCalledTimes(1);
+  // The picture on show stays until the sizes of the edit are read.
+  expect(document.querySelectorAll("canvas")).toHaveLength(1);
+  rerender(canvas({ doc: doc({ revision: 1, pageRevisions: [0, 0, 1] }), current: true }));
+  await waitFor(() => expect(ipc.pdfRender).toHaveBeenCalledTimes(2));
 });

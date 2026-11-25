@@ -52,3 +52,18 @@ test("a_closed_document_drops_only_its_own_thumbnails", () => {
   expect(cache.size).toBe(1);
   expect(cache.get(thumbKey(30, 0, 0, 120))).toBeDefined();
 });
+
+test("a_changed_page_drops_its_thumbnails_of_every_revision_and_width_and_no_other", () => {
+  const cache = new ThumbCache();
+  cache.set(thumbKey(3, 0, 5, 120), thumb(1));
+  cache.set(thumbKey(3, 4, 5, 240), thumb(2));
+  cache.set(thumbKey(3, 0, 50, 120), thumb(3));
+  cache.set(thumbKey(3, 0, 6, 120), thumb(4));
+  cache.set(thumbKey(30, 0, 5, 120), thumb(5));
+  cache.dropPage(3, 5);
+  // Page 50 and document 30 share the digits of page 5 and document 3, and are not it.
+  expect(cache.size).toBe(3);
+  expect(cache.get(thumbKey(3, 0, 50, 120))).toBeDefined();
+  expect(cache.get(thumbKey(3, 0, 6, 120))).toBeDefined();
+  expect(cache.get(thumbKey(30, 0, 5, 120))).toBeDefined();
+});

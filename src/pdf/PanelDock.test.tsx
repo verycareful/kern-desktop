@@ -20,6 +20,7 @@ import { PanelDock } from "./PanelDock";
 import { DEFAULT_PANELS, movePanel, toggleCollapsed } from "./panel-placement";
 import { usePdfView } from "./pdf-view";
 import { THUMB_WIDTH, thumbCache, thumbKey } from "./thumb-cache";
+import { testDoc } from "./test-doc";
 import type { PdfDoc } from "./usePdfDoc";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
@@ -29,8 +30,7 @@ const info = (width_pt: number, height_pt: number): PdfPageInfo => ({
   rotate: 0,
   crop_box: [0, 0, width_pt, height_pt],
 });
-const doc = (over: Partial<PdfDoc> = {}): PdfDoc =>
-  ({ phase: "ready", handle: 3, pages: 4, revision: 0, readOnly: null, ...over }) as PdfDoc;
+const doc = (over: Partial<PdfDoc> = {}): PdfDoc => testDoc(over);
 
 let tabId = "";
 beforeEach(() => {

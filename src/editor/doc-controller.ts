@@ -15,9 +15,15 @@ export interface DocController {
   whySaveRefused(): string | null;
   /**
    * What closing would lose: unsaved edits, or the only copy of a file deleted on disk; null
-   * when nothing. `readOnly` says it cannot be saved where it is.
+   * when nothing. `readOnly` says it cannot be saved where it is; `unsavable` says the document
+   * has no way to save yet, so the close question offers no Save for it.
    */
-  closeRisk(): { dirty: boolean; deleted: boolean; readOnly: boolean } | null;
+  closeRisk(): {
+    dirty: boolean;
+    deleted: boolean;
+    readOnly: boolean;
+    unsavable?: boolean;
+  } | null;
   /** Saves for a close; true when nothing is lost by closing now. */
   saveForClose(): Promise<boolean>;
   /** The document as it is, for another window to take over; null when it holds nothing. */
@@ -26,6 +32,11 @@ export interface DocController {
   setMoving(moving: boolean): void;
   /** A save or a move is under way: the document is not to be moved now. */
   busy(): boolean;
+  /**
+   * Why the document cannot go to another window now, in words that follow "it": a document whose
+   * unsaved changes would not go along. Absent or null when it can.
+   */
+  whyNotMovable?(): string | null;
 }
 
 const controllers = new Map<string, DocController>();

@@ -24,10 +24,12 @@ export function ThumbnailStrip(props: {
   tabId: string;
   doc: PdfDoc;
   sizes: PageSize[] | null;
+  /** The revision of the document `sizes` were read at (`usePageSizes`). */
+  sizesAt: number;
   /** The strip runs along the bottom: its thumbnails stand side by side. */
   horizontal: boolean;
 }) {
-  const { tabId, doc, sizes, horizontal } = props;
+  const { tabId, doc, sizes, sizesAt, horizontal } = props;
   const viewed = usePdfView((s) => s.byTab[tabId]?.page ?? 0);
   const current = Math.min(viewed, Math.max(0, (sizes?.length ?? 1) - 1));
   const scroller = useRef<HTMLDivElement>(null);
@@ -122,6 +124,7 @@ export function ThumbnailStrip(props: {
           size={size}
           current={page === current}
           visible={near.has(page)}
+          sized={(doc.pageRevisions[page] ?? 0) <= sizesAt}
           observe={observe}
           unobserve={unobserve}
         />
@@ -137,11 +140,15 @@ const ThumbItem = memo(function ThumbItem(props: {
   size: PageSize;
   current: boolean;
   visible: boolean;
+  /** `size` is the page as the last edit left it; false while the sizes are read again. */
+  sized: boolean;
   observe(el: Element, page: number): void;
   unobserve(el: Element): void;
 }) {
-  const { tabId, doc, page, size, current, visible, observe, unobserve } = props;
-  const { handle, revision } = doc;
+  const { tabId, doc, page, size, current, visible, sized, observe, unobserve } = props;
+  const { handle } = doc;
+  // The revision at which this page last changed: a page no edit touched keeps its thumbnail.
+  const revision = doc.pageRevisions[page] ?? 0;
   const item = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [failure, setFailure] = useState<WireError | null>(null);
@@ -149,6 +156,7 @@ const ThumbItem = memo(function ThumbItem(props: {
   const widthPx = Math.round(THUMB_WIDTH * dpr);
   const height = Math.max(1, Math.round((THUMB_WIDTH * size.heightPt) / size.widthPt));
   const drawing = visible && handle !== undefined;
+  const render = drawing && sized;
 
   useEffect(() => {
     const el = item.current;
@@ -160,7 +168,7 @@ const ThumbItem = memo(function ThumbItem(props: {
   useEffect(() => {
     setFailure(null);
     const target = canvas.current;
-    if (!drawing || handle === undefined || !target) return;
+    if (!render || handle === undefined || !target) return;
     const key = thumbKey(handle, revision, page, widthPx);
     const hit = thumbCache.get(key);
     if (hit) {
@@ -194,7 +202,7 @@ const ThumbItem = memo(function ThumbItem(props: {
       live = false;
       if (running) void pdfCancelJob(job).catch(() => undefined);
     };
-  }, [drawing, handle, revision, page, widthPx]);
+  }, [render, handle, revision, page, widthPx]);
 
   return (
     <div ref={item} className="kern-pdf-thumb-item" role="listitem">

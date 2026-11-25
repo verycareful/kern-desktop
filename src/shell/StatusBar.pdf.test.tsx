@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { WirePath } from "../ipc";
 import { registerPdf } from "../pdf/pdf-controller";
+import { testController } from "../pdf/test-doc";
 import { usePdfView } from "../pdf/pdf-view";
 import { useTabs } from "../store/tabs";
 import { StatusBar } from "./StatusBar";
@@ -31,13 +32,7 @@ test("a_pdf_shows_its_page_out_of_its_pages_and_its_zoom", () => {
 test("the_counter_opens_go_to_page", () => {
   const id = openPdf();
   const askGoToPage = vi.fn();
-  registerPdf(id, {
-    zoomIn: vi.fn(),
-    zoomOut: vi.fn(),
-    zoomFit: vi.fn(),
-    askGoToPage,
-    goToPage: vi.fn(),
-  });
+  registerPdf(id, testController({ askGoToPage }));
   usePdfView.getState().patch(id, { page: 0, pages: 5, zoom: 1 });
   render(<StatusBar />);
   fireEvent.click(screen.getByTestId("status-page"));

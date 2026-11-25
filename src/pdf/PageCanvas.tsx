@@ -22,8 +22,13 @@ export function PageCanvas(props: {
   cssWidth: number;
   /** Near enough to the view to be drawn. */
   visible: boolean;
+  /**
+   * `size` is the page as the last edit left it. False while the sizes are being read again: the
+   * picture on show stays until then, so a turned page is not drawn into the box it had before.
+   */
+  current: boolean;
 }) {
-  const { doc, page, size, cssWidth, visible } = props;
+  const { doc, page, size, cssWidth, visible, current } = props;
   const handle = doc.handle;
   const dpr = window.devicePixelRatio || 1;
   const plan = useMemo(
@@ -33,10 +38,13 @@ export function PageCanvas(props: {
   const canvases = useRef<(HTMLCanvasElement | null)[]>([]);
   const [failure, setFailure] = useState<WireError | null>(null);
   const drawing = visible && handle !== undefined;
+  // The revision at which this page last changed: a page no edit touched is not drawn again.
+  const pageRevision = doc.pageRevisions[page] ?? 0;
+  const render = drawing && current;
 
   useEffect(() => {
     setFailure(null);
-    if (!drawing || handle === undefined) return;
+    if (!render || handle === undefined) return;
     let live = true;
     const running = new Set<number>();
 
@@ -68,8 +76,8 @@ export function PageCanvas(props: {
       // is of no consequence.
       for (const job of running) void pdfCancelJob(job).catch(() => undefined);
     };
-    // The revision is an edit: the page is drawn again.
-  }, [drawing, handle, doc.revision, page, plan]);
+    // A new revision of the page is an edit to it: the page is drawn again.
+  }, [render, handle, pageRevision, page, plan]);
 
   return (
     <div className="kern-pdf-page-pixels" data-testid={`pdf-page-${page}`}>

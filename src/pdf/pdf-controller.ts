@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-// What the PDF actions (Ctrl+plus, Ctrl+minus, Ctrl+0, Ctrl+G) and the thumbnails reach: the viewer of a PDF tab
+// What the PDF actions (zoom, Go to page, rotate, undo, redo) and the thumbnails reach: the viewer of a PDF tab
 // registers its commands here under the tab's id while it is mounted, as the editor does
 // (editor/doc-controller.ts), so the action table needs nothing of React.
+/** What a rotation turns: the page in view, or every page. */
+export type RotateScope = "page" | "all";
+
+/** A turn clockwise, in degrees; a quarter turn the other way is 270. */
+export type Turn = 90 | 180 | 270;
+
 export interface PdfController {
   zoomIn(): void;
   zoomOut(): void;
@@ -13,6 +19,14 @@ export interface PdfController {
   askGoToPage(): void;
   /** Brings page `page` (from 0) into view: the row that holds it, or the one page shown. */
   goToPage(page: number): void;
+  /** Turns the pages `scope` names clockwise by `degrees`. */
+  rotate(degrees: Turn, scope: RotateScope): void;
+  undo(): void;
+  redo(): void;
+  /** The document is open and can be changed here (no other place holds it). */
+  canEdit(): boolean;
+  canUndo(): boolean;
+  canRedo(): boolean;
 }
 
 const controllers = new Map<string, PdfController>();
