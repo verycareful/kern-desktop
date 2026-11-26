@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { expect, test } from "vitest";
 import type { PdfEditAnswer } from "../ipc";
-import { afterEdit, openedEdit, stampOp } from "./edit-state";
+import { afterEdit, afterSave, openedEdit, stampOp } from "./edit-state";
 
 const answer = (over: Partial<PdfEditAnswer>): PdfEditAnswer => ({
   revision: 1,
@@ -71,4 +71,22 @@ test("stampOp_dates_the_ops_that_take_a_date_and_no_other", () => {
   expect(
     stampOp({ op: "deleteAnnotation", page: 0, id: { object: 3, generation: 0 } }, date)
   ).not.toHaveProperty("modified");
+});
+
+test("a_save_makes_the_document_equal_to_its_file_and_keeps_the_history", () => {
+  let state = afterEdit(openedEdit(0, 3), answer({ revision: 1 }));
+  expect(state.modified).toBe(true);
+  state = afterSave(state);
+  expect(state).toMatchObject({ modified: false, canUndo: true, revision: 1 });
+  // An undo goes back past the save: the document differs from its file again.
+  state = afterEdit(
+    state,
+    answer({ revision: 2, can_undo: false, can_redo: true, modified: true })
+  );
+  expect(state.modified).toBe(true);
+});
+
+test("saving_a_document_that_is_unchanged_changes_nothing", () => {
+  const state = openedEdit(0, 3);
+  expect(afterSave(state)).toBe(state);
 });

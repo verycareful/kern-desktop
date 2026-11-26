@@ -339,6 +339,14 @@ export const pdfSave = (
 export const pdfCompact = (handle: PdfHandle, out: WirePath, job?: JobId) =>
   invoke<WirePath>(cmd("pdf_compact"), { handle, out, job });
 
+/**
+ * Writes a compacted copy of the file `source` to `out` (never over a file); answers its path. For
+ * a file `pdfOpen` refuses with `RebuiltNotEditable` or `RevisionNotEditable`, which has no
+ * document to `pdfCompact`.
+ */
+export const pdfCompactFile = (source: PdfSource, out: WirePath, job?: JobId) =>
+  invoke<WirePath>(cmd("pdf_compact_file"), { source, out, job });
+
 // ---- drawing ----
 
 /** The size of the picture `pdfRender` makes: ask first, a picture is up to 1 GiB. */

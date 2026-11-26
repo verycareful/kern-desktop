@@ -5,13 +5,14 @@ import { registerDoc } from "../editor/doc-controller";
 import type { PdfDoc } from "./usePdfDoc";
 
 // What the document actions and the close question reach of an open PDF: the viewer registers
-// its commands under the tab's id, as a text editor does (editor/doc-controller.ts). A PDF has
-// no way to save yet, so the question about closing a changed one offers no Save, Ctrl+S says
-// why it does nothing, and the document is not handed to another window, which would not have
-// its changes.
+// its commands under the tab's id, as a text editor does (editor/doc-controller.ts). A PDF has no
+// state to hand to another window, so a clean one is opened afresh there and a changed one is not
+// moved at all: its changes would be lost with this window.
 
-const NO_SAVE = "This PDF has changes, and saving a PDF is not available yet.";
-const NOT_MOVABLE = "it has changes that are not saved, and they would be lost in the other window";
+const READ_ONLY_SAVE =
+  "This PDF is open in another place, so it is read-only here. Use Save As to keep your changes in another file.";
+const NOT_MOVABLE =
+  "it has changes that are not saved (save this PDF before moving it to another window)";
 
 export function usePdfDocController(tabId: string, doc: PdfDoc): void {
   const latest = useRef(doc);
@@ -21,18 +22,43 @@ export function usePdfDocController(tabId: string, doc: PdfDoc): void {
   useEffect(() => {
     // A change that is with the engine counts as one already made: closing now would lose it.
     const changed = () => latest.current.modified || latest.current.busy();
+    const ready = () => latest.current.phase === "ready";
     return registerDoc(tabId, {
-      save: () => undefined,
-      askSaveAs: () => undefined,
-      canSave: () => false,
-      canSaveAs: () => false,
-      whySaveRefused: () => (changed() ? NO_SAVE : null),
-      closeRisk: () =>
-        changed() ? { dirty: true, deleted: false, readOnly: false, unsavable: true } : null,
-      saveForClose: async () => !changed(),
+      save: () => void latest.current.save(),
+      askSaveAs: () => latest.current.askSaveAs(),
+      canSave: () => {
+        const d = latest.current;
+        return (
+          ready() &&
+          !d.readOnly &&
+          !d.saving &&
+          !d.moving &&
+          (d.modified || d.externalChange === "gone")
+        );
+      },
+      canSaveAs: () => ready() && !latest.current.saving && !latest.current.moving,
+      whySaveRefused: () => {
+        const d = latest.current;
+        if (!ready()) return null;
+        if (d.moving)
+          return "The document is being moved to another window, so it cannot be saved now.";
+        if (d.saving) return "A save is already under way.";
+        return d.readOnly ? READ_ONLY_SAVE : null;
+      },
+      closeRisk: () => {
+        const d = latest.current;
+        if (!ready() || !(changed() || d.externalChange === "gone")) return null;
+        return {
+          dirty: changed(),
+          deleted: d.externalChange === "gone",
+          readOnly: d.readOnly !== null,
+        };
+      },
+      saveForClose: () => latest.current.saveForClose(),
       snapshot: () => null,
-      setMoving: () => undefined,
-      busy: () => latest.current.busy(),
+      settled: ready,
+      setMoving: (moving) => latest.current.setMoving(moving),
+      busy: () => latest.current.busy() || latest.current.moving,
       whyNotMovable: () => (changed() ? NOT_MOVABLE : null),
     });
   }, [tabId]);

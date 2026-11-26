@@ -629,7 +629,7 @@ fn every_window_that_holds_documents_may_report_a_rename_and_a_stranger_may_not(
 /// the settings' writes and window, the file manager's own commands (drags out, the clipboard of
 /// files, drops, the default file manager), moving a tab to a window or taking a document in, and
 /// the files of other places.
-const NOT_FOR_DOCUMENT_WINDOWS: [&str; 24] = [
+const NOT_FOR_DOCUMENT_WINDOWS: [&str; 23] = [
     "binds_set",
     "binds_clear",
     "layout_get",
@@ -646,7 +646,6 @@ const NOT_FOR_DOCUMENT_WINDOWS: [&str; 24] = [
     "file_identity",
     "drag_out",
     "dnd_target",
-    "drop_start_op",
     "remove_start_op",
     "clip_get",
     "clip_set",
@@ -723,6 +722,44 @@ fn a_document_window_is_granted_every_command_its_capability_names() {
     for cmd in NOT_FOR_DOCUMENT_WINDOWS {
         assert!(!kern_cmds.iter().any(|c| c == cmd), "{cmd}");
     }
+}
+
+/// Save a copy first, in a document window, copies the file into its own folder with the copy
+/// operation the editor windows use for a drop, and answers the name question of that copy. It is
+/// not granted the general start_op, nor the removal commands.
+#[test]
+fn a_document_window_may_copy_its_file_and_start_nothing_else() {
+    let e = env("doc-1");
+    let (kernkraft_cmds, kern_cmds) = granted("doc.json", "doc-*");
+    for cmd in ["cancel_op", "answer_conflict"] {
+        assert!(kernkraft_cmds.iter().any(|c| c == cmd), "{cmd}");
+    }
+    assert!(kern_cmds.iter().any(|c| c == "drop_start_op"));
+    let source = json!([{"k": "Utf8", "v": "/does-not-exist/a.pdf"}]);
+    let dest = json!({"k": "Utf8", "v": "/does-not-exist"});
+    let err = invoke(
+        &e,
+        "drop_start_op",
+        json!({"kind": "copy", "sources": source, "dest": dest}),
+    )
+    .unwrap_err();
+    let text = err.to_string();
+    assert!(!text.contains("not allowed"), "{text}");
+    assert!(!text.contains("invalid args"), "{text}");
+    let err = invoke(
+        &e,
+        "remove_start_op",
+        json!({"kind": "trash", "sources": source}),
+    )
+    .unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+    let err = invoke(
+        &e,
+        &kernkraft("start_op"),
+        json!({"kind": "copy", "sources": source, "dest": null}),
+    )
+    .unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
 }
 
 #[test]
@@ -925,7 +962,7 @@ fn every_window_reads_the_binds_and_only_the_settings_window_changes_them() {
 /// size, picture, text, search hits, links and annotations, an edit with its undo and redo, the
 /// save and the compacted copy, the jobs, and the font list read once at start. Merge, extract and
 /// split are not here: only the window that offers page operations asks for them.
-const PDF_VIEW_COMMANDS: [&str; 17] = [
+const PDF_VIEW_COMMANDS: [&str; 18] = [
     "pdf_open",
     "pdf_close",
     "pdf_page_info",
@@ -940,6 +977,7 @@ const PDF_VIEW_COMMANDS: [&str; 17] = [
     "pdf_redo",
     "pdf_save",
     "pdf_compact",
+    "pdf_compact_file",
     "pdf_cancel_job",
     "pdf_job_progress",
     "pdf_set_system_fonts",

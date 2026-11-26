@@ -265,6 +265,11 @@ export function PdfPages(props: {
         canEdit: () => docNow.current.canEdit,
         canUndo: () => docNow.current.canEdit && docNow.current.canUndo,
         canRedo: () => docNow.current.canEdit && docNow.current.canRedo,
+        askCompactedCopy: () => docNow.current.askCompactedCopy(),
+        canCompactedCopy: () => docNow.current.phase === "ready" && !docNow.current.moving,
+        askReload: () => docNow.current.askReload(),
+        canReload: () =>
+          docNow.current.phase === "ready" && !docNow.current.moving && !docNow.current.busy(),
       }),
     [tabId, zoomBy, patchView, goToPage, rotate]
   );

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { WireError, WirePath, WirePdfOpened } from "../ipc";
 
@@ -8,9 +8,15 @@ const ipc = vi.hoisted(() => ({
   pdfOpen: vi.fn(),
   pdfPageInfo: vi.fn(),
   pdfClose: vi.fn(),
+  pdfApply: vi.fn(),
+  pdfCompactFile: vi.fn(),
   docOpened: vi.fn(),
   docClosed: vi.fn(),
   on: vi.fn(),
+  textCheck: vi.fn(),
+  entryOf: vi.fn(),
+  watchDir: vi.fn(),
+  unwatchDir: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 vi.mock("./system-fonts", () => ({ ensureSystemFonts: () => Promise.resolve() }));
@@ -18,6 +24,8 @@ vi.mock("./system-fonts", () => ({ ensureSystemFonts: () => Promise.resolve() })
 import { useOps } from "../ops/useOps";
 import { useTabs } from "../store/tabs";
 import { usePdfView } from "./pdf-view";
+import { EVENT_DIR_CHANGED } from "../ipc";
+import { pdfController } from "./pdf-controller";
 import { PdfViewer } from "./PdfViewer";
 
 const p = (v: string): WirePath => ({ k: "Utf8", v });
@@ -37,6 +45,9 @@ const wireError = (kind: string, message = kind): WireError => ({
   details: null,
 });
 
+let disk: "same" | "changed" | "deleted";
+let handlers: Record<string, (payload: unknown) => void>;
+
 beforeEach(() => {
   vi.clearAllMocks();
   useOps.setState({ notice: null });
@@ -55,7 +66,17 @@ beforeEach(() => {
   });
   ipc.docOpened.mockResolvedValue(undefined);
   ipc.docClosed.mockResolvedValue(undefined);
-  ipc.on.mockResolvedValue(() => undefined);
+  ipc.on.mockImplementation(async (name: string, handler: (payload: unknown) => void) => {
+    handlers[name] = handler;
+    return () => undefined;
+  });
+  ipc.textCheck.mockImplementation(async () => disk);
+  ipc.entryOf.mockRejectedValue(wireError("NotFound"));
+  ipc.watchDir.mockResolvedValue(undefined);
+  ipc.unwatchDir.mockResolvedValue(undefined);
+  ipc.pdfCompactFile.mockResolvedValue(undefined);
+  disk = "same";
+  handlers = {};
 });
 
 const viewer = (props: Partial<Parameters<typeof PdfViewer>[0]> = {}) =>
@@ -172,4 +193,90 @@ test("a_tab_not_shown_does_not_ask_for_the_password_over_the_tab_that_is", async
   await act(async () => undefined);
   await waitFor(() => expect(ipc.pdfOpen).toHaveBeenCalled());
   expect(screen.queryByTestId("password-prompt")).toBeNull();
+});
+
+test.each(["RebuiltNotEditable", "RevisionNotEditable"])(
+  "a_file_refused_as_%s_offers_a_compacted_copy_that_is_written_from_the_file",
+  async (kind) => {
+    ipc.pdfOpen.mockRejectedValue(wireError(kind, "cannot edit in place"));
+    viewer();
+    const failed = await screen.findByTestId("pdf-failed");
+    expect(failed).toHaveTextContent("book.pdf could not be opened");
+    fireEvent.click(within(failed).getByRole("button", { name: "Save a compacted copy…" }));
+
+    const field = await screen.findByLabelText("Path of the new file");
+    expect(field).toHaveValue("/home/a/book_compacted.pdf");
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() =>
+      expect(ipc.pdfCompactFile).toHaveBeenCalledWith(
+        { path: FILE, password: undefined },
+        p("/home/a/book_compacted.pdf")
+      )
+    );
+    await waitFor(() => expect(screen.queryByTestId("save-as-dialog")).toBeNull());
+  }
+);
+
+test("other_failures_offer_no_compacted_copy", async () => {
+  ipc.pdfOpen.mockRejectedValue(wireError("BadHeader"));
+  viewer();
+  const failed = await screen.findByTestId("pdf-failed");
+  expect(within(failed).queryByRole("button")).toBeNull();
+});
+
+test("a_file_changed_by_another_program_shows_the_banner_and_reload_reads_it_again", async () => {
+  viewer();
+  await screen.findByTestId("pdf-pages");
+  await waitFor(() => expect(handlers[EVENT_DIR_CHANGED]).toBeDefined());
+  expect(screen.queryByTestId("pdf-changed-banner")).toBeNull();
+  disk = "changed";
+  await act(async () => handlers[EVENT_DIR_CHANGED]?.({ key: "doc:t1" }));
+  const banner = await screen.findByTestId("pdf-changed-banner");
+
+  ipc.pdfOpen.mockResolvedValue(opened({ handle: 12, stamp: "s9:new" }));
+  disk = "same";
+  fireEvent.click(within(banner).getByRole("button", { name: "Reload" }));
+  await waitFor(() => expect(screen.queryByTestId("pdf-changed-banner")).toBeNull());
+  expect(ipc.pdfOpen).toHaveBeenCalledTimes(2);
+});
+
+test("a_file_deleted_on_disk_shows_its_banner_without_reload", async () => {
+  viewer();
+  await screen.findByTestId("pdf-pages");
+  await waitFor(() => expect(handlers[EVENT_DIR_CHANGED]).toBeDefined());
+  disk = "deleted";
+  await act(async () => handlers[EVENT_DIR_CHANGED]?.({ key: "doc:t1" }));
+  const banner = await screen.findByTestId("pdf-gone-banner");
+  expect(within(banner).queryByRole("button", { name: /reload/i })).toBeNull();
+});
+
+test("the_first_edit_asks_about_a_copy_and_goes_on_when_the_user_says_so", async () => {
+  ipc.pdfApply.mockResolvedValue({
+    revision: 1,
+    pages: 3,
+    changed_pages: [0],
+    can_undo: true,
+    can_redo: false,
+    modified: true,
+  });
+  viewer();
+  await screen.findByTestId("pdf-pages");
+  await waitFor(() => expect(pdfController("t1")).toBeDefined());
+  act(() => pdfController("t1")?.rotate(90, "page"));
+  const prompt = await screen.findByTestId("copy-first-prompt");
+  expect(ipc.pdfApply).not.toHaveBeenCalled();
+  fireEvent.click(within(prompt).getByRole("button", { name: "Edit without a copy" }));
+  await waitFor(() => expect(ipc.pdfApply).toHaveBeenCalledTimes(1));
+  expect(screen.queryByTestId("copy-first-prompt")).toBeNull();
+});
+
+test("cancelling_the_copy_question_leaves_the_pdf_as_it_was", async () => {
+  viewer();
+  await screen.findByTestId("pdf-pages");
+  await waitFor(() => expect(pdfController("t1")).toBeDefined());
+  act(() => pdfController("t1")?.rotate(90, "page"));
+  const prompt = await screen.findByTestId("copy-first-prompt");
+  fireEvent.click(within(prompt).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByTestId("copy-first-prompt")).toBeNull());
+  expect(ipc.pdfApply).not.toHaveBeenCalled();
 });

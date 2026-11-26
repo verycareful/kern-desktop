@@ -17,6 +17,10 @@ const ipc = vi.hoisted(() => ({
   docOpened: vi.fn(),
   docClosed: vi.fn(),
   on: vi.fn(),
+  textCheck: vi.fn(),
+  entryOf: vi.fn(),
+  watchDir: vi.fn(),
+  unwatchDir: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 vi.mock("./system-fonts", () => ({ ensureSystemFonts: () => Promise.resolve() }));
@@ -59,6 +63,10 @@ beforeEach(() => {
   ipc.pdfClose.mockResolvedValue(undefined);
   ipc.docOpened.mockResolvedValue(undefined);
   ipc.docClosed.mockResolvedValue(undefined);
+  ipc.textCheck.mockResolvedValue("same");
+  ipc.entryOf.mockResolvedValue({ kind: "file", len: 10, modified_ms: 1000 });
+  ipc.watchDir.mockResolvedValue(undefined);
+  ipc.unwatchDir.mockResolvedValue(undefined);
   ipc.on.mockImplementation(async (name: string, handler: (payload: unknown) => void) => {
     handlers[name] = handler;
     return () => {
@@ -215,6 +223,9 @@ test("a_file_open_elsewhere_is_shown_read_only_until_the_other_place_lets_go", a
 });
 
 test("a_rename_gives_the_tab_the_new_path_and_keeps_the_open_document", async () => {
+  // The file is not looked at under its new name here (usePdfDoc.save.test.ts does that): the stamp
+  // stays, so the document is not read again.
+  ipc.entryOf.mockRejectedValue(new Error("not looked at"));
   const { result, rerender } = mount();
   await waitFor(() => expect(result.current.phase).toBe("ready"));
   await waitFor(() => expect(handlers[EVENT_DOC_MOVED]).toBeDefined());

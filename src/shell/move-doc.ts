@@ -156,7 +156,7 @@ export async function handTo(path: WirePath, to: string): Promise<void> {
       return;
     }
     const doc = docController(id);
-    if (doc && !doc.busy() && doc.snapshot() !== null) break;
+    if (doc && !doc.busy() && (doc.settled ? doc.settled() : doc.snapshot() !== null)) break;
     if (Date.now() >= deadline) {
       await refuse(
         doc?.busy()

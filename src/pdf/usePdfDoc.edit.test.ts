@@ -13,6 +13,10 @@ const ipc = vi.hoisted(() => ({
   docOpened: vi.fn(),
   docClosed: vi.fn(),
   on: vi.fn(),
+  textCheck: vi.fn(),
+  entryOf: vi.fn(),
+  watchDir: vi.fn(),
+  unwatchDir: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 vi.mock("./system-fonts", () => ({ ensureSystemFonts: () => Promise.resolve() }));
@@ -64,14 +68,29 @@ beforeEach(() => {
   ipc.pdfClose.mockResolvedValue(undefined);
   ipc.docOpened.mockResolvedValue(undefined);
   ipc.docClosed.mockResolvedValue(undefined);
+  ipc.textCheck.mockResolvedValue("same");
+  ipc.entryOf.mockResolvedValue({ kind: "file", len: 10, modified_ms: 1000 });
+  ipc.watchDir.mockResolvedValue(undefined);
+  ipc.unwatchDir.mockResolvedValue(undefined);
   ipc.on.mockImplementation(async () => () => undefined);
 });
 
 afterEach(() => vi.useRealTimers());
 
+// The first change of an open session asks whether to keep a copy; the tests of the edits answer
+// that once, so each can go on to its change (the question itself is tested in usePdfDoc.save.test.ts).
 const ready = async (opts = {}) => {
   const view = renderHook(() => usePdfDoc("t1", FILE, opts));
   await waitFor(() => expect(view.result.current.phase).toBe("ready"));
+  if (view.result.current.canEdit) {
+    let go!: Promise<boolean>;
+    act(() => {
+      go = view.result.current.beforeFirstEdit();
+    });
+    await waitFor(() => expect(view.result.current.prompt).toBe("copyFirst"));
+    await act(() => view.result.current.answerCopyFirst("without"));
+    await expect(go).resolves.toBe(true);
+  }
   return view;
 };
 

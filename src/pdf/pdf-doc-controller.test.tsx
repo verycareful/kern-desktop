@@ -41,28 +41,58 @@ beforeEach(() => {
   });
 });
 
-test("a_changed_pdf_is_at_risk_when_closed_and_has_no_way_to_save", () => {
-  mount({ modified: true });
-  expect(docController("t1")?.closeRisk()).toEqual({
-    dirty: true,
-    deleted: false,
-    readOnly: false,
-    unsavable: true,
-  });
-  expect(docController("t1")?.canSave()).toBe(false);
-  expect(docController("t1")?.canSaveAs()).toBe(false);
-  expect(docController("t1")?.whySaveRefused()).toMatch(/saving a PDF is not available yet/);
+test("a_changed_pdf_is_at_risk_when_closed_and_can_be_saved", async () => {
+  const saveForClose = vi.fn(async () => true);
+  const save = vi.fn(async () => null);
+  mount({ modified: true, saveForClose, save });
+  const ctl = docController("t1");
+  expect(ctl?.closeRisk()).toEqual({ dirty: true, deleted: false, readOnly: false });
+  expect(ctl?.canSave()).toBe(true);
+  expect(ctl?.canSaveAs()).toBe(true);
+  expect(ctl?.whySaveRefused()).toBeNull();
+  ctl?.save();
+  expect(save).toHaveBeenCalledTimes(1);
+  await expect(ctl?.saveForClose()).resolves.toBe(true);
+  expect(saveForClose).toHaveBeenCalledTimes(1);
 });
 
-test("an_unchanged_pdf_closes_without_a_question", () => {
+test("an_unchanged_pdf_closes_without_a_question_and_has_nothing_to_save", () => {
   mount();
   expect(docController("t1")?.closeRisk()).toBeNull();
   expect(docController("t1")?.whySaveRefused()).toBeNull();
+  expect(docController("t1")?.canSave()).toBe(false);
+  expect(docController("t1")?.canSaveAs()).toBe(true);
+});
+
+test("a_pdf_whose_file_was_deleted_can_be_saved_again_and_is_at_risk", () => {
+  mount({ externalChange: "gone" });
+  expect(docController("t1")?.canSave()).toBe(true);
+  expect(docController("t1")?.closeRisk()).toEqual({
+    dirty: false,
+    deleted: true,
+    readOnly: false,
+  });
+});
+
+test("a_read_only_pdf_is_not_saved_in_place_and_says_why", () => {
+  mount({ modified: true, readOnly: { kind: "OpenElsewhere", detail: "editor-2" } });
+  const ctl = docController("t1");
+  expect(ctl?.canSave()).toBe(false);
+  expect(ctl?.canSaveAs()).toBe(true);
+  expect(ctl?.closeRisk()).toMatchObject({ dirty: true, readOnly: true });
+  expect(ctl?.whySaveRefused()).toMatch(/read-only here\. Use Save As/);
+});
+
+test("a_save_in_progress_refuses_a_second_and_says_so", () => {
+  mount({ modified: true, saving: true });
+  const ctl = docController("t1");
+  expect(ctl?.canSave()).toBe(false);
+  expect(ctl?.whySaveRefused()).toBe("A save is already under way.");
 });
 
 test("a_change_still_with_the_engine_counts_as_made", () => {
   mount({ busy: () => true });
-  expect(docController("t1")?.closeRisk()).toMatchObject({ dirty: true, unsavable: true });
+  expect(docController("t1")?.closeRisk()).toMatchObject({ dirty: true });
   expect(docController("t1")?.busy()).toBe(true);
 });
 
@@ -80,14 +110,22 @@ test("the_controller_goes_when_the_viewer_does", () => {
   expect(docController("t1")).toBeUndefined();
 });
 
-test("a_changed_pdf_is_not_moved_to_another_window_and_the_tab_stays", async () => {
+test("a_dirty_pdf_cannot_move_to_another_window", async () => {
   mount({ modified: true });
   await moveTabToWindow("t1");
   expect(ipc.detachDoc).not.toHaveBeenCalled();
   expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["t1"]);
   expect(useOps.getState().notice?.text).toMatch(
-    /book\.pdf was not moved to a new window: it has changes that are not saved/
+    /book\.pdf was not moved to a new window: it has changes that are not saved.*save this PDF before moving it to another window/
   );
+});
+
+test("a_pdf_that_moves_takes_no_edit_meanwhile", async () => {
+  const setMoving = vi.fn();
+  mount({ setMoving });
+  ipc.detachDoc.mockResolvedValue("doc-1");
+  await moveTabToWindow("t1");
+  expect(setMoving).toHaveBeenCalledWith(true);
 });
 
 test("an_unchanged_pdf_moves_with_its_format_and_no_state", async () => {

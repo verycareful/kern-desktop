@@ -26,6 +26,7 @@
     "kernkraft-tauri:allow-pdf-redo",
     "kernkraft-tauri:allow-pdf-save",
     "kernkraft-tauri:allow-pdf-compact",
+    "kernkraft-tauri:allow-pdf-compact-file",
     "kernkraft-tauri:allow-pdf-cancel-job",
     "kernkraft-tauri:allow-pdf-job-progress",
     "kernkraft-tauri:allow-pdf-set-system-fonts",

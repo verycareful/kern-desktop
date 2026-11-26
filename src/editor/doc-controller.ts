@@ -15,19 +15,23 @@ export interface DocController {
   whySaveRefused(): string | null;
   /**
    * What closing would lose: unsaved edits, or the only copy of a file deleted on disk; null
-   * when nothing. `readOnly` says it cannot be saved where it is; `unsavable` says the document
-   * has no way to save yet, so the close question offers no Save for it.
+   * when nothing. `readOnly` says it cannot be saved where it is.
    */
   closeRisk(): {
     dirty: boolean;
     deleted: boolean;
     readOnly: boolean;
-    unsavable?: boolean;
   } | null;
   /** Saves for a close; true when nothing is lost by closing now. */
   saveForClose(): Promise<boolean>;
   /** The document as it is, for another window to take over; null when it holds nothing. */
   snapshot(): HandedDoc | null;
+  /**
+   * The document is open, so it can be moved or refused now rather than waited for. Absent, a
+   * document is settled once its `snapshot` is not null (a PDF has no state to hand over, so its
+   * snapshot is always null).
+   */
+  settled?(): boolean;
   /** While true the document cannot be edited or saved: it is being handed to another window. */
   setMoving(moving: boolean): void;
   /** A save or a move is under way: the document is not to be moved now. */

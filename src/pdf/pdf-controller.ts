@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-// What the PDF actions (zoom, Go to page, rotate, undo, redo) and the thumbnails reach: the viewer of a PDF tab
+// What the PDF actions (zoom, Go to page, rotate, undo, redo, a compacted copy, reload) and the thumbnails reach: the viewer of a PDF tab
 // registers its commands here under the tab's id while it is mounted, as the editor does
 // (editor/doc-controller.ts), so the action table needs nothing of React.
 /** What a rotation turns: the page in view, or every page. */
@@ -27,6 +27,12 @@ export interface PdfController {
   canEdit(): boolean;
   canUndo(): boolean;
   canRedo(): boolean;
+  /** Opens the question for a compacted copy of the document as it is. */
+  askCompactedCopy(): void;
+  canCompactedCopy(): boolean;
+  /** Reads the file again, after asking when that drops changes made here. */
+  askReload(): void;
+  canReload(): boolean;
 }
 
 const controllers = new Map<string, PdfController>();

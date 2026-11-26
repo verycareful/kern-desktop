@@ -7,7 +7,10 @@ import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { PasswordPrompt } from "./PasswordPrompt";
 import { PanelDock } from "./PanelDock";
+import { PdfChangedBanner } from "./PdfChangedBanner";
+import { PdfPrompts } from "./PdfPrompts";
 import { usePdfDocController } from "./pdf-doc-controller";
+import { needsCompactedCopy } from "./pdf-save";
 import { usePdfDoc } from "./usePdfDoc";
 import "./pdf.css";
 
@@ -78,6 +81,17 @@ export function PdfViewer(props: {
       <div className="kern-doc-note" role="alert" data-testid="pdf-failed">
         <p>{name} could not be opened.</p>
         {doc.error && <p>{errorText(doc.error)}</p>}
+        {needsCompactedCopy(doc.error) && (
+          <>
+            <p>
+              Kern does not change this file in place. A compacted copy is a new file that can be
+              opened and edited.
+            </p>
+            <button type="button" className="kern-button" onClick={doc.askCompactedCopy}>
+              Save a compacted copy…
+            </button>
+          </>
+        )}
       </div>
     );
   } else if (doc.pages === 0) {
@@ -99,7 +113,36 @@ export function PdfViewer(props: {
       data-tab-id={tabId}
     >
       {doc.phase === "ready" && doc.readOnly && <ReadOnlyBanner readOnly={doc.readOnly} />}
+      {doc.phase === "ready" && doc.externalChange !== "none" && (
+        <PdfChangedBanner
+          kind={doc.externalChange}
+          dirty={doc.modified}
+          onReload={() => void doc.reload()}
+          onSaveAs={doc.askSaveAs}
+        />
+      )}
+      {doc.phase === "ready" && doc.watchError && (
+        <div className="kern-doc-banner" role="alert" data-testid="pdf-watch-banner">
+          <p>
+            Kern cannot watch the folder of this file, so it will not notice if the file changes or
+            is deleted ({errorText(doc.watchError)}).
+          </p>
+        </div>
+      )}
+      {doc.phase === "ready" && doc.moving && (
+        <div className="kern-doc-banner" role="status" data-testid="pdf-moving">
+          <p>Moving {name} to another window…</p>
+        </div>
+      )}
+      {doc.problem && (
+        <div className="kern-doc-banner" role="alert" data-testid="pdf-problem">
+          <p>{doc.problem}</p>
+        </div>
+      )}
       {body}
+      {active && (doc.phase === "ready" || doc.phase === "failed") && (
+        <PdfPrompts path={path} doc={doc} />
+      )}
       {active && doc.phase === "needs-password" && (
         <PasswordPrompt
           path={path}

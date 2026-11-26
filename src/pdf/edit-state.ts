@@ -31,6 +31,14 @@ export function openedEdit(revision: number, pages: number): EditState {
 }
 
 /**
+ * The state after the document was written to a file: it then equals its file, and the history
+ * stays (an undo goes back past the save, and the document differs from the file again).
+ */
+export function afterSave(state: EditState): EditState {
+  return state.modified ? { ...state, modified: false } : state;
+}
+
+/**
  * The state after the engine answered an edit, an undo or a redo. An answer that is not newer
  * than the state is an older one that arrived late, and changes nothing.
  */

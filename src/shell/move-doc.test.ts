@@ -232,6 +232,75 @@ test("a_tab_asked_for_by_an_editor_hands_over_its_text_and_closes_once_taken", a
   expect(ipc.handRefused).not.toHaveBeenCalled();
 });
 
+// A PDF holds no state to hand over: its snapshot is always null, and it is settled once open.
+const pdfController = (over: Partial<DocController> = {}): DocController =>
+  controller({
+    closeRisk: () => null,
+    snapshot: () => null,
+    settled: () => true,
+    busy: () => false,
+    ...over,
+  });
+
+test("an_open_pdf_that_is_unchanged_is_handed_over_at_once_with_no_state", async () => {
+  vi.useFakeTimers();
+  const pdf = p("/home/a/b.pdf");
+  useTabs.setState({
+    tabs: [{ id: "q", kind: "doc", path: pdf, dirty: false, format: "pdf" }],
+    activeId: "q",
+  });
+  off = registerDoc("q", pdfController());
+  ipc.handDoc.mockResolvedValue(undefined);
+  await handTo(pdf, "editor-2");
+  // Not the fifteen seconds a document with no state yet is waited for.
+  expect(ipc.handDoc).toHaveBeenCalledExactlyOnceWith("q", pdf, null, "editor-2", "pdf");
+  expect(ipc.handRefused).not.toHaveBeenCalled();
+  expect(useTabs.getState().tabs).toEqual([]);
+});
+
+test("a_changed_pdf_is_refused_at_once_and_stays_where_it_is", async () => {
+  vi.useFakeTimers();
+  const pdf = p("/home/a/b.pdf");
+  useTabs.setState({
+    tabs: [{ id: "q", kind: "doc", path: pdf, dirty: true, format: "pdf" }],
+    activeId: "q",
+  });
+  off = registerDoc(
+    "q",
+    pdfController({
+      whyNotMovable: () =>
+        "it has changes that are not saved (save this PDF before moving it to another window)",
+    })
+  );
+  await handTo(pdf, "editor-2");
+  expect(ipc.handDoc).not.toHaveBeenCalled();
+  expect(ipc.handRefused).toHaveBeenCalledExactlyOnceWith(
+    pdf,
+    "editor-2",
+    expect.stringMatching(/save this PDF before moving it to another window/)
+  );
+  expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["q"]);
+});
+
+test("a_pdf_that_has_not_opened_is_waited_for_then_refused_as_a_text_document_is", async () => {
+  vi.useFakeTimers();
+  const pdf = p("/home/a/b.pdf");
+  useTabs.setState({
+    tabs: [{ id: "q", kind: "doc", path: pdf, dirty: false, format: "pdf" }],
+    activeId: "q",
+  });
+  off = registerDoc("q", pdfController({ settled: () => false }));
+  const done = handTo(pdf, "editor-2");
+  await vi.advanceTimersByTimeAsync(HAND_WAIT_MS + 200);
+  await done;
+  expect(ipc.handDoc).not.toHaveBeenCalled();
+  expect(ipc.handRefused).toHaveBeenCalledExactlyOnceWith(
+    pdf,
+    "editor-2",
+    "it had not finished opening, or could not be opened"
+  );
+});
+
 test("a_document_window_hands_its_own_document_and_is_closed_by_the_backend", async () => {
   ipc.isDocumentWindow.mockReturnValue(true);
   off = registerDoc("doc-1", controller());

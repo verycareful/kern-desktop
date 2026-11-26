@@ -7,8 +7,7 @@ import { useCloseGuard, type AtRisk } from "./useCloseGuard";
 // The question useCloseGuard.ts asks before a document is closed: Save, Close
 // without saving, or Cancel. Escape is Cancel. Save is offered while some document listed can be
 // saved where it is, and saves those; a read-only one needs Save As, which the user reaches by
-// cancelling, and is asked about again once the others are saved, as is one that has no way to
-// save yet.
+// cancelling, and is asked about again once the others are saved.
 
 function why(item: AtRisk): string {
   if (item.deleted && item.dirty) return "has unsaved changes, and its file was deleted on disk";
@@ -24,17 +23,13 @@ export function ClosePrompt() {
   if (!question) return null;
   const { items, what, saving } = question;
   const readOnly = items.filter((i) => i.readOnly);
-  const unsavable = items.filter((i) => i.unsavable && !i.readOnly);
-  const blocked = readOnly.length + unsavable.length;
+  const blocked = readOnly.length;
   const canSave = blocked < items.length;
   const only = items.length === 1 ? items[0]! : null;
-  // A lone document with no way to save yet cannot be offered Save, so the question is not Save.
   const title = only
-    ? only.unsavable && !only.readOnly
-      ? `${only.name} cannot be saved yet. Close it anyway?`
-      : only.deleted && !only.dirty
-        ? `Save ${only.name} again before closing?`
-        : `Save the changes to ${only.name} before closing?`
+    ? only.deleted && !only.dirty
+      ? `Save ${only.name} again before closing?`
+      : `Save the changes to ${only.name} before closing?`
     : `Save ${items.length} documents before closing the window?`;
 
   return (
@@ -64,13 +59,6 @@ export function ClosePrompt() {
             ))}
           </ul>
         </>
-      )}
-      {unsavable.length > 0 && (
-        <p className="kern-modal-text">
-          {unsavable.map((i) => i.name).join(", ")} cannot be saved yet, so closing{" "}
-          {unsavable.length === 1 ? "it" : "them"} loses {unsavable.length === 1 ? "its" : "their"}{" "}
-          changes.{canSave && readOnly.length === 0 ? " Save writes the others." : ""}
-        </p>
       )}
       {readOnly.length > 0 && (
         <p className="kern-modal-text">

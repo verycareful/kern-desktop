@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   EVENT_DOC_MOVED,
+  entryOf,
   on,
   pathKey,
   pdfApply,
@@ -15,30 +16,45 @@ import {
   type PdfEditAnswer,
   type PdfHandle,
   type UnlistenFn,
+  type WireEntry,
   type WireError,
   type WirePath,
   type WireReadOnly,
   type WireStamp,
 } from "../ipc";
+import { sameEntry } from "../editor/same-entry";
+import { tabPlace } from "../editor/useTextDoc";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
 import { useOps } from "../ops/useOps";
 import { useTabs } from "../store/tabs";
-import { afterEdit, openedEdit, stampOp, type EditState, type PdfOpInput } from "./edit-state";
+import {
+  afterEdit,
+  afterSave,
+  openedEdit,
+  stampOp,
+  type EditState,
+  type PdfOpInput,
+} from "./edit-state";
 import { pdfDate } from "./pdf-date";
+import { entryAtStamp } from "./pdf-save";
 import { ensureSystemFonts } from "./system-fonts";
 import { thumbCache } from "./thumb-cache";
 import { useDocRegistration } from "./useDocRegistration";
+import { useExternalChange, type ExternalChangeState } from "./useExternalChange";
+import { usePdfSave, type PdfSave } from "./usePdfSave";
 
 // One open PDF. The hook owns the engine's handle for the document: it opens on mount, asks for
 // the password an encrypted file needs, and closes the handle when the tab goes, so the engine
 // never holds a document no tab shows. The document is open at one place at a time, as a text
 // document is (useDocRegistration). Edits go to the engine one at a time, and what the engine
-// answers (edit-state.ts) is all the hook knows of them.
+// answers (edit-state.ts) is all the hook knows of them. Writing the file, and what is asked
+// before it, is usePdfSave; whether the file is still the one that was opened is
+// useExternalChange.
 
 export type PdfPhase = "opening" | "needs-password" | "ready" | "failed";
 
-export interface PdfDoc {
+export interface PdfDoc extends PdfSave {
   phase: PdfPhase;
   /** Why the file did not open; while a password is asked for, that the last one was wrong. */
   error?: WireError;
@@ -57,8 +73,17 @@ export interface PdfDoc {
   stamp?: WireStamp;
   /** Another place holds the file: it is shown and not saved. */
   readOnly: WireReadOnly | null;
-  /** An edit can be made: the document is open and no other place holds the file. */
+  /** An edit can be made: the document is open, no other place holds the file, and it is not moving. */
   canEdit: boolean;
+  /** The next change will ask whether to keep a copy of the file first. */
+  firstEditPending: boolean;
+  /** The document is being handed to another window: it takes no change and no save meanwhile. */
+  moving: boolean;
+  setMoving(moving: boolean): void;
+  /** The file on disk is not the one that was opened or saved: changed by another program, or gone. */
+  externalChange: ExternalChangeState["change"];
+  /** The folder watch could not be set or ended: changes on disk will not be noticed. */
+  watchError: ExternalChangeState["watchError"];
   /** Opens the file, with `password` when it is encrypted; the phase says how it went. */
   open(password?: string): Promise<void>;
   /** The password was not given: the tab fails with that as its reason. */
@@ -93,6 +118,7 @@ interface State {
   changedPages: readonly number[];
   stamp?: WireStamp;
   readOnly: WireReadOnly | null;
+  moving: boolean;
 }
 
 const OPENING: State = {
@@ -100,6 +126,7 @@ const OPENING: State = {
   edit: openedEdit(0, 0),
   changedPages: [],
   readOnly: null,
+  moving: false,
 };
 
 const say = (text: string) => useOps.getState().notify(text);
@@ -117,8 +144,15 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
   // file was asked for again) closes the document it opened and changes nothing.
   const generation = useRef(0);
   const handle = useRef<PdfHandle | null>(null);
-  // The path a rename gave the document: the same document, not one to open again.
+  // The path a rename or a Save As gave the document: the same document, not one to open again.
   const ownedKey = useRef<string | null>(null);
+  // The stamp of the file as opened or last saved. A save replaces it at once, before any state is,
+  // so a check of the file never compares it with an older one.
+  const stampRef = useRef<WireStamp | undefined>(undefined);
+  // What the file was opened with, for Reload and for a compacted copy of a file that did not open.
+  const passwordRef = useRef<string | undefined>(undefined);
+  // What the file looked like when its stamp was taken: what a rename is compared with.
+  const entryRef = useRef<WireEntry | null>(null);
 
   const closeHandle = useCallback((h: PdfHandle) => {
     pdfClose(h).catch((e: unknown) =>
@@ -136,6 +170,9 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
   const open = useCallback(
     async (password?: string) => {
       const mine = ++generation.current;
+      stampRef.current = undefined;
+      entryRef.current = null;
+      passwordRef.current = password;
       setState((s) => ({ ...OPENING, readOnly: s.readOnly }));
       try {
         await ensureSystemFonts();
@@ -148,6 +185,10 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
         const previous = handle.current;
         handle.current = opened.handle;
         if (previous !== null) closeHandle(previous);
+        stampRef.current = opened.stamp;
+        void entryAtStamp(latestPath.current, opened.stamp).then((entry) => {
+          if (mine === generation.current) entryRef.current = entry;
+        });
         setState((s) => ({
           phase: "ready",
           handle: opened.handle,
@@ -155,6 +196,7 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
           changedPages: [],
           stamp: opened.stamp,
           readOnly: s.readOnly,
+          moving: false,
         }));
       } catch (e) {
         if (mine !== generation.current) return;
@@ -198,6 +240,19 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
   // not finished with.
   const queue = useRef<Promise<void>>(Promise.resolve());
   const pending = useRef(0);
+  // Runs `run` once everything asked before it has finished. A save runs here too, so none lands
+  // between a change and the answer to it.
+  const enqueue = useCallback(<T>(run: () => Promise<T>): Promise<T> => {
+    pending.current += 1;
+    const settled = queue.current.then(run).finally(() => {
+      pending.current -= 1;
+    });
+    queue.current = settled.then(
+      () => undefined,
+      () => undefined
+    );
+    return settled;
+  }, []);
   const step = useCallback(
     (what: string, call: (h: PdfHandle) => Promise<PdfEditAnswer>): Promise<void> => {
       // The document this change was asked of; one closed or opened again before the change's
@@ -214,6 +269,10 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
         }
         if (now.readOnly) {
           say(`${what} was not made: ${name} is open in another place and cannot be changed here.`);
+          return;
+        }
+        if (now.moving) {
+          say(`${what} was not made: ${name} is moving to another window.`);
           return;
         }
         const mine = asked;
@@ -233,17 +292,19 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
         }
       };
       // `run` never rejects, so the chain never breaks.
-      pending.current += 1;
-      queue.current = queue.current.then(run).finally(() => {
-        pending.current -= 1;
-      });
-      return queue.current;
+      return enqueue(run);
     },
-    []
+    [enqueue]
   );
   const busy = useCallback(() => pending.current > 0, []);
+  // Asks before the first change of an open session whether to keep a copy of the file (set below,
+  // once the saving hook exists); a change the user cancels at that question is not made.
+  const beforeFirstEdit = useRef<() => Promise<boolean>>(() => Promise.resolve(true));
   const apply = useCallback(
-    (op: PdfOpInput) => step("The change", (h) => pdfApply(h, stampOp(op, pdfDate(new Date())))),
+    async (op: PdfOpInput) => {
+      if (!(await beforeFirstEdit.current())) return;
+      await step("The change", (h) => pdfApply(h, stampOp(op, pdfDate(new Date()))));
+    },
     [step]
   );
   const undo = useCallback(() => step("Undo", (h) => pdfUndo(h)), [step]);
@@ -268,7 +329,42 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
   // ---- the file is renamed or moved inside Kern ----
   // The backend has registered the document under its new path already; the tab takes that path.
   // The handle stays: the bytes it holds are the file's, whatever the file is called now.
+  // A rename changes the change time of the file and so its stamp, though nothing in it: left as it
+  // is, the next save would be refused as a change by another program. The file is looked at under
+  // its new name, and when it is what it was when the stamp was taken (the same size and
+  // modification time, before and after a stamp is taken again), the new stamp is the file's own.
+  // Otherwise the stamp stays, and the check says that the file has changed.
   const ready = state.phase === "ready";
+  const external = useExternalChange({ tabId, path, stamp: stampRef, ready });
+  const checkRef = useRef(external.check);
+  useLayoutEffect(() => {
+    checkRef.current = external.check;
+  });
+  const retakeStamp = useCallback(
+    async (to: WirePath) => {
+      const mine = generation.current;
+      const before = entryRef.current;
+      try {
+        if (before !== null && stampRef.current !== undefined) {
+          const now = await entryOf(to);
+          if (sameEntry(before, now)) {
+            const again = await pdfOpen(to, passwordRef.current);
+            closeHandle(again.handle);
+            const after = await entryOf(to);
+            if (mine === generation.current && sameEntry(now, after)) {
+              stampRef.current = again.stamp;
+              entryRef.current = after;
+              setState((s) => ({ ...s, stamp: again.stamp }));
+            }
+          }
+        }
+      } catch {
+        // Not read: the stamp stays, and the check that follows reports what it finds.
+      }
+      void checkRef.current();
+    },
+    [closeHandle]
+  );
   useEffect(() => {
     if (!ready) return;
     let alive = true;
@@ -276,7 +372,9 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
     on(EVENT_DOC_MOVED, (ev) => {
       if (pathKey(latestPath.current) !== pathKey(ev.from)) return;
       ownedKey.current = pathKey(ev.to);
+      latestPath.current = ev.to;
       useTabs.getState().retargetDoc(tabId, ev.to);
+      void retakeStamp(ev.to);
     }).then(
       (off) => {
         if (alive) unlisten.push(off);
@@ -291,13 +389,13 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
       alive = false;
       unlisten.forEach((u) => u());
     };
-  }, [ready, tabId]);
+  }, [ready, tabId, retakeStamp]);
 
   // ---- registration with the backend ----
   const onHeld = useCallback((held: WireReadOnly | null) => {
     setState((s) => ({ ...s, readOnly: held }));
   }, []);
-  useDocRegistration({
+  const registration = useDocRegistration({
     tabId,
     path,
     location: opts.location,
@@ -307,8 +405,66 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
     onRegistered: opts.onRegistered,
   });
 
+  // ---- writing the file ----
+  const setMoving = useCallback((moving: boolean) => setState((s) => ({ ...s, moving })), []);
+  const saved = useCallback(
+    (next: { stamp: WireStamp; path?: WirePath }) => {
+      stampRef.current = next.stamp;
+      entryRef.current = null;
+      const at = next.path ?? latestPath.current;
+      if (next.path) {
+        // Saved as another file: the tab follows it, and it is the same document, not one to open.
+        ownedKey.current = pathKey(next.path);
+        latestPath.current = next.path;
+        useTabs.getState().retargetDoc(tabId, next.path);
+      }
+      const mine = generation.current;
+      void entryAtStamp(at, next.stamp).then((entry) => {
+        if (mine === generation.current) entryRef.current = entry;
+      });
+      // A file saved under a name nothing holds is this document's own: the other place that held
+      // the old one has no claim on it.
+      setState((s) => ({
+        ...s,
+        stamp: next.stamp,
+        edit: afterSave(s.edit),
+        readOnly: next.path ? null : s.readOnly,
+      }));
+    },
+    [tabId]
+  );
+  const facts = useRef({ ready: false, readOnly: false, modified: false, moving: false });
+  useLayoutEffect(() => {
+    facts.current = {
+      ready: state.phase === "ready",
+      readOnly: state.readOnly !== null,
+      modified: state.edit.modified,
+      moving: state.moving,
+    };
+  });
+  const here = opts.location ?? tabPlace(tabId);
+  const writing = usePdfSave({
+    tabId,
+    here,
+    latestPath,
+    handle,
+    stamp: stampRef,
+    password: passwordRef,
+    generation,
+    latest: facts,
+    enqueue,
+    saved,
+    reopen: open,
+    registration,
+    external,
+  });
+  useLayoutEffect(() => {
+    beforeFirstEdit.current = writing.beforeFirstEdit;
+  });
+
   return useMemo(
     () => ({
+      ...writing,
       phase: state.phase,
       error: state.error,
       handle: state.handle,
@@ -321,7 +477,16 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
       modified: state.edit.modified,
       stamp: state.stamp,
       readOnly: state.readOnly,
-      canEdit: state.phase === "ready" && state.readOnly === null,
+      canEdit: state.phase === "ready" && state.readOnly === null && !state.moving,
+      firstEditPending:
+        state.phase === "ready" &&
+        state.readOnly === null &&
+        !state.moving &&
+        writing.decidedFor !== state.handle,
+      moving: state.moving,
+      setMoving,
+      externalChange: external.change,
+      watchError: external.watchError,
       open,
       cancelPassword,
       apply,
@@ -329,6 +494,18 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
       redo,
       busy,
     }),
-    [state, open, cancelPassword, apply, undo, redo, busy]
+    [
+      writing,
+      state,
+      external.change,
+      external.watchError,
+      setMoving,
+      open,
+      cancelPassword,
+      apply,
+      undo,
+      redo,
+      busy,
+    ]
   );
 }

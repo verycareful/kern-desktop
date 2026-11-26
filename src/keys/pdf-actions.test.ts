@@ -234,3 +234,40 @@ test("the_edit_actions_are_off_for_a_text_document_and_a_pdf_that_is_not_mounted
   openPdf();
   for (const id of ids) expect(isEnabled(getAction(id), currentContext()), id).toBe(false);
 });
+
+test("the_compacted_copy_and_reload_actions_run_on_the_viewer_and_follow_what_it_allows", () => {
+  const id = openPdf();
+  const askCompactedCopy = vi.fn();
+  const askReload = vi.fn();
+  let allowed = true;
+  const off = registerPdf(
+    id,
+    testController({
+      askCompactedCopy,
+      askReload,
+      canCompactedCopy: () => allowed,
+      canReload: () => allowed,
+    })
+  );
+  const ctx = currentContext();
+  const compacted = getAction("pdf.saveCompacted");
+  const reload = getAction("pdf.reload");
+  expect(compacted.keys).toEqual([]);
+  expect(reload.keys).toEqual([]);
+  expect(compacted.label).toBe("Save a compacted copy…");
+  expect(reload.label).toBe("Reload from disk");
+  runAction(compacted, ctx);
+  runAction(reload, ctx);
+  expect(askCompactedCopy).toHaveBeenCalledTimes(1);
+  expect(askReload).toHaveBeenCalledTimes(1);
+  allowed = false;
+  expect(isEnabled(compacted, ctx)).toBe(false);
+  expect(isEnabled(reload, ctx)).toBe(false);
+  off();
+});
+
+test("save_and_save_as_are_the_document_actions_a_pdf_shares_with_text", () => {
+  // A PDF registers its commands under the same controller, so Ctrl+S and Ctrl+Shift+S reach it.
+  expect(getAction("doc.save").keys).toEqual(["Ctrl+S"]);
+  expect(getAction("doc.saveAs").keys).toEqual(["Ctrl+Shift+S"]);
+});

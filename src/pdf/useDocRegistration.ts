@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
   EVENT_DOC_RELEASED,
   docClosed,
@@ -40,9 +40,17 @@ export interface DocRegistration {
   onRegistered?(ok: boolean): void;
 }
 
+/** What a save as needs of the registration: to wait for it, and to know the tab is gone. */
+export interface DocRegistrationHandle {
+  /** Settles when the registrations and releases sent so far have been answered. */
+  settled(): Promise<unknown>;
+  /** The tab's component has unmounted (as against a new path or place). */
+  unmounted(): boolean;
+}
+
 const say = (text: string) => useOps.getState().notify(text);
 
-export function useDocRegistration(args: DocRegistration): void {
+export function useDocRegistration(args: DocRegistration): DocRegistrationHandle {
   const { tabId, path, ready } = args;
   const key = pathKey(path);
   const here = args.location ?? tabPlace(tabId);
@@ -173,4 +181,5 @@ export function useDocRegistration(args: DocRegistration): void {
     },
     []
   );
+  return useMemo(() => ({ settled: () => chain.current, unmounted: () => unmounted.current }), []);
 }
