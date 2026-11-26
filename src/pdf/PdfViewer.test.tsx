@@ -23,6 +23,8 @@ vi.mock("./system-fonts", () => ({ ensureSystemFonts: () => Promise.resolve() })
 
 import { useOps } from "../ops/useOps";
 import { useTabs } from "../store/tabs";
+import { usePdfFind } from "./pdf-find";
+import { useLinkPrompt } from "./pdf-link-prompt";
 import { usePdfView } from "./pdf-view";
 import { EVENT_DIR_CHANGED } from "../ipc";
 import { pdfController } from "./pdf-controller";
@@ -52,6 +54,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   useOps.setState({ notice: null });
   usePdfView.setState({ byTab: {} });
+  usePdfFind.setState({ byTab: {} });
+  useLinkPrompt.setState({ byTab: {} });
   useTabs.setState({
     tabs: [{ id: "t1", kind: "doc", path: FILE, dirty: false, format: "pdf" }],
     activeId: "t1",
@@ -279,4 +283,36 @@ test("cancelling_the_copy_question_leaves_the_pdf_as_it_was", async () => {
   fireEvent.click(within(prompt).getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(screen.queryByTestId("copy-first-prompt")).toBeNull());
   expect(ipc.pdfApply).not.toHaveBeenCalled();
+});
+
+test("the_find_bar_stands_above_the_pages_while_it_is_open_and_never_before_them", async () => {
+  viewer();
+  await screen.findByTestId("pdf-pages");
+  expect(screen.queryByTestId("pdf-find")).toBeNull();
+  act(() => pdfController("t1")?.openFind());
+  const bar = await screen.findByTestId("pdf-find");
+  expect(bar.compareDocumentPosition(screen.getByTestId("pdf-scroll"))).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING
+  );
+  expect(document.activeElement).toBe(within(bar).getByRole("searchbox", { name: "Find" }));
+});
+
+test("a_link_asks_in_the_prompt_of_the_tab_that_is_in_front_and_closing_the_tab_forgets_it", async () => {
+  const view = viewer();
+  await screen.findByTestId("pdf-pages");
+  act(() => useLinkPrompt.getState().ask("t1", "https://example.org/"));
+  expect(await screen.findByTestId("link-address")).toHaveTextContent("https://example.org/");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByTestId("link-prompt")).toBeNull();
+  expect(useLinkPrompt.getState().byTab["t1"]).toBeUndefined();
+  act(() => useLinkPrompt.getState().ask("t1", "tel:1"));
+  view.unmount();
+  expect(useLinkPrompt.getState().byTab["t1"]).toBeUndefined();
+});
+
+test("a_link_asked_of_a_tab_behind_another_waits_for_it_to_come_to_the_front", async () => {
+  viewer({ active: false });
+  await waitFor(() => expect(ipc.pdfOpen).toHaveBeenCalled());
+  act(() => useLinkPrompt.getState().ask("t1", "https://example.org/"));
+  expect(screen.queryByTestId("link-prompt")).toBeNull();
 });

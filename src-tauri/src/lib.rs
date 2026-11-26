@@ -68,6 +68,9 @@ pub fn run() {
                 .with_state_flags(StateFlags::all() - StateFlags::MAXIMIZED)
                 .build(),
         )
+        // Hands an address in a PDF's link to the application the system picks. A window may use
+        // only its `open_url`, and only for the schemes its capability names.
+        .plugin(tauri_plugin_opener::init())
         .plugin(kernkraft_tauri::init())
         .plugin(zoom::plugin())
         .plugin(guard::plugin())

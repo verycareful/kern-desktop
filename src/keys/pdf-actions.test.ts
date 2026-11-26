@@ -309,3 +309,33 @@ test("copy_and_select_all_do_not_reach_a_folder_or_a_text_document", () => {
     expect(isEnabled(getAction(id), currentContext()), id).toBe(false);
   }
 });
+
+test("find_and_the_two_steps_run_on_the_viewer_with_their_keys", () => {
+  const id = openPdf();
+  const openFind = vi.fn();
+  const findStep = vi.fn();
+  let can = true;
+  const off = registerPdf(id, testController({ openFind, findStep, canFind: () => can }));
+  const ctx = currentContext();
+  const find = getAction("pdf.find");
+  const next = getAction("pdf.findNext");
+  const previous = getAction("pdf.findPrevious");
+  expect(find.keys).toEqual(["Ctrl+F"]);
+  expect(next.keys).toEqual(["F3"]);
+  expect(previous.keys).toEqual(["Shift+F3"]);
+  runAction(find, ctx);
+  runAction(next, ctx);
+  runAction(previous, ctx);
+  expect(openFind).toHaveBeenCalledTimes(1);
+  expect(findStep.mock.calls).toEqual([[1], [-1]]);
+  can = false;
+  for (const a of [find, next, previous]) expect(isEnabled(a, ctx), a.id).toBe(false);
+  off();
+});
+
+test("find_does_not_reach_a_folder_or_a_text_document", () => {
+  useTabs.getState().openDoc(p("/a/n.md"));
+  for (const id of ["pdf.find", "pdf.findNext", "pdf.findPrevious"]) {
+    expect(isEnabled(getAction(id), currentContext()), id).toBe(false);
+  }
+});

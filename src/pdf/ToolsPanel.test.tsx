@@ -60,9 +60,14 @@ test("collapsed_shows_icons_only_with_labels_as_titles", () => {
   }
 });
 
-test("find_is_off_until_its_session_switches_it_on", () => {
-  render(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed={false} />);
+test("find_runs_the_find_action_and_waits_for_a_document_with_pages", () => {
+  const { rerender } = render(
+    <ToolsPanel tabId={tabId} doc={testDoc({ pages: 0 })} collapsed={false} />
+  );
   expect(screen.getByRole("button", { name: "Find" })).toBeDisabled();
+  rerender(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Find" }));
+  expect(controller.openFind).toHaveBeenCalledTimes(1);
 });
 
 test("select_all_text_runs_the_select_all_action_and_waits_for_a_document_with_pages", () => {

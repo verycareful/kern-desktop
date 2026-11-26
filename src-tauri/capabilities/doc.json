@@ -5,6 +5,15 @@
   "windows": ["doc-*"],
   "permissions": [
     "core:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://*" },
+        { "url": "http://*" },
+        { "url": "mailto:*" },
+        { "url": "tel:*" }
+      ]
+    },
     "kernkraft-tauri:allow-answer-conflict",
     "kernkraft-tauri:allow-cancel-op",
     "kernkraft-tauri:allow-entry-of",

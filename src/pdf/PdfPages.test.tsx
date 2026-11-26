@@ -18,6 +18,7 @@ import { useViewSettings } from "../files/view-settings";
 import { PAGE_GAP, PAGE_MARGIN, CSS_PX_PER_PT } from "./page-geometry";
 import { PdfPages } from "./PdfPages";
 import { pdfController } from "./pdf-controller";
+import { usePdfFind } from "./pdf-find";
 import { usePdfSelection } from "./pdf-selection";
 import { dropPageText } from "./page-text";
 import { usePdfView } from "./pdf-view";
@@ -70,6 +71,7 @@ beforeEach(() => {
   intersections = [];
   usePdfView.setState({ byTab: {} });
   usePdfSelection.setState({ byTab: {}, searches: {} });
+  usePdfFind.setState({ byTab: {} });
   dropPageText(3);
   ipc.pdfText.mockResolvedValue({
     revision: 0,
@@ -571,4 +573,54 @@ test("a_document_with_no_pages_has_nothing_to_select", async () => {
   expect(pdfController("t1")?.canSelectAll()).toBe(false);
   pdfController("t1")?.selectAll();
   expect(ipc.pdfText).not.toHaveBeenCalled();
+});
+
+test("go_to_page_with_a_spot_puts_the_spot_a_quarter_of_the_view_below_the_top", async () => {
+  await pages();
+  const scale = (VIEW.width - 2 * PAGE_MARGIN) / 600;
+  act(() => pdfController("t1")?.goToPage(2, 0.5));
+  const pageTop = PAGE_MARGIN + 2 * (800 * scale + PAGE_GAP);
+  expect(screen.getByTestId("pdf-scroll").scrollTop).toBeCloseTo(
+    pageTop + 0.5 * 800 * scale - 0.25 * VIEW.height,
+    4
+  );
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(2);
+  // A spot near the top of the first page is the top of the view.
+  act(() => pdfController("t1")?.goToPage(0, 0.01));
+  expect(screen.getByTestId("pdf-scroll").scrollTop).toBe(0);
+});
+
+test("go_to_page_with_a_spot_in_single_shows_the_page_a_quarter_of_the_view_above_the_spot", async () => {
+  useViewSettings.setState({ pdfLayout: "single" });
+  await pages();
+  act(() => pdfController("t1")?.goToPage(3, 0.6));
+  expect(screen.getByRole("group", { name: "Page 4" })).toBeInTheDocument();
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(3);
+  expect(screen.getByTestId("pdf-scroll").scrollTop).toBeGreaterThan(0);
+});
+
+test("find_opens_the_bar_and_steps_only_when_it_is_open", async () => {
+  await pages();
+  const c = pdfController("t1");
+  expect(c?.canFind()).toBe(true);
+  act(() => c?.findStep(1));
+  expect(usePdfFind.getState().byTab["t1"]?.open).toBe(true);
+  const focus = usePdfFind.getState().byTab["t1"]?.focus;
+  act(() => {
+    usePdfFind.getState().begin("t1");
+    usePdfFind
+      .getState()
+      .report("t1", 0, [{ rects: [[0, 0, 0.1, 0.1]] }, { rects: [[0, 0.2, 0.1, 0.3]] }]);
+  });
+  act(() => c?.findStep(1));
+  expect(usePdfFind.getState().byTab["t1"]?.current).toEqual({ page: 0, index: 1 });
+  act(() => c?.findStep(-1));
+  expect(usePdfFind.getState().byTab["t1"]?.current).toEqual({ page: 0, index: 0 });
+  act(() => c?.openFind());
+  expect(usePdfFind.getState().byTab["t1"]?.focus).toBe((focus ?? 0) + 1);
+});
+
+test("find_waits_for_a_document_with_pages", async () => {
+  await pages({ pages: 0 });
+  expect(pdfController("t1")?.canFind()).toBe(false);
 });

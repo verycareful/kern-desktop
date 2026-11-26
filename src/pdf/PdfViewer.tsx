@@ -5,12 +5,16 @@ import type { Location, WirePath } from "../ipc";
 import { ReadOnlyBanner } from "../editor/ReadOnlyBanner";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
+import { FindBar } from "./FindBar";
+import { LinkPrompt } from "./LinkPrompt";
 import { PasswordPrompt } from "./PasswordPrompt";
 import { PanelDock } from "./PanelDock";
 import { PdfChangedBanner } from "./PdfChangedBanner";
 import { PdfPrompts } from "./PdfPrompts";
 import { usePdfDocController } from "./pdf-doc-controller";
+import { useLinkPrompt } from "./pdf-link-prompt";
 import { needsCompactedCopy } from "./pdf-save";
+import { useFindSearch } from "./useFindSearch";
 import { usePdfDoc } from "./usePdfDoc";
 import "./pdf.css";
 
@@ -52,6 +56,10 @@ export function PdfViewer(props: {
       ),
   });
   usePdfDocController(tabId, doc);
+  useFindSearch(tabId, doc);
+  const linkUrl = useLinkPrompt((s) => s.byTab[tabId]);
+  const closeLink = useLinkPrompt((s) => s.close);
+  useEffect(() => () => closeLink(tabId), [closeLink, tabId]);
   useEffect(() => {
     if (doc.phase === "failed") {
       settle({
@@ -139,7 +147,11 @@ export function PdfViewer(props: {
           <p>{doc.problem}</p>
         </div>
       )}
+      {doc.phase === "ready" && doc.pages > 0 && <FindBar tabId={tabId} />}
       {body}
+      {active && linkUrl !== undefined && (
+        <LinkPrompt url={linkUrl} onClose={() => closeLink(tabId)} />
+      )}
       {active && (doc.phase === "ready" || doc.phase === "failed") && (
         <PdfPrompts path={path} doc={doc} />
       )}

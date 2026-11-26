@@ -74,6 +74,9 @@ export function testController(over: Partial<PdfController> = {}): PdfController
     searchSelection: vi.fn(),
     selectAll: vi.fn(),
     canSelectAll: () => true,
+    openFind: vi.fn(),
+    findStep: vi.fn(),
+    canFind: () => true,
     ...over,
   };
 }

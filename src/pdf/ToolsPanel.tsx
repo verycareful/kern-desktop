@@ -55,8 +55,8 @@ const EDIT_TOOLS: readonly (Tool & { needs: EditNeeds })[] = [
   { id: "pdf.redo", label: "Redo", Icon: Redo2, needs: "redo" },
 ];
 
-// Find waits for its own session; selecting the page's text is an action of the table.
-const FIND_TOOL: Tool = { id: "find", label: "Find", Icon: Search };
+// Find and selecting the page's text are actions of the table.
+const FIND_TOOL: Tool = { id: "pdf.find", label: "Find", Icon: Search };
 const SELECT_TOOL: Tool = { id: "pdf.selectAll", label: "Select all text", Icon: TextSelect };
 
 export function ToolsPanel(props: { tabId: string; doc: PdfDoc; collapsed: boolean }) {
@@ -75,7 +75,12 @@ export function ToolsPanel(props: { tabId: string; doc: PdfDoc; collapsed: boole
       data-testid="pdf-tools"
     >
       <ToolGroup title="Search and select" collapsed={collapsed}>
-        <ToolButton tool={FIND_TOOL} collapsed={collapsed} disabled />
+        <ActionButton
+          tabId={tabId}
+          tool={FIND_TOOL}
+          collapsed={collapsed}
+          available={doc.phase === "ready" && doc.pages > 0}
+        />
         <ActionButton
           tabId={tabId}
           tool={SELECT_TOOL}

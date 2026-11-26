@@ -34,6 +34,7 @@ fn env(label: &str) -> Env {
     fs::create_dir_all(&config).unwrap();
     fs::create_dir_all(&state).unwrap();
     let app = mock_builder()
+        .plugin(tauri_plugin_opener::init())
         .plugin(kernkraft_tauri::init())
         .plugin(zoom::plugin())
         .manage(StoreState::new(Store::new(config, state)))
@@ -263,8 +264,12 @@ fn granted(name: &str, windows: &str) -> (Vec<String>, Vec<String>) {
     assert_eq!(json["windows"], json!([windows]));
     let (mut kernkraft_cmds, mut kern_cmds) = (Vec::new(), Vec::new());
     for permission in json["permissions"].as_array().unwrap() {
-        let permission = permission.as_str().unwrap();
-        if permission.starts_with("core:") {
+        // A grant with a scope is an object; its identifier names the permission.
+        let permission = permission
+            .as_str()
+            .or_else(|| permission["identifier"].as_str())
+            .unwrap();
+        if permission.starts_with("core:") || permission.starts_with("opener:") {
             continue;
         }
         let prefix = format!("{}:allow-", kernkraft_tauri::PLUGIN_NAME);
@@ -782,6 +787,86 @@ fn a_document_window_may_put_text_on_the_clipboard_and_not_touch_the_clipboard_o
         assert!(
             err.as_str().unwrap().contains("not allowed"),
             "{cmd}: {err}"
+        );
+    }
+}
+
+/// The grants of the opener plugin in a capability file: each identifier with its allowed URL
+/// patterns (empty when the grant has no scope).
+fn opener_grants(name: &str) -> Vec<(String, Vec<String>)> {
+    let file = format!("{}/capabilities/{name}", env!("CARGO_MANIFEST_DIR"));
+    let json: Value = serde_json::from_str(&fs::read_to_string(file).unwrap()).unwrap();
+    json["permissions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|p| {
+            let id = p.as_str().or_else(|| p["identifier"].as_str()).unwrap();
+            id.starts_with("opener:").then(|| {
+                let allowed = p["allow"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .map(|e| e["url"].as_str().unwrap().to_owned())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                (id.to_owned(), allowed)
+            })
+        })
+        .collect()
+}
+
+/// A link in a PDF is handed to the system for the four schemes Kern Android also opens, and for
+/// nothing else: no file path, no reveal in the file manager, no other scheme.
+#[test]
+fn the_windows_that_show_a_pdf_may_open_only_web_mail_and_phone_addresses() {
+    let schemes = ["https://*", "http://*", "mailto:*", "tel:*"];
+    for (file, window) in [("doc.json", "doc-1"), ("editor.json", "editor-1")] {
+        let grants = opener_grants(file);
+        assert_eq!(
+            grants,
+            vec![(
+                "opener:allow-open-url".to_owned(),
+                schemes.iter().map(|s| (*s).to_owned()).collect()
+            )],
+            "{file}"
+        );
+        let e = env(window);
+        for (cmd, args) in [
+            ("open_path", json!({"path": "/etc/hostname"})),
+            ("reveal_item_in_dir", json!({"path": "/etc/hostname"})),
+            ("open_url", json!({"url": "file:///etc/hostname"})),
+            ("open_url", json!({"url": "ftp://example.org/a"})),
+            ("open_url", json!({"url": "javascript:alert(1)"})),
+        ] {
+            let err = invoke(&e, &format!("plugin:opener|{cmd}"), args.clone()).unwrap_err();
+            // A command no capability grants is "not allowed"; an address outside the scope of
+            // the grant is "Not allowed to open url".
+            assert!(
+                err.as_str().unwrap().to_lowercase().contains("not allowed"),
+                "{window} {cmd} {args}: {err}"
+            );
+        }
+    }
+}
+
+/// Only the windows that show a PDF hold the grant: the main window and the settings window
+/// have none.
+#[test]
+fn the_main_and_settings_windows_may_not_open_an_address() {
+    for (label, file) in [("main", "main.json"), ("settings", "settings.json")] {
+        assert!(opener_grants(file).is_empty(), "{file}");
+        let e = env(label);
+        let err = invoke(
+            &e,
+            "plugin:opener|open_url",
+            json!({"url": "https://example.org"}),
+        )
+        .unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{label}: {err}"
         );
     }
 }

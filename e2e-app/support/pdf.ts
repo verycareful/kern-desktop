@@ -28,6 +28,25 @@ export function textPagePdf(): Buffer {
   ]);
 }
 
+/** The address the link of `linkPagePdf` carries. */
+export const LINK_ADDRESS = "https://example.org/kern";
+
+/**
+ * The bytes of a one-page PDF with the text `PAGE_TEXT` and a link box over it that leads to
+ * `LINK_ADDRESS`.
+ */
+export function linkPagePdf(): Buffer {
+  const content = `BT /F1 24 Tf 20 150 Td (${PAGE_TEXT}) Tj ET`;
+  return pdfOf([
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 300] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R /Annots [6 0 R] >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    `<< /Type /Annot /Subtype /Link /Rect [10 140 190 180] /Border [0 0 0] /A << /S /URI /URI (${LINK_ADDRESS}) >> >>`,
+  ]);
+}
+
 function pdfOf(objects: string[]): Buffer {
   let out = "%PDF-1.4\n";
   const offsets: number[] = [];

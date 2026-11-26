@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
-// What the PDF actions (zoom, Go to page, rotate, undo, redo, a compacted copy, reload, copy and select) and the thumbnails reach: the viewer of a PDF tab
+// What the PDF actions (zoom, Go to page, rotate, undo, redo, a compacted copy, reload, copy, select and find) and the thumbnails reach: the viewer of a PDF tab
 // registers its commands here under the tab's id while it is mounted, as the editor does
 // (editor/doc-controller.ts), so the action table needs nothing of React.
 /** What a rotation turns: the page in view, or every page. */
@@ -17,8 +17,11 @@ export interface PdfController {
   zoomFit(): void;
   /** Opens the Go to page box. */
   askGoToPage(): void;
-  /** Brings page `page` (from 0) into view: the row that holds it, or the one page shown. */
-  goToPage(page: number): void;
+  /**
+   * Brings page `page` (from 0) into view: the row that holds it, or the one page shown. With
+   * `at`, the height down the page (a fraction, 0 at the top) that is to be in view.
+   */
+  goToPage(page: number, at?: number): void;
   /** Turns the pages `scope` names clockwise by `degrees`. */
   rotate(degrees: Turn, scope: RotateScope): void;
   undo(): void;
@@ -42,6 +45,11 @@ export interface PdfController {
   /** Selects all the text of the page in view. */
   selectAll(): void;
   canSelectAll(): boolean;
+  /** Opens the find bar, or gives its field the focus when it is open. */
+  openFind(): void;
+  /** Goes to the next (`1`) or the previous (`-1`) match, opening the find bar when it is closed. */
+  findStep(direction: 1 | -1): void;
+  canFind(): boolean;
 }
 
 const controllers = new Map<string, PdfController>();

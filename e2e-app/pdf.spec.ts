@@ -19,7 +19,7 @@ import {
   sleep,
   waitForWindows,
 } from "./support/app";
-import { PAGE_TEXT, onePagePdf, textPagePdf } from "./support/pdf";
+import { LINK_ADDRESS, PAGE_TEXT, linkPagePdf, onePagePdf, textPagePdf } from "./support/pdf";
 import { testDir } from "./support/world";
 
 /**
@@ -169,5 +169,62 @@ describe("pdf", function () {
       { timeout: SHOWS_WITHIN_MS, timeoutMsg: "Copy said nothing" }
     );
     expect(said).toBe("Copied the selected text");
+  });
+
+  it("find_counts_a_word_and_steps_and_closes", async () => {
+    const dir = testDir("pdf-find");
+    const file = path.join(dir, "words.pdf");
+    writeFileSync(file, textPagePdf());
+    await openPdf(file);
+
+    // Ctrl+F opens the bar once the document is shown; the question is searched as it is typed.
+    await browser.waitUntil(
+      async () => {
+        await browser.keys(["Control", "f"]);
+        return (await browser.$('[data-testid="pdf-find"]')).isExisting();
+      },
+      { timeout: SHOWS_WITHIN_MS, interval: 500, timeoutMsg: "Ctrl+F did not open the find bar" }
+    );
+    const field = await browser.$('[data-testid="pdf-find"] input');
+    await field.setValue("kern");
+    const count = await browser.$('[data-testid="pdf-find-count"]');
+    await browser.waitUntil(async () => (await count.getText()) === "1 of 1", {
+      timeout: SHOWS_WITHIN_MS,
+      timeoutMsg: `the count said ${await count.getText()}, not 1 of 1 (the text is ${PAGE_TEXT})`,
+    });
+    expect(await (await browser.$('[data-testid="pdf-hit-current"]')).isExisting()).toBe(true);
+    await field.setValue("absent");
+    await browser.waitUntil(async () => (await count.getText()) === "No matches", {
+      timeout: SHOWS_WITHIN_MS,
+    });
+    await browser.keys(["Escape"]);
+    await browser.waitUntil(
+      async () => !(await (await browser.$('[data-testid="pdf-find"]')).isExisting()),
+      {
+        timeout: SHOWS_WITHIN_MS,
+      }
+    );
+  });
+
+  it("a_link_asks_before_it_leaves_and_shows_the_whole_address", async () => {
+    const dir = testDir("pdf-link");
+    const file = path.join(dir, "link.pdf");
+    writeFileSync(file, linkPagePdf());
+    await openPdf(file);
+
+    const box = await browser.$('[data-testid="pdf-link"]');
+    await box.waitForExist({ timeout: SHOWS_WITHIN_MS });
+    await box.click();
+    const address = await browser.$('[data-testid="link-address"]');
+    await address.waitForExist({ timeout: SHOWS_WITHIN_MS });
+    expect(await address.getText()).toBe(LINK_ADDRESS);
+    // Cancel hands nothing to the system.
+    await (await browser.$("button=Cancel")).click();
+    await browser.waitUntil(
+      async () => !(await (await browser.$('[data-testid="link-prompt"]')).isExisting()),
+      {
+        timeout: SHOWS_WITHIN_MS,
+      }
+    );
   });
 });

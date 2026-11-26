@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toWireError, type WireError } from "../ipc";
+import { pdfLinks, toWireError, type PdfLink, type WireError } from "../ipc";
 import { errorText } from "../ops/error-text";
+import { followLink } from "./link-actions";
+import { linkAt } from "./links";
 import { loadPageText } from "./page-text";
+import { usePdfFind } from "./pdf-find";
 import { usePdfSelection } from "./pdf-selection";
 import { charNear, hitTest, inLine, sameChar, selectionRects, type CharRef } from "./selection";
 import { copySelection, searchSelection } from "./selection-actions";
@@ -26,6 +29,9 @@ const box = (r: readonly [number, number, number, number]) => ({
   height: percent(r[3] - r[1]),
 });
 
+const linkLabel = (link: PdfLink) =>
+  typeof link.page === "number" ? `Go to page ${link.page + 1}` : `Link to ${link.uri ?? "a file"}`;
+
 // The text of one page over its picture: a transparent box per line and the selection drawn
 // over them. Selecting is Kern's own (pointer events and selection.ts), not the browser's, so a
 // line that runs right to left or up a turned page selects by where its glyphs are drawn.
@@ -44,13 +50,19 @@ export function TextLayer(props: {
   const pageRevision = doc.pageRevisions[page] ?? 0;
   const [text, setText] = useState<PageText | null>(null);
   const [failure, setFailure] = useState<WireError | null>(null);
+  const [links, setLinks] = useState<PdfLink[]>([]);
   const [dragging, setDragging] = useState(false);
-  const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const drag = useRef<{ x: number; y: number; moved: boolean; selecting: boolean } | null>(null);
   const layer = useRef<HTMLDivElement>(null);
   const selection = usePdfSelection((s) => s.byTab[tabId]);
   const select = usePdfSelection((s) => s.select);
   const clear = usePdfSelection((s) => s.clear);
   const mine = selection?.page === page ? selection : undefined;
+  const hits = usePdfFind((s) => s.byTab[tabId]?.hits[page]);
+  const currentHit = usePdfFind((s) => {
+    const c = s.byTab[tabId]?.current;
+    return c?.page === page ? c.index : -1;
+  });
 
   const reading = visible && current && handle !== undefined;
   useEffect(() => {
@@ -70,6 +82,27 @@ export function TextLayer(props: {
     };
     // The page is read again when an edit changes it; `doc` is the same document throughout.
   }, [reading, handle, page, pageRevision]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The links of the page are read with its text; a page whose links cannot be read has none to
+  // follow, and its text still selects.
+  useEffect(() => {
+    if (!reading || handle === undefined) {
+      setLinks([]);
+      return;
+    }
+    let live = true;
+    pdfLinks(handle, page).then(
+      (read) => {
+        if (live) setLinks(read);
+      },
+      () => {
+        if (live) setLinks([]);
+      }
+    );
+    return () => {
+      live = false;
+    };
+  }, [reading, handle, page, pageRevision]);
 
   // An edit to the page moves its text, so what was selected there no longer says what it did.
   const seenRevision = useRef(pageRevision);
@@ -103,18 +136,23 @@ export function TextLayer(props: {
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0 || !text) return;
+    if (e.button !== 0) return;
     const at = place(e);
-    const start: CharRef | null = at
-      ? (hitTest(text, at[0], at[1]) ??
-        (inLine(text, at[0], at[1]) ? charNear(text, at[0], at[1]) : null))
-      : null;
+    const start: CharRef | null =
+      at && text
+        ? (hitTest(text, at[0], at[1]) ??
+          (inLine(text, at[0], at[1]) ? charNear(text, at[0], at[1]) : null))
+        : null;
     if (!start) {
       clear(tabId);
+      // A press on a link that is not on text is a click on the link when it is let go in place.
+      if (at && linkAt(links, at[0], at[1])) {
+        drag.current = { x: e.clientX, y: e.clientY, moved: false, selecting: false };
+      }
       return;
     }
     layer.current?.setPointerCapture(e.pointerId);
-    drag.current = { x: e.clientX, y: e.clientY, moved: false };
+    drag.current = { x: e.clientX, y: e.clientY, moved: false, selecting: true };
     setDragging(true);
     select(tabId, { page, from: start, to: start });
   };
@@ -133,10 +171,19 @@ export function TextLayer(props: {
     const d = drag.current;
     if (!d) return;
     drag.current = null;
-    setDragging(false);
-    layer.current?.releasePointerCapture(e.pointerId);
-    // A press that did not travel is a click: it ends the selection and starts none.
-    if (!d.moved) clear(tabId);
+    if (d.selecting) {
+      setDragging(false);
+      layer.current?.releasePointerCapture(e.pointerId);
+    }
+    // A press that did not travel is a click: it ends the selection and starts none, and on a
+    // link it follows the link. A press that travelled selected the text it crossed.
+    const travelled = d.moved || Math.hypot(e.clientX - d.x, e.clientY - d.y) >= DRAG_PX;
+    if (travelled) return;
+    clear(tabId);
+    if (e.type === "pointercancel") return;
+    const at = place(e);
+    const link = at ? linkAt(links, at[0], at[1]) : undefined;
+    if (link) followLink(tabId, link, doc.pages);
   };
 
   const last = rects[rects.length - 1];
@@ -155,6 +202,34 @@ export function TextLayer(props: {
           {line.text}
         </span>
       ))}
+      {hits?.map((hit, i) =>
+        hit.rects.map((r, j) => (
+          <span
+            key={`${i}-${j}`}
+            className={i === currentHit ? "kern-pdf-hit kern-pdf-hit-current" : "kern-pdf-hit"}
+            style={box(r)}
+            data-testid={i === currentHit ? "pdf-hit-current" : "pdf-hit"}
+          />
+        ))
+      )}
+      {links.map((link, i) =>
+        link.rects.map((r, j) => (
+          <button
+            key={`${i}-${j}`}
+            type="button"
+            className="kern-pdf-link"
+            style={box(r)}
+            tabIndex={j === 0 ? 0 : -1}
+            aria-hidden={j === 0 ? undefined : true}
+            aria-label={linkLabel(link)}
+            data-testid="pdf-link"
+            // A press of the pointer is the layer's (a drag over a link still selects); the key is the button's.
+            onClick={(e) => {
+              if (e.detail === 0) followLink(tabId, link, doc.pages);
+            }}
+          />
+        ))
+      )}
       {rects.map((r, i) => (
         <span key={i} className="kern-pdf-selection" style={box(r)} data-testid="pdf-selection" />
       ))}

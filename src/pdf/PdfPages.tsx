@@ -20,6 +20,7 @@ import {
   type Zoom,
 } from "./page-geometry";
 import { registerPdf, type RotateScope, type Turn } from "./pdf-controller";
+import { usePdfFind } from "./pdf-find";
 import { usePdfView } from "./pdf-view";
 import type { PdfDoc } from "./usePdfDoc";
 import { acrossOf, layoutOf, layoutRows, rowOfPage } from "./view-layout";
@@ -29,6 +30,8 @@ const WHEEL_PER_STEP = 100;
 /** A wheel that counts lines, not pixels, is this many pixels a line. */
 const WHEEL_LINE_PX = 16;
 const DOM_DELTA_LINE = 1;
+/** A spot brought into view (a match of Find) stands this fraction of the view below its top. */
+const SPOT_ABOVE = 0.25;
 
 interface Anchor {
   /** The page in view: the first of its row, or the one the reader was last on if it is in the row. */
@@ -145,26 +148,33 @@ export function PdfPages(props: {
   }, [boxes, layoutKey]);
 
   const showPage = useCallback(
-    (page: number) => {
-      anchor.current = { page, frac: 0, top: true };
+    (page: number, at?: number) => {
+      // One page at a time: the row is the page, so the spot is a fraction of it.
+      const frac = at === undefined ? 0 : Math.max(0, at - SPOT_ABOVE);
+      anchor.current = { page, frac, top: frac === 0 };
       patchView(tabId, { page });
     },
     [patchView, tabId]
   );
   const goToPage = useCallback(
-    (page: number) => {
+    (page: number, at?: number) => {
       const el = scroll.current;
       const b = boxesNow.current;
       if (!el || !b) return;
       if (singleNow.current) {
-        showPage(page);
+        showPage(page, at);
         return;
       }
       const index = rowOfPage(rowsNow.current, page);
       const row = b.rows[index];
-      if (!row) return;
-      el.scrollTop = index === 0 ? 0 : row.top;
-      anchor.current = { page, frac: 0, top: index === 0 };
+      const box = b.pages[page];
+      if (!row || !box) return;
+      const spot =
+        at === undefined ? row.top : box.top + at * box.height - el.clientHeight * SPOT_ABOVE;
+      el.scrollTop = at === undefined && index === 0 ? 0 : Math.max(0, spot);
+      const frac =
+        row.height > 0 ? Math.min(1, Math.max(0, (el.scrollTop - row.top) / row.height)) : 0;
+      anchor.current = { page, frac, top: el.scrollTop <= 0 };
       patchView(tabId, { page });
     },
     [patchView, showPage, tabId]
@@ -289,6 +299,13 @@ export function PdfPages(props: {
           if (d.pages > 0) void selectAllOnPage(tabId, d, shownPage());
         },
         canSelectAll: () => docNow.current.phase === "ready" && docNow.current.pages > 0,
+        openFind: () => usePdfFind.getState().open(tabId),
+        findStep: (direction) => {
+          const find = usePdfFind.getState();
+          if (find.byTab[tabId]?.open) find.step(tabId, direction);
+          else find.open(tabId);
+        },
+        canFind: () => docNow.current.phase === "ready" && docNow.current.pages > 0,
       }),
     [tabId, zoomBy, patchView, goToPage, rotate, shownPage]
   );

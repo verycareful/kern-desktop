@@ -1621,6 +1621,35 @@ const pdfActions: Action[] = [
     enabled: (c) => pdfOf(c)?.canSelectAll() ?? false,
     run: (c) => pdfOf(c)?.selectAll(),
   },
+  // The keys of Find are not claimed from a field that has the focus (CodeMirror's own Ctrl+F
+  // and F3); the find bar's field answers them itself.
+  {
+    id: "pdf.find",
+    label: "Find in the document",
+    area: "Edit",
+    keys: ["Ctrl+F"],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canFind() ?? false,
+    run: (c) => pdfOf(c)?.openFind(),
+  },
+  {
+    id: "pdf.findNext",
+    label: "Find next",
+    area: "Edit",
+    keys: ["F3"],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canFind() ?? false,
+    run: (c) => pdfOf(c)?.findStep(1),
+  },
+  {
+    id: "pdf.findPrevious",
+    label: "Find previous",
+    area: "Edit",
+    keys: ["Shift+F3"],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canFind() ?? false,
+    run: (c) => pdfOf(c)?.findStep(-1),
+  },
   {
     id: "pdf.searchSelection",
     label: "Search for the selected text",
