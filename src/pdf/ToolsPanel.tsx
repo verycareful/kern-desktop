@@ -20,7 +20,7 @@ import { useBindLabel } from "../keys/binds";
 import { useViewSettings } from "../files/view-settings";
 import type { PdfDoc } from "./usePdfDoc";
 
-// The tools beside an open PDF: Find and Select (their sessions switch them on), the edits
+// The tools beside an open PDF: Find (its session switches it on), Select all text, the edits
 // (rotate, undo, redo) and the page layout. Expanded each is an icon and its name; collapsed only the icon is left, and the name
 // is its title. Later tools join this list.
 
@@ -55,10 +55,9 @@ const EDIT_TOOLS: readonly (Tool & { needs: EditNeeds })[] = [
   { id: "pdf.redo", label: "Redo", Icon: Redo2, needs: "redo" },
 ];
 
-const UNAVAILABLE_TOOLS: readonly Tool[] = [
-  { id: "find", label: "Find", Icon: Search },
-  { id: "select", label: "Select", Icon: TextSelect },
-];
+// Find waits for its own session; selecting the page's text is an action of the table.
+const FIND_TOOL: Tool = { id: "find", label: "Find", Icon: Search };
+const SELECT_TOOL: Tool = { id: "pdf.selectAll", label: "Select all text", Icon: TextSelect };
 
 export function ToolsPanel(props: { tabId: string; doc: PdfDoc; collapsed: boolean }) {
   const { tabId, doc, collapsed } = props;
@@ -76,9 +75,13 @@ export function ToolsPanel(props: { tabId: string; doc: PdfDoc; collapsed: boole
       data-testid="pdf-tools"
     >
       <ToolGroup title="Search and select" collapsed={collapsed}>
-        {UNAVAILABLE_TOOLS.map((tool) => (
-          <ToolButton key={tool.id} tool={tool} collapsed={collapsed} disabled />
-        ))}
+        <ToolButton tool={FIND_TOOL} collapsed={collapsed} disabled />
+        <ActionButton
+          tabId={tabId}
+          tool={SELECT_TOOL}
+          collapsed={collapsed}
+          available={doc.phase === "ready" && doc.pages > 0}
+        />
       </ToolGroup>
       <ToolGroup title="Edit" collapsed={collapsed}>
         {EDIT_TOOLS.map((tool) => (

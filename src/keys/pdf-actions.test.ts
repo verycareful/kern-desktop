@@ -271,3 +271,41 @@ test("save_and_save_as_are_the_document_actions_a_pdf_shares_with_text", () => {
   expect(getAction("doc.save").keys).toEqual(["Ctrl+S"]);
   expect(getAction("doc.saveAs").keys).toEqual(["Ctrl+Shift+S"]);
 });
+
+test("copy_select_all_and_search_run_on_the_viewer_and_follow_the_selection", () => {
+  const id = openPdf();
+  const copySelection = vi.fn();
+  const selectAll = vi.fn();
+  const searchSelection = vi.fn();
+  let selected = true;
+  const off = registerPdf(
+    id,
+    testController({ copySelection, selectAll, searchSelection, hasSelection: () => selected })
+  );
+  const ctx = currentContext();
+  const copy = getAction("pdf.copy");
+  const all = getAction("pdf.selectAll");
+  const search = getAction("pdf.searchSelection");
+  expect(copy.keys).toEqual(["Ctrl+C"]);
+  expect(all.keys).toEqual(["Ctrl+A"]);
+  expect(search.keys).toEqual([]);
+  runAction(copy, ctx);
+  runAction(all, ctx);
+  runAction(search, ctx);
+  expect(copySelection).toHaveBeenCalledTimes(1);
+  expect(selectAll).toHaveBeenCalledTimes(1);
+  expect(searchSelection).toHaveBeenCalledTimes(1);
+  // Copy and Search need a selection; Select all does not.
+  selected = false;
+  expect(isEnabled(copy, ctx)).toBe(false);
+  expect(isEnabled(search, ctx)).toBe(false);
+  expect(isEnabled(all, ctx)).toBe(true);
+  off();
+});
+
+test("copy_and_select_all_do_not_reach_a_folder_or_a_text_document", () => {
+  useTabs.getState().openDoc(p("/a/n.md"));
+  for (const id of ["pdf.copy", "pdf.selectAll", "pdf.searchSelection"]) {
+    expect(isEnabled(getAction(id), currentContext()), id).toBe(false);
+  }
+});

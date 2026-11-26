@@ -33,7 +33,7 @@ test("expanded_shows_each_tool_with_its_name", () => {
   render(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed={false} />);
   for (const name of [
     "Find",
-    "Select",
+    "Select all text",
     "Rotate page clockwise",
     "Rotate page counterclockwise",
     "Rotate all pages clockwise",
@@ -60,10 +60,19 @@ test("collapsed_shows_icons_only_with_labels_as_titles", () => {
   }
 });
 
-test("find_and_select_are_off_until_their_sessions_switch_them_on", () => {
+test("find_is_off_until_its_session_switches_it_on", () => {
   render(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed={false} />);
   expect(screen.getByRole("button", { name: "Find" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Select" })).toBeDisabled();
+});
+
+test("select_all_text_runs_the_select_all_action_and_waits_for_a_document_with_pages", () => {
+  const { rerender } = render(
+    <ToolsPanel tabId={tabId} doc={testDoc({ pages: 0 })} collapsed={false} />
+  );
+  expect(screen.getByRole("button", { name: "Select all text" })).toBeDisabled();
+  rerender(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Select all text" }));
+  expect(controller.selectAll).toHaveBeenCalledTimes(1);
 });
 
 test("a_layout_button_runs_the_layout_action_and_the_current_layout_is_pressed", () => {

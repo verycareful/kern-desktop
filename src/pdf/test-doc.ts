@@ -69,6 +69,11 @@ export function testController(over: Partial<PdfController> = {}): PdfController
     canCompactedCopy: () => true,
     askReload: vi.fn(),
     canReload: () => true,
+    hasSelection: () => true,
+    copySelection: vi.fn(),
+    searchSelection: vi.fn(),
+    selectAll: vi.fn(),
+    canSelectAll: () => true,
     ...over,
   };
 }

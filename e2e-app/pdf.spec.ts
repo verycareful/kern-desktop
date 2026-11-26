@@ -19,7 +19,7 @@ import {
   sleep,
   waitForWindows,
 } from "./support/app";
-import { onePagePdf } from "./support/pdf";
+import { PAGE_TEXT, onePagePdf, textPagePdf } from "./support/pdf";
 import { testDir } from "./support/world";
 
 /**
@@ -131,5 +131,43 @@ describe("pdf", function () {
     await question.waitForExist({ timeout: SHOWS_WITHIN_MS });
     await sleep(500);
     expect(readFileSync(file).equals(theirs)).toBe(true);
+  });
+
+  it("select_all_and_copy_a_pages_text", async () => {
+    const dir = testDir("pdf-select");
+    const file = path.join(dir, "words.pdf");
+    writeFileSync(file, textPagePdf());
+    await openPdf(file);
+
+    // The text of the page is read once the page is near the view; Select all waits for it.
+    await browser.waitUntil(
+      async () => {
+        await browser.keys(["Control", "a"]);
+        return (await browser.$('[data-testid="pdf-selection"]')).isExisting();
+      },
+      {
+        timeout: SHOWS_WITHIN_MS,
+        interval: 500,
+        timeoutMsg: `Select all did not select the text ${PAGE_TEXT}`,
+      }
+    );
+    // Copy goes to the clipboard through a command the document window must be granted; the
+    // window says so when it did, and says why when it did not.
+    const copy = await browser.$("button=Copy");
+    await copy.waitForClickable({ timeout: SHOWS_WITHIN_MS });
+    await copy.click();
+    const notice = async () => {
+      const el = await browser.$('[data-testid="status-notice"]');
+      return (await el.isExisting()) ? await el.getText() : "";
+    };
+    let said = "";
+    await browser.waitUntil(
+      async () => {
+        said = await notice();
+        return said !== "";
+      },
+      { timeout: SHOWS_WITHIN_MS, timeoutMsg: "Copy said nothing" }
+    );
+    expect(said).toBe("Copied the selected text");
   });
 });

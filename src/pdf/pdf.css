@@ -317,3 +317,51 @@
   color: var(--kern-text-dim);
   cursor: default;
 }
+
+/* The text of a page: over the picture, invisible, selected by the viewer's own pointer code. */
+.kern-pdf-text {
+  position: absolute;
+  inset: 0;
+  user-select: none;
+  touch-action: none;
+}
+
+.kern-pdf-text-line {
+  position: absolute;
+  overflow: hidden;
+  white-space: pre;
+  color: transparent;
+  font-size: 1px;
+  cursor: text;
+}
+
+/* The selection is a colour laid over the page, like the highlight of any viewer. */
+.kern-pdf-selection {
+  position: absolute;
+  background: rgb(51 144 255 / 35%);
+  pointer-events: none;
+}
+
+.kern-pdf-selection-menu {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin-top: 6px;
+  color: var(--kern-text);
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+}
+
+.kern-pdf-text-error {
+  position: absolute;
+  inset: auto 0 0;
+  margin: 0;
+  padding: 4px 8px;
+  color: #555;
+  font-size: 12px;
+  text-align: center;
+}

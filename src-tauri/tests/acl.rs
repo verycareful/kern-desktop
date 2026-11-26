@@ -629,7 +629,7 @@ fn every_window_that_holds_documents_may_report_a_rename_and_a_stranger_may_not(
 /// the settings' writes and window, the file manager's own commands (drags out, the clipboard of
 /// files, drops, the default file manager), moving a tab to a window or taking a document in, and
 /// the files of other places.
-const NOT_FOR_DOCUMENT_WINDOWS: [&str; 23] = [
+const NOT_FOR_DOCUMENT_WINDOWS: [&str; 22] = [
     "binds_set",
     "binds_clear",
     "layout_get",
@@ -649,7 +649,6 @@ const NOT_FOR_DOCUMENT_WINDOWS: [&str; 23] = [
     "remove_start_op",
     "clip_get",
     "clip_set",
-    "clip_text",
     "fm1_status",
     "default_fm_status",
     "make_default_fm",
@@ -760,6 +759,31 @@ fn a_document_window_may_copy_its_file_and_start_nothing_else() {
     )
     .unwrap_err();
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+}
+
+/// Copy of a selection in a PDF puts text on the clipboard from a document window. The clipboard
+/// of files stays the file manager's.
+#[test]
+fn a_document_window_may_put_text_on_the_clipboard_and_not_touch_the_clipboard_of_files() {
+    let e = env("doc-1");
+    let (_, kern_cmds) = granted("doc.json", "doc-*");
+    assert!(kern_cmds.iter().any(|c| c == "clip_text"));
+    // Reached, so refused or answered by the command (it wants a focused window), never by the
+    // access control.
+    if let Err(err) = invoke(&e, "clip_text", json!({"text": "a"})) {
+        assert!(
+            !err.as_str().is_some_and(|s| s.contains("not allowed")),
+            "{err}"
+        );
+    }
+    for cmd in ["clip_get", "clip_set", "clip_clear_if"] {
+        assert!(!kern_cmds.iter().any(|c| c == cmd), "{cmd}");
+        let err = invoke(&e, cmd, json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{cmd}: {err}"
+        );
+    }
 }
 
 #[test]

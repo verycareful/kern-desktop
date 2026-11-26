@@ -6,6 +6,8 @@ import type { WireError } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { GoToPage } from "./GoToPage";
 import { PageCanvas } from "./PageCanvas";
+import { TextLayer } from "./TextLayer";
+import { copySelection, hasSelection, searchSelection, selectAllOnPage } from "./selection-actions";
 import {
   FIT_WIDTH,
   PAGE_MARGIN,
@@ -238,6 +240,15 @@ export function PdfPages(props: {
   useLayoutEffect(() => {
     docNow.current = doc;
   });
+  // The page in view, as the status bar shows it, kept inside the document.
+  const shownPage = useCallback(
+    () =>
+      Math.max(
+        0,
+        Math.min(usePdfView.getState().byTab[tabId]?.page ?? 0, docNow.current.pages - 1)
+      ),
+    [tabId]
+  );
   const rotate = useCallback(
     (degrees: Turn, scope: RotateScope) => {
       const d = docNow.current;
@@ -245,11 +256,11 @@ export function PdfPages(props: {
       // not asked.
       const last = d.pages - 1;
       if (last < 0) return;
-      const shownNow = Math.min(usePdfView.getState().byTab[tabId]?.page ?? 0, last);
+      const shownNow = Math.min(shownPage(), last);
       const pages = scope === "all" ? Array.from({ length: d.pages }, (_, i) => i) : [shownNow];
       void d.apply({ op: "rotate", pages, degrees });
     },
-    [tabId]
+    [shownPage]
   );
   useEffect(
     () =>
@@ -270,8 +281,16 @@ export function PdfPages(props: {
         askReload: () => docNow.current.askReload(),
         canReload: () =>
           docNow.current.phase === "ready" && !docNow.current.moving && !docNow.current.busy(),
+        hasSelection: () => hasSelection(tabId),
+        copySelection: () => void copySelection(tabId, docNow.current),
+        searchSelection: () => void searchSelection(tabId, docNow.current),
+        selectAll: () => {
+          const d = docNow.current;
+          if (d.pages > 0) void selectAllOnPage(tabId, d, shownPage());
+        },
+        canSelectAll: () => docNow.current.phase === "ready" && docNow.current.pages > 0,
       }),
-    [tabId, zoomBy, patchView, goToPage, rotate]
+    [tabId, zoomBy, patchView, goToPage, rotate, shownPage]
   );
 
   // Ctrl and the wheel zoom. React's own wheel handler is passive and could not keep the
@@ -347,6 +366,13 @@ export function PdfPages(props: {
                     page={page}
                     size={size}
                     cssWidth={box.width}
+                    visible={near.has(page)}
+                    current={(doc.pageRevisions[page] ?? 0) <= sizesAt}
+                  />
+                  <TextLayer
+                    tabId={tabId}
+                    doc={doc}
+                    page={page}
                     visible={near.has(page)}
                     current={(doc.pageRevisions[page] ?? 0) <= sizesAt}
                   />

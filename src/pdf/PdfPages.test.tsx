@@ -9,6 +9,8 @@ const ipc = vi.hoisted(() => ({
   pdfRenderSize: vi.fn(),
   pdfRender: vi.fn(),
   pdfCancelJob: vi.fn(),
+  pdfText: vi.fn(),
+  clipText: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
@@ -16,6 +18,8 @@ import { useViewSettings } from "../files/view-settings";
 import { PAGE_GAP, PAGE_MARGIN, CSS_PX_PER_PT } from "./page-geometry";
 import { PdfPages } from "./PdfPages";
 import { pdfController } from "./pdf-controller";
+import { usePdfSelection } from "./pdf-selection";
+import { dropPageText } from "./page-text";
 import { usePdfView } from "./pdf-view";
 import { usePageSizes } from "./usePageSizes";
 import { testDoc } from "./test-doc";
@@ -65,6 +69,25 @@ beforeEach(() => {
   vi.clearAllMocks();
   intersections = [];
   usePdfView.setState({ byTab: {} });
+  usePdfSelection.setState({ byTab: {}, searches: {} });
+  dropPageText(3);
+  ipc.pdfText.mockResolvedValue({
+    revision: 0,
+    lines: [
+      {
+        block: 0,
+        text: "ab",
+        rect: [0.1, 0.1, 0.14, 0.12],
+        glyphs: [
+          [0.1, 0.1, 0.12, 0.12],
+          [0.12, 0.1, 0.14, 0.12],
+        ],
+      },
+    ],
+    blocks: [],
+    tagged: false,
+  });
+  ipc.clipText.mockResolvedValue(undefined);
   useViewSettings.setState({ pdfLayout: "scroll", pdfGridAcross: 4 });
   vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
   vi.stubGlobal("ResizeObserver", FakeResizeObserver);
@@ -524,4 +547,28 @@ test("undo_and_redo_go_to_the_document", async () => {
   pdfController("t1")?.redo();
   expect(undo).toHaveBeenCalledTimes(1);
   expect(redo).toHaveBeenCalledTimes(1);
+});
+
+test("select_all_takes_the_text_of_the_page_in_view_and_copy_puts_it_on_the_clipboard", async () => {
+  ipc.pdfPageInfo.mockImplementation(async () => info(600, 800));
+  await pages();
+  expect(pdfController("t1")?.hasSelection()).toBe(false);
+  expect(pdfController("t1")?.canSelectAll()).toBe(true);
+  act(() => usePdfView.getState().patch("t1", { page: 2 }));
+  pdfController("t1")?.selectAll();
+  await waitFor(() => expect(pdfController("t1")?.hasSelection()).toBe(true));
+  expect(usePdfSelection.getState().byTab["t1"]?.page).toBe(2);
+  expect(ipc.pdfText).toHaveBeenCalledWith(3, 2);
+  pdfController("t1")?.copySelection();
+  await waitFor(() => expect(ipc.clipText).toHaveBeenCalledWith("ab"));
+  pdfController("t1")?.searchSelection();
+  await waitFor(() => expect(usePdfSelection.getState().searches["t1"]?.text).toBe("ab"));
+});
+
+test("a_document_with_no_pages_has_nothing_to_select", async () => {
+  ipc.pdfPageInfo.mockImplementation(async () => info(600, 800));
+  await pages({ pages: 0 });
+  expect(pdfController("t1")?.canSelectAll()).toBe(false);
+  pdfController("t1")?.selectAll();
+  expect(ipc.pdfText).not.toHaveBeenCalled();
 });
