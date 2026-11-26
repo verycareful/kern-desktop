@@ -69,6 +69,11 @@ export interface PdfTextLine {
   /** The index of the block the line belongs to. */
   block: number;
   text: string;
+  /**
+   * The line ended where the text wrapped, not where its writer broke it: a judgement from the
+   * geometry. The last line of a block, and every line of a list or an address, is never one.
+   */
+  wrapped: boolean;
   rect: Rect;
   /** One rectangle per character, in the order of `text` (logical, not left to right). */
   glyphs: Rect[];

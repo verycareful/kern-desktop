@@ -26,16 +26,24 @@ const wire = (revision: number): PdfPageText => ({
     {
       block: 0,
       text: "first line",
+      wrapped: false,
       rect: [0.1, 0.1, 0.2, 0.14],
       glyphs: glyphs("first line", 0.1),
     },
     {
       block: 0,
       text: "second line",
+      wrapped: false,
       rect: [0.1, 0.16, 0.21, 0.2],
       glyphs: glyphs("second line", 0.16),
     },
-    { block: 1, text: "Title", rect: [0.1, 0.5, 0.15, 0.54], glyphs: glyphs("Title", 0.5) },
+    {
+      block: 1,
+      text: "Title",
+      wrapped: false,
+      rect: [0.1, 0.5, 0.15, 0.54],
+      glyphs: glyphs("Title", 0.5),
+    },
   ],
   blocks: [
     { id: 0, rect: [0.1, 0.1, 0.6, 0.2], editable: true },
@@ -88,6 +96,25 @@ test("a_block_opens_with_its_lines_and_enter_sends_one_edit_at_the_revision_it_w
     block: 0,
     revision: 5,
     text: "new words",
+  });
+});
+
+test("a_paragraph_that_wrapped_opens_as_one_run_and_is_sent_to_be_set_again_to_its_width", async () => {
+  const wrapped = wire(5);
+  wrapped.lines[0]!.wrapped = true;
+  ipc.pdfText.mockResolvedValue(wrapped);
+  const apply = await tool();
+  open();
+  expect(box()).toHaveValue("first line second line");
+  fireEvent.change(box(), { target: { value: "first line, then the second line" } });
+  fireEvent.keyDown(box(), { key: "Enter" });
+  await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull());
+  expect(apply).toHaveBeenCalledWith({
+    op: "editText",
+    page: 0,
+    block: 0,
+    revision: 5,
+    text: "first line, then the second line",
   });
 });
 

@@ -2,7 +2,7 @@
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/)
 [![Rust](https://img.shields.io/badge/Rust-2021%20edition-000000?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![kernkraft](https://img.shields.io/badge/kernkraft-0.1.3.1-5A4FCF?style=flat-square)](https://github.com/verycareful/kernkraft)
+[![kernkraft](https://img.shields.io/badge/kernkraft-0.2.2.0-5A4FCF?style=flat-square)](https://github.com/verycareful/kernkraft)
 [![GTK](https://img.shields.io/badge/GTK-3-7FE719?style=flat-square&logo=gtk&logoColor=white)](https://www.gtk.org/)
 [![zbus](https://img.shields.io/badge/zbus-5-4A86CF?style=flat-square)](https://github.com/dbus2/zbus)
 [![React](https://img.shields.io/badge/React-19.1-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
@@ -86,6 +86,40 @@ Kern Desktop is in alpha.
   A file with mixed line endings, a file that is not UTF-8 and a very large
   file open read-only. A file you open from outside Kern gets a window of its
   own, and its Home button moves it into the main window.
+- **PDF viewer.** A PDF opens in a tab like a text file, and one opened from
+  outside Kern gets a window of its own. An encrypted file asks for its
+  password. Four layouts: continuous scroll (Ctrl+Alt+1), single page
+  (Ctrl+Alt+2), two pages (Ctrl+Alt+3) and a grid of pages (Ctrl+Alt+4).
+  Zoom runs from 25 % to 500 % (Ctrl+=, Ctrl+-, Ctrl+0 to fit the width, or
+  Ctrl+wheel), and Ctrl+G goes to a page. A thumbnail strip and a tools panel
+  fold away (Ctrl+Alt+5, Ctrl+Alt+6) and sit on either side.
+- **Text in a PDF.** Drag to select text along a line or across lines, also
+  in right-to-left text and on a turned page; Ctrl+A selects the page and
+  Ctrl+C copies. Ctrl+F finds in the whole document, with Match case and
+  Whole word, and F3 and Shift+F3 step through the matches. A link to a page
+  goes there; a link to a web, mail or phone address shows the whole address
+  and opens it only when you say so. No other kind of link is opened.
+- **Editing a PDF.** Rotate pages (Ctrl+R, Ctrl+Shift+R), and choose, drag to
+  reorder or remove them in the strip and the grid. Merge PDFs, Extract pages
+  and Split into files write new files and never replace one. Highlight,
+  underline or strike out the selected text (Ctrl+Shift+H, Ctrl+Shift+U,
+  Ctrl+Shift+K), draw with the pen (Ctrl+Alt+I), add notes (Ctrl+Alt+N), and
+  pick an annotation to recolour it, change its text or delete it. The Edit
+  text tool (Ctrl+Alt+E) opens a block of the page's text in a box: a
+  paragraph that wrapped is set again to its width, and a click or a drag
+  where there is no text puts new text there. Ctrl+Z and Ctrl+Y undo and redo
+  every change. The first change asks whether to keep a copy of the file
+  first. Ctrl+S saves in place and asks before writing over a file another
+  program changed; Save As writes a new file, and a file that cannot be
+  edited as it is offers a compacted copy.
+- **Limits of PDF text editing.** New and edited text is set in the font,
+  size and colour of the block it replaces or of the nearest text, with no
+  shaping: ligatures, kerning, combining marks and the joining of Arabic
+  letters are not formed. A letter that font lacks is set in a system font,
+  and a notice says so. Vertical text, Type 3 fonts, text that is clipped or
+  split across content streams, and tagged form content cannot be edited, and
+  the tool says why. New text on a page with no text asks for a size and is
+  set in black. A box for new text is placed with the pointer only.
 - **Editor windows.** Open as editor gives a folder its own window, with a
   folder tree beside your documents. The tree's menu carries the file
   operations, and its heading holds search, the terminal, hidden files, the
@@ -116,14 +150,14 @@ Kern Desktop is in alpha.
 - **Desktop integration.** Kern follows the system theme: colours, accent,
   fonts and corner radius from Hyprland, the desktop portal, GTK and
   fontconfig, each with its own switch in Settings. It installs a desktop
-  entry for folders and every text type the system knows. You can make it the
+  entry for folders, PDFs and every text type the system knows. You can make it the
   default file manager, so other programs' "Show in folder" opens in Kern. A
   second launch hands its files to the running instance over D-Bus.
 - **No network.** Kern opens no network connection, in its code, its
   dependencies or its packaging. CI checks the release binary for it.
 
 The other document formats of Kern for Android (spreadsheets, Word and
-PowerPoint files, PDF, EPUB) come in later versions.
+PowerPoint files, EPUB) come in later versions.
 
 ## Installing
 

@@ -84,6 +84,7 @@ beforeEach(() => {
       {
         block: 0,
         text: "ab",
+        wrapped: false,
         rect: [0.1, 0.1, 0.14, 0.12],
         glyphs: [
           [0.1, 0.1, 0.12, 0.12],

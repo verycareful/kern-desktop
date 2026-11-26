@@ -26,7 +26,15 @@ const wire = (blocks = true): PdfPageText => ({
   revision: 2,
   tagged: false,
   lines: blocks
-    ? [{ block: 0, text: "body", rect: [0.1, 0.1, 0.6, 0.14], glyphs: glyphs("body", 0.1) }]
+    ? [
+        {
+          block: 0,
+          text: "body",
+          wrapped: false,
+          rect: [0.1, 0.1, 0.6, 0.14],
+          glyphs: glyphs("body", 0.1),
+        },
+      ]
     : [],
   blocks: blocks ? [{ id: 0, rect: [0.1, 0.1, 0.6, 0.2], editable: true }] : [],
 });

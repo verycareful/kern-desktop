@@ -3,11 +3,13 @@
 
 //! Prints the `MimeType=` line of Kern's desktop entry.
 //!
-//! Kern opens a folder in the file manager and a file in the editor when
-//! kernkraft's MIME database says it is text, so the entry claims
-//! `inode/directory` and every type in the database's `mime/types` list that
-//! [`MimeDb::is_text`] accepts. The list comes from that same function, so
-//! the entry cannot claim a type the editor refuses or miss one it opens.
+//! Kern opens a folder in the file manager, a PDF in the PDF viewer, and a
+//! file in the editor when kernkraft's MIME database says it is text, so the
+//! entry claims `inode/directory`, [`PDF_MIME`], and every type in the
+//! database's `mime/types` list that [`MimeDb::is_text`] accepts. The text
+//! list comes from that same function and the PDF type from the constant the
+//! opener routes on, so the entry cannot claim a type Kern refuses or miss
+//! one it opens.
 //!
 //! `mime/types` is the one-type-per-line list `update-mime-database` writes
 //! beside `globs2`, `subclasses` and `aliases`. Only the system data
@@ -19,6 +21,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use kern_lib::open::PDF_MIME;
 use kernkraft_xdg_apps::MimeDb;
 
 const DEFAULT_DATA_DIR: &str = "/usr/share";
@@ -56,6 +59,7 @@ fn main() -> ExitCode {
         eprintln!("{} lists no text type", types_path.display());
         return ExitCode::FAILURE;
     }
+    text.push(PDF_MIME);
     text.sort_unstable();
     text.dedup();
     let mut line = format!("MimeType={DIRECTORY};");

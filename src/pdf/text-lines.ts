@@ -19,6 +19,8 @@ export interface TextLine {
   block: number;
   /** The characters in logical order, as the engine gave them. */
   text: string;
+  /** The line ended where the text wrapped (see `PdfTextLine.wrapped`). */
+  wrapped: boolean;
   rect: Rect;
   /** In logical order: unit `i` is the `i`th character of `text`, or the only unit of a whole line. */
   units: TextUnit[];
@@ -45,7 +47,14 @@ export function pageText(wire: PdfPageText): PageText {
     const units: TextUnit[] = whole
       ? [{ text: line.text, rect: line.rect }]
       : characters.map((text, i) => ({ text, rect: line.glyphs[i] as Rect }));
-    lines.push({ block: line.block, text: line.text, rect: line.rect, units, whole });
+    lines.push({
+      block: line.block,
+      text: line.text,
+      wrapped: line.wrapped,
+      rect: line.rect,
+      units,
+      whole,
+    });
   }
   return { revision: wire.revision, lines, blocks: wire.blocks };
 }

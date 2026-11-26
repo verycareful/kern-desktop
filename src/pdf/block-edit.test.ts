@@ -24,9 +24,21 @@ const wire = (revision: number, over: Partial<PdfPageText> = {}): PdfPageText =>
   revision,
   tagged: false,
   lines: [
-    { block: 0, text: "first line", rect: rect(0.1), glyphs: glyphs("first line", 0.1) },
-    { block: 0, text: "second line", rect: rect(0.16), glyphs: glyphs("second line", 0.16) },
-    { block: 1, text: "Title", rect: rect(0.5), glyphs: glyphs("Title", 0.5) },
+    {
+      block: 0,
+      text: "first line",
+      wrapped: false,
+      rect: rect(0.1),
+      glyphs: glyphs("first line", 0.1),
+    },
+    {
+      block: 0,
+      text: "second line",
+      wrapped: false,
+      rect: rect(0.16),
+      glyphs: glyphs("second line", 0.16),
+    },
+    { block: 1, text: "Title", wrapped: false, rect: rect(0.5), glyphs: glyphs("Title", 0.5) },
   ],
   blocks: [
     { id: 0, rect: [0.1, 0.1, 0.6, 0.21], editable: true },
@@ -72,6 +84,60 @@ describe("blockText", () => {
 
   it("a_block_with_no_line_reads_as_nothing", () => {
     expect(blockText(pageText(wire(5)), 9)).toBe("");
+  });
+
+  /** One block of lines, each `[text, wrapped]`. */
+  const paragraph = (...lines: [string, boolean][]) =>
+    pageText({
+      revision: 1,
+      tagged: false,
+      lines: lines.map(([text, wrapped], i) => ({
+        block: 0,
+        text,
+        wrapped,
+        rect: rect(0.1 + i * 0.06),
+        glyphs: glyphs(text, 0.1 + i * 0.06),
+      })),
+      blocks: [{ id: 0, rect: [0.1, 0.1, 0.6, 0.5], editable: true }],
+    });
+
+  it("lines_that_wrapped_run_on_with_a_space_and_a_line_its_writer_ended_keeps_its_line_feed", () => {
+    const text = paragraph(
+      ["The quick brown", true],
+      ["fox jumps.", false],
+      ["A new line", true],
+      ["of its own.", false]
+    );
+    expect(blockText(text, 0)).toBe("The quick brown fox jumps.\nA new line of its own.");
+  });
+
+  it("a_word_hyphenated_at_the_wrap_keeps_its_hyphen_and_a_soft_hyphen_joins_it_up", () => {
+    expect(blockText(paragraph(["a well-", true], ["known case", false]), 0)).toBe(
+      "a well-known case"
+    );
+    expect(blockText(paragraph(["para­", true], ["graph", false]), 0)).toBe("para­graph");
+    expect(blockText(paragraph(["an em—", true], ["dash", false]), 0)).toBe("an em—dash");
+  });
+
+  it("a_dash_set_apart_by_a_space_keeps_the_space_after_it", () => {
+    expect(blockText(paragraph(["one –", true], ["two", false]), 0)).toBe("one – two");
+    expect(blockText(paragraph(["one -", true], ["two", false]), 0)).toBe("one - two");
+  });
+
+  it("a_line_that_ends_in_a_space_gets_no_second_one", () => {
+    expect(blockText(paragraph(["ends here ", true], ["and on", false]), 0)).toBe(
+      "ends here and on"
+    );
+  });
+
+  it("text_written_without_spaces_joins_with_nothing", () => {
+    expect(blockText(paragraph(["日本語の", true], ["文章", false]), 0)).toBe("日本語の文章");
+    expect(blockText(paragraph(["ภาษา", true], ["ไทย", false]), 0)).toBe("ภาษาไทย");
+    expect(blockText(paragraph(["文。", true], ["Next", false]), 0)).toBe("文。Next");
+  });
+
+  it("right_to_left_lines_that_wrapped_run_on_with_a_space", () => {
+    expect(blockText(paragraph(["שלום", true], ["עולם", false]), 0)).toBe("שלום עולם");
   });
 });
 

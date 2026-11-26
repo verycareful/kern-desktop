@@ -14,6 +14,7 @@ const glyph = (i: number): Rect => [0.1 + i * 0.01, 0.1, 0.11 + i * 0.01, 0.12];
 const line = (text: string, glyphs = Array.from(text).map((_, i) => glyph(i))): PdfTextLine => ({
   block: 0,
   text,
+  wrapped: false,
   rect: [0.1, 0.1, 0.1 + glyphs.length * 0.01, 0.12],
   glyphs,
 });

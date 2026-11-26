@@ -267,7 +267,7 @@ test("the_edit_text_tool_offers_the_blocks_of_the_page_and_only_while_the_docume
   ipc.pdfText.mockResolvedValue({
     revision: 0,
     tagged: false,
-    lines: [{ block: 0, text: "hello", rect: [0.1, 0.1, 0.3, 0.14], glyphs: [] }],
+    lines: [{ block: 0, text: "hello", wrapped: false, rect: [0.1, 0.1, 0.3, 0.14], glyphs: [] }],
     blocks: [{ id: 0, rect: [0.1, 0.1, 0.3, 0.14], editable: true }],
   });
   const { doc, view, element } = await layer();

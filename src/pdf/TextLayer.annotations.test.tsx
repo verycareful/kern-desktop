@@ -28,7 +28,7 @@ const glyphs: Rect[] = Array.from("hello").map((_, i) => [
 ]);
 const wire: PdfPageText = {
   revision: 1,
-  lines: [{ block: 0, text: "hello", rect: [0.1, 0.1, 0.2, 0.12], glyphs }],
+  lines: [{ block: 0, text: "hello", wrapped: false, rect: [0.1, 0.1, 0.2, 0.12], glyphs }],
   blocks: [],
   tagged: false,
 };

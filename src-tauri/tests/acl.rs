@@ -826,7 +826,11 @@ fn opener_grants(name: &str) -> Vec<(String, Vec<String>)> {
 #[test]
 fn the_windows_that_show_a_pdf_may_open_only_web_mail_and_phone_addresses() {
     let schemes = ["https://*", "http://*", "mailto:*", "tel:*"];
-    for (file, window) in [("doc.json", "doc-1"), ("editor.json", "editor-1")] {
+    for (file, window) in [
+        ("doc.json", "doc-1"),
+        ("editor.json", "editor-1"),
+        ("main.json", "main"),
+    ] {
         let grants = opener_grants(file);
         assert_eq!(
             grants,
@@ -855,24 +859,19 @@ fn the_windows_that_show_a_pdf_may_open_only_web_mail_and_phone_addresses() {
     }
 }
 
-/// Only the windows that show a PDF hold the grant: the main window and the settings window
-/// have none.
+/// Only the windows that show a PDF hold the grant (a PDF opened inside the app is a tab of the
+/// main window): the settings window has none.
 #[test]
-fn the_main_and_settings_windows_may_not_open_an_address() {
-    for (label, file) in [("main", "main.json"), ("settings", "settings.json")] {
-        assert!(opener_grants(file).is_empty(), "{file}");
-        let e = env(label);
-        let err = invoke(
-            &e,
-            "plugin:opener|open_url",
-            json!({"url": "https://example.org"}),
-        )
-        .unwrap_err();
-        assert!(
-            err.as_str().unwrap().contains("not allowed"),
-            "{label}: {err}"
-        );
-    }
+fn the_settings_window_may_not_open_an_address() {
+    assert!(opener_grants("settings.json").is_empty());
+    let e = env("settings");
+    let err = invoke(
+        &e,
+        "plugin:opener|open_url",
+        json!({"url": "https://example.org"}),
+    )
+    .unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
 }
 
 #[test]

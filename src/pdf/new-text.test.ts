@@ -22,6 +22,7 @@ const CSS_WIDTH = 1000;
 const line = (block: number, text: string, rect: Rect) => ({
   block,
   text,
+  wrapped: false,
   rect,
   glyphs: Array.from(text).map((): Rect => rect),
 });

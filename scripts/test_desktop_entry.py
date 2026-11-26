@@ -49,6 +49,22 @@ ANCHORS = (
     "text/x-c++src",
     "text/x-python",
     "text/rust",
+    "application/pdf",
+)
+# The legacy binary Office formats: Kern opens none of them, so the entry
+# claims none of them, under their canonical names or the aliases the
+# database maps to them.
+LEGACY_OFFICE = (
+    "application/vnd.ms-excel",
+    "application/msexcel",
+    "application/x-msexcel",
+    "application/msword",
+    "application/vnd.ms-word",
+    "application/x-msword",
+    "application/vnd.ms-powerpoint",
+    "application/mspowerpoint",
+    "application/powerpoint",
+    "application/x-mspowerpoint",
 )
 # desktop-file-validate warns on every type under message/: it expects mail
 # programs to claim them. Kern opens them as text, so these warnings are the
@@ -113,6 +129,8 @@ class DesktopEntry(unittest.TestCase):
         self.assertEqual(len(listed), len(set(listed)), "a type is listed twice")
         missing = [t for t in ANCHORS if t not in listed]
         self.assertEqual(missing, [], "types every database knows are not claimed")
+        legacy = [t for t in listed if t in LEGACY_OFFICE]
+        self.assertEqual(legacy, [], "a legacy Office format is claimed")
         made = generated()
         if os.environ.get("CI"):
             with open(SYSTEM_TYPES, encoding="utf-8") as f:

@@ -4,7 +4,7 @@ import { toWireError, type WireError } from "../ipc";
 import type { PdfTextBlock, Rect } from "../ipc/pdf";
 import { errorText } from "../ops/error-text";
 import type { ApplyOutcome, PdfOpInput } from "./edit-state";
-import type { PageText } from "./text-lines";
+import type { PageText, TextLine } from "./text-lines";
 import type { PdfDoc } from "./usePdfDoc";
 
 // Editing the text of a block: what the engine is asked, what its refusals say in plain words, and
@@ -43,12 +43,51 @@ export function editBlockOp(
   return { op: "editText", page, block, revision, text };
 }
 
-/** The text of a block as the engine sets it back: its lines, one to a line. */
+/**
+ * A line that ends in one of these already gives the engine's line breaking (UAX #14) a place to
+ * break, so it joins the next with nothing between them: a space, and a soft hyphen, which the
+ * engine drops, so a word hyphenated at the wrap joins up whole.
+ */
+const BREAKS_AFTER = /^[\s\u00AD]$/u;
+/**
+ * A hyphen or dash that ends a word ("well-" then "known") joins with nothing (UAX #14 LB21, B2);
+ * one set apart by a space ("a –" then "b") keeps the space after it.
+ */
+const DASH = /^[-\u2010\u2012\u2013\u2014]$/u;
+/**
+ * Scripts written with no space between words: a wrap between two of their characters joins
+ * with nothing (UAX #14 LB31 for ideographs, SA for South East Asian scripts), and so does one
+ * beside CJK punctuation or a full-width form.
+ */
+const NO_SPACE_SCRIPT =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}\u3000-\u303F\uFF00-\uFFEF]/u;
+
+/** What goes between a line and the next line of its block. */
+function lineEnd(line: TextLine, next: TextLine): string {
+  if (!line.wrapped) return "\n";
+  const chars = Array.from(line.text);
+  const last = chars[chars.length - 1] ?? "";
+  const before = chars[chars.length - 2] ?? " ";
+  const first = Array.from(next.text)[0] ?? "";
+  if (BREAKS_AFTER.test(last)) return "";
+  if (DASH.test(last)) return /\s/u.test(before) ? " " : "";
+  if (NO_SPACE_SCRIPT.test(last) || NO_SPACE_SCRIPT.test(first)) return "";
+  return " ";
+}
+
+/**
+ * The text of a block as the engine sets it back: a line its writer ended ends with a line feed,
+ * which the engine keeps as a hard break; lines that wrapped run on, so the engine sets them
+ * again to the block's width.
+ */
 export function blockText(text: PageText, block: number): string {
-  return text.lines
-    .filter((line) => line.block === block)
-    .map((line) => line.text)
-    .join("\n");
+  const lines = text.lines.filter((line) => line.block === block);
+  return lines
+    .map((line, i) => {
+      const next = lines[i + 1];
+      return next ? line.text + lineEnd(line, next) : line.text;
+    })
+    .join("");
 }
 
 const area = (r: Rect): number => (r[2] - r[0]) * (r[3] - r[1]);

@@ -19,7 +19,7 @@ const H = 0.02;
 // A horizontal line of `text` whose first character is at `x`, glyph `i` at `x + i * W`.
 function across(text: string, x: number, y: number): PdfTextLine {
   const glyphs: Rect[] = Array.from(text).map((_, i) => [x + i * W, y, x + (i + 1) * W, y + H]);
-  return { block: 0, text, rect: [x, y, x + glyphs.length * W, y + H], glyphs };
+  return { block: 0, text, wrapped: false, rect: [x, y, x + glyphs.length * W, y + H], glyphs };
 }
 
 // A right-to-left line: its text is in logical order and its first character stands at the
@@ -31,7 +31,13 @@ function leftward(text: string, right: number, y: number): PdfTextLine {
     right - i * W,
     y + H,
   ]);
-  return { block: 0, text, rect: [right - glyphs.length * W, y, right, y + H], glyphs };
+  return {
+    block: 0,
+    text,
+    wrapped: false,
+    rect: [right - glyphs.length * W, y, right, y + H],
+    glyphs,
+  };
 }
 
 // A line on a page turned a quarter: the glyphs stand one above the next. `up` reads from the
@@ -42,7 +48,7 @@ function down(text: string, x: number, top: number, up = false): PdfTextLine {
     const place = up ? n - 1 - i : i;
     return [x, top + place * H, x + W, top + (place + 1) * H];
   });
-  return { block: 0, text, rect: [x, top, x + W, top + n * H], glyphs };
+  return { block: 0, text, wrapped: false, rect: [x, top, x + W, top + n * H], glyphs };
 }
 
 const page = (...lines: PdfTextLine[]) =>
@@ -83,7 +89,13 @@ describe("selection", () => {
     const place = (i: number): Rect => [0.1 + i * W, 0.1, 0.1 + (i + 1) * W, 0.1 + H];
     // logical a b x y z -> shown at places 0 1 4 3 2
     for (const shown of [0, 1, 4, 3, 2]) glyphs.push(place(shown));
-    const text = page({ block: 0, text: "abxyz", rect: [0.1, 0.1, 0.1 + 5 * W, 0.1 + H], glyphs });
+    const text = page({
+      block: 0,
+      text: "abxyz",
+      wrapped: false,
+      rect: [0.1, 0.1, 0.1 + 5 * W, 0.1 + H],
+      glyphs,
+    });
     // From "b" (place 1) to "y" (place 3): places 1 2 3 are b, z, y.
     const from = hitTest(text, 0.1 + 1.5 * W, 0.11)!;
     const to = hitTest(text, 0.1 + 3.5 * W, 0.11)!;

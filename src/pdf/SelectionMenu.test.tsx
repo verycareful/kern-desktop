@@ -25,10 +25,17 @@ const wire: PdfPageText = {
     {
       block: 0,
       text: "hello there",
+      wrapped: false,
       rect: [0.1, 0.1, 0.32, 0.12],
       glyphs: glyphs("hello there", 0.1),
     },
-    { block: 0, text: "second", rect: [0.1, 0.2, 0.22, 0.22], glyphs: glyphs("second", 0.2) },
+    {
+      block: 0,
+      text: "second",
+      wrapped: false,
+      rect: [0.1, 0.2, 0.22, 0.22],
+      glyphs: glyphs("second", 0.2),
+    },
   ],
   blocks: [],
   tagged: false,

@@ -11,7 +11,9 @@ import { testDoc } from "./test-doc";
 
 const wire = (revision = 1): PdfPageText => ({
   revision,
-  lines: [{ block: 0, text: "a", rect: [0, 0, 0.1, 0.1], glyphs: [[0, 0, 0.1, 0.1]] }],
+  lines: [
+    { block: 0, text: "a", wrapped: false, rect: [0, 0, 0.1, 0.1], glyphs: [[0, 0, 0.1, 0.1]] },
+  ],
   blocks: [],
   tagged: false,
 });
