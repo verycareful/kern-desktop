@@ -291,6 +291,79 @@ describe("pdf", function () {
     expect(readFileSync(file).equals(original)).toBe(false);
   });
 
+  it("add_text_where_the_page_has_none_and_save_it", async () => {
+    // The driver drops repeated letters it types, so the new text has none.
+    const NEW_TEXT = "Lamp";
+    const dir = testDir("pdf-add-text");
+    const file = path.join(dir, "words.pdf");
+    const original = textPagePdf();
+    writeFileSync(file, original);
+    await openPdf(file);
+
+    const tool = await browser.$('button[aria-label="Edit text"]');
+    await tool.waitForClickable({ timeout: SHOWS_WITHIN_MS });
+    await tool.click();
+    // The page takes a click once its text has been read; the block is offered at the same time.
+    await (
+      await browser.$(`button[aria-label="Edit text: ${PAGE_TEXT}"]`)
+    ).waitForClickable({
+      timeout: SHOWS_WITHIN_MS,
+    });
+    const surface = await browser.$('[data-testid="pdf-new-text-surface-0"]');
+    const { width, height } = await surface.getSize();
+    // Near the left edge and three tenths of the page below its middle, where the page has no
+    // text; the box runs from there to the right edge of the line above, wide enough for the word.
+    await surface.click({ x: -Math.round(width * 0.4), y: Math.round(height * 0.3) });
+    const box = await browser.$('textarea[aria-label="New text"]');
+    await box.waitForDisplayed({ timeout: SHOWS_WITHIN_MS });
+    await browser.keys(NEW_TEXT);
+    await browser.keys("Enter");
+    const without = await browser.$("button=Edit without a copy");
+    await without.waitForClickable({ timeout: SHOWS_WITHIN_MS });
+    await without.click();
+
+    // The page's text is read again from the changed document: the new text is a block of it.
+    const shown = () =>
+      browser.execute(() => ({
+        blocks: Array.from(document.querySelectorAll(".kern-pdf-block")).map((b) =>
+          b.getAttribute("aria-label")
+        ),
+        box: document.querySelector(".kern-pdf-new-text-box")?.textContent ?? null,
+        alerts: Array.from(document.querySelectorAll("[role=alert], [role=status]")).map(
+          (a) => a.textContent
+        ),
+      }));
+    try {
+      await browser.waitUntil(
+        async () => {
+          const said = await browser.$(".kern-pdf-new-text-box [role=alert]");
+          if (await said.isExisting()) {
+            throw new Error(`the box was refused: ${await said.getText()}`);
+          }
+          return browser.$(`button[aria-label="Edit text: ${NEW_TEXT}"]`).isExisting();
+        },
+        { timeout: SHOWS_WITHIN_MS, interval: 500 }
+      );
+    } catch (e) {
+      throw new Error(`${String(e)}; the page shows ${JSON.stringify(await shown())}`);
+    }
+    // The page's own text is still there beside it.
+    expect(await browser.$(`button[aria-label="Edit text: ${PAGE_TEXT}"]`).isExisting()).toBe(true);
+
+    await browser.waitUntil(
+      async () => {
+        await browser.keys(["Control", "s"]);
+        return readFileSync(file).length > original.length;
+      },
+      {
+        timeout: SHOWS_WITHIN_MS,
+        interval: 500,
+        timeoutMsg: "the PDF with the new text was not saved by the document window",
+      }
+    );
+    expect(readFileSync(file).equals(original)).toBe(false);
+  });
+
   it("find_counts_a_word_and_steps_and_closes", async () => {
     const dir = testDir("pdf-find");
     const file = path.join(dir, "words.pdf");

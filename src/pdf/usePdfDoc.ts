@@ -34,6 +34,7 @@ import {
   afterSave,
   openedEdit,
   stampOp,
+  substitutionNotice,
   type ApplyOutcome,
   type EditState,
   type PdfOpInput,
@@ -311,7 +312,11 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
             const edit = afterEdit(s.edit, answer);
             return edit === s.edit ? s : { ...s, edit, changedPages: answer.changed_pages };
           });
-          return { status: "applied" };
+          // A font replaced is said whoever asked: the change was made, and its text looks other
+          // than the page's.
+          const notes = answer.notes ?? [];
+          if (notes.length > 0) say(substitutionNotice(name, notes));
+          return { status: "applied", notes };
         } catch (e) {
           if (mine !== generation.current) return { status: "declined" };
           const error = toWireError(e);

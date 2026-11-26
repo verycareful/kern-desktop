@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { expect, test } from "vitest";
 import type { PdfEditAnswer } from "../ipc";
-import { afterEdit, afterSave, openedEdit, stampOp } from "./edit-state";
+import { afterEdit, afterSave, openedEdit, stampOp, substitutionNotice } from "./edit-state";
 
 const answer = (over: Partial<PdfEditAnswer>): PdfEditAnswer => ({
   revision: 1,
@@ -71,6 +71,21 @@ test("stampOp_dates_the_ops_that_take_a_date_and_no_other", () => {
   expect(
     stampOp({ op: "deleteAnnotation", page: 0, id: { object: 3, generation: 0 } }, date)
   ).not.toHaveProperty("modified");
+  // The engine refuses a field an op does not have, and new text has no date.
+  expect(
+    stampOp({ op: "addText", page: 0, at: [0.1, 0.2], width: 0.5, text: "x" }, date)
+  ).not.toHaveProperty("modified");
+});
+
+test("a_substituted_font_is_said_with_the_file_and_the_engine_words", () => {
+  expect(
+    substitutionNotice("book.pdf", [
+      "substitute font used for: Helvetica (DejaVu Sans)",
+      "substitute font used for: Times (DejaVu Serif)",
+    ])
+  ).toBe(
+    "Some letters of the change to book.pdf are set in another font, because the page's font cannot show them (substitute font used for: Helvetica (DejaVu Sans); substitute font used for: Times (DejaVu Serif))."
+  );
 });
 
 test("a_save_makes_the_document_equal_to_its_file_and_keeps_the_history", () => {

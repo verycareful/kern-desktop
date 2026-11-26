@@ -187,6 +187,21 @@ export type PdfOp =
       family?: string | null;
       size?: number | null;
       colour?: Rgb | null;
+    }
+  | {
+      op: "addText";
+      page: number;
+      /** The top left corner of the text's box, in fractions of the displayed page. */
+      at: [number, number];
+      /** The box's width, a fraction of the displayed page's width; the lines wrap at it. */
+      width: number;
+      text: string;
+      /** The block whose font, size and colour the text takes; else the block nearest `at`. */
+      like?: { block: number; revision: number } | null;
+      family?: string | null;
+      /** In points. A page with no text to follow refuses new text without it (`NoSizeForNewText`). */
+      size?: number | null;
+      colour?: Rgb | null;
     };
 
 export interface PdfEditAnswer {
@@ -199,10 +214,14 @@ export interface PdfEditAnswer {
   modified: boolean;
   /** The annotation an add operation made. */
   annotation?: PdfObjectId;
-  /** After `editText`: the lines the new text came to. */
+  /** After `editText` and `addText`: the lines the new text came to. */
   lines?: number;
-  /** After `editText`: the fonts the edit had to substitute. */
+  /** After `editText` and `addText`: the fonts of the page that had to be replaced, in words. */
   notes?: string[];
+  /** After `addText`: the family the text is set in. */
+  family?: string;
+  /** After `addText`: the block whose style the text took, or null when no block was followed. */
+  followed?: number | null;
 }
 
 export interface PdfRenderSize {
@@ -258,6 +277,7 @@ const toWireOp = (op: PdfOp): Record<string, unknown> => {
     case "editAnnotation":
     case "deleteAnnotation":
     case "editText":
+    case "addText":
       return { ...op, page: toWirePage(op.page) };
   }
 };

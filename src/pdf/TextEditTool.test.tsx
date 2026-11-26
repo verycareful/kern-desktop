@@ -52,7 +52,9 @@ beforeEach(() => {
 async function tool(applyChecked?: Mock<PdfDoc["applyChecked"]>) {
   const apply =
     applyChecked ??
-    vi.fn<PdfDoc["applyChecked"]>().mockResolvedValue({ status: "applied" } as ApplyOutcome);
+    vi
+      .fn<PdfDoc["applyChecked"]>()
+      .mockResolvedValue({ status: "applied", notes: [] } as ApplyOutcome);
   const doc = testDoc({ handle: HANDLE, pages: 1, pageRevisions: [0], applyChecked: apply });
   render(<TextEditTool doc={doc} page={0} size={size} cssWidth={1000} />);
   await screen.findByRole("button", { name: /Edit text: first line/ });
@@ -152,7 +154,7 @@ test("a_stale_block_reads_the_page_again_from_the_engine_not_from_the_kept_text"
     vi
       .fn<PdfDoc["applyChecked"]>()
       .mockResolvedValueOnce(stale)
-      .mockResolvedValueOnce({ status: "applied" })
+      .mockResolvedValueOnce({ status: "applied", notes: [] })
   );
   ipc.pdfText.mockResolvedValue(wire(9));
   open();

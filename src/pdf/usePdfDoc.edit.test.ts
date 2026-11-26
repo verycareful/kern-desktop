@@ -324,7 +324,7 @@ test("applyChecked_tells_the_caller_how_the_change_ended_and_keeps_the_notice_qu
   await act(async () => {
     applied = await result.current.applyChecked({ op: "rotate", pages: [1], degrees: 90 });
   });
-  expect(applied).toEqual({ status: "applied" });
+  expect(applied).toEqual({ status: "applied", notes: [] });
   expect(result.current.modified).toBe(true);
 
   const refusal = { kind: "StaleBlock", message: "read at 0", path: null, details: null };
@@ -337,6 +337,37 @@ test("applyChecked_tells_the_caller_how_the_change_ended_and_keeps_the_notice_qu
   expect(failed).toEqual({ status: "failed", error: refusal });
   expect(useOps.getState().notice).toBeNull();
   expect(result.current.revision).toBe(1);
+});
+
+test("a_change_that_replaced_a_font_says_so_and_hands_the_notes_to_the_caller", async () => {
+  const { result } = await ready();
+  const notes = ["substitute font used for: Helvetica (DejaVu Sans)"];
+  ipc.pdfApply.mockResolvedValueOnce({
+    ...answer(),
+    lines: 1,
+    family: "DejaVu Sans",
+    followed: 0,
+    notes,
+  });
+  let applied: unknown;
+  await act(async () => {
+    applied = await result.current.applyChecked({
+      op: "addText",
+      page: 1,
+      at: [0.1, 0.5],
+      width: 0.4,
+      text: "Hi",
+    });
+  });
+  expect(applied).toEqual({ status: "applied", notes });
+  // Said even to a quiet caller: the change was made, and some of it looks other than the page.
+  expect(useOps.getState().notice?.text).toMatch(
+    /book\.pdf.*another font.*Helvetica \(DejaVu Sans\)/
+  );
+  const calls = ipc.pdfApply.mock.calls;
+  const sent = calls[calls.length - 1]?.[1] as Record<string, unknown>;
+  expect(sent).toMatchObject({ op: "addText", page: 1, at: [0.1, 0.5], width: 0.4, text: "Hi" });
+  expect(sent).not.toHaveProperty("modified");
 });
 
 test("applyChecked_refuses_with_the_reason_when_the_document_cannot_take_a_change", async () => {

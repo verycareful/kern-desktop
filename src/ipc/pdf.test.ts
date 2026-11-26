@@ -93,6 +93,13 @@ describe("the page base", () => {
       op: { op: "deleteAnnotation", page: 2, id: { object: 9, generation: 0 } },
       job: undefined,
     });
+    // New text: the page is converted, the box is fractions of the displayed page as it is.
+    await pdfApply(7, { op: "addText", page: 0, at: [0.25, 0.5], width: 0.4, text: "Hi" });
+    expect(bridge).toHaveBeenLastCalledWith(cmd("pdf_apply"), {
+      handle: 7,
+      op: { op: "addText", page: 1, at: [0.25, 0.5], width: 0.4, text: "Hi" },
+      job: undefined,
+    });
   });
 
   test("undo_and_redo_answer_the_pages_they_changed_from_zero", async () => {

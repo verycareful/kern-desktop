@@ -735,3 +735,38 @@
   line-height: 1.4;
   color: var(--kern-text-dim);
 }
+
+/* The page under the blocks while Edit text is in hand: a click where there is no text adds new
+   text there, a drag sets how wide it runs. */
+.kern-pdf-new-text-surface {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+/* The width a drag is setting, drawn at the height the new text's box will stand. */
+.kern-pdf-new-text-drag {
+  position: absolute;
+  height: 0;
+  border-top: 2px solid var(--kern-accent);
+  pointer-events: none;
+}
+
+.kern-pdf-new-text-size {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 6px;
+  margin: 2px 0 0;
+  color: var(--kern-text);
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+  font-size: 12px;
+}
+
+.kern-pdf-new-text-size input {
+  width: 6em;
+}

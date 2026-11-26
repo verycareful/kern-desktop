@@ -85,10 +85,19 @@ export function stampOp(op: PdfOpInput, modified: string): PdfOp {
  * text is edited in) and not in a notice.
  */
 export type ApplyOutcome =
-  | { status: "applied" }
+  /** `notes`: the fonts of the page the change had to replace, in the engine's words (said in a notice). */
+  | { status: "applied"; notes: string[] }
   /** Not made, and nothing went wrong: the copy question was cancelled, or the document was closed. */
   | { status: "declined" }
   /** Not made because the document cannot take a change now; `message` says why. */
   | { status: "refused"; message: string }
   /** The engine refused the change; the document is as it was. */
   | { status: "failed"; error: WireError };
+
+/**
+ * What the user is told when a text change had to set letters in a font of the system's in place
+ * of the page's own: the change is made, but those letters look other than the text around them.
+ */
+export function substitutionNotice(name: string, notes: readonly string[]): string {
+  return `Some letters of the change to ${name} are set in another font, because the page's font cannot show them (${notes.join("; ")}).`;
+}
