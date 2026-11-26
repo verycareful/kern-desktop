@@ -4,6 +4,9 @@
 // What the PDF actions (zoom, Go to page, rotate, undo, redo, a compacted copy, reload, copy, select and find) and the thumbnails reach: the viewer of a PDF tab
 // registers its commands here under the tab's id while it is mounted, as the editor does
 // (editor/doc-controller.ts), so the action table needs nothing of React.
+import type { MarkupKind } from "../ipc/pdf";
+import type { PdfTool } from "./pdf-tool";
+
 /** What a rotation turns: the page in view, every page, or the pages chosen in the strip or grid. */
 export type RotateScope = "page" | "all" | "selection";
 
@@ -55,6 +58,18 @@ export interface PdfController {
   /** Selects all the text of the page in view. */
   selectAll(): void;
   canSelectAll(): boolean;
+  /** The tool in hand: Select, or Ink or Note, which act on the page where it is pressed. */
+  tool(): PdfTool;
+  setTool(tool: PdfTool): void;
+  /** Annotations can be made: the document is open and can be changed here. */
+  canAnnotate(): boolean;
+  /** Marks the selected text (one change); needs `canMark`. */
+  mark(kind: MarkupKind): void;
+  canMark(): boolean;
+  /** An annotation is picked and can be changed. */
+  hasPickedAnnotation(): boolean;
+  /** Takes the picked annotation away. */
+  deletePicked(): void;
   /** Opens the find bar, or gives its field the focus when it is open. */
   openFind(): void;
   /** Goes to the next (`1`) or the previous (`-1`) match, opening the find bar when it is closed. */

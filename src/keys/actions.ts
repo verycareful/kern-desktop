@@ -1711,6 +1711,50 @@ const pdfActions: Action[] = [
     enabled: (c) => pdfOf(c)?.hasSelection() ?? false,
     run: (c) => pdfOf(c)?.searchSelection(),
   },
+  // Annotations. The tools are in hand until Select is chosen again or Escape is pressed. The
+  // markup keys act on the selected text. Delete takes the picked annotation away; the strip and
+  // the grid keep their own Delete for the pages chosen there, and the keys skip a press they
+  // took.
+  ...(
+    [
+      ["pdf.tool.select", "Select text and annotations", "select", "Ctrl+Alt+V"],
+      ["pdf.tool.ink", "Draw with the pen", "ink", "Ctrl+Alt+I"],
+      ["pdf.note.add", "Add a note", "note", "Ctrl+Alt+N"],
+    ] as const
+  ).map(([id, label, tool, key]): Action => ({
+    id,
+    label,
+    area: "Edit",
+    keys: [key],
+    when: "doc",
+    enabled: (c) =>
+      tool === "select" ? pdfOf(c) !== undefined : (pdfOf(c)?.canAnnotate() ?? false),
+    run: (c) => pdfOf(c)?.setTool(tool),
+  })),
+  ...(
+    [
+      ["pdf.markup.highlight", "Highlight the selected text", "highlight", "Ctrl+Shift+H"],
+      ["pdf.markup.underline", "Underline the selected text", "underline", "Ctrl+Shift+U"],
+      ["pdf.markup.strikeout", "Strike out the selected text", "strikeOut", "Ctrl+Shift+K"],
+    ] as const
+  ).map(([id, label, kind, key]): Action => ({
+    id,
+    label,
+    area: "Edit",
+    keys: [key],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canMark() ?? false,
+    run: (c) => pdfOf(c)?.mark(kind),
+  })),
+  {
+    id: "pdf.annotation.delete",
+    label: "Delete the picked annotation",
+    area: "Edit",
+    keys: ["Delete"],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.hasPickedAnnotation() ?? false,
+    run: (c) => pdfOf(c)?.deletePicked(),
+  },
   {
     id: "pdf.undo",
     label: "Undo",

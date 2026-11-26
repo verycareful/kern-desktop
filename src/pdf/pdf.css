@@ -547,3 +547,117 @@
   gap: 4px;
   padding: 2px 0;
 }
+
+/* The annotations of a page: boxes a key can reach, the one picked, and the surfaces of the tools.
+   The layer takes no pointer, so a press on the page goes to its text; only a tool's surface does. */
+.kern-pdf-annotations {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.kern-pdf-annotation {
+  position: absolute;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  pointer-events: none;
+}
+
+.kern-pdf-annotation:focus-visible {
+  outline: 2px solid rgb(51 144 255 / 70%);
+}
+
+.kern-pdf-annotation-picked {
+  position: absolute;
+  outline: 2px solid var(--kern-accent);
+  outline-offset: 2px;
+}
+
+.kern-pdf-annotation-menu,
+.kern-pdf-note-editor {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  margin-top: 6px;
+  color: var(--kern-text);
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+  pointer-events: auto;
+}
+
+.kern-pdf-annotation-text {
+  max-width: 24em;
+  margin: 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.kern-pdf-annotation-buttons,
+.kern-pdf-note-buttons,
+.kern-pdf-colours {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.kern-pdf-note-buttons {
+  justify-content: flex-end;
+}
+
+.kern-pdf-note-input {
+  width: 18em;
+  margin: 0;
+  resize: vertical;
+}
+
+.kern-pdf-swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--kern-border);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.kern-pdf-swatch[aria-pressed="true"],
+.kern-pdf-width[aria-pressed="true"] {
+  outline: 2px solid var(--kern-accent);
+  outline-offset: 1px;
+}
+
+.kern-pdf-width {
+  min-width: 22px;
+  padding: 0 4px;
+  color: var(--kern-text);
+  font-size: 11px;
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-pdf-colours {
+  padding: 4px 6px;
+}
+
+.kern-pdf-ink-surface,
+.kern-pdf-note-surface {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.kern-pdf-ink-surface svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}

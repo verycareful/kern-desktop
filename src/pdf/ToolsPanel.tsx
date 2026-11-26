@@ -2,10 +2,14 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import {
   Columns2,
+  Eraser,
   File,
   FileOutput,
+  Highlighter,
   LayoutGrid,
   Merge,
+  MousePointer2,
+  Pen,
   Redo2,
   RefreshCcw,
   RefreshCw,
@@ -14,15 +18,21 @@ import {
   Rows3,
   Search,
   Split,
+  StickyNote,
+  Strikethrough,
   TextSelect,
   Trash2,
+  Underline,
   Undo2,
   type LucideIcon,
 } from "lucide-react";
 import { currentContext, getAction, isEnabled, runAction } from "../keys/actions";
 import { useBindLabel } from "../keys/binds";
 import { useViewSettings } from "../files/view-settings";
+import { PALETTE, INK_WIDTHS, cssColour, sameColour } from "./annotations";
 import { usePageSelection } from "./page-selection";
+import { usePdfSelection } from "./pdf-selection";
+import { usePdfTool, type PdfTool } from "./pdf-tool";
 import type { PdfDoc } from "./usePdfDoc";
 
 // The tools beside an open PDF: Find (its session switches it on), Select all text, the edits
@@ -69,6 +79,31 @@ const FILE_TOOLS: readonly Tool[] = [
   { id: "pdf.split", label: "Split into files…", Icon: Split },
 ];
 
+// The tools in hand: Select picks text and annotations, Pen and Note act on the page where they
+// are pressed. One is in hand at a time.
+const HAND_TOOLS: readonly (Tool & { hand: PdfTool })[] = [
+  {
+    id: "pdf.tool.select",
+    label: "Select text and annotations",
+    Icon: MousePointer2,
+    hand: "select",
+  },
+  { id: "pdf.tool.ink", label: "Draw with the pen", Icon: Pen, hand: "ink" },
+  { id: "pdf.note.add", label: "Add a note", Icon: StickyNote, hand: "note" },
+];
+
+// Marking the selected text, and taking away the annotation that is picked.
+const MARK_TOOLS: readonly Tool[] = [
+  { id: "pdf.markup.highlight", label: "Highlight the selected text", Icon: Highlighter },
+  { id: "pdf.markup.underline", label: "Underline the selected text", Icon: Underline },
+  { id: "pdf.markup.strikeout", label: "Strike out the selected text", Icon: Strikethrough },
+];
+const DELETE_ANNOTATION_TOOL: Tool = {
+  id: "pdf.annotation.delete",
+  label: "Delete the picked annotation",
+  Icon: Eraser,
+};
+
 // Find and selecting the page's text are actions of the table.
 const FIND_TOOL: Tool = { id: "pdf.find", label: "Find", Icon: Search };
 const SELECT_TOOL: Tool = { id: "pdf.selectAll", label: "Select all text", Icon: TextSelect };
@@ -76,6 +111,8 @@ const SELECT_TOOL: Tool = { id: "pdf.selectAll", label: "Select all text", Icon:
 export function ToolsPanel(props: { tabId: string; doc: PdfDoc; collapsed: boolean }) {
   const { tabId, doc, collapsed } = props;
   const chosen = usePageSelection((st) => (st.byTab[tabId]?.pages.length ?? 0) > 0);
+  const textSelected = usePdfSelection((st) => st.byTab[tabId] !== undefined);
+  const annotationPicked = usePdfTool((st) => (st.byTab[tabId]?.picked ?? null) !== null);
   const available: Record<EditNeeds, boolean> = {
     edit: doc.canEdit,
     undo: doc.canEdit && doc.canUndo,
@@ -113,6 +150,33 @@ export function ToolsPanel(props: { tabId: string; doc: PdfDoc; collapsed: boole
             available={available[tool.needs]}
           />
         ))}
+      </ToolGroup>
+      <ToolGroup title="Annotate" collapsed={collapsed}>
+        {HAND_TOOLS.map((tool) => (
+          <HandButton
+            key={tool.id}
+            tabId={tabId}
+            tool={tool}
+            collapsed={collapsed}
+            available={tool.hand === "select" ? doc.phase === "ready" : doc.canEdit}
+          />
+        ))}
+        {MARK_TOOLS.map((tool) => (
+          <ActionButton
+            key={tool.id}
+            tabId={tabId}
+            tool={tool}
+            collapsed={collapsed}
+            available={doc.canEdit && textSelected}
+          />
+        ))}
+        <ActionButton
+          tabId={tabId}
+          tool={DELETE_ANNOTATION_TOOL}
+          collapsed={collapsed}
+          available={doc.canEdit && annotationPicked}
+        />
+        <ColourRow tabId={tabId} />
       </ToolGroup>
       <ToolGroup title="Pages" collapsed={collapsed}>
         <ActionButton
@@ -216,5 +280,66 @@ function ActionButton(props: {
       title={key ? `${tool.label} (${key})` : tool.label}
       onClick={() => runAction(action, currentContext(tabId))}
     />
+  );
+}
+
+// A tool in hand is an action of the table, and is pressed while it is the one in hand.
+function HandButton(props: {
+  tabId: string;
+  tool: Tool & { hand: PdfTool };
+  collapsed: boolean;
+  available: boolean;
+}) {
+  const { tabId, tool, collapsed, available } = props;
+  const action = getAction(tool.id);
+  const key = useBindLabel(action);
+  const inHand = usePdfTool((s) => (s.byTab[tabId]?.tool ?? "select") === tool.hand);
+  return (
+    <ToolButton
+      tool={tool}
+      collapsed={collapsed}
+      pressed={inHand}
+      disabled={!available}
+      title={key ? `${tool.label} (${key})` : tool.label}
+      onClick={() => runAction(action, currentContext(tabId))}
+    />
+  );
+}
+
+// The colour a new annotation is drawn in, and the width of the pen's line. The colours are
+// document content, so they are fixed and never follow the theme.
+function ColourRow(props: { tabId: string }) {
+  const { tabId } = props;
+  const colour = usePdfTool((s) => s.byTab[tabId]?.colour ?? null);
+  const width = usePdfTool((s) => s.byTab[tabId]?.inkWidth);
+  const { setColour, setInkWidth } = usePdfTool.getState();
+  return (
+    <div className="kern-pdf-colours" role="group" aria-label="Colour and pen width">
+      {PALETTE.map((swatch) => (
+        <button
+          key={swatch.name}
+          type="button"
+          className="kern-pdf-swatch"
+          aria-label={`Colour ${swatch.name}`}
+          title={swatch.name}
+          aria-pressed={colour ? sameColour(colour, swatch.rgb) : false}
+          style={{ background: cssColour(swatch.rgb) }}
+          onClick={() => setColour(tabId, swatch.rgb)}
+        />
+      ))}
+      {INK_WIDTHS.map((w) => (
+        <button
+          key={w}
+          type="button"
+          className="kern-pdf-width"
+          aria-label={`Pen width ${w} points`}
+          title={`Pen width ${w} pt`}
+          aria-pressed={width === w}
+          onClick={() => setInkWidth(tabId, w)}
+        >
+          {w}
+        </button>
+      ))}
+    </div>
   );
 }

@@ -178,6 +178,51 @@ describe("pdf", function () {
     expect(said).toBe("Copied the selected text");
   });
 
+  it("highlight_the_selected_text_and_save_it", async () => {
+    const dir = testDir("pdf-highlight");
+    const file = path.join(dir, "words.pdf");
+    const original = textPagePdf();
+    writeFileSync(file, original);
+    await openPdf(file);
+
+    // Select all waits for the page's text, as in the test above; the menu of the selection then
+    // offers the markup.
+    await browser.waitUntil(
+      async () => {
+        await browser.keys(["Control", "a"]);
+        return (await browser.$('[data-testid="pdf-selection"]')).isExisting();
+      },
+      {
+        timeout: SHOWS_WITHIN_MS,
+        interval: 500,
+        timeoutMsg: `Select all did not select ${PAGE_TEXT}`,
+      }
+    );
+    const highlight = await browser.$("button=Highlight");
+    await highlight.waitForClickable({ timeout: SHOWS_WITHIN_MS });
+    await highlight.click();
+    // The first change asks about a copy; the annotation is made once it is answered.
+    const without = await browser.$("button=Edit without a copy");
+    await without.waitForClickable({ timeout: SHOWS_WITHIN_MS });
+    await without.click();
+
+    await browser.waitUntil(
+      async () => {
+        await browser.keys(["Control", "s"]);
+        return readFileSync(file).length > original.length;
+      },
+      {
+        timeout: SHOWS_WITHIN_MS,
+        interval: 500,
+        timeoutMsg: "the highlighted PDF was not saved by the document window",
+      }
+    );
+    const saved = readFileSync(file);
+    // The opened bytes are kept and the highlight is an update after them.
+    expect(saved.subarray(0, original.length).equals(original)).toBe(true);
+    expect(saved.subarray(original.length).toString("latin1")).toContain("/Highlight");
+  });
+
   it("find_counts_a_word_and_steps_and_closes", async () => {
     const dir = testDir("pdf-find");
     const file = path.join(dir, "words.pdf");

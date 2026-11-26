@@ -1,15 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 
+import type { MarkupKind } from "../ipc/pdf";
 import { percent } from "./percent";
 
-// The small menu at the end of a selection: what can be done with the text. The entries are
-// buttons, so a later session adds its own (the markup entries) beside these.
+const MARKS: readonly (readonly [MarkupKind, string])[] = [
+  ["highlight", "Highlight"],
+  ["underline", "Underline"],
+  ["strikeOut", "Strikeout"],
+];
+
+// The small menu at the end of a selection: what can be done with the text.
 export function SelectionMenu(props: {
   /** Where the selection ends, as fractions of the page. */
   at: { left: number; top: number };
   onCopy(): void;
   onSearch(): void;
+  /** The document can be changed, so the text can be marked and a note can be put by it. */
+  canMark: boolean;
+  onMark(kind: MarkupKind): void;
+  onNote(): void;
 }) {
   return (
     <div
@@ -25,6 +35,25 @@ export function SelectionMenu(props: {
       </button>
       <button type="button" className="kern-button" onClick={props.onSearch}>
         Search for it
+      </button>
+      {MARKS.map(([kind, label]) => (
+        <button
+          key={kind}
+          type="button"
+          className="kern-button"
+          disabled={!props.canMark}
+          onClick={() => props.onMark(kind)}
+        >
+          {label}
+        </button>
+      ))}
+      <button
+        type="button"
+        className="kern-button"
+        disabled={!props.canMark}
+        onClick={props.onNote}
+      >
+        Note
       </button>
     </div>
   );

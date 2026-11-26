@@ -3,11 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { pdfLinks, toWireError, type PdfLink, type WireError } from "../ipc";
 import { errorText } from "../ops/error-text";
+import { annotationAt } from "./annotations";
+import { markSelection, noteAtSelection } from "./annotation-actions";
 import { followLink } from "./link-actions";
 import { linkAt } from "./links";
 import { loadPageText } from "./page-text";
 import { usePdfFind } from "./pdf-find";
 import { usePdfSelection } from "./pdf-selection";
+import { usePdfTool } from "./pdf-tool";
 import { charNear, hitTest, inLine, sameChar, selectionRects, type CharRef } from "./selection";
 import { copySelection, searchSelection } from "./selection-actions";
 import { percent } from "./percent";
@@ -135,6 +138,10 @@ export function TextLayer(props: {
     return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
   };
 
+  // The annotation of the page under the point, if one can be picked there.
+  const annotationUnder = (at: [number, number]) =>
+    annotationAt(usePdfTool.getState().listed[tabId]?.[page] ?? [], at[0], at[1]);
+
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     const at = place(e);
@@ -145,12 +152,17 @@ export function TextLayer(props: {
         : null;
     if (!start) {
       clear(tabId);
-      // A press on a link that is not on text is a click on the link when it is let go in place.
-      if (at && linkAt(links, at[0], at[1])) {
+      // A press on a link or an annotation that is not on text is a click on it when it is let
+      // go in place.
+      if (at && (linkAt(links, at[0], at[1]) || annotationUnder(at))) {
         drag.current = { x: e.clientX, y: e.clientY, moved: false, selecting: false };
+      } else if (usePdfTool.getState().byTab[tabId]?.picked) {
+        usePdfTool.getState().pick(tabId, null);
       }
       return;
     }
+    // Text selected over an annotation is the text, not the annotation.
+    if (usePdfTool.getState().byTab[tabId]?.picked) usePdfTool.getState().pick(tabId, null);
     layer.current?.setPointerCapture(e.pointerId);
     drag.current = { x: e.clientX, y: e.clientY, moved: false, selecting: true };
     setDragging(true);
@@ -183,7 +195,12 @@ export function TextLayer(props: {
     if (e.type === "pointercancel") return;
     const at = place(e);
     const link = at ? linkAt(links, at[0], at[1]) : undefined;
-    if (link) followLink(tabId, link, doc.pages);
+    if (link) {
+      followLink(tabId, link, doc.pages);
+      return;
+    }
+    const annotation = at ? annotationUnder(at) : null;
+    usePdfTool.getState().pick(tabId, annotation ? { page, id: annotation.id } : null);
   };
 
   const last = rects[rects.length - 1];
@@ -238,6 +255,14 @@ export function TextLayer(props: {
           at={{ left: Math.min(last[2], MENU_MAX_LEFT), top: Math.min(last[3], MENU_MAX_TOP) }}
           onCopy={() => void copySelection(tabId, doc)}
           onSearch={() => void searchSelection(tabId, doc)}
+          canMark={doc.canEdit}
+          onMark={(kind) => void markSelection(tabId, doc, kind)}
+          onNote={() =>
+            noteAtSelection(tabId, [
+              Math.min(last[2], MENU_MAX_LEFT),
+              Math.min(last[3], MENU_MAX_TOP),
+            ])
+          }
         />
       )}
       {failure && (

@@ -397,3 +397,74 @@ test("merge_extract_and_split_do_not_reach_a_text_document", () => {
     expect(isEnabled(getAction(name), currentContext()), name).toBe(false);
   }
 });
+
+test("the_annotation_tools_run_on_the_viewer_and_the_pen_and_note_follow_the_edit_state", () => {
+  const id = openPdf();
+  const c = testController();
+  const off = registerPdf(id, c);
+  const ctx = currentContext();
+  runAction(getAction("pdf.tool.select"), ctx);
+  runAction(getAction("pdf.tool.ink"), ctx);
+  runAction(getAction("pdf.note.add"), ctx);
+  expect(c.setTool).toHaveBeenNthCalledWith(1, "select");
+  expect(c.setTool).toHaveBeenNthCalledWith(2, "ink");
+  expect(c.setTool).toHaveBeenNthCalledWith(3, "note");
+  off();
+  const held = testController({ canAnnotate: () => false });
+  const hold = registerPdf(id, held);
+  expect(isEnabled(getAction("pdf.tool.ink"), ctx)).toBe(false);
+  expect(isEnabled(getAction("pdf.note.add"), ctx)).toBe(false);
+  // Select can always be chosen: it is how a tool is put down.
+  expect(isEnabled(getAction("pdf.tool.select"), ctx)).toBe(true);
+  hold();
+});
+
+test("the_markup_actions_act_on_the_selected_text_and_each_has_a_key", () => {
+  const id = openPdf();
+  const c = testController({ canMark: () => false });
+  const off = registerPdf(id, c);
+  const ctx = currentContext();
+  for (const name of ["pdf.markup.highlight", "pdf.markup.underline", "pdf.markup.strikeout"]) {
+    expect(isEnabled(getAction(name), ctx), name).toBe(false);
+    expect(getAction(name).keys.length, name).toBe(1);
+  }
+  off();
+  const ready = testController({ canMark: () => true });
+  const on = registerPdf(id, ready);
+  runAction(getAction("pdf.markup.highlight"), ctx);
+  runAction(getAction("pdf.markup.underline"), ctx);
+  runAction(getAction("pdf.markup.strikeout"), ctx);
+  expect(vi.mocked(ready.mark).mock.calls).toEqual([["highlight"], ["underline"], ["strikeOut"]]);
+  on();
+});
+
+test("delete_takes_the_picked_annotation_away_and_only_while_one_is_picked", () => {
+  const id = openPdf();
+  const none = testController({ hasPickedAnnotation: () => false });
+  const off = registerPdf(id, none);
+  const ctx = currentContext();
+  const del = getAction("pdf.annotation.delete");
+  expect(del.keys).toEqual(["Delete"]);
+  expect(isEnabled(del, ctx)).toBe(false);
+  off();
+  const some = testController({ hasPickedAnnotation: () => true });
+  const on = registerPdf(id, some);
+  runAction(del, ctx);
+  expect(some.deletePicked).toHaveBeenCalledTimes(1);
+  on();
+});
+
+test("the_annotation_actions_do_not_reach_a_text_document", () => {
+  useTabs.getState().openDoc(p("/a/n.md"));
+  const textId = useTabs.getState().activeId as string;
+  registerPdf(textId, testController());
+  for (const name of [
+    "pdf.tool.select",
+    "pdf.tool.ink",
+    "pdf.note.add",
+    "pdf.markup.highlight",
+    "pdf.annotation.delete",
+  ]) {
+    expect(isEnabled(getAction(name), currentContext()), name).toBe(false);
+  }
+});

@@ -10,6 +10,7 @@ vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()),
 import { useOps } from "../ops/useOps";
 import { dropPageText } from "./page-text";
 import { usePdfSelection } from "./pdf-selection";
+import { markSelection } from "./annotation-actions";
 import { copySelection, searchSelection, selectAllOnPage } from "./selection-actions";
 import { SelectionMenu } from "./SelectionMenu";
 import { testDoc } from "./test-doc";
@@ -55,7 +56,16 @@ const select = (from: number, to: number) =>
 test("the_menu_has_a_button_for_each_thing_to_do_with_the_text", () => {
   const onCopy = vi.fn();
   const onSearch = vi.fn();
-  render(<SelectionMenu at={{ left: 0.5, top: 0.25 }} onCopy={onCopy} onSearch={onSearch} />);
+  render(
+    <SelectionMenu
+      at={{ left: 0.5, top: 0.25 }}
+      onCopy={onCopy}
+      onSearch={onSearch}
+      canMark
+      onMark={vi.fn()}
+      onNote={vi.fn()}
+    />
+  );
   fireEvent.click(screen.getByRole("button", { name: "Copy" }));
   fireEvent.click(screen.getByRole("button", { name: "Search for it" }));
   expect(onCopy).toHaveBeenCalledTimes(1);
@@ -115,4 +125,69 @@ test("select_all_selects_the_whole_page_and_a_page_without_text_says_so", async 
   await selectAllOnPage(TAB, doc, 2);
   expect(usePdfSelection.getState().byTab[TAB]).toBeUndefined();
   expect(notify).toHaveBeenCalledWith("Page 3 has no text to select");
+});
+
+test("highlight_underline_strikeout_and_note_appear_after_this_session", () => {
+  const onMark = vi.fn();
+  const onNote = vi.fn();
+  render(
+    <SelectionMenu
+      at={{ left: 0.5, top: 0.25 }}
+      onCopy={vi.fn()}
+      onSearch={vi.fn()}
+      canMark
+      onMark={onMark}
+      onNote={onNote}
+    />
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Highlight" }));
+  fireEvent.click(screen.getByRole("button", { name: "Underline" }));
+  fireEvent.click(screen.getByRole("button", { name: "Strikeout" }));
+  fireEvent.click(screen.getByRole("button", { name: "Note" }));
+  expect(onMark.mock.calls).toEqual([["highlight"], ["underline"], ["strikeOut"]]);
+  expect(onNote).toHaveBeenCalledTimes(1);
+});
+
+test("a_document_that_cannot_be_changed_offers_the_markup_and_does_not_make_it", () => {
+  const onMark = vi.fn();
+  render(
+    <SelectionMenu
+      at={{ left: 0.5, top: 0.25 }}
+      onCopy={vi.fn()}
+      onSearch={vi.fn()}
+      canMark={false}
+      onMark={onMark}
+      onNote={vi.fn()}
+    />
+  );
+  for (const name of ["Highlight", "Underline", "Strikeout", "Note"]) {
+    expect(screen.getByRole("button", { name })).toBeDisabled();
+  }
+  expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled();
+});
+
+test("highlight_applies_one_op_and_marks_the_tab_dirty", async () => {
+  // The change goes to the document as one op, and the document (usePdfDoc) takes the engine's
+  // `modified` as the tab's dirty flag (usePdfDoc.edit.test.ts).
+  const apply = vi.fn().mockResolvedValue(undefined);
+  const editable = testDoc({ handle: HANDLE, pages: 3, apply });
+  select(0, 4);
+  await markSelection(TAB, editable, "highlight");
+  expect(apply).toHaveBeenCalledTimes(1);
+  const op = apply.mock.calls[0]![0] as { op: string; kind: string; page: number; quads: Rect[] };
+  expect(op).toMatchObject({ op: "addMarkup", kind: "highlight", page: 1 });
+  expect(op.quads.length).toBe(1);
+  expect(op.quads[0]![0]).toBeCloseTo(0.1);
+  expect(op.quads[0]![2]).toBeCloseTo(0.2);
+  expect(usePdfSelection.getState().byTab[TAB]).toBeUndefined();
+});
+
+test("a_document_that_cannot_be_changed_is_not_marked_and_says_so", async () => {
+  const apply = vi.fn();
+  const locked = testDoc({ handle: HANDLE, pages: 3, apply, canEdit: false });
+  select(0, 4);
+  const notify = vi.spyOn(useOps.getState(), "notify");
+  await markSelection(TAB, locked, "underline");
+  expect(apply).not.toHaveBeenCalled();
+  expect(notify).toHaveBeenCalledWith("This document cannot be changed here");
 });

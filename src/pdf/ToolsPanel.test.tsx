@@ -10,7 +10,10 @@ vi.mock("../ipc", async (orig) => ({
 import { settingsSet, type WirePath } from "../ipc";
 import { useViewSettings } from "../files/view-settings";
 import { useTabs } from "../store/tabs";
+import { PALETTE } from "./annotations";
 import { usePageSelection } from "./page-selection";
+import { usePdfSelection } from "./pdf-selection";
+import { usePdfTool } from "./pdf-tool";
 import { DEFAULT_PANELS } from "./panel-placement";
 import { registerPdf } from "./pdf-controller";
 import { testController, testDoc } from "./test-doc";
@@ -23,6 +26,8 @@ let controller = testController();
 beforeEach(() => {
   useTabs.setState({ tabs: [], activeId: null });
   usePageSelection.setState({ byTab: {} });
+  usePdfSelection.setState({ byTab: {}, searches: {} });
+  usePdfTool.setState({ byTab: {}, listed: {} });
   useViewSettings.setState({ pdfLayout: "scroll", pdfPanels: DEFAULT_PANELS });
   vi.mocked(settingsSet).mockReset();
   useTabs.getState().openDoc(p("/a/book.pdf"), "pdf");
@@ -57,8 +62,9 @@ test("expanded_shows_each_tool_with_its_name", () => {
 
 test("collapsed_shows_icons_only_with_labels_as_titles", () => {
   render(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed />);
-  const buttons = screen.getAllByRole("button");
-  expect(buttons).toHaveLength(16);
+  // The colours and the pen widths are swatches, not tools: they have no name to show.
+  const buttons = screen.getAllByRole("button").filter((b) => !b.closest(".kern-pdf-colours"));
+  expect(buttons).toHaveLength(23);
   for (const b of buttons) {
     expect(b).toHaveTextContent("");
     expect(b.getAttribute("title")).toContain(b.getAttribute("aria-label"));
@@ -161,4 +167,62 @@ test("remove_chosen_pages_waits_for_a_choice_and_for_a_document_that_can_be_chan
   expect(controller.removeSelection).toHaveBeenCalledTimes(1);
   rerender(<ToolsPanel tabId={tabId} doc={testDoc({ canEdit: false })} collapsed={false} />);
   expect(screen.getByRole("button", { name: "Remove chosen pages" })).toBeDisabled();
+});
+
+test("the_tool_in_hand_is_pressed_and_choosing_another_runs_its_action", () => {
+  render(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed={false} />);
+  expect(screen.getByRole("button", { name: "Select text and annotations" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Draw with the pen" }));
+  expect(controller.setTool).toHaveBeenCalledWith("ink");
+  act(() => usePdfTool.getState().setTool(tabId, "ink"));
+  expect(screen.getByRole("button", { name: "Draw with the pen" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  expect(screen.getByRole("button", { name: "Add a note" })).toHaveAttribute(
+    "aria-pressed",
+    "false"
+  );
+});
+
+test("the_pen_and_the_note_wait_for_a_document_that_can_be_changed", () => {
+  render(<ToolsPanel tabId={tabId} doc={testDoc({ canEdit: false })} collapsed={false} />);
+  expect(screen.getByRole("button", { name: "Draw with the pen" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Add a note" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Select text and annotations" })).toBeEnabled();
+});
+
+test("the_markup_tools_wait_for_selected_text_and_delete_waits_for_a_picked_annotation", () => {
+  render(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed={false} />);
+  const mark = "Highlight the selected text";
+  const del = "Delete the picked annotation";
+  expect(screen.getByRole("button", { name: mark })).toBeDisabled();
+  expect(screen.getByRole("button", { name: del })).toBeDisabled();
+  act(() => {
+    usePdfSelection
+      .getState()
+      .select(tabId, { page: 0, from: { line: 0, unit: 0 }, to: { line: 0, unit: 2 } });
+    usePdfTool.getState().pick(tabId, { page: 0, id: { object: 3, generation: 0 } });
+  });
+  expect(screen.getByRole("button", { name: mark })).toBeEnabled();
+  expect(screen.getByRole("button", { name: del })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: mark }));
+  expect(controller.mark).toHaveBeenCalledWith("highlight");
+  fireEvent.click(screen.getByRole("button", { name: del }));
+  expect(controller.deletePicked).toHaveBeenCalledTimes(1);
+});
+
+test("a_colour_and_a_pen_width_are_chosen_for_the_tab", () => {
+  render(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Colour Green" }));
+  expect(usePdfTool.getState().byTab[tabId]?.colour).toEqual(PALETTE[1]!.rgb);
+  expect(screen.getByRole("button", { name: "Colour Green" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Pen width 4 points" }));
+  expect(usePdfTool.getState().byTab[tabId]?.inkWidth).toBe(4);
 });

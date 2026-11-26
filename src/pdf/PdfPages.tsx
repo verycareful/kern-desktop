@@ -9,9 +9,13 @@ import { GoToPage } from "./GoToPage";
 import { layoutBeforeGrid, noteLayout } from "./layout-before-grid";
 import { moveTarget } from "./page-ops";
 import { PageCanvas } from "./PageCanvas";
+import { AnnotationLayer } from "./AnnotationLayer";
 import { TextLayer } from "./TextLayer";
 import { PAGE_MENU } from "./ThumbnailStrip";
 import { PAGE_ITEM_ATTR, usePageDrag } from "./usePageDrag";
+import { canChangePicked, canMark, deletePicked, markSelection } from "./annotation-actions";
+import { usePdfSelection } from "./pdf-selection";
+import { toolStateOf, usePdfTool } from "./pdf-tool";
 import { copySelection, hasSelection, searchSelection, selectAllOnPage } from "./selection-actions";
 import {
   FIT_WIDTH,
@@ -350,6 +354,8 @@ export function PdfPages(props: {
       usePageDialog.getState().open(tabId, { kind, pages: formatRanges(selectedPages(tabId)) }),
     [tabId]
   );
+  // What the tab held of annotations (the tool, the colour, the page lists) goes with the tab.
+  useEffect(() => () => usePdfTool.getState().forget(tabId), [tabId]);
   useEffect(
     () =>
       registerPdf(tabId, {
@@ -384,6 +390,16 @@ export function PdfPages(props: {
           if (d.pages > 0) void selectAllOnPage(tabId, d, shownPage());
         },
         canSelectAll: () => docNow.current.phase === "ready" && docNow.current.pages > 0,
+        tool: () => toolStateOf(tabId).tool,
+        setTool: (tool) => {
+          usePdfSelection.getState().clear(tabId);
+          usePdfTool.getState().setTool(tabId, tool);
+        },
+        canAnnotate: () => docNow.current.canEdit,
+        mark: (kind) => void markSelection(tabId, docNow.current, kind),
+        canMark: () => canMark(tabId, docNow.current),
+        hasPickedAnnotation: () => canChangePicked(tabId, docNow.current),
+        deletePicked: () => void deletePicked(tabId, docNow.current),
         openFind: () => usePdfFind.getState().open(tabId),
         findStep: (direction) => {
           const find = usePdfFind.getState();
@@ -495,13 +511,24 @@ export function PdfPages(props: {
                       onRemove={removeSelection}
                     />
                   ) : (
-                    <TextLayer
-                      tabId={tabId}
-                      doc={doc}
-                      page={page}
-                      visible={near.has(page)}
-                      current={(doc.pageRevisions[page] ?? 0) <= sizesAt}
-                    />
+                    <>
+                      <TextLayer
+                        tabId={tabId}
+                        doc={doc}
+                        page={page}
+                        visible={near.has(page)}
+                        current={(doc.pageRevisions[page] ?? 0) <= sizesAt}
+                      />
+                      <AnnotationLayer
+                        tabId={tabId}
+                        doc={doc}
+                        page={page}
+                        size={size}
+                        cssWidth={box.width}
+                        visible={near.has(page)}
+                        current={(doc.pageRevisions[page] ?? 0) <= sizesAt}
+                      />
+                    </>
                   )}
                 </PageSlot>
               );
