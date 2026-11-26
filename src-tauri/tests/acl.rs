@@ -35,6 +35,7 @@ fn env(label: &str) -> Env {
     fs::create_dir_all(&state).unwrap();
     let app = mock_builder()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(kernkraft_tauri::init())
         .plugin(zoom::plugin())
         .manage(StoreState::new(Store::new(config, state)))
@@ -77,6 +78,9 @@ fn env(label: &str) -> Env {
             kern_lib::dnd::dnd_target,
             kern_lib::dnd::drop_start_op,
             kern_lib::remove::remove_start_op,
+            kern_lib::pick::pick_pdfs,
+            kern_lib::pick::pick_folder,
+            kern_lib::pick::pick_save_pdf,
         ])
         .build(tauri::generate_context!())
         .unwrap();
@@ -1070,7 +1074,7 @@ fn every_window_reads_the_binds_and_only_the_settings_window_changes_them() {
 /// The kernkraft PDF commands a window that shows a PDF sends: opening and closing it, a page's
 /// size, picture, text, search hits, links and annotations, an edit with its undo and redo, the
 /// save and the compacted copy, the jobs, and the font list read once at start. Merge, extract and
-/// split are not here: only the window that offers page operations asks for them.
+/// split are in PDF_FILE_COMMANDS.
 const PDF_VIEW_COMMANDS: [&str; 18] = [
     "pdf_open",
     "pdf_close",
@@ -1091,6 +1095,12 @@ const PDF_VIEW_COMMANDS: [&str; 18] = [
     "pdf_job_progress",
     "pdf_set_system_fonts",
 ];
+
+/// What a PDF's Merge, Extract and Split send: each writes a new file and never replaces one.
+const PDF_FILE_COMMANDS: [&str; 3] = ["pdf_merge", "pdf_extract", "pdf_split"];
+
+/// Kern's own file chooser commands (pick.rs), which the page operations use to name files.
+const PICK_COMMANDS: [&str; 3] = ["pick_pdfs", "pick_folder", "pick_save_pdf"];
 
 #[test]
 fn doc_and_editor_windows_may_open_and_save_a_pdf() {
@@ -1123,6 +1133,94 @@ fn doc_and_editor_windows_may_open_and_save_a_pdf() {
         assert!(
             err.as_str().unwrap().contains("not allowed"),
             "settings {cmd}: {err}"
+        );
+    }
+}
+
+#[test]
+fn merge_extract_and_split_are_allowed_in_doc_and_editor_windows() {
+    for (file, windows, label) in [
+        ("doc.json", "doc-*", "doc-1"),
+        ("editor.json", "editor-*", "editor-1"),
+    ] {
+        let (kernkraft_cmds, kern_cmds) = granted(file, windows);
+        let e = env(label);
+        for cmd in PDF_FILE_COMMANDS {
+            assert!(kernkraft_cmds.iter().any(|c| c == cmd), "{file}: {cmd}");
+            if let Err(err) = invoke(&e, &kernkraft(cmd), json!({})) {
+                assert!(
+                    !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                    "{label} {cmd}: {err}"
+                );
+            }
+        }
+        for cmd in PICK_COMMANDS {
+            assert!(kern_cmds.iter().any(|c| c == cmd), "{file}: {cmd}");
+        }
+    }
+}
+
+/// The window that holds a PDF in a tab (main) holds the same page operations and choosers; the
+/// Settings window shows no PDF and holds none.
+#[test]
+fn the_main_window_may_pick_files_and_the_settings_window_may_not() {
+    let main = env("main");
+    for cmd in PDF_FILE_COMMANDS {
+        if let Err(err) = invoke(&main, &kernkraft(cmd), json!({})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "main {cmd}: {err}"
+            );
+        }
+    }
+    for cmd in PICK_COMMANDS {
+        if let Err(err) = invoke(&main, cmd, json!({})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "main {cmd}: {err}"
+            );
+        }
+    }
+    let settings = env("settings");
+    for cmd in PICK_COMMANDS {
+        let err = invoke(&settings, cmd, json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "settings {cmd}: {err}"
+        );
+    }
+    for cmd in PDF_FILE_COMMANDS {
+        let err = invoke(&settings, &kernkraft(cmd), json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "settings {cmd}: {err}"
+        );
+    }
+}
+
+/// The dialog plugin's own `open` and `save` add what they return to the asset protocol's scope,
+/// so no window may call them; Kern's choosers do not.
+#[test]
+fn no_window_may_call_the_dialog_plugins_own_commands() {
+    for label in ["main", "doc-1", "editor-1", "settings"] {
+        let e = env(label);
+        for cmd in ["open", "save", "message", "ask", "confirm"] {
+            let err = invoke(&e, &format!("plugin:dialog|{cmd}"), json!({})).unwrap_err();
+            assert!(
+                err.as_str().unwrap().to_lowercase().contains("not allowed"),
+                "{label} {cmd}: {err}"
+            );
+        }
+    }
+    for file in ["main.json", "doc.json", "editor.json", "settings.json"] {
+        let text = fs::read_to_string(format!(
+            "{}/capabilities/{file}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        assert!(
+            !text.contains("dialog:"),
+            "{file} names a dialog permission"
         );
     }
 }

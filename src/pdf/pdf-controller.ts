@@ -4,8 +4,8 @@
 // What the PDF actions (zoom, Go to page, rotate, undo, redo, a compacted copy, reload, copy, select and find) and the thumbnails reach: the viewer of a PDF tab
 // registers its commands here under the tab's id while it is mounted, as the editor does
 // (editor/doc-controller.ts), so the action table needs nothing of React.
-/** What a rotation turns: the page in view, or every page. */
-export type RotateScope = "page" | "all";
+/** What a rotation turns: the page in view, every page, or the pages chosen in the strip or grid. */
+export type RotateScope = "page" | "all" | "selection";
 
 /** A turn clockwise, in degrees; a quarter turn the other way is 270. */
 export type Turn = 90 | 180 | 270;
@@ -24,6 +24,16 @@ export interface PdfController {
   goToPage(page: number, at?: number): void;
   /** Turns the pages `scope` names clockwise by `degrees`. */
   rotate(degrees: Turn, scope: RotateScope): void;
+  /** Pages are chosen in the thumbnail strip or the grid. */
+  hasPageSelection(): boolean;
+  /** Takes the chosen pages out (refused, with the reason, when it would leave none). */
+  removeSelection(): void;
+  /** Opens Merge, Extract (starting with the chosen pages) or Split (the same). */
+  askMerge(): void;
+  askExtract(): void;
+  askSplit(): void;
+  /** Merge, Extract and Split can be asked: the document is open and has pages. */
+  canPageFiles(): boolean;
   undo(): void;
   redo(): void;
   /** The document is open and can be changed here (no other place holds it). */

@@ -10,9 +10,12 @@ import { LinkPrompt } from "./LinkPrompt";
 import { PasswordPrompt } from "./PasswordPrompt";
 import { PanelDock } from "./PanelDock";
 import { PdfChangedBanner } from "./PdfChangedBanner";
+import { PageFileDialogs } from "./PageFileDialogs";
 import { PdfPrompts } from "./PdfPrompts";
 import { usePdfDocController } from "./pdf-doc-controller";
 import { useLinkPrompt } from "./pdf-link-prompt";
+import { usePageSelection } from "./page-selection";
+import { usePageDialog } from "./pdf-page-dialog";
 import { needsCompactedCopy } from "./pdf-save";
 import { useFindSearch } from "./useFindSearch";
 import { usePdfDoc } from "./usePdfDoc";
@@ -60,6 +63,10 @@ export function PdfViewer(props: {
   const linkUrl = useLinkPrompt((s) => s.byTab[tabId]);
   const closeLink = useLinkPrompt((s) => s.close);
   useEffect(() => () => closeLink(tabId), [closeLink, tabId]);
+  const closePageDialog = usePageDialog((s) => s.close);
+  useEffect(() => () => closePageDialog(tabId), [closePageDialog, tabId]);
+  const clearChosenPages = usePageSelection((s) => s.clear);
+  useEffect(() => () => clearChosenPages(tabId), [clearChosenPages, tabId]);
   useEffect(() => {
     if (doc.phase === "failed") {
       settle({
@@ -155,6 +162,7 @@ export function PdfViewer(props: {
       {active && (doc.phase === "ready" || doc.phase === "failed") && (
         <PdfPrompts path={path} doc={doc} />
       )}
+      {active && <PageFileDialogs tabId={tabId} doc={doc} />}
       {active && doc.phase === "needs-password" && (
         <PasswordPrompt
           path={path}

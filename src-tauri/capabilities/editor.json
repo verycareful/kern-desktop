@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "editor",
-  "description": "Capability for the editor windows: tabs of documents, a folder tree with its file operations, and the places strip. Of kernkraft's commands what that page calls: listing, watching, text open, save and check, the theme, volumes to look at, what a pinned or recent entry is, where a link points, creating, renaming, the name search, a terminal and https links; copies and moves through drop_start_op and the Trash and delete for good of given items through remove_start_op, each starting only those operations (cancel_op, answer_conflict, undo_state, same_filesystem with them); the file clipboard; its tabs kept for the next launch (session_put); the binds of keys and mouse buttons, read only; and the report of a rename or move it did, so a tab open on the file follows it (doc_moved). Never start_op, which can also empty the Trash or purge it, and no mount, launcher, default-application or Trash listing command",
+  "description": "Capability for the editor windows: tabs of documents, a folder tree with its file operations, and the places strip. Of kernkraft's commands what that page calls: listing, watching, text open, save and check, the theme, volumes to look at, what a pinned or recent entry is, where a link points, creating, renaming, the name search, a terminal and https links; copies and moves through drop_start_op and the Trash and delete for good of given items through remove_start_op, each starting only those operations (cancel_op, answer_conflict, undo_state, same_filesystem with them); the file clipboard; its tabs kept for the next launch (session_put); the binds of keys and mouse buttons, read only; the report of a rename or move it did, so a tab open on the file follows it (doc_moved); and a PDF's Merge, Extract and Split (pdf_merge, pdf_extract, pdf_split, which write only a new file) with the system's file chooser for them (pick_pdfs, pick_folder, pick_save_pdf; never the dialog plugin's own commands). Never start_op, which can also empty the Trash or purge it, and no mount, launcher, default-application or Trash listing command",
   "windows": ["editor-*"],
   "permissions": [
     "core:default",
@@ -37,6 +37,9 @@
     "kernkraft-tauri:allow-pdf-compact",
     "kernkraft-tauri:allow-pdf-compact-file",
     "kernkraft-tauri:allow-pdf-cancel-job",
+    "kernkraft-tauri:allow-pdf-merge",
+    "kernkraft-tauri:allow-pdf-extract",
+    "kernkraft-tauri:allow-pdf-split",
     "kernkraft-tauri:allow-pdf-job-progress",
     "kernkraft-tauri:allow-pdf-set-system-fonts",
     "kernkraft-tauri:allow-text-check",
@@ -78,6 +81,9 @@
     "allow-file-identity",
     "allow-link-target",
     "allow-open-paths",
+    "allow-pick-folder",
+    "allow-pick-pdfs",
+    "allow-pick-save-pdf",
     "allow-doc-opened",
     "allow-doc-closed",
     "allow-doc-moved",

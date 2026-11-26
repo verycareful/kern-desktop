@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const ipc = vi.hoisted(() => ({
@@ -10,6 +10,8 @@ const ipc = vi.hoisted(() => ({
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
+import { useTabs } from "../store/tabs";
+import { usePageSelection } from "./page-selection";
 import { registerPdf, type PdfController } from "./pdf-controller";
 import { usePdfView } from "./pdf-view";
 import { ThumbnailStrip } from "./ThumbnailStrip";
@@ -46,6 +48,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   intersections = [];
   usePdfView.setState({ byTab: {} });
+  usePageSelection.setState({ byTab: {} });
   thumbCache.dropDocument(3);
   vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
   ipc.pdfRenderSize.mockImplementation(async (_h, _p, _r, widthPx: number) => ({
@@ -278,4 +281,132 @@ test("a_thumbnail_is_as_tall_as_its_page_is_to_its_width", () => {
 test("a_strip_with_no_sizes_yet_shows_no_thumbnails", () => {
   render(<ThumbnailStrip tabId="t1" doc={doc()} sizes={null} sizesAt={0} horizontal={false} />);
   expect(screen.queryAllByRole("button")).toHaveLength(0);
+});
+
+const chosen = () => usePageSelection.getState().byTab["t1"]?.pages ?? [];
+
+test("a_plain_click_chooses_the_page_and_ctrl_and_shift_choose_more_without_moving_the_view", () => {
+  const goToPage = vi.fn();
+  const off = registerPdf("t1", controller(goToPage));
+  strip();
+  fireEvent.click(screen.getByRole("button", { name: "Page 2" }));
+  expect(chosen()).toEqual([1]);
+  expect(goToPage).toHaveBeenCalledWith(1);
+  goToPage.mockClear();
+  fireEvent.click(screen.getByRole("button", { name: "Page 4" }), { ctrlKey: true });
+  expect(chosen()).toEqual([1, 3]);
+  fireEvent.click(screen.getByRole("button", { name: "Page 5" }), { shiftKey: true });
+  expect(chosen()).toEqual([3, 4]);
+  expect(goToPage).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Page 4, chosen" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  off();
+});
+
+test("shift_with_an_arrow_chooses_the_run_the_focus_travels", () => {
+  strip();
+  fireEvent.click(screen.getByRole("button", { name: "Page 2" }));
+  const first = screen.getByRole("button", { name: "Page 2, chosen" });
+  first.focus();
+  fireEvent.keyDown(first, { key: "ArrowDown", shiftKey: true });
+  fireEvent.keyDown(document.activeElement as Element, { key: "ArrowDown", shiftKey: true });
+  expect(chosen()).toEqual([1, 2, 3]);
+});
+
+test("delete_removes_the_chosen_pages_through_the_controller", () => {
+  const removeSelection = vi.fn();
+  const off = registerPdf("t1", testController({ removeSelection }));
+  strip();
+  const button = screen.getByRole("button", { name: "Page 2" });
+  fireEvent.click(button);
+  fireEvent.keyDown(button, { key: "Delete" });
+  expect(removeSelection).toHaveBeenCalledTimes(1);
+  off();
+});
+
+function menuOn(page: number) {
+  fireEvent.contextMenu(screen.getByRole("button", { name: new RegExp(`^Page ${page}(,|$)`) }));
+  return screen.getByRole("menu");
+}
+
+test("the_context_menu_rotates_and_removes_the_selected_pages", () => {
+  useTabs.setState({ tabs: [], activeId: null });
+  useTabs.getState().openDoc({ k: "Utf8", v: "/a/book.pdf" }, "pdf");
+  const tabId = useTabs.getState().activeId as string;
+  const rotate = vi.fn();
+  const removeSelection = vi.fn();
+  const off = registerPdf(tabId, testController({ rotate, removeSelection }));
+  render(
+    <ThumbnailStrip tabId={tabId} doc={doc()} sizes={sizes()} sizesAt={0} horizontal={false} />
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Page 2" }));
+  fireEvent.click(screen.getByRole("button", { name: "Page 3" }), { ctrlKey: true });
+  const menu = menuOn(3);
+  fireEvent.click(within(menu).getByRole("menuitem", { name: /Rotate chosen pages clockwise/ }));
+  expect(rotate).toHaveBeenCalledWith(90, "selection");
+  fireEvent.contextMenu(screen.getByRole("button", { name: "Page 3, chosen" }));
+  fireEvent.click(
+    within(screen.getByRole("menu")).getByRole("menuitem", { name: /Remove chosen pages/ })
+  );
+  expect(removeSelection).toHaveBeenCalledTimes(1);
+  // The right click on a page that was chosen kept the choice of both pages.
+  expect(usePageSelection.getState().byTab[tabId]?.pages).toEqual([1, 2]);
+  off();
+});
+
+test("a_right_click_on_a_page_that_is_not_chosen_chooses_it_alone", () => {
+  useTabs.setState({ tabs: [], activeId: null });
+  useTabs.getState().openDoc({ k: "Utf8", v: "/a/book.pdf" }, "pdf");
+  const tabId = useTabs.getState().activeId as string;
+  const off = registerPdf(tabId, testController());
+  render(
+    <ThumbnailStrip tabId={tabId} doc={doc()} sizes={sizes()} sizesAt={0} horizontal={false} />
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Page 1" }));
+  menuOn(4);
+  expect(usePageSelection.getState().byTab[tabId]?.pages).toEqual([3]);
+  off();
+});
+
+test("dragging_a_thumbnail_reorders_the_page_and_chooses_it_where_it_lands", async () => {
+  const reorderPages = vi.fn(async () => undefined);
+  strip({ reorderPages });
+  const items = screen.getAllByRole("listitem");
+  const box = screen.getByTestId("pdf-thumbs");
+  const r = (l: number, t: number, w: number, h: number) =>
+    ({
+      left: l,
+      top: t,
+      right: l + w,
+      bottom: t + h,
+      width: w,
+      height: h,
+      x: l,
+      y: t,
+      toJSON: () => ({}),
+    }) as DOMRect;
+  box.getBoundingClientRect = () => r(0, 0, 130, 600);
+  items.forEach((el, i) => {
+    el.getBoundingClientRect = () => r(0, i * 110, 120, 100);
+  });
+  const button = screen.getByRole("button", { name: "Page 1" });
+  fireEvent.pointerDown(button, { button: 0, clientX: 60, clientY: 50 });
+  // Into the gap before the fourth page (the upper half of it).
+  fireEvent.pointerMove(window, { clientX: 60, clientY: 340 });
+  fireEvent.pointerUp(window, { clientX: 60, clientY: 340 });
+  // Gap 3 after taking page 0 out of the way: page 0 ends at 2.
+  expect(reorderPages).toHaveBeenCalledWith(0, 2);
+  await waitFor(() => expect(chosen()).toEqual([2]));
+});
+
+test("a_drag_is_not_started_when_the_pages_cannot_be_changed", () => {
+  const reorderPages = vi.fn(async () => undefined);
+  strip({ reorderPages, canEdit: false });
+  const button = screen.getByRole("button", { name: "Page 1" });
+  fireEvent.pointerDown(button, { button: 0, clientX: 60, clientY: 50 });
+  fireEvent.pointerMove(window, { clientX: 60, clientY: 340 });
+  fireEvent.pointerUp(window, { clientX: 60, clientY: 340 });
+  expect(reorderPages).not.toHaveBeenCalled();
 });

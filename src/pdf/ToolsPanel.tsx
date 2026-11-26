@@ -3,7 +3,9 @@
 import {
   Columns2,
   File,
+  FileOutput,
   LayoutGrid,
+  Merge,
   Redo2,
   RefreshCcw,
   RefreshCw,
@@ -11,13 +13,16 @@ import {
   RotateCw,
   Rows3,
   Search,
+  Split,
   TextSelect,
+  Trash2,
   Undo2,
   type LucideIcon,
 } from "lucide-react";
 import { currentContext, getAction, isEnabled, runAction } from "../keys/actions";
 import { useBindLabel } from "../keys/binds";
 import { useViewSettings } from "../files/view-settings";
+import { usePageSelection } from "./page-selection";
 import type { PdfDoc } from "./usePdfDoc";
 
 // The tools beside an open PDF: Find (its session switches it on), Select all text, the edits
@@ -55,12 +60,22 @@ const EDIT_TOOLS: readonly (Tool & { needs: EditNeeds })[] = [
   { id: "pdf.redo", label: "Redo", Icon: Redo2, needs: "redo" },
 ];
 
+// What is done to whole pages: the ones chosen in the strip or the grid (Remove), and new files made
+// from the document (Merge, Extract, Split), which are available whenever it is open.
+const REMOVE_TOOL: Tool = { id: "pdf.page.remove", label: "Remove chosen pages", Icon: Trash2 };
+const FILE_TOOLS: readonly Tool[] = [
+  { id: "pdf.merge", label: "Merge PDFs…", Icon: Merge },
+  { id: "pdf.extract", label: "Extract pages…", Icon: FileOutput },
+  { id: "pdf.split", label: "Split into files…", Icon: Split },
+];
+
 // Find and selecting the page's text are actions of the table.
 const FIND_TOOL: Tool = { id: "pdf.find", label: "Find", Icon: Search };
 const SELECT_TOOL: Tool = { id: "pdf.selectAll", label: "Select all text", Icon: TextSelect };
 
 export function ToolsPanel(props: { tabId: string; doc: PdfDoc; collapsed: boolean }) {
   const { tabId, doc, collapsed } = props;
+  const chosen = usePageSelection((st) => (st.byTab[tabId]?.pages.length ?? 0) > 0);
   const available: Record<EditNeeds, boolean> = {
     edit: doc.canEdit,
     undo: doc.canEdit && doc.canUndo,
@@ -96,6 +111,23 @@ export function ToolsPanel(props: { tabId: string; doc: PdfDoc; collapsed: boole
             tool={tool}
             collapsed={collapsed}
             available={available[tool.needs]}
+          />
+        ))}
+      </ToolGroup>
+      <ToolGroup title="Pages" collapsed={collapsed}>
+        <ActionButton
+          tabId={tabId}
+          tool={REMOVE_TOOL}
+          collapsed={collapsed}
+          available={doc.canEdit && chosen}
+        />
+        {FILE_TOOLS.map((tool) => (
+          <ActionButton
+            key={tool.id}
+            tabId={tabId}
+            tool={tool}
+            collapsed={collapsed}
+            available={doc.phase === "ready" && doc.pages > 0 && !doc.moving}
           />
         ))}
       </ToolGroup>

@@ -41,6 +41,82 @@
   inset: 0;
 }
 
+/* The grid is the page organizer: one button over each page, and the pages chosen are outlined. */
+.kern-pdf-page-overlay {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.kern-pdf-page-overlay:hover {
+  background: rgb(0 0 0 / 6%);
+}
+
+.kern-pdf-page-overlay:focus-visible {
+  outline: 2px solid var(--kern-accent);
+  outline-offset: 2px;
+}
+
+.kern-pdf-page-chosen {
+  outline: 3px solid var(--kern-accent);
+  outline-offset: 2px;
+}
+
+/* Where a dragged page would land: a bar on the side of the page it would go before or after. */
+.kern-pdf-gap-before,
+.kern-pdf-gap-after {
+  position: relative;
+}
+
+.kern-pdf-page.kern-pdf-gap-before,
+.kern-pdf-page.kern-pdf-gap-after {
+  position: absolute;
+}
+
+.kern-pdf-gap-before::before,
+.kern-pdf-gap-after::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  background: var(--kern-accent);
+  pointer-events: none;
+}
+
+.kern-pdf-gap-before::before {
+  top: 0;
+  bottom: 0;
+  left: -6px;
+  width: 4px;
+}
+
+.kern-pdf-gap-after::after {
+  top: 0;
+  bottom: 0;
+  right: -6px;
+  width: 4px;
+}
+
+.kern-pdf-thumbs-column .kern-pdf-gap-before::before,
+.kern-pdf-thumbs-column .kern-pdf-gap-after::after {
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 4px;
+}
+
+.kern-pdf-thumbs-column .kern-pdf-gap-before::before {
+  top: -4px;
+  bottom: auto;
+}
+
+.kern-pdf-thumbs-column .kern-pdf-gap-after::after {
+  top: auto;
+  bottom: -4px;
+}
+
 .kern-pdf-tile {
   position: absolute;
   display: block;
@@ -214,6 +290,10 @@
 .kern-pdf-thumb-button[aria-current="page"] {
   color: var(--kern-text);
   border-color: var(--kern-accent);
+}
+
+.kern-pdf-thumb-button[aria-pressed="true"] {
+  background: var(--kern-accent-soft);
 }
 
 /* A thumbnail is paper like a page: white, never themed. */
@@ -424,4 +504,46 @@
   background: var(--kern-surface-sunken, var(--kern-surface));
   border: 1px solid var(--kern-border);
   border-radius: var(--kern-radius-small);
+}
+
+/* The Merge, Extract and Split dialogs. */
+.kern-pdf-job-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.kern-pdf-job-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kern-pdf-job-note {
+  min-height: 1.2em;
+  color: var(--kern-text-dim);
+  font-size: 12px;
+}
+
+.kern-pdf-job-files {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+
+.kern-pdf-merge-list {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.kern-pdf-merge-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
 }

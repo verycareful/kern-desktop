@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useViewSettings } from "../files/view-settings";
+import { setPdfLayout, useViewSettings } from "../files/view-settings";
+import { ActionMenu } from "../keys/ActionMenu";
 import type { WireError } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { GoToPage } from "./GoToPage";
+import { layoutBeforeGrid, noteLayout } from "./layout-before-grid";
+import { moveTarget } from "./page-ops";
 import { PageCanvas } from "./PageCanvas";
 import { TextLayer } from "./TextLayer";
+import { PAGE_MENU } from "./ThumbnailStrip";
+import { PAGE_ITEM_ATTR, usePageDrag } from "./usePageDrag";
 import { copySelection, hasSelection, searchSelection, selectAllOnPage } from "./selection-actions";
 import {
   FIT_WIDTH,
@@ -20,7 +25,10 @@ import {
   type Zoom,
 } from "./page-geometry";
 import { registerPdf, type RotateScope, type Turn } from "./pdf-controller";
+import { usePageSelection, selectedPages } from "./page-selection";
+import { formatRanges } from "./page-range";
 import { usePdfFind } from "./pdf-find";
+import { usePageDialog } from "./pdf-page-dialog";
 import { usePdfView } from "./pdf-view";
 import type { PdfDoc } from "./usePdfDoc";
 import { acrossOf, layoutOf, layoutRows, rowOfPage } from "./view-layout";
@@ -70,6 +78,10 @@ export function PdfPages(props: {
   const layout = useMemo(() => layoutOf(layoutKind, gridAcross), [layoutKind, gridAcross]);
   const across = acrossOf(layout);
   const single = layout.kind === "single";
+  // The grid is the page organizer: a press on a page chooses or drags it instead of selecting its
+  // text, and a click goes back to the layout the grid replaced.
+  const organizer = layout.kind === "grid";
+  useEffect(() => noteLayout(layoutKind), [layoutKind]);
   const patchView = usePdfView((s) => s.patch);
   const clearView = usePdfView((s) => s.clear);
 
@@ -186,6 +198,55 @@ export function PdfPages(props: {
     },
     [shown, count, showPage]
   );
+  // The grid as the page organizer.
+  const pagesBox = useRef<HTMLDivElement>(null);
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const chosenNow = usePageSelection((s) => s.byTab[tabId]?.pages);
+  const chosenSet = useMemo(() => new Set(chosenNow ?? []), [chosenNow]);
+  const choosePage = useCallback(
+    (page: number, keys: { ctrl: boolean; shift: boolean }) =>
+      usePageSelection.getState().click(tabId, page, pages, keys),
+    [tabId, pages]
+  );
+  const leaveGrid = useCallback(
+    (page: number) => {
+      // The next layout puts the view on the row of this page (the anchor), at its top.
+      showPage(page);
+      void setPdfLayout(layoutBeforeGrid());
+    },
+    [showPage]
+  );
+  const onPageClick = useCallback(
+    (page: number, e: React.MouseEvent) => {
+      const keys = { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey };
+      if (keys.ctrl || keys.shift) choosePage(page, keys);
+      else leaveGrid(page);
+    },
+    [choosePage, leaveGrid]
+  );
+  const onPageMenu = useCallback(
+    (page: number, e: React.MouseEvent) => {
+      e.preventDefault();
+      if (!usePageSelection.getState().byTab[tabId]?.pages.includes(page)) {
+        choosePage(page, { ctrl: false, shift: false });
+      }
+      setMenuAt({ x: e.clientX, y: e.clientY });
+    },
+    [choosePage, tabId]
+  );
+  const drag = usePageDrag({
+    container: pagesBox,
+    axis: "x",
+    enabled: organizer && doc.canEdit && pages > 1,
+    onDrop: (from, gap) => {
+      const to = moveTarget(from, gap);
+      if (to === from) return;
+      void doc.reorderPages(from, to).then(() => usePageSelection.getState().set(tabId, [to]));
+    },
+  });
+  // The pages chosen before an edit that took pages out are dropped with them.
+  useEffect(() => usePageSelection.getState().fit(tabId, pages), [tabId, pages]);
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (!single || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
     const direction =
@@ -267,10 +328,27 @@ export function PdfPages(props: {
       const last = d.pages - 1;
       if (last < 0) return;
       const shownNow = Math.min(shownPage(), last);
-      const pages = scope === "all" ? Array.from({ length: d.pages }, (_, i) => i) : [shownNow];
-      void d.apply({ op: "rotate", pages, degrees });
+      const pages =
+        scope === "all"
+          ? Array.from({ length: d.pages }, (_, i) => i)
+          : scope === "selection"
+            ? selectedPages(tabId).filter((p) => p <= last)
+            : [shownNow];
+      void d.rotatePages(pages, degrees);
     },
-    [shownPage]
+    [shownPage, tabId]
+  );
+  // A change of the page order or count makes the pages chosen before it point at other pages, so
+  // the choice is dropped once the change is made.
+  const forgetChoice = useCallback(() => usePageSelection.getState().clear(tabId), [tabId]);
+  const removeSelection = useCallback(() => {
+    const chosen = selectedPages(tabId);
+    void docNow.current.removePages(chosen).then(forgetChoice);
+  }, [tabId, forgetChoice]);
+  const askPageFile = useCallback(
+    (kind: "extract" | "split") =>
+      usePageDialog.getState().open(tabId, { kind, pages: formatRanges(selectedPages(tabId)) }),
+    [tabId]
   );
   useEffect(
     () =>
@@ -281,8 +359,15 @@ export function PdfPages(props: {
         askGoToPage: () => patchView(tabId, { goTo: true }),
         goToPage,
         rotate,
-        undo: () => void docNow.current.undo(),
-        redo: () => void docNow.current.redo(),
+        hasPageSelection: () => selectedPages(tabId).length > 0,
+        removeSelection,
+        askMerge: () => usePageDialog.getState().open(tabId, { kind: "merge" }),
+        askExtract: () => askPageFile("extract"),
+        askSplit: () => askPageFile("split"),
+        canPageFiles: () =>
+          docNow.current.phase === "ready" && docNow.current.pages > 0 && !docNow.current.moving,
+        undo: () => void docNow.current.undo().then(forgetChoice),
+        redo: () => void docNow.current.redo().then(forgetChoice),
         canEdit: () => docNow.current.canEdit,
         canUndo: () => docNow.current.canEdit && docNow.current.canUndo,
         canRedo: () => docNow.current.canEdit && docNow.current.canRedo,
@@ -307,7 +392,17 @@ export function PdfPages(props: {
         },
         canFind: () => docNow.current.phase === "ready" && docNow.current.pages > 0,
       }),
-    [tabId, zoomBy, patchView, goToPage, rotate, shownPage]
+    [
+      tabId,
+      zoomBy,
+      patchView,
+      goToPage,
+      rotate,
+      shownPage,
+      removeSelection,
+      askPageFile,
+      forgetChoice,
+    ]
   );
 
   // Ctrl and the wheel zoom. React's own wheel handler is passive and could not keep the
@@ -359,10 +454,13 @@ export function PdfPages(props: {
         )}
         {boxes && sizes && (
           <div
+            ref={pagesBox}
             className="kern-pdf-pages"
             style={{ width: contentWidth, height: boxes.total }}
             data-testid="pdf-pages"
             data-zoom={factor}
+            data-organizer={organizer ? "true" : undefined}
+            onPointerDown={drag.onPointerDown}
           >
             {sizes.map((size, page) => {
               const box = boxes.pages[page];
@@ -375,6 +473,8 @@ export function PdfPages(props: {
                   top={box.top}
                   width={box.width}
                   height={box.height}
+                  chosen={organizer && chosenSet.has(page)}
+                  organizer={organizer}
                   observe={observe}
                   unobserve={unobserve}
                 >
@@ -386,19 +486,38 @@ export function PdfPages(props: {
                     visible={near.has(page)}
                     current={(doc.pageRevisions[page] ?? 0) <= sizesAt}
                   />
-                  <TextLayer
-                    tabId={tabId}
-                    doc={doc}
-                    page={page}
-                    visible={near.has(page)}
-                    current={(doc.pageRevisions[page] ?? 0) <= sizesAt}
-                  />
+                  {organizer ? (
+                    <PageOverlay
+                      page={page}
+                      chosen={chosenSet.has(page)}
+                      onClick={onPageClick}
+                      onMenu={onPageMenu}
+                      onRemove={removeSelection}
+                    />
+                  ) : (
+                    <TextLayer
+                      tabId={tabId}
+                      doc={doc}
+                      page={page}
+                      visible={near.has(page)}
+                      current={(doc.pageRevisions[page] ?? 0) <= sizesAt}
+                    />
+                  )}
                 </PageSlot>
               );
             })}
           </div>
         )}
       </div>
+      {menuAt && (
+        <ActionMenu
+          sections={PAGE_MENU()}
+          x={menuAt.x}
+          y={menuAt.y}
+          targetId={tabId}
+          onClose={() => setMenuAt(null)}
+        />
+      )}
       {active && goTo && boxes && (
         <GoToPage
           pages={pages}
@@ -420,6 +539,10 @@ const PageSlot = memo(function PageSlot(props: {
   top: number;
   width: number;
   height: number;
+  /** The grid is the organizer and this page is one of the pages chosen in it. */
+  chosen: boolean;
+  /** The page can be dragged to another place. */
+  organizer: boolean;
   observe(el: Element, page: number): void;
   unobserve(el: Element): void;
   children: React.ReactNode;
@@ -435,13 +558,42 @@ const PageSlot = memo(function PageSlot(props: {
   return (
     <div
       ref={box}
-      className="kern-pdf-page"
+      className={`kern-pdf-page${props.chosen ? " kern-pdf-page-chosen" : ""}`}
       role="group"
       aria-label={`Page ${page + 1}`}
       data-page={page}
+      {...(props.organizer ? { [PAGE_ITEM_ATTR]: page } : {})}
       style={{ left: props.left, top: props.top, width: props.width, height: props.height }}
     >
       {props.children}
     </div>
+  );
+});
+
+// What covers a page of the grid: one button that goes back to the previous layout at that page, or,
+// with Ctrl or Shift, chooses it with the others. Delete removes the chosen pages.
+const PageOverlay = memo(function PageOverlay(props: {
+  page: number;
+  chosen: boolean;
+  onClick(page: number, e: React.MouseEvent): void;
+  onMenu(page: number, e: React.MouseEvent): void;
+  onRemove(): void;
+}) {
+  const { page, chosen } = props;
+  return (
+    <button
+      type="button"
+      className="kern-pdf-page-overlay"
+      aria-label={chosen ? `Open page ${page + 1}, chosen` : `Open page ${page + 1}`}
+      aria-pressed={chosen}
+      onClick={(e) => props.onClick(page, e)}
+      onContextMenu={(e) => props.onMenu(page, e)}
+      onKeyDown={(e) => {
+        if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+          e.preventDefault();
+          props.onRemove();
+        }
+      }}
+    />
   );
 });

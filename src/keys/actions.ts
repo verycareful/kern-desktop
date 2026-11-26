@@ -1584,6 +1584,58 @@ const pdfActions: Action[] = [
     enabled: (c) => pdfOf(c)?.canEdit() ?? false,
     run: (c) => pdfOf(c)?.rotate(degrees, scope),
   })),
+  // The pages chosen in the thumbnail strip or the grid. None has a key: Delete in the strip and
+  // the grid removes the chosen pages, and each has its menu entry.
+  ...(
+    [
+      ["pdf.rotateSelection.cw", "Rotate chosen pages clockwise", 90],
+      ["pdf.rotateSelection.ccw", "Rotate chosen pages counterclockwise", 270],
+    ] as const
+  ).map(([id, label, degrees]): Action => ({
+    id,
+    label,
+    area: "Edit",
+    keys: [],
+    when: "doc",
+    enabled: (c) => (pdfOf(c)?.canEdit() && pdfOf(c)?.hasPageSelection()) ?? false,
+    run: (c) => pdfOf(c)?.rotate(degrees, "selection"),
+  })),
+  {
+    id: "pdf.page.remove",
+    label: "Remove chosen pages",
+    area: "Edit",
+    keys: [],
+    when: "doc",
+    enabled: (c) => (pdfOf(c)?.canEdit() && pdfOf(c)?.hasPageSelection()) ?? false,
+    run: (c) => pdfOf(c)?.removeSelection(),
+  },
+  {
+    id: "pdf.merge",
+    label: "Merge PDFs…",
+    area: "File",
+    keys: [],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canPageFiles() ?? false,
+    run: (c) => pdfOf(c)?.askMerge(),
+  },
+  {
+    id: "pdf.extract",
+    label: "Extract pages…",
+    area: "File",
+    keys: [],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canPageFiles() ?? false,
+    run: (c) => pdfOf(c)?.askExtract(),
+  },
+  {
+    id: "pdf.split",
+    label: "Split into files…",
+    area: "File",
+    keys: [],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canPageFiles() ?? false,
+    run: (c) => pdfOf(c)?.askSplit(),
+  },
   {
     id: "pdf.saveCompacted",
     label: "Save a compacted copy…",

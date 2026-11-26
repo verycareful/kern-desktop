@@ -13,6 +13,22 @@ export function onePagePdf(): Buffer {
   ]);
 }
 
+/**
+ * The bytes of a PDF of `count` pages with no text. Page n is `100 + 20 n` points wide, so the
+ * pages are told apart by their size.
+ */
+export function pagesPdf(count: number): Buffer {
+  const kids = Array.from({ length: count }, (_, i) => `${3 + i} 0 R`).join(" ");
+  return pdfOf([
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    `<< /Type /Pages /Kids [${kids}] /Count ${count} >>`,
+    ...Array.from(
+      { length: count },
+      (_, i) => `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${100 + 20 * (i + 1)} 300] >>`
+    ),
+  ]);
+}
+
 /** The text on the page of `textPagePdf`. */
 export const PAGE_TEXT = "Hello Kern";
 

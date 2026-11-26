@@ -3,7 +3,7 @@
 
 [package]
 name = "kern"
-version = "0.1.2+2.9"
+version = "0.1.2+2.10"
 description = "Kern for Linux: a file manager and document viewer"
 license = "AGPL-3.0-or-later"
 publish = false
@@ -26,6 +26,7 @@ kernkraft-fs = { git = "https://github.com/verycareful/kernkraft", tag = "0.2.1.
 kernkraft-theme = { git = "https://github.com/verycareful/kernkraft", tag = "0.2.1.0" }
 kernkraft-bus = { git = "https://github.com/verycareful/kernkraft", tag = "0.2.1.0" }
 kernkraft-xdg-apps = { git = "https://github.com/verycareful/kernkraft", tag = "0.2.1.0" }
+tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-window-state = "2"
 # Only for the interface macro and message types; connections come from kernkraft-bus.

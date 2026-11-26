@@ -11,6 +11,7 @@ const ipc = vi.hoisted(() => ({
   pdfCancelJob: vi.fn(),
   pdfText: vi.fn(),
   clipText: vi.fn(),
+  settingsSet: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
@@ -18,7 +19,9 @@ import { useViewSettings } from "../files/view-settings";
 import { PAGE_GAP, PAGE_MARGIN, CSS_PX_PER_PT } from "./page-geometry";
 import { PdfPages } from "./PdfPages";
 import { pdfController } from "./pdf-controller";
+import { usePageSelection } from "./page-selection";
 import { usePdfFind } from "./pdf-find";
+import { usePageDialog } from "./pdf-page-dialog";
 import { usePdfSelection } from "./pdf-selection";
 import { dropPageText } from "./page-text";
 import { usePdfView } from "./pdf-view";
@@ -72,6 +75,8 @@ beforeEach(() => {
   usePdfView.setState({ byTab: {} });
   usePdfSelection.setState({ byTab: {}, searches: {} });
   usePdfFind.setState({ byTab: {} });
+  usePageSelection.setState({ byTab: {} });
+  usePageDialog.setState({ byTab: {} });
   dropPageText(3);
   ipc.pdfText.mockResolvedValue({
     revision: 0,
@@ -90,6 +95,7 @@ beforeEach(() => {
     tagged: false,
   });
   ipc.clipText.mockResolvedValue(undefined);
+  ipc.settingsSet.mockRejectedValue(new Error("no settings in a test"));
   useViewSettings.setState({ pdfLayout: "scroll", pdfGridAcross: 4 });
   vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
   vi.stubGlobal("ResizeObserver", FakeResizeObserver);
@@ -514,15 +520,63 @@ test("go_to_page_in_a_spread_scrolls_to_the_row_that_holds_the_page", async () =
 
 test("rotate_turns_the_page_in_view_or_every_page_through_the_controller", async () => {
   ipc.pdfPageInfo.mockImplementation(async () => info(600, 800));
-  const apply = vi.fn(() => Promise.resolve());
-  await pages({ apply });
+  const rotatePages = vi.fn(() => Promise.resolve());
+  await pages({ rotatePages });
   act(() => usePdfView.getState().patch("t1", { page: 2 }));
   pdfController("t1")?.rotate(90, "page");
-  expect(apply).toHaveBeenLastCalledWith({ op: "rotate", pages: [2], degrees: 90 });
+  expect(rotatePages).toHaveBeenLastCalledWith([2], 90);
   pdfController("t1")?.rotate(270, "page");
-  expect(apply).toHaveBeenLastCalledWith({ op: "rotate", pages: [2], degrees: 270 });
+  expect(rotatePages).toHaveBeenLastCalledWith([2], 270);
   pdfController("t1")?.rotate(180, "all");
-  expect(apply).toHaveBeenLastCalledWith({ op: "rotate", pages: [0, 1, 2, 3], degrees: 180 });
+  expect(rotatePages).toHaveBeenLastCalledWith([0, 1, 2, 3], 180);
+});
+
+test("rotate_turns_the_chosen_pages_and_nothing_when_none_is_chosen", async () => {
+  const rotatePages = vi.fn(() => Promise.resolve());
+  await pages({ rotatePages });
+  pdfController("t1")?.rotate(90, "selection");
+  expect(rotatePages).toHaveBeenLastCalledWith([], 90);
+  act(() => usePageSelection.getState().set("t1", [1, 3]));
+  expect(pdfController("t1")?.hasPageSelection()).toBe(true);
+  pdfController("t1")?.rotate(90, "selection");
+  expect(rotatePages).toHaveBeenLastCalledWith([1, 3], 90);
+});
+
+test("remove_takes_out_the_chosen_pages_and_forgets_the_choice", async () => {
+  const removePages = vi.fn(() => Promise.resolve());
+  await pages({ removePages });
+  act(() => usePageSelection.getState().set("t1", [1, 2]));
+  act(() => pdfController("t1")?.removeSelection());
+  expect(removePages).toHaveBeenCalledWith([1, 2]);
+  await waitFor(() => expect(pdfController("t1")?.hasPageSelection()).toBe(false));
+});
+
+test("undo_and_redo_forget_the_choice_because_the_pages_may_have_moved", async () => {
+  const undo = vi.fn(() => Promise.resolve());
+  await pages({ undo });
+  act(() => usePageSelection.getState().set("t1", [1]));
+  act(() => pdfController("t1")?.undo());
+  await waitFor(() => expect(pdfController("t1")?.hasPageSelection()).toBe(false));
+  expect(undo).toHaveBeenCalled();
+});
+
+test("extract_and_split_start_with_the_chosen_pages_and_merge_with_none", async () => {
+  await pages();
+  act(() => usePageSelection.getState().set("t1", [0, 1, 2, 3]));
+  act(() => pdfController("t1")?.askExtract());
+  expect(usePageDialog.getState().byTab["t1"]).toEqual({ kind: "extract", pages: "1-4" });
+  act(() => usePageSelection.getState().set("t1", [1, 3]));
+  act(() => pdfController("t1")?.askSplit());
+  expect(usePageDialog.getState().byTab["t1"]).toEqual({ kind: "split", pages: "2,4" });
+  act(() => pdfController("t1")?.askMerge());
+  expect(usePageDialog.getState().byTab["t1"]).toEqual({ kind: "merge" });
+});
+
+test("a_selection_beyond_a_document_that_shrank_is_dropped", async () => {
+  const view = await pages();
+  act(() => usePageSelection.getState().set("t1", [1, 3]));
+  view.rerender(<Pages doc={doc({ pages: 3, pageRevisions: [1, 1, 1] })} />);
+  await waitFor(() => expect(usePageSelection.getState().byTab["t1"]?.pages).toEqual([1]));
 });
 
 test("the_controller_answers_for_the_document_as_it_is_now", async () => {
@@ -623,4 +677,98 @@ test("find_opens_the_bar_and_steps_only_when_it_is_open", async () => {
 test("find_waits_for_a_document_with_pages", async () => {
   await pages({ pages: 0 });
   expect(pdfController("t1")?.canFind()).toBe(false);
+});
+
+// The grid is the page organizer.
+const GRID_WIDTH = 100;
+
+/** jsdom does no layout: each page of the grid stands in a row of three, 100 wide and 140 tall. */
+function layoutGrid() {
+  const box = screen.getByTestId("pdf-pages");
+  box.getBoundingClientRect = () => rectOf(0, 0, 400, 300);
+  for (const el of box.querySelectorAll<HTMLElement>("[data-page-item]")) {
+    const page = Number(el.dataset.pageItem);
+    el.getBoundingClientRect = () =>
+      rectOf((page % 3) * (GRID_WIDTH + 20), Math.floor(page / 3) * 160, GRID_WIDTH, 140);
+  }
+}
+const rectOf = (l: number, t: number, w: number, h: number) =>
+  ({
+    left: l,
+    top: t,
+    right: l + w,
+    bottom: t + h,
+    width: w,
+    height: h,
+    x: l,
+    y: t,
+    toJSON: () => ({}),
+  }) as DOMRect;
+
+test("in_the_grid_a_page_is_a_button_and_has_no_text_layer", async () => {
+  useViewSettings.setState({ pdfLayout: "grid", pdfGridAcross: 3 });
+  await pages();
+  expect(screen.getAllByRole("button", { name: /^Open page \d$/ })).toHaveLength(4);
+  expect(screen.getByTestId("pdf-pages")).toHaveAttribute("data-organizer", "true");
+  expect(document.querySelector(".kern-pdf-text")).toBeNull();
+});
+
+test("a_click_on_a_page_of_the_grid_returns_to_the_layout_before_it_at_that_page", async () => {
+  useViewSettings.setState({ pdfLayout: "spread" });
+  const view = await pages();
+  act(() => useViewSettings.setState({ pdfLayout: "grid", pdfGridAcross: 3 }));
+  view.rerender(<Pages doc={doc()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Open page 3" }));
+  expect(ipc.settingsSet).toHaveBeenCalledWith({ pdf_layout: "spread" });
+  expect(usePdfView.getState().byTab["t1"]?.page).toBe(2);
+});
+
+test("ctrl_click_and_shift_click_choose_pages_and_leave_the_grid_alone", async () => {
+  useViewSettings.setState({ pdfLayout: "grid", pdfGridAcross: 3 });
+  await pages();
+  fireEvent.click(screen.getByRole("button", { name: "Open page 2" }), { ctrlKey: true });
+  fireEvent.click(screen.getByRole("button", { name: "Open page 4" }), { shiftKey: true });
+  expect(usePageSelection.getState().byTab["t1"]?.pages).toEqual([1, 2, 3]);
+  expect(ipc.settingsSet).not.toHaveBeenCalled();
+  expect(screen.getByRole("group", { name: "Page 3" })).toHaveClass("kern-pdf-page-chosen");
+});
+
+test("the_grid_layout_drags_to_reorder_and_a_click_returns_to_the_previous_layout_at_that_page", async () => {
+  const reorderPages = vi.fn(() => Promise.resolve());
+  const view = await pages({ reorderPages });
+  act(() => useViewSettings.setState({ pdfLayout: "grid", pdfGridAcross: 3 }));
+  view.rerender(<Pages doc={doc({ reorderPages })} />);
+  layoutGrid();
+  const first = screen.getByRole("button", { name: "Open page 1" });
+  fireEvent.pointerDown(first, { button: 0, clientX: 50, clientY: 70 });
+  // The left half of the second page of the second row: the gap before page 4 (index 4).
+  fireEvent.pointerMove(window, { clientX: 140, clientY: 230 });
+  fireEvent.pointerUp(window, { clientX: 140, clientY: 230 });
+  expect(reorderPages).toHaveBeenCalledWith(0, 3);
+  await waitFor(() => expect(usePageSelection.getState().byTab["t1"]?.pages).toEqual([3]));
+  // A press that did not travel is a click, which goes back to the previous layout.
+  fireEvent.click(screen.getByRole("button", { name: /^Open page 2/ }));
+  expect(ipc.settingsSet).toHaveBeenCalledWith({ pdf_layout: "scroll" });
+});
+
+test("a_drag_in_the_grid_does_not_go_back_to_the_previous_layout", async () => {
+  useViewSettings.setState({ pdfLayout: "grid", pdfGridAcross: 3 });
+  await pages({ reorderPages: vi.fn(() => Promise.resolve()) });
+  layoutGrid();
+  const first = screen.getByRole("button", { name: "Open page 1" });
+  fireEvent.pointerDown(first, { button: 0, clientX: 50, clientY: 70 });
+  fireEvent.pointerMove(window, { clientX: 250, clientY: 70 });
+  fireEvent.pointerUp(window, { clientX: 250, clientY: 70 });
+  // The click that follows the end of a drag is swallowed.
+  fireEvent.click(first);
+  expect(ipc.settingsSet).not.toHaveBeenCalled();
+});
+
+test("delete_in_the_grid_removes_the_chosen_pages", async () => {
+  const removePages = vi.fn(() => Promise.resolve());
+  useViewSettings.setState({ pdfLayout: "grid", pdfGridAcross: 3 });
+  await pages({ removePages });
+  act(() => usePageSelection.getState().set("t1", [2]));
+  fireEvent.keyDown(screen.getByRole("button", { name: "Open page 3, chosen" }), { key: "Delete" });
+  expect(removePages).toHaveBeenCalledWith([2]);
 });

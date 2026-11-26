@@ -505,6 +505,25 @@ export const clipGet = () => invoke<ClipContents | null>("clip_get");
 /** Clears the clipboard only if it still holds exactly this operation on exactly these paths; resolves to whether it did. */
 export const clipClearIf = (op: ClipOp, paths: WirePath[]) =>
   invoke<boolean>("clip_clear_if", { op, paths });
+
+// The system's file chooser (pick.rs).
+// For the PDF operations that name files. Each answers null when the chooser is closed. The chooser
+// may offer to replace a file; the operation that writes still refuses one that exists.
+
+/** Asks for one or more PDF files, starting in `folder`. */
+export const pickPdfs = (title: string, folder?: WirePath) =>
+  invoke<WirePath[] | null>("pick_pdfs", { title, folder: folder ?? null });
+/** Asks for a folder, starting in `folder`. */
+export const pickFolder = (title: string, folder?: WirePath) =>
+  invoke<WirePath | null>("pick_folder", { title, folder: folder ?? null });
+/** Asks where to write a PDF, starting in `folder` with the name `fileName`. */
+export const pickSavePdf = (title: string, folder?: WirePath, fileName?: string) =>
+  invoke<WirePath | null>("pick_save_pdf", {
+    title,
+    folder: folder ?? null,
+    fileName: fileName ?? null,
+  });
+
 export const dragOut = (paths: WirePath[]) => invoke<void>("drag_out", { paths });
 /** Answers kern://drag-over: the backend then shows the pointer what Kern will do at that place. */
 export const dndTarget = (drag: number, target: DragTarget) =>

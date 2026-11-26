@@ -15,6 +15,7 @@ import {
   type Location,
   type PdfEditAnswer,
   type PdfHandle,
+  type PdfSource,
   type UnlistenFn,
   type WireEntry,
   type WireError,
@@ -37,6 +38,7 @@ import {
   type PdfOpInput,
 } from "./edit-state";
 import { pdfDate } from "./pdf-date";
+import { refuseRemoval, reorderOrder } from "./page-ops";
 import { entryAtStamp } from "./pdf-save";
 import { ensureSystemFonts } from "./system-fonts";
 import { thumbCache } from "./thumb-cache";
@@ -99,6 +101,14 @@ export interface PdfDoc extends PdfSave {
   redo(): Promise<void>;
   /** A change is with the engine or waiting for it. */
   busy(): boolean;
+  /** The file the document was opened from, with the password it was opened with. */
+  fileSource(): PdfSource;
+  /** Turns `pages` (from 0) clockwise by `degrees`; no pages is no change, never every page. */
+  rotatePages(pages: readonly number[], degrees: 90 | 180 | 270): Promise<void>;
+  /** Takes `pages` out; one that would leave the PDF with none is refused with the reason. */
+  removePages(pages: readonly number[]): Promise<void>;
+  /** Moves the page `from` so that it stands at `to` (both from 0); the same place is no change. */
+  reorderPages(from: number, to: number): Promise<void>;
 }
 
 export interface PdfDocOptions {
@@ -310,6 +320,39 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
   const undo = useCallback(() => step("Undo", (h) => pdfUndo(h)), [step]);
   const redo = useCallback(() => step("Redo", (h) => pdfRedo(h)), [step]);
 
+  // Page operations: changes that move, turn or take out whole pages.
+  const fileSource = useCallback(
+    (): PdfSource => ({ path: latestPath.current, password: passwordRef.current }),
+    []
+  );
+  const rotatePages = useCallback(
+    async (pages: readonly number[], degrees: 90 | 180 | 270) => {
+      // The engine reads no pages as every page, which is not what an empty choice means.
+      if (pages.length === 0) return;
+      await apply({ op: "rotate", pages: [...pages], degrees });
+    },
+    [apply]
+  );
+  const removePages = useCallback(
+    async (pages: readonly number[]) => {
+      const why = refuseRemoval(latest.current.edit.pages, pages);
+      if (why !== null) {
+        say(why);
+        return;
+      }
+      await apply({ op: "remove", pages: [...pages] });
+    },
+    [apply]
+  );
+  const reorderPages = useCallback(
+    async (from: number, to: number) => {
+      const order = reorderOrder(latest.current.edit.pages, from, to);
+      if (order === null) return;
+      await apply({ op: "reorder", order });
+    },
+    [apply]
+  );
+
   // The tab is dirty exactly while the engine says the document differs from its file.
   const { modified } = state.edit;
   useEffect(() => {
@@ -493,6 +536,10 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
       undo,
       redo,
       busy,
+      fileSource,
+      rotatePages,
+      removePages,
+      reorderPages,
     }),
     [
       writing,
@@ -506,6 +553,10 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
       undo,
       redo,
       busy,
+      fileSource,
+      rotatePages,
+      removePages,
+      reorderPages,
     ]
   );
 }

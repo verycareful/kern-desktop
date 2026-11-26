@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { pdfCancelJob, pdfRender, pdfRenderSize, toWireError, type WireError } from "../ipc";
+import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
+import { getAction } from "../keys/actions";
 import { errorText } from "../ops/error-text";
 import { nextJobId } from "./jobs";
 import type { PageSize } from "./page-geometry";
+import { moveTarget } from "./page-ops";
+import { usePageSelection } from "./page-selection";
 import { pdfController } from "./pdf-controller";
 import { usePdfView } from "./pdf-view";
 import { paintPixels } from "./pixels";
 import { THUMB_WIDTH, thumbCache, thumbKey } from "./thumb-cache";
+import { PAGE_ITEM_ATTR, usePageDrag } from "./usePageDrag";
 import type { PdfDoc } from "./usePdfDoc";
 
 /** A thumbnail is drawn while it is within this many pixels of the strip's view. */
@@ -19,7 +24,9 @@ const WHOLE_PAGE: [number, number, number, number] = [0, 0, 1, 1];
 // bottom). A thumbnail is drawn while it is near the strip's view, from the cache when it has
 // been drawn before, and dropped when it is not; one that scrolls away mid-draw is cancelled.
 // The page in view is marked and kept in view, and a click brings a page into view in the
-// pages through the controller the pages registered.
+// pages through the controller the pages registered. A click with Ctrl or Shift chooses pages
+// instead (Shift also with the arrows), a right click offers what can be done to the chosen
+// pages, Delete removes them, and dragging a page to another place moves it.
 export function ThumbnailStrip(props: {
   tabId: string;
   doc: PdfDoc;
@@ -34,6 +41,10 @@ export function ThumbnailStrip(props: {
   const current = Math.min(viewed, Math.max(0, (sizes?.length ?? 1) - 1));
   const scroller = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState<ReadonlySet<number>>(() => new Set());
+  const chosen = usePageSelection((s) => s.byTab[tabId]?.pages);
+  const chosenSet = useMemo(() => new Set(chosen ?? []), [chosen]);
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const pageCount = sizes?.length ?? 0;
 
   const elements = useRef(new Map<Element, number>());
   const observer = useRef<IntersectionObserver | null>(null);
@@ -78,10 +89,54 @@ export function ThumbnailStrip(props: {
     }
   }, [current, sizes]);
 
+  const choose = useCallback(
+    (page: number, keys: { ctrl: boolean; shift: boolean }) =>
+      usePageSelection.getState().click(tabId, page, pageCount, keys),
+    [tabId, pageCount]
+  );
+  const onChoose = useCallback(
+    (page: number, e: React.MouseEvent) => {
+      const keys = { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey };
+      choose(page, keys);
+      // A plain click also brings the page into view; choosing more pages leaves the view alone.
+      if (!keys.ctrl && !keys.shift) pdfController(tabId)?.goToPage(page);
+    },
+    [choose, tabId]
+  );
+  const onMenu = useCallback(
+    (page: number, e: React.MouseEvent) => {
+      e.preventDefault();
+      // A right click on a page that is not chosen chooses it alone, as a file manager does.
+      if (!usePageSelection.getState().byTab[tabId]?.pages.includes(page)) {
+        choose(page, { ctrl: false, shift: false });
+      }
+      setMenuAt({ x: e.clientX, y: e.clientY });
+    },
+    [choose, tabId]
+  );
+  const drag = usePageDrag({
+    container: scroller,
+    axis: horizontal ? "x" : "y",
+    enabled: doc.canEdit && pageCount > 1,
+    onDrop: (from, gap) => {
+      const to = moveTarget(from, gap);
+      if (to === from) return;
+      void doc.reorderPages(from, to).then(() => usePageSelection.getState().set(tabId, [to]));
+    },
+  });
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     const forward = horizontal ? "ArrowRight" : "ArrowDown";
     const back = horizontal ? "ArrowLeft" : "ArrowUp";
-    if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+    if (e.key === "Delete" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+      e.preventDefault();
+      pdfController(tabId)?.removeSelection();
+      return;
+    }
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    // Shift with an arrow chooses the run of pages from the anchor to the one the focus reaches.
+    const extend = e.shiftKey && (e.key === forward || e.key === back);
+    if (e.shiftKey && !extend) return;
     const here = (e.target as HTMLElement).closest<HTMLElement>("[data-page]");
     if (!here || !scroller.current) return;
     const items = [...scroller.current.querySelectorAll<HTMLElement>("[data-page]")];
@@ -103,7 +158,11 @@ export function ThumbnailStrip(props: {
       return;
     }
     e.preventDefault();
-    items[to]?.focus();
+    const target = items[to];
+    target?.focus();
+    if (extend && target) {
+      choose(Number(target.getAttribute("data-page")), { ctrl: false, shift: true });
+    }
   };
 
   return (
@@ -114,38 +173,66 @@ export function ThumbnailStrip(props: {
       aria-label="Page thumbnails"
       data-testid="pdf-thumbs"
       onKeyDown={onKeyDown}
+      onPointerDown={drag.onPointerDown}
     >
       {sizes?.map((size, page) => (
         <ThumbItem
           key={page}
-          tabId={tabId}
           doc={doc}
           page={page}
           size={size}
           current={page === current}
+          chosen={chosenSet.has(page)}
+          onChoose={onChoose}
+          onMenu={onMenu}
           visible={near.has(page)}
           sized={(doc.pageRevisions[page] ?? 0) <= sizesAt}
           observe={observe}
           unobserve={unobserve}
         />
       ))}
+      {menuAt && (
+        <ActionMenu
+          sections={PAGE_MENU()}
+          x={menuAt.x}
+          y={menuAt.y}
+          targetId={tabId}
+          onClose={() => setMenuAt(null)}
+        />
+      )}
     </div>
   );
 }
 
+/** What the right click on a thumbnail offers: the actions of the table that work on chosen pages. */
+export const PAGE_MENU = (): MenuSection[] => [
+  {
+    actions: [
+      getAction("pdf.rotateSelection.cw"),
+      getAction("pdf.rotateSelection.ccw"),
+      getAction("pdf.page.remove"),
+    ],
+  },
+  { rule: true, actions: [getAction("pdf.extract")] },
+];
+
 const ThumbItem = memo(function ThumbItem(props: {
-  tabId: string;
   doc: PdfDoc;
   page: number;
   size: PageSize;
   current: boolean;
+  /** The page is one of the pages chosen. */
+  chosen: boolean;
+  onChoose(page: number, e: React.MouseEvent): void;
+  onMenu(page: number, e: React.MouseEvent): void;
   visible: boolean;
   /** `size` is the page as the last edit left it; false while the sizes are read again. */
   sized: boolean;
   observe(el: Element, page: number): void;
   unobserve(el: Element): void;
 }) {
-  const { tabId, doc, page, size, current, visible, sized, observe, unobserve } = props;
+  const { doc, page, size, current, chosen, onChoose, onMenu, visible, sized, observe, unobserve } =
+    props;
   const { handle } = doc;
   // The revision at which this page last changed: a page no edit touched keeps its thumbnail.
   const revision = doc.pageRevisions[page] ?? 0;
@@ -205,19 +292,29 @@ const ThumbItem = memo(function ThumbItem(props: {
   }, [render, handle, revision, page, widthPx]);
 
   return (
-    <div ref={item} className="kern-pdf-thumb-item" role="listitem">
+    <div
+      ref={item}
+      className="kern-pdf-thumb-item"
+      role="listitem"
+      {...{ [PAGE_ITEM_ATTR]: page }}
+      onContextMenu={(e) => onMenu(page, e)}
+    >
       <button
         type="button"
         className="kern-pdf-thumb-button"
         data-page={page}
         // One stop in the Tab order: the page in view; the arrows move among the others.
         tabIndex={current ? 0 : -1}
-        aria-label={`Page ${page + 1}`}
+        aria-label={chosen ? `Page ${page + 1}, chosen` : `Page ${page + 1}`}
         aria-current={current ? "page" : undefined}
+        aria-pressed={chosen}
         title={`Page ${page + 1}`}
-        onClick={() => pdfController(tabId)?.goToPage(page)}
+        onClick={(e) => onChoose(page, e)}
       >
-        <span className="kern-pdf-thumb" style={{ width: THUMB_WIDTH, height }}>
+        <span
+          className={`kern-pdf-thumb${chosen ? " kern-pdf-thumb-chosen" : ""}`}
+          style={{ width: THUMB_WIDTH, height }}
+        >
           {drawing && <canvas ref={canvas} className="kern-pdf-thumb-pixels" />}
           {failure && (
             <span className="kern-pdf-thumb-error" role="alert" title={errorText(failure)}>

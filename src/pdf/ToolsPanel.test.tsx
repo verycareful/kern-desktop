@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 
 vi.mock("../ipc", async (orig) => ({
@@ -10,6 +10,7 @@ vi.mock("../ipc", async (orig) => ({
 import { settingsSet, type WirePath } from "../ipc";
 import { useViewSettings } from "../files/view-settings";
 import { useTabs } from "../store/tabs";
+import { usePageSelection } from "./page-selection";
 import { DEFAULT_PANELS } from "./panel-placement";
 import { registerPdf } from "./pdf-controller";
 import { testController, testDoc } from "./test-doc";
@@ -21,6 +22,7 @@ let tabId = "";
 let controller = testController();
 beforeEach(() => {
   useTabs.setState({ tabs: [], activeId: null });
+  usePageSelection.setState({ byTab: {} });
   useViewSettings.setState({ pdfLayout: "scroll", pdfPanels: DEFAULT_PANELS });
   vi.mocked(settingsSet).mockReset();
   useTabs.getState().openDoc(p("/a/book.pdf"), "pdf");
@@ -40,6 +42,10 @@ test("expanded_shows_each_tool_with_its_name", () => {
     "Rotate all pages counterclockwise",
     "Undo",
     "Redo",
+    "Remove chosen pages",
+    "Merge PDFs…",
+    "Extract pages…",
+    "Split into files…",
     "Continuous scroll",
     "Single page",
     "Two pages",
@@ -52,7 +58,7 @@ test("expanded_shows_each_tool_with_its_name", () => {
 test("collapsed_shows_icons_only_with_labels_as_titles", () => {
   render(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed />);
   const buttons = screen.getAllByRole("button");
-  expect(buttons).toHaveLength(12);
+  expect(buttons).toHaveLength(16);
   for (const b of buttons) {
     expect(b).toHaveTextContent("");
     expect(b.getAttribute("title")).toContain(b.getAttribute("aria-label"));
@@ -128,4 +134,31 @@ test("no_edit_tool_is_on_for_a_document_that_cannot_be_changed", () => {
   for (const name of ["Rotate page clockwise", "Rotate all pages clockwise", "Undo", "Redo"]) {
     expect(screen.getByRole("button", { name })).toBeDisabled();
   }
+});
+
+test("merge_extract_and_split_run_their_actions_whenever_the_document_has_pages", () => {
+  const { rerender } = render(
+    <ToolsPanel tabId={tabId} doc={testDoc({ pages: 0 })} collapsed={false} />
+  );
+  for (const name of ["Merge PDFs…", "Extract pages…", "Split into files…"]) {
+    expect(screen.getByRole("button", { name })).toBeDisabled();
+  }
+  rerender(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed={false} />);
+  fireEvent.click(screen.getByRole("button", { name: "Merge PDFs…" }));
+  fireEvent.click(screen.getByRole("button", { name: "Extract pages…" }));
+  fireEvent.click(screen.getByRole("button", { name: "Split into files…" }));
+  expect(controller.askMerge).toHaveBeenCalledTimes(1);
+  expect(controller.askExtract).toHaveBeenCalledTimes(1);
+  expect(controller.askSplit).toHaveBeenCalledTimes(1);
+});
+
+test("remove_chosen_pages_waits_for_a_choice_and_for_a_document_that_can_be_changed", () => {
+  const { rerender } = render(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed={false} />);
+  expect(screen.getByRole("button", { name: "Remove chosen pages" })).toBeDisabled();
+  act(() => usePageSelection.getState().set(tabId, [1]));
+  expect(screen.getByRole("button", { name: "Remove chosen pages" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Remove chosen pages" }));
+  expect(controller.removeSelection).toHaveBeenCalledTimes(1);
+  rerender(<ToolsPanel tabId={tabId} doc={testDoc({ canEdit: false })} collapsed={false} />);
+  expect(screen.getByRole("button", { name: "Remove chosen pages" })).toBeDisabled();
 });

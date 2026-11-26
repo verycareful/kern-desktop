@@ -339,3 +339,61 @@ test("find_does_not_reach_a_folder_or_a_text_document", () => {
     expect(isEnabled(getAction(id), currentContext()), id).toBe(false);
   }
 });
+
+test("the_actions_on_chosen_pages_run_on_the_viewer_and_follow_the_choice_and_the_edit_state", () => {
+  const id = openPdf();
+  const c = testController({ hasPageSelection: () => false });
+  const off = registerPdf(id, c);
+  const ctx = currentContext();
+  for (const name of ["pdf.rotateSelection.cw", "pdf.rotateSelection.ccw", "pdf.page.remove"]) {
+    expect(isEnabled(getAction(name), ctx), name).toBe(false);
+  }
+  off();
+  const chosen = testController({ hasPageSelection: () => true });
+  const on = registerPdf(id, chosen);
+  runAction(getAction("pdf.rotateSelection.cw"), ctx);
+  runAction(getAction("pdf.rotateSelection.ccw"), ctx);
+  runAction(getAction("pdf.page.remove"), ctx);
+  expect(chosen.rotate).toHaveBeenNthCalledWith(1, 90, "selection");
+  expect(chosen.rotate).toHaveBeenNthCalledWith(2, 270, "selection");
+  expect(chosen.removeSelection).toHaveBeenCalledTimes(1);
+  on();
+  // A document that cannot be changed here turns all three off even with pages chosen.
+  const held = testController({ hasPageSelection: () => true, canEdit: () => false });
+  const hold = registerPdf(id, held);
+  for (const name of ["pdf.rotateSelection.cw", "pdf.rotateSelection.ccw", "pdf.page.remove"]) {
+    expect(isEnabled(getAction(name), ctx), name).toBe(false);
+  }
+  hold();
+});
+
+test("merge_extract_and_split_run_on_the_viewer_and_have_menu_entries_and_no_keys", () => {
+  const id = openPdf();
+  const c = testController();
+  const off = registerPdf(id, c);
+  const ctx = currentContext();
+  runAction(getAction("pdf.merge"), ctx);
+  runAction(getAction("pdf.extract"), ctx);
+  runAction(getAction("pdf.split"), ctx);
+  expect(c.askMerge).toHaveBeenCalledTimes(1);
+  expect(c.askExtract).toHaveBeenCalledTimes(1);
+  expect(c.askSplit).toHaveBeenCalledTimes(1);
+  for (const name of ["pdf.merge", "pdf.extract", "pdf.split"]) {
+    expect(getAction(name).area, name).toBe("File");
+    expect(getAction(name).keys, name).toEqual([]);
+  }
+  off();
+  const closed = testController({ canPageFiles: () => false });
+  const shut = registerPdf(id, closed);
+  expect(isEnabled(getAction("pdf.merge"), ctx)).toBe(false);
+  shut();
+});
+
+test("merge_extract_and_split_do_not_reach_a_text_document", () => {
+  useTabs.getState().openDoc(p("/a/n.md"));
+  const textId = useTabs.getState().activeId as string;
+  registerPdf(textId, testController());
+  for (const name of ["pdf.merge", "pdf.extract", "pdf.split", "pdf.page.remove"]) {
+    expect(isEnabled(getAction(name), currentContext()), name).toBe(false);
+  }
+});

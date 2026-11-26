@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { vi } from "vitest";
+import type { WirePath } from "../ipc";
 import type { PdfController } from "./pdf-controller";
 import type { PdfDoc } from "./usePdfDoc";
 
@@ -26,6 +27,10 @@ export function testDoc(over: Partial<PdfDoc> = {}): PdfDoc {
     undo: async () => undefined,
     redo: async () => undefined,
     busy: () => false,
+    fileSource: () => ({ path: { k: "Utf8", v: "/home/a/book.pdf" } as WirePath }),
+    rotatePages: async () => undefined,
+    removePages: async () => undefined,
+    reorderPages: async () => undefined,
     moving: false,
     setMoving: () => undefined,
     externalChange: "none",
@@ -60,6 +65,12 @@ export function testController(over: Partial<PdfController> = {}): PdfController
     askGoToPage: vi.fn(),
     goToPage: vi.fn(),
     rotate: vi.fn(),
+    hasPageSelection: () => true,
+    removeSelection: vi.fn(),
+    askMerge: vi.fn(),
+    askExtract: vi.fn(),
+    askSplit: vi.fn(),
+    canPageFiles: () => true,
     undo: vi.fn(),
     redo: vi.fn(),
     canEdit: () => true,

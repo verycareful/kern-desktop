@@ -19,7 +19,14 @@ import {
   sleep,
   waitForWindows,
 } from "./support/app";
-import { LINK_ADDRESS, PAGE_TEXT, linkPagePdf, onePagePdf, textPagePdf } from "./support/pdf";
+import {
+  LINK_ADDRESS,
+  PAGE_TEXT,
+  linkPagePdf,
+  onePagePdf,
+  pagesPdf,
+  textPagePdf,
+} from "./support/pdf";
 import { testDir } from "./support/world";
 
 /**
@@ -226,5 +233,52 @@ describe("pdf", function () {
         timeout: SHOWS_WITHIN_MS,
       }
     );
+  });
+
+  it("remove_a_page_and_undo_it_and_the_merge_dialog_opens", async () => {
+    const dir = testDir("pdf-pages");
+    const file = path.join(dir, "three.pdf");
+    writeFileSync(file, pagesPdf(3));
+    await openPdf(file);
+    const pageCount = async () =>
+      (await browser.$$('[data-testid="pdf-pages"] [role="group"]')).length;
+    expect(await pageCount()).toBe(3);
+
+    // Choose the second page in the strip and remove it: the engine takes it out and the view
+    // follows, with the copy question asked first, as for any first change.
+    const second = await browser.$('[data-testid="pdf-thumbs"] button[aria-label="Page 2"]');
+    await second.waitForClickable({ timeout: SHOWS_WITHIN_MS });
+    await second.click();
+    await browser.keys(["Delete"]);
+    const without = await browser.$("button=Edit without a copy");
+    await without.waitForClickable({ timeout: SHOWS_WITHIN_MS });
+    await without.click();
+    await browser.waitUntil(async () => (await pageCount()) === 2, {
+      timeout: SHOWS_WITHIN_MS,
+      timeoutMsg: "the page was not taken out",
+    });
+
+    // Undo gives it back.
+    await browser.waitUntil(
+      async () => {
+        await browser.keys(["Control", "z"]);
+        return (await pageCount()) === 3;
+      },
+      { timeout: SHOWS_WITHIN_MS, interval: 500, timeoutMsg: "undo did not give the page back" }
+    );
+
+    // Merge opens its dialog with this PDF first; the system's chooser is not driven here.
+    await (await browser.$("button=Merge PDFs…")).click();
+    const dialog = await browser.$('[data-testid="pdf-merge-dialog"]');
+    await dialog.waitForExist({ timeout: SHOWS_WITHIN_MS });
+    // The name is cut with an ellipsis when it is long, which the driver's visible text leaves
+    // out, so the row is read as it is and must have room on the screen.
+    const row = (await browser.execute(
+      "const e = document.querySelector('[data-testid=\"pdf-merge-dialog\"] .kern-pdf-job-path');" +
+        "return e ? { text: e.textContent, width: e.getBoundingClientRect().width } : null;"
+    )) as { text: string; width: number } | null;
+    expect(row?.text).toBe("three.pdf (this PDF)");
+    expect(row?.width ?? 0).toBeGreaterThan(40);
+    await (await browser.$("button=Cancel")).click();
   });
 });
