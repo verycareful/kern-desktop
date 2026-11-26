@@ -3,7 +3,7 @@
 
 [package]
 name = "kern"
-version = "0.1.2+2.15"
+version = "0.1.2+2.16"
 description = "Kern for Linux: a file manager and document viewer"
 license = "AGPL-3.0-or-later"
 publish = false
@@ -21,11 +21,11 @@ tauri = { version = "2", features = ["protocol-asset"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-kernkraft-tauri = { git = "https://github.com/verycareful/kernkraft", tag = "0.2.3.0" }
-kernkraft-fs = { git = "https://github.com/verycareful/kernkraft", tag = "0.2.3.0" }
-kernkraft-theme = { git = "https://github.com/verycareful/kernkraft", tag = "0.2.3.0" }
-kernkraft-bus = { git = "https://github.com/verycareful/kernkraft", tag = "0.2.3.0" }
-kernkraft-xdg-apps = { git = "https://github.com/verycareful/kernkraft", tag = "0.2.3.0" }
+kernkraft-tauri = { git = "https://github.com/verycareful/kernkraft", tag = "0.2.4.0" }
+kernkraft-fs = { git = "https://github.com/verycareful/kernkraft", tag = "0.2.4.0" }
+kernkraft-theme = { git = "https://github.com/verycareful/kernkraft", tag = "0.2.4.0" }
+kernkraft-bus = { git = "https://github.com/verycareful/kernkraft", tag = "0.2.4.0" }
+kernkraft-xdg-apps = { git = "https://github.com/verycareful/kernkraft", tag = "0.2.4.0" }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-window-state = "2"

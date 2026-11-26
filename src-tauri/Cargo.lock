@@ -2179,7 +2179,7 @@ dependencies = [
 
 [[package]]
 name = "kern"
-version = "0.1.2+2.15"
+version = "0.1.2+2.16"
 dependencies = [
  "gtk",
  "kernkraft-bus",
@@ -2202,8 +2202,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-bus"
-version = "0.2.3+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.2.3.0#c11fa8aef9fb4a6caa83a1301c05ecda6dfe3345"
+version = "0.2.4+0"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.2.4.0#f1c40bcc28178bdd610b70fe78b688bbe92a8a2f"
 dependencies = [
  "thiserror 2.0.21",
  "zbus",
@@ -2211,8 +2211,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-font"
-version = "0.2.3+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.2.3.0#c11fa8aef9fb4a6caa83a1301c05ecda6dfe3345"
+version = "0.2.4+0"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.2.4.0#f1c40bcc28178bdd610b70fe78b688bbe92a8a2f"
 dependencies = [
  "kernkraft-fs",
  "read-fonts 0.41.0",
@@ -2223,8 +2223,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-fs"
-version = "0.2.3+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.2.3.0#c11fa8aef9fb4a6caa83a1301c05ecda6dfe3345"
+version = "0.2.4+0"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.2.4.0#f1c40bcc28178bdd610b70fe78b688bbe92a8a2f"
 dependencies = [
  "jiff",
  "percent-encoding",
@@ -2235,8 +2235,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-pdf"
-version = "0.2.3+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.2.3.0#c11fa8aef9fb4a6caa83a1301c05ecda6dfe3345"
+version = "0.2.4+0"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.2.4.0#f1c40bcc28178bdd610b70fe78b688bbe92a8a2f"
 dependencies = [
  "aes",
  "cbc",
@@ -2261,8 +2261,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-pdf-engine"
-version = "0.2.3+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.2.3.0#c11fa8aef9fb4a6caa83a1301c05ecda6dfe3345"
+version = "0.2.4+0"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.2.4.0#f1c40bcc28178bdd610b70fe78b688bbe92a8a2f"
 dependencies = [
  "getrandom 0.3.4",
  "kernkraft-font",
@@ -2274,8 +2274,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-tauri"
-version = "0.2.3+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.2.3.0#c11fa8aef9fb4a6caa83a1301c05ecda6dfe3345"
+version = "0.2.4+0"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.2.4.0#f1c40bcc28178bdd610b70fe78b688bbe92a8a2f"
 dependencies = [
  "base64 0.22.1",
  "inotify",
@@ -2298,8 +2298,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-text"
-version = "0.2.3+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.2.3.0#c11fa8aef9fb4a6caa83a1301c05ecda6dfe3345"
+version = "0.2.4+0"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.2.4.0#f1c40bcc28178bdd610b70fe78b688bbe92a8a2f"
 dependencies = [
  "kernkraft-fs",
  "rustix",
@@ -2308,8 +2308,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-theme"
-version = "0.2.3+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.2.3.0#c11fa8aef9fb4a6caa83a1301c05ecda6dfe3345"
+version = "0.2.4+0"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.2.4.0#f1c40bcc28178bdd610b70fe78b688bbe92a8a2f"
 dependencies = [
  "inotify",
  "kernkraft-bus",
@@ -2322,8 +2322,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-thumb"
-version = "0.2.3+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.2.3.0#c11fa8aef9fb4a6caa83a1301c05ecda6dfe3345"
+version = "0.2.4+0"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.2.4.0#f1c40bcc28178bdd610b70fe78b688bbe92a8a2f"
 dependencies = [
  "image",
  "kernkraft-fs",
@@ -2337,8 +2337,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-volumes"
-version = "0.2.3+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.2.3.0#c11fa8aef9fb4a6caa83a1301c05ecda6dfe3345"
+version = "0.2.4+0"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.2.4.0#f1c40bcc28178bdd610b70fe78b688bbe92a8a2f"
 dependencies = [
  "kernkraft-bus",
  "rustix",
@@ -2349,8 +2349,8 @@ dependencies = [
 
 [[package]]
 name = "kernkraft-xdg-apps"
-version = "0.2.3+0"
-source = "git+https://github.com/verycareful/kernkraft?tag=0.2.3.0#c11fa8aef9fb4a6caa83a1301c05ecda6dfe3345"
+version = "0.2.4+0"
+source = "git+https://github.com/verycareful/kernkraft?tag=0.2.4.0#f1c40bcc28178bdd610b70fe78b688bbe92a8a2f"
 dependencies = [
  "kernkraft-fs",
  "percent-encoding",
