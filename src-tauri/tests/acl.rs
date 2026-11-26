@@ -732,6 +732,33 @@ fn a_document_window_is_granted_every_command_its_capability_names() {
     }
 }
 
+/// A PDF in a tab of the main window asks before its first change whether to keep a copy, and the
+/// copy is made with the same operation a document window uses (`drop_start_op`), so the main
+/// window holds it, and the answer to the name question and the cancel that go with it.
+#[test]
+fn the_main_window_may_copy_a_pdf_beside_itself() {
+    let main = env("main");
+    let source = json!([{"k": "Utf8", "v": "/does-not-exist/a.pdf"}]);
+    let dest = json!({"k": "Utf8", "v": "/does-not-exist"});
+    let err = invoke(
+        &main,
+        "drop_start_op",
+        json!({"kind": "copy", "sources": source, "dest": dest}),
+    )
+    .unwrap_err();
+    let text = err.to_string();
+    assert!(!text.contains("not allowed"), "{text}");
+    assert!(!text.contains("invalid args"), "{text}");
+    for cmd in ["cancel_op", "answer_conflict"] {
+        if let Err(err) = invoke(&main, &kernkraft(cmd), json!({})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "main {cmd}: {err}"
+            );
+        }
+    }
+}
+
 /// Save a copy first, in a document window, copies the file into its own folder with the copy
 /// operation the editor windows use for a drop, and answers the name question of that copy. It is
 /// not granted the general start_op, nor the removal commands.

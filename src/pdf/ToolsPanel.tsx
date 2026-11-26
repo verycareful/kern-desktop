@@ -90,13 +90,13 @@ const HAND_TOOLS: readonly (Tool & { hand: PdfTool })[] = [
     hand: "select",
   },
   { id: "pdf.tool.ink", label: "Draw with the pen", Icon: Pen, hand: "ink" },
-  { id: "pdf.note.add", label: "Add a note", Icon: StickyNote, hand: "note" },
+  { id: "pdf.note.add", label: "Add or open a note", Icon: StickyNote, hand: "note" },
   { id: "pdf.tool.editText", label: "Edit text", Icon: TextCursorInput, hand: "editText" },
 ];
 
 // What the Edit text tool cannot do, said where it is picked up.
 const EDIT_TEXT_HELP =
-  "Click a block of text to change it, or click where there is no text to add new text there; drag to set how wide new text runs, and a drag that ends near the width of the page's text takes it. Enter keeps the change, Shift+Enter starts a new line, Escape lets go. Changed text keeps its font, size and colour, and new text takes those of the nearest text; a letter that font lacks is set in another font, and Kern says so. On a page with no text, new text asks for a size. Letters are not shaped: ligatures, kerning and the joining of Arabic letters are not formed. New text is not part of a tagged file's structure. Vertical text, and text Kern cannot take apart, cannot be edited, and Kern says why.";
+  "Click a block of text to change it, or click where there is no text to add new text there; drag to set how wide new text runs, and a drag that ends near the width of the page's text takes it. Drag either side of a box (or move a side with the arrow keys) to change its left edge or its width. Enter keeps the change, and so does a click outside the box; Shift+Enter starts a new line, Escape lets go. Changed text keeps its font, size and colour, and new text takes those of the nearest text; a letter that font lacks is set in another font, and Kern says so. On a page with no text, new text asks for a size. Letters are not shaped: ligatures, kerning and the joining of Arabic letters are not formed. New text is not part of a tagged file's structure. Vertical text, and text Kern cannot take apart, cannot be edited, and Kern says why.";
 
 // Marking the selected text, and taking away the annotation that is picked.
 const MARK_TOOLS: readonly Tool[] = [

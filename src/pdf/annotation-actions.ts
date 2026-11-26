@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import type { MarkupKind, PdfObjectId, Rgb } from "../ipc/pdf";
+import type { MarkupKind, PdfObjectId, Rect, Rgb } from "../ipc/pdf";
 import { toWireError } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { useOps } from "../ops/useOps";
@@ -54,12 +54,45 @@ export async function markSelection(tabId: string, doc: PdfDoc, kind: MarkupKind
   }
 }
 
-/** Starts a note at the end of the selected text, which is where the selection menu stands. */
-export function noteAtSelection(tabId: string, at: [number, number]): void {
+/**
+ * Starts a note on the selected text: the text is highlighted and the note is kept with the
+ * highlight when it is written. `at` is where the note's box stands, the end of the selection.
+ */
+export async function noteAtSelection(
+  tabId: string,
+  doc: PdfDoc,
+  at: [number, number]
+): Promise<void> {
   const selection = usePdfSelection.getState().byTab[tabId];
   if (!selection) return;
-  usePdfSelection.getState().clear(tabId);
-  usePdfTool.getState().draft(tabId, { kind: "new", page: selection.page, at });
+  if (!doc.canEdit) {
+    say("This document cannot be changed here");
+    return;
+  }
+  try {
+    const text = await loadPageText(doc, selection.page);
+    const rects = selectionRects(text, selection.from, selection.to);
+    if (!markupOp("highlight", selection.page, rects, colourFor(tabId, "highlight"))) {
+      say("There is no text to put a note on in the selection");
+      return;
+    }
+    usePdfSelection.getState().clear(tabId);
+    usePdfTool.getState().draft(tabId, { kind: "markup", page: selection.page, at, rects });
+  } catch (e) {
+    say(`The note could not be started: ${errorText(toWireError(e))}`);
+  }
+}
+
+/** Highlights `rects` of `page` with the note `text` kept with the highlight: one change. */
+export async function addMarkupNote(
+  tabId: string,
+  doc: PdfDoc,
+  page: number,
+  rects: readonly Rect[],
+  text: string
+): Promise<void> {
+  const op = markupOp("highlight", page, rects, colourFor(tabId, "highlight"), text);
+  if (op) await doc.apply(op);
 }
 
 /** Adds a note reading `text` at `at` on `page`. */
@@ -93,7 +126,7 @@ export async function recolourPicked(tabId: string, doc: PdfDoc, colour: Rgb): P
   await doc.apply(recolourOp(picked.page, picked.id, colour));
 }
 
-/** Sets the text of the note `id` on page `page` (from 0). */
+/** Sets the text of the note, or the note on marked text, `id` on page `page` (from 0). */
 export async function setNoteText(
   doc: PdfDoc,
   page: number,

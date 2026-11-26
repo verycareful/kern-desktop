@@ -3,11 +3,28 @@
 import { useEffect, useRef, useState } from "react";
 import { pdfAnnotations, toWireError, type WireError } from "../ipc";
 import { errorText } from "../ops/error-text";
-import { addNote, deletePicked, recolourPicked, setNoteText } from "./annotation-actions";
+import {
+  addMarkupNote,
+  addNote,
+  deletePicked,
+  recolourPicked,
+  setNoteText,
+} from "./annotation-actions";
 import { AnnotationMenu } from "./AnnotationMenu";
-import { DEFAULT_INK_WIDTH, fractionAt, inkOp, kindLabel, pickable, sameId } from "./annotations";
+import {
+  DEFAULT_INK_WIDTH,
+  annotationAt,
+  fractionAt,
+  inkOp,
+  isMarkup,
+  kindLabel,
+  pickable,
+  sameId,
+  takesNote,
+} from "./annotations";
 import { InkTool } from "./InkTool";
 import { NoteEditor } from "./NoteEditor";
+import { whenPainted } from "./page-paint";
 import { percent } from "./percent";
 import { TextEditTool } from "./TextEditTool";
 import { colourFor, usePdfTool } from "./pdf-tool";
@@ -52,7 +69,6 @@ export function AnnotationLayer(props: {
   const dropListed = usePdfTool((s) => s.dropListed);
   const pick = usePdfTool((s) => s.pick);
   const setDraft = usePdfTool((s) => s.draft);
-  const setTool = usePdfTool((s) => s.setTool);
   const [failure, setFailure] = useState<WireError | null>(null);
   const noteSurface = useRef<HTMLDivElement>(null);
 
@@ -90,18 +106,18 @@ export function AnnotationLayer(props: {
     if (pickedHere && list && !mine) pick(tabId, null);
   }, [pickedHere, list, mine, tabId, pick]);
 
-  // Escape puts down what is in hand: the picked annotation first, then the tool.
-  const holding = pickedHere !== null || (tool !== "select" && draft === null);
+  // Escape puts down the picked annotation. It never changes the tool: what a tool has in
+  // progress (a line, a drag, a box) is ended by the tool, and the tool stays in hand.
+  const holding = pickedHere !== null;
   useEffect(() => {
     if (!holding) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       if (usePdfTool.getState().byTab[tabId]?.picked) pick(tabId, null);
-      else setTool(tabId, "select");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [holding, tabId, pick, setTool]);
+  }, [holding, tabId, pick]);
 
   const canEdit = doc.canEdit;
   const pxPerPt = size.widthPt > 0 ? cssWidth / size.widthPt : 1;
@@ -110,7 +126,15 @@ export function AnnotationLayer(props: {
     if (e.button !== 0 || usePdfTool.getState().byTab[tabId]?.draft) return;
     const r = noteSurface.current?.getBoundingClientRect();
     const at = r ? fractionAt(e.clientX, e.clientY, r) : null;
-    if (at) setDraft(tabId, { kind: "new", page, at });
+    if (!at) return;
+    // A press on a note, or on marked text, opens the note that is there instead of putting
+    // another on top of it.
+    const there = annotationAt(list ?? [], at[0], at[1]);
+    if (there && takesNote(there)) {
+      setDraft(tabId, { kind: "edit", page, id: there.id });
+      return;
+    }
+    setDraft(tabId, { kind: "new", page, at });
   };
 
   const editing = draft?.page === page ? draft : null;
@@ -163,7 +187,13 @@ export function AnnotationLayer(props: {
           pxPerPt={pxPerPt}
           onGroup={async (strokes, colour, widthPt) => {
             const op = inkOp(page, strokes, colour, widthPt);
-            if (op) await doc.apply(op);
+            if (!op) return;
+            const outcome = await doc.applyChecked(op);
+            // The lines stay on show until the page is drawn with them in it: the engine answers
+            // before the picture is made, and without this they vanish and come back.
+            if (outcome.status === "applied" && handle !== undefined) {
+              await whenPainted(handle, page, outcome.revision);
+            }
           }}
         />
       )}
@@ -190,10 +220,24 @@ export function AnnotationLayer(props: {
           }}
         />
       )}
+      {editing?.kind === "markup" && (
+        <NoteEditor
+          at={{ left: editing.at[0], top: editing.at[1] }}
+          initial=""
+          commitLabel="Add note"
+          onCancel={() => setDraft(tabId, null)}
+          onCommit={(text) => {
+            setDraft(tabId, null);
+            void addMarkupNote(tabId, doc, page, editing.rects, text);
+          }}
+        />
+      )}
       {editing?.kind === "edit" && editedNote && (
         <NoteEditor
           at={{ left: editedNote.rect[0], top: editedNote.rect[1] }}
           initial={editedNote.contents ?? ""}
+          // Marked text can have its note taken away by saving nothing; a note keeps some text.
+          allowEmpty={isMarkup(editedNote)}
           commitLabel="Save"
           onCancel={() => setDraft(tabId, null)}
           onCommit={(text) => {

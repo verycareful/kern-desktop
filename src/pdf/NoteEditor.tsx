@@ -16,13 +16,15 @@ export function NoteEditor(props: {
   initial: string;
   /** The button that keeps the text. */
   commitLabel: string;
+  /** Saving no text is allowed (it takes a note away); a new note needs some. */
+  allowEmpty?: boolean;
   onCommit(text: string): void;
   onCancel(): void;
 }) {
-  const { at, initial, commitLabel, onCommit, onCancel } = props;
+  const { at, initial, commitLabel, allowEmpty = false, onCommit, onCancel } = props;
   const [text, setText] = useState(initial);
   const field = useRef<HTMLTextAreaElement>(null);
-  const empty = text.trim() === "";
+  const empty = !allowEmpty && text.trim() === "";
 
   useEffect(() => field.current?.focus(), []);
 

@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import type { PdfAnnotation, Rgb } from "../ipc/pdf";
-import { PALETTE, cssColour, isNote, kindLabel, sameColour } from "./annotations";
+import { PALETTE, cssColour, isNote, kindLabel, sameColour, takesNote } from "./annotations";
 import { percent } from "./percent";
 
 // Where the menu may stand, as fractions of the page, so it stays on the page.
 const MENU_MAX_LEFT = 0.6;
 const MENU_MAX_TOP = 0.9;
 
-// What can be done with the annotation that is picked: its colour, the text of a note, and taking
-// it away. The buttons are off while the document cannot be changed.
+// What can be done with the annotation that is picked: its colour, the text of a note (or the note
+// on marked text), and taking it away. The buttons are off while the document cannot be changed.
 export function AnnotationMenu(props: {
   annotation: PdfAnnotation;
   canEdit: boolean;
@@ -31,7 +31,7 @@ export function AnnotationMenu(props: {
       // A press on the menu is the menu's, not a press on the page under it.
       onPointerDown={(e) => e.stopPropagation()}
     >
-      {isNote(annotation) && annotation.contents && (
+      {takesNote(annotation) && annotation.contents && (
         <p className="kern-pdf-annotation-text">{annotation.contents}</p>
       )}
       <div className="kern-pdf-annotation-buttons">
@@ -47,14 +47,14 @@ export function AnnotationMenu(props: {
             onClick={() => props.onColour(swatch.rgb)}
           />
         ))}
-        {isNote(annotation) && (
+        {takesNote(annotation) && (
           <button
             type="button"
             className="kern-button"
             disabled={!canEdit}
             onClick={props.onEditText}
           >
-            Edit text
+            {isNote(annotation) ? "Edit text" : annotation.contents ? "Edit note" : "Add note"}
           </button>
         )}
         <button type="button" className="kern-button" disabled={!canEdit} onClick={props.onDelete}>

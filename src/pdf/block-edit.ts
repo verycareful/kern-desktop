@@ -33,14 +33,27 @@ export type BlockResult =
   | { status: "declined" }
   | { status: "failed"; message: string };
 
-/** The change that sets a block's text; empty text takes the block's text off the page. */
+/** Where the box of a block stands when it is not where it was read: only what was changed is given. */
+export interface BlockBoxChange {
+  left?: number;
+  width?: number;
+}
+
+/**
+ * The change that sets a block's text; empty text takes the block's text off the page. A `box`
+ * moves the block's left edge and sets the width its text is broken to.
+ */
 export function editBlockOp(
   page: number,
   block: number,
   revision: number,
-  text: string
+  text: string,
+  box: BlockBoxChange = {}
 ): PdfOpInput {
-  return { op: "editText", page, block, revision, text };
+  const op: PdfOpInput = { op: "editText", page, block, revision, text };
+  if (box.left !== undefined) op.left = box.left;
+  if (box.width !== undefined) op.width = box.width;
+  return op;
 }
 
 /**
@@ -111,7 +124,7 @@ const REFUSALS: Readonly<Record<string, string>> = {
   NotOnPage:
     "This text is no longer on the page as it was read, so it cannot be edited. Choose it again.",
   Type3Font:
-    "This text is set in a Type 3 font, whose letters are small drawings, so no new letter can be typed in it.",
+    "This text is drawn as shapes (a Type 3 font, whose letters are small drawings) and not as letters Kern can change, so it cannot be edited here.",
   ClippingRenderMode:
     "This text also shapes a clip for what is drawn after it, so taking it out would change how the rest of the page looks.",
   SplitAcrossStreams:
@@ -174,10 +187,11 @@ export async function submitBlockEdit(
   doc: PdfDoc,
   target: BlockTarget,
   text: string,
-  reread: () => Promise<PageText>
+  reread: () => Promise<PageText>,
+  box: BlockBoxChange = {}
 ): Promise<BlockResult> {
   const ask = (at: BlockTarget) =>
-    doc.applyChecked(editBlockOp(at.page, at.block, at.revision, text));
+    doc.applyChecked(editBlockOp(at.page, at.block, at.revision, text, box));
   let outcome = await ask(target);
   if (outcome.status === "failed" && outcome.error.kind === "StaleBlock") {
     let fresh: BlockTarget | null;

@@ -24,6 +24,7 @@ import {
   layoutBoxes,
   rowAtOffset,
   scaleOf,
+  snapBox,
   stepZoom,
   type PageSize,
   type Zoom,
@@ -109,6 +110,7 @@ export function PdfPages(props: {
     () => (single ? (count > 0 ? [[shown]] : []) : layoutRows(layout, count)),
     [layout, single, count, shown]
   );
+  const dpr = window.devicePixelRatio || 1;
   const scale = sizes ? scaleOf(zoom, sizes, view.width, across) : 1;
   const boxes = useMemo(
     () => (sizes ? layoutBoxes(sizes, rows, scale) : null),
@@ -479,13 +481,15 @@ export function PdfPages(props: {
             onPointerDown={drag.onPointerDown}
           >
             {sizes.map((size, page) => {
-              const box = boxes.pages[page];
-              if (!box) return null;
+              const placed = boxes.pages[page];
+              if (!placed) return null;
+              // The page stands on whole device pixels, so its picture is not resampled.
+              const box = snapBox({ ...placed, left: blockLeft + placed.left }, size, dpr);
               return (
                 <PageSlot
                   key={page}
                   page={page}
-                  left={blockLeft + box.left}
+                  left={box.left}
                   top={box.top}
                   width={box.width}
                   height={box.height}

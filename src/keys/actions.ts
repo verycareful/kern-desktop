@@ -1711,7 +1711,7 @@ const pdfActions: Action[] = [
     enabled: (c) => pdfOf(c)?.hasSelection() ?? false,
     run: (c) => pdfOf(c)?.searchSelection(),
   },
-  // Annotations. The tools are in hand until Select is chosen again or Escape is pressed. The
+  // Annotations. The tools are in hand until Select is chosen again (Escape ends only what is in progress). The
   // markup keys act on the selected text. Delete takes the picked annotation away; the strip and
   // the grid keep their own Delete for the pages chosen there, and the keys skip a press they
   // took.
@@ -1719,7 +1719,7 @@ const pdfActions: Action[] = [
     [
       ["pdf.tool.select", "Select text and annotations", "select", "Ctrl+Alt+V"],
       ["pdf.tool.ink", "Draw with the pen", "ink", "Ctrl+Alt+I"],
-      ["pdf.note.add", "Add a note", "note", "Ctrl+Alt+N"],
+      ["pdf.note.add", "Add or open a note", "note", "Ctrl+Alt+N"],
       ["pdf.tool.editText", "Edit text", "editText", "Ctrl+Alt+E"],
     ] as const
   ).map(([id, label, tool, key]): Action => ({

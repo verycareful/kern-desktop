@@ -231,7 +231,7 @@ describe("submitBlockEdit", () => {
   } as const;
 
   it("an_applied_edit_is_done_and_sent_once_with_the_revision_it_was_read_at", async () => {
-    const d = doc(async () => ({ status: "applied", notes: [] }));
+    const d = doc(async () => ({ status: "applied", notes: [], revision: 1 }));
     const reread = vi.fn();
     const result = await submitBlockEdit(d, target(), "new", reread);
     expect(result).toEqual({ status: "done" });
@@ -242,7 +242,9 @@ describe("submitBlockEdit", () => {
 
   it("a_stale_revision_re-reads_the_page_and_asks_again", async () => {
     const d = doc(async (op) =>
-      (op as { revision: number }).revision === 5 ? stale : { status: "applied", notes: [] }
+      (op as { revision: number }).revision === 5
+        ? stale
+        : { status: "applied", notes: [], revision: 1 }
     );
     const reread = vi.fn().mockResolvedValue(pageText(wire(8)));
     const result = await submitBlockEdit(d, target(), "new", reread);

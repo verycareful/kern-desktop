@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { pdfCancelJob, pdfRender, pdfRenderSize, toWireError, type WireError } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { nextJobId } from "./jobs";
+import { markPainted } from "./page-paint";
 import { paintPixels } from "./pixels";
 import type { PdfDoc } from "./usePdfDoc";
 import type { PageSize } from "./page-geometry";
@@ -47,6 +48,13 @@ export function PageCanvas(props: {
     if (!render || handle === undefined) return;
     let live = true;
     const running = new Set<number>();
+    // The page is on screen at this revision once every tile of it is (or has failed, which is
+    // shown in its place), so a tool that put something on show itself can take it away.
+    let tilesLeft = plan.tiles.length;
+    const tileDone = () => {
+      tilesLeft -= 1;
+      if (live && tilesLeft === 0) markPainted(handle, page, pageRevision);
+    };
 
     const drawTile = async (index: number) => {
       const tile = plan.tiles[index];
@@ -66,6 +74,7 @@ export function PageCanvas(props: {
         if (live) setFailure(toWireError(e));
       } finally {
         running.delete(job);
+        tileDone();
       }
     };
     plan.tiles.forEach((_, index) => void drawTile(index));

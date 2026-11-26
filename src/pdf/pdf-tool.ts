@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { create } from "zustand";
-import type { PdfAnnotation, PdfObjectId, Rgb } from "../ipc/pdf";
+import type { PdfAnnotation, PdfObjectId, Rect, Rgb } from "../ipc/pdf";
 import { DEFAULT_COLOURS, DEFAULT_INK_WIDTH, sameId } from "./annotations";
 
 // What a PDF tab is doing with annotations, keyed by tab id: the tool in hand, the colour and the
@@ -33,9 +33,13 @@ export interface PickedAnnotation {
   id: PdfObjectId;
 }
 
-/** A note that is being written: where it goes, or the annotation whose text it sets. */
+/**
+ * A note that is being written: where it goes, the text it will mark (a highlight that carries
+ * it), or the annotation whose text it sets.
+ */
 export type NoteDraft =
   | { kind: "new"; page: number; at: [number, number] }
+  | { kind: "markup"; page: number; at: [number, number]; rects: Rect[] }
   | { kind: "edit"; page: number; id: PdfObjectId };
 
 export interface ToolState {

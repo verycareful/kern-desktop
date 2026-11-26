@@ -258,7 +258,7 @@ export function TextLayer(props: {
           canMark={doc.canEdit}
           onMark={(kind) => void markSelection(tabId, doc, kind)}
           onNote={() =>
-            noteAtSelection(tabId, [
+            void noteAtSelection(tabId, doc, [
               Math.min(last[2], MENU_MAX_LEFT),
               Math.min(last[3], MENU_MAX_TOP),
             ])

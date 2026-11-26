@@ -25,7 +25,8 @@ const WHOLE_PAGE: [number, number, number, number] = [0, 0, 1, 1];
 // been drawn before, and dropped when it is not; one that scrolls away mid-draw is cancelled.
 // The page in view is marked and kept in view, and a click brings a page into view in the
 // pages through the controller the pages registered. A click with Ctrl or Shift chooses pages
-// instead (Shift also with the arrows), a right click offers what can be done to the chosen
+// instead (Shift also with the arrows; an arrow, Home or End alone moves the choice and the view
+// to the page the focus reaches), a right click offers what can be done to the chosen
 // pages, Delete removes them, and dragging a page to another place moves it.
 export function ThumbnailStrip(props: {
   tabId: string;
@@ -160,9 +161,12 @@ export function ThumbnailStrip(props: {
     e.preventDefault();
     const target = items[to];
     target?.focus();
-    if (extend && target) {
-      choose(Number(target.getAttribute("data-page")), { ctrl: false, shift: true });
-    }
+    if (!target) return;
+    const page = Number(target.getAttribute("data-page"));
+    // The focus and the chosen page go together, so one thumbnail is marked. Shift extends the
+    // run; a plain key chooses the page alone and brings it into view, as a click does.
+    choose(page, { ctrl: false, shift: extend });
+    if (!extend) pdfController(tabId)?.goToPage(page);
   };
 
   return (

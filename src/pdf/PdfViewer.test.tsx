@@ -152,10 +152,13 @@ test("a_corrupt_file_shows_the_error_and_settles_as_failed", async () => {
   const onSettled = vi.fn();
   viewer({ onSettled });
   expect(await screen.findByTestId("pdf-failed")).toHaveTextContent("the file is damaged");
-  expect(onSettled).toHaveBeenCalledWith({
-    ok: false,
-    reason: expect.stringContaining("the file is damaged"),
-  });
+  // The window is told from an effect that runs after the failed note is drawn.
+  await waitFor(() =>
+    expect(onSettled).toHaveBeenCalledWith({
+      ok: false,
+      reason: expect.stringContaining("the file is damaged"),
+    })
+  );
 });
 
 test("settles_ok_once_the_document_is_registered_as_open", async () => {

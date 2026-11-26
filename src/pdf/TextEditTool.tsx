@@ -7,11 +7,16 @@ import { errorText } from "../ops/error-text";
 import { fractionAt } from "./annotations";
 import { BlockRefused } from "./BlockRefused";
 import { blockText, submitBlockEdit, type BlockTarget } from "./block-edit";
+import { boxChange, type Sides } from "./box-sides";
+import { BoxSides } from "./BoxSides";
 import {
   DEFAULT_NEW_SIZE_PT,
+  MIN_WIDTH_PT,
   NEW_SIZE_RANGE_PT,
+  SNAP_PX,
   nearestLineRect,
   placeNewText,
+  snapRight,
   submitNewText,
   type NewTextPlace,
 } from "./new-text";
@@ -39,10 +44,12 @@ interface Chosen {
 // edited opens a box with its text where it stands and a block that cannot says why. A click on the
 // page where there is no text opens an empty box there for new text, running to the right edge of
 // the page's text; a drag sets how wide it runs, and its end takes a width of the page's text when
-// it comes near one. Enter keeps the text (one change), Shift+Enter starts a line, Escape lets the
-// box go. A change the engine refuses keeps the box and says why in it. The box asks nothing else
-// of the page: it grows downward and nothing moves. While a box is open the other blocks and the
-// page wait, so text that was typed is never dropped by a click elsewhere.
+// it comes near one. Both sides of a box are handles that can be dragged (or moved with the arrow
+// keys): the left side moves its left edge and the right side its right edge. Enter keeps the text
+// (one change), Shift+Enter starts a line, Escape lets the box go. A press outside an open box
+// keeps what was typed, as Enter does, and does nothing else: it opens no other box. A change the
+// engine refuses keeps the box and says why in it. The box asks nothing else of the page: it grows
+// downward and nothing moves. Escape also ends a drag that sets a width and puts the refusal away.
 export function TextEditTool(props: {
   doc: PdfDoc;
   /** Counted from 0. */
@@ -61,6 +68,12 @@ export function TextEditTool(props: {
   const [adding, setAdding] = useState<NewTextPlace | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const surface = useRef<HTMLDivElement>(null);
+  // What the open box does to keep its text; the press that leaves the box calls it.
+  const commitRef = useRef<(() => void) | null>(null);
+  const openRef = useRef(false);
+  // The press that left a box is not also a press that begins something: the box can close before
+  // the page sees the rest of that press.
+  const leaving = useRef(false);
 
   // The text is read again when an edit changes the page; what was chosen belonged to the page as
   // it was.
@@ -106,13 +119,43 @@ export function TextEditTool(props: {
 
   const cssHeight = size.widthPt > 0 ? (cssWidth * size.heightPt) / size.widthPt : cssWidth;
   const open = editing !== null || adding !== null;
+  openRef.current = open;
+
+  useEffect(() => {
+    const onPress = (e: PointerEvent) => {
+      if (!openRef.current) {
+        leaving.current = false;
+        return;
+      }
+      const inside =
+        e.target instanceof Element && e.target.closest(".kern-pdf-block-box, [role='dialog']");
+      if (inside) return;
+      leaving.current = true;
+      commitRef.current?.();
+    };
+    document.addEventListener("pointerdown", onPress, true);
+    return () => document.removeEventListener("pointerdown", onPress, true);
+  }, []);
+
+  // Escape ends a drag that is setting a width and puts the refusal away; a box has its own.
+  useEffect(() => {
+    if (!drag && !refused) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      setDrag(null);
+      setRefused(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drag, refused]);
 
   const pointAt = (e: React.PointerEvent): [number, number] | null => {
     const r = surface.current?.getBoundingClientRect();
     return r ? fractionAt(e.clientX, e.clientY, r) : null;
   };
   const press = (e: React.PointerEvent) => {
-    if (e.button !== 0 || open || !text) return;
+    if (e.button !== 0 || open || leaving.current || !text) return;
     const at = pointAt(e);
     if (!at) return;
     e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -204,6 +247,8 @@ export function TextEditTool(props: {
           chosen={editing}
           text={text}
           cssHeight={cssHeight}
+          widthPt={size.widthPt}
+          commitRef={commitRef}
           onClose={() => setEditing(null)}
         />
       )}
@@ -214,6 +259,9 @@ export function TextEditTool(props: {
           text={text}
           cssHeight={cssHeight}
           pxPerPt={size.widthPt > 0 ? cssWidth / size.widthPt : 1}
+          widthPt={size.widthPt}
+          cssWidth={cssWidth}
+          commitRef={commitRef}
           onClose={() => setAdding(null)}
         />
       )}
@@ -265,9 +313,17 @@ function NewTextBox(props: {
   cssHeight: number;
   /** CSS pixels to a point of the page. */
   pxPerPt: number;
+  /** The page's width in points and on screen, for the least width and the snap of a side. */
+  widthPt: number;
+  cssWidth: number;
+  commitRef: React.MutableRefObject<(() => void) | null>;
   onClose(): void;
 }) {
-  const { doc, place, text, cssHeight, pxPerPt, onClose } = props;
+  const { doc, place, text, cssHeight, pxPerPt, widthPt, cssWidth, commitRef, onClose } = props;
+  const [sides, setSides] = useState<Sides>({
+    left: place.at[0],
+    right: place.at[0] + place.width,
+  });
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -307,7 +363,12 @@ function NewTextBox(props: {
     }
     setBusy(true);
     setError(null);
-    const result = await submitNewText(doc, place, value, points);
+    const placed: NewTextPlace = {
+      ...place,
+      at: [sides.left, place.at[1]],
+      width: sides.right - sides.left,
+    };
+    const result = await submitNewText(doc, placed, value, points);
     if (!mounted.current) return;
     setBusy(false);
     if (result.status === "done") onClose();
@@ -318,6 +379,9 @@ function NewTextBox(props: {
       );
     } else if (result.status === "failed") setError(result.message);
   };
+
+  commitRef.current = () => void keep();
+  useEffect(() => () => void (commitRef.current = null), [commitRef]);
 
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
@@ -347,9 +411,20 @@ function NewTextBox(props: {
   return (
     <div
       className="kern-pdf-block-box kern-pdf-new-text-box"
-      style={{ left: percent(place.at[0]), top: percent(place.at[1]), width: percent(place.width) }}
+      style={{
+        left: percent(sides.left),
+        top: percent(place.at[1]),
+        width: percent(sides.right - sides.left),
+      }}
       onPointerDown={(e) => e.stopPropagation()}
     >
+      <BoxSides
+        sides={sides}
+        min={widthPt > 0 ? MIN_WIDTH_PT / widthPt : 0}
+        snapRight={(right, left) => snapRight(text, left, right, SNAP_PX / cssWidth)}
+        disabled={busy}
+        onChange={setSides}
+      />
       <textarea
         ref={field}
         className="kern-pdf-block-input"
@@ -390,10 +465,15 @@ function BlockBox(props: {
   chosen: Chosen;
   text: PageText;
   cssHeight: number;
+  /** The page's width in points, for the least width of the box. */
+  widthPt: number;
+  commitRef: React.MutableRefObject<(() => void) | null>;
   onClose(): void;
 }) {
-  const { doc, chosen, text, cssHeight, onClose } = props;
+  const { doc, chosen, text, cssHeight, widthPt, commitRef, onClose } = props;
   const { target, block } = chosen;
+  const was: Sides = { left: block.rect[0], right: block.rect[2] };
+  const [sides, setSides] = useState<Sides>(was);
   const [value, setValue] = useState(target.original);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -410,22 +490,31 @@ function BlockBox(props: {
 
   const keep = async () => {
     if (busy) return;
-    // Text that is as it was is no change.
-    if (value === target.original) {
+    // Text that is as it was, in the box it was in, is no change.
+    const box = boxChange(was, sides);
+    if (value === target.original && box.left === undefined && box.width === undefined) {
       onClose();
       return;
     }
     setBusy(true);
     setError(null);
-    const result = await submitBlockEdit(doc, target, value, () =>
-      // A fresh read: the kept one is the very text that was refused as stale.
-      pdfText(doc.handle as number, target.page).then(pageText)
+    const result = await submitBlockEdit(
+      doc,
+      target,
+      value,
+      () =>
+        // A fresh read: the kept one is the very text that was refused as stale.
+        pdfText(doc.handle as number, target.page).then(pageText),
+      box
     );
     if (!mounted.current) return;
     setBusy(false);
     if (result.status === "done") onClose();
     else if (result.status === "failed") setError(result.message);
   };
+
+  commitRef.current = () => void keep();
+  useEffect(() => () => void (commitRef.current = null), [commitRef]);
 
   const lines = text.lines.filter((l) => l.block === block.id);
   const first = lines[0];
@@ -440,13 +529,19 @@ function BlockBox(props: {
     <div
       className="kern-pdf-block-box"
       style={{
-        left: percent(block.rect[0]),
+        left: percent(sides.left),
         top: percent(block.rect[1]),
-        width: percent(block.rect[2] - block.rect[0]),
+        width: percent(sides.right - sides.left),
       }}
       // A press in the box is the box's.
       onPointerDown={(e) => e.stopPropagation()}
     >
+      <BoxSides
+        sides={sides}
+        min={widthPt > 0 ? MIN_WIDTH_PT / widthPt : 0}
+        disabled={busy}
+        onChange={setSides}
+      />
       <textarea
         ref={field}
         className="kern-pdf-block-input"

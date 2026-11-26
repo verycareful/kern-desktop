@@ -146,6 +146,26 @@ export function layoutBoxes(
 }
 
 /**
+ * `box` on the device's pixel grid: the left and top on a whole device pixel, and the size the
+ * page's picture has when it is drawn at `box.width` (a whole number of device pixels wide, its
+ * height from the page's shape as `planRender` and the engine take it), so the picture is shown
+ * one pixel to a pixel. A box between pixels has the browser resample the picture, and the text
+ * in it goes soft.
+ */
+export function snapBox(box: PageBox, size: PageSize, dpr: number): PageBox {
+  const unit = dpr > 0 ? dpr : 1;
+  const widthPx = Math.max(1, Math.round(box.width * unit));
+  const aspect = size.widthPt > 0 ? size.heightPt / size.widthPt : 1;
+  const heightPx = Math.max(1, Math.round(widthPx * aspect));
+  return {
+    left: Math.round(box.left * unit) / unit,
+    top: Math.round(box.top * unit) / unit,
+    width: widthPx / unit,
+    height: heightPx / unit,
+  };
+}
+
+/**
  * The row at `offset` from the top of the content: the row whose band holds it, or the one
  * above when it falls in a gap. 0 for an offset above the first row.
  */
@@ -161,19 +181,20 @@ export function rowAtOffset(rows: readonly { top: number }[], offset: number): n
 }
 
 /**
- * The size of every page of the document, from the engine. `stale` is asked after each batch:
- * a document that went, or a view that no longer wants the answer, stops the reads.
+ * The size of every page of the document (`pages` is a count), or of just the pages listed (from
+ * 0), in the order given, from the engine. `stale` is asked after each batch: a document that
+ * went, or a view that no longer wants the answer, stops the reads.
  */
 export async function pageSizes(
   handle: PdfHandle,
-  pages: number,
+  pages: number | readonly number[],
   stale: () => boolean = () => false
 ): Promise<PageSize[]> {
+  const which = typeof pages === "number" ? Array.from({ length: pages }, (_, i) => i) : pages;
   const sizes: PageSize[] = [];
-  for (let first = 0; first < pages; first += SIZE_BATCH) {
-    const last = Math.min(pages, first + SIZE_BATCH);
+  for (let first = 0; first < which.length; first += SIZE_BATCH) {
     const batch = await Promise.all(
-      Array.from({ length: last - first }, (_, i) => pdfPageInfo(handle, first + i))
+      which.slice(first, first + SIZE_BATCH).map((page) => pdfPageInfo(handle, page))
     );
     if (stale()) return sizes;
     for (const info of batch) {

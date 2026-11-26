@@ -714,6 +714,41 @@
   font-family: sans-serif;
 }
 
+/* The two sides of a text box, wide enough to take with a pointer and drawn as one line each. */
+.kern-pdf-box-side {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 10px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.kern-pdf-box-side::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  background: var(--kern-accent);
+  opacity: 0.6;
+}
+
+.kern-pdf-box-side:hover::after,
+.kern-pdf-box-side:focus-visible::after {
+  opacity: 1;
+}
+
+.kern-pdf-box-side-left {
+  left: -5px;
+}
+
+.kern-pdf-box-side-right {
+  right: -5px;
+}
+
 .kern-pdf-block-error {
   max-width: 100%;
   padding: 4px 6px;

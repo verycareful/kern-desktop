@@ -227,14 +227,14 @@ test("the_page_in_view_is_marked_and_is_the_one_tab_stop", () => {
 
 test("the_arrow_keys_move_focus_along_the_strip_and_stop_at_its_ends", () => {
   strip();
-  const first = screen.getByRole("button", { name: "Page 1" });
+  const first = screen.getByRole("button", { name: /^Page 1(,|$)/ });
   first.focus();
   fireEvent.keyDown(first, { key: "ArrowDown" });
-  expect(screen.getByRole("button", { name: "Page 2" })).toHaveFocus();
+  expect(screen.getByRole("button", { name: /^Page 2(,|$)/ })).toHaveFocus();
   fireEvent.keyDown(document.activeElement as Element, { key: "End" });
-  expect(screen.getByRole("button", { name: "Page 5" })).toHaveFocus();
+  expect(screen.getByRole("button", { name: /^Page 5(,|$)/ })).toHaveFocus();
   fireEvent.keyDown(document.activeElement as Element, { key: "ArrowDown" });
-  expect(screen.getByRole("button", { name: "Page 5" })).toHaveFocus();
+  expect(screen.getByRole("button", { name: /^Page 5(,|$)/ })).toHaveFocus();
   fireEvent.keyDown(document.activeElement as Element, { key: "Home" });
   expect(first).toHaveFocus();
 });
@@ -242,12 +242,12 @@ test("the_arrow_keys_move_focus_along_the_strip_and_stop_at_its_ends", () => {
 test("along_the_bottom_the_strip_is_a_row_and_the_side_arrows_move_focus", () => {
   strip({}, 5, true);
   expect(screen.getByTestId("pdf-thumbs")).toHaveClass("kern-pdf-thumbs-row");
-  const first = screen.getByRole("button", { name: "Page 1" });
+  const first = screen.getByRole("button", { name: /^Page 1(,|$)/ });
   first.focus();
   fireEvent.keyDown(first, { key: "ArrowDown" });
   expect(first).toHaveFocus();
   fireEvent.keyDown(first, { key: "ArrowRight" });
-  expect(screen.getByRole("button", { name: "Page 2" })).toHaveFocus();
+  expect(screen.getByRole("button", { name: /^Page 2(,|$)/ })).toHaveFocus();
 });
 
 test("a_thumbnail_the_engine_could_not_draw_says_so", async () => {
@@ -302,6 +302,32 @@ test("a_plain_click_chooses_the_page_and_ctrl_and_shift_choose_more_without_movi
     "aria-pressed",
     "true"
   );
+  off();
+});
+
+test("an_arrow_moves_the_chosen_page_and_the_view_with_the_focus_so_one_thumbnail_is_marked", () => {
+  const goToPage = vi.fn();
+  const off = registerPdf("t1", controller(goToPage));
+  strip();
+  const first = screen.getByRole("button", { name: "Page 2" });
+  fireEvent.click(first);
+  goToPage.mockClear();
+  first.focus();
+  fireEvent.keyDown(first, { key: "ArrowDown" });
+  expect(screen.getByRole("button", { name: "Page 3, chosen" })).toHaveFocus();
+  expect(chosen()).toEqual([2]);
+  expect(goToPage).toHaveBeenCalledWith(2);
+  fireEvent.keyDown(document.activeElement as Element, { key: "End" });
+  expect(chosen()).toEqual([4]);
+  expect(goToPage).toHaveBeenLastCalledWith(4);
+  fireEvent.keyDown(document.activeElement as Element, { key: "Home" });
+  expect(chosen()).toEqual([0]);
+  expect(goToPage).toHaveBeenLastCalledWith(0);
+  // At the end of the strip nothing moves, so nothing is chosen anew.
+  goToPage.mockClear();
+  fireEvent.keyDown(document.activeElement as Element, { key: "ArrowUp" });
+  expect(chosen()).toEqual([0]);
+  expect(goToPage).not.toHaveBeenCalled();
   off();
 });
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { PdfAnnotation, PdfPageText, Rect } from "../ipc/pdf";
 
@@ -136,4 +136,20 @@ test("selecting_text_puts_down_a_picked_annotation", async () => {
   act(() => usePdfTool.getState().pick(TAB, { page: 0, id: ink.id! }));
   fireEvent.pointerDown(el, { button: 0, pointerId: 1, ...middle(0) });
   expect(picked()).toBeNull();
+});
+
+test("note_in_the_selection_menu_starts_a_note_on_the_selected_text_and_not_a_note_at_a_point", async () => {
+  const el = await layer();
+  fireEvent.pointerDown(el, { button: 0, pointerId: 1, ...middle(0) });
+  fireEvent.pointerMove(el, { pointerId: 1, ...middle(4) });
+  fireEvent.pointerUp(el, { pointerId: 1, ...middle(4) });
+  fireEvent.click(await screen.findByRole("button", { name: "Note" }));
+  await waitFor(() => expect(usePdfTool.getState().byTab[TAB]?.draft).not.toBeNull());
+  expect(usePdfTool.getState().byTab[TAB]?.draft).toMatchObject({
+    kind: "markup",
+    page: 0,
+    rects: [[expect.closeTo(0.1), 0.1, expect.closeTo(0.2), 0.12]],
+  });
+  // The text was let go, as it is for a highlight.
+  expect(usePdfSelection.getState().byTab[TAB]).toBeUndefined();
 });

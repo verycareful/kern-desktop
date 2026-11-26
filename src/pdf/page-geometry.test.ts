@@ -19,6 +19,7 @@ import {
   rowAtOffset,
   pageSizes,
   scaleOf,
+  snapBox,
   stepZoom,
   type PageSize,
 } from "./page-geometry";
@@ -154,4 +155,36 @@ test("the_row_at_an_offset_is_the_one_above_in_a_gap_and_the_first_above_the_top
   expect(rowAtOffset(rows, 100)).toBe(1);
   expect(rowAtOffset(rows, 5000)).toBe(2);
   expect(rowAtOffset([], 10)).toBe(0);
+});
+
+test("a_page_box_stands_on_whole_device_pixels_and_is_as_big_as_the_picture_drawn_in_it", () => {
+  const size: PageSize = { widthPt: 595.28, heightPt: 841.89, rotate: 0 };
+  for (const dpr of [1, 1.25, 1.5, 2]) {
+    for (const scale of [0.3333, 0.5, 1.1337]) {
+      const box = snapBox(
+        { left: 12.34, top: 56.78, width: size.widthPt * scale, height: size.heightPt * scale },
+        size,
+        dpr
+      );
+      for (const edge of [box.left, box.top, box.width, box.height]) {
+        expect(Math.abs(edge * dpr - Math.round(edge * dpr))).toBeLessThan(1e-9);
+      }
+      // The picture is the box's width in device pixels and the height the engine draws it at.
+      const widthPx = Math.round(box.width * dpr);
+      expect(Math.round(box.height * dpr)).toBe(
+        Math.round((widthPx * size.heightPt) / size.widthPt)
+      );
+      expect(Math.abs(box.width - size.widthPt * scale)).toBeLessThanOrEqual(0.5 / dpr + 1e-9);
+    }
+  }
+});
+
+test("a_box_of_a_device_that_reports_no_pixel_ratio_is_snapped_to_css_pixels", () => {
+  const size: PageSize = { widthPt: 100, heightPt: 200, rotate: 0 };
+  expect(snapBox({ left: 1.4, top: 2.6, width: 50.4, height: 100.8 }, size, 0)).toEqual({
+    left: 1,
+    top: 3,
+    width: 50,
+    height: 100,
+  });
 });

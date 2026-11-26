@@ -18,7 +18,8 @@ const pointsOf = (stroke: Stroke): string =>
 // The surface a line is drawn on, over a page: lines drawn within INK_GROUP_MS of each other are
 // one change, so a word written with a few lines is one step to undo. A line stays on the
 // surface until the engine has answered, so it does not vanish and return. A refused change
-// leaves the page as it was (the document says why).
+// leaves the page as it was (the document says why). Escape drops the line being drawn and the
+// lines not yet sent, and the tool stays in hand.
 export function InkTool(props: {
   colour: Rgb;
   /** The line's width, in points. */
@@ -79,6 +80,25 @@ export function InkTool(props: {
     };
     // `letGo` and `send` read refs only, so the cleanup of the first render is the last one's.
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Escape ends what is in progress and stays in the tool: the line being drawn and the lines held
+  // for the engine are dropped. Lines already sent are the engine's, and stay.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (!current.current && held.current.length === 0) return;
+      e.preventDefault();
+      const dropped = held.current.length;
+      clearTimeout(timer.current);
+      current.current = null;
+      held.current = [];
+      heldLook.current = null;
+      setDrawing(null);
+      if (dropped > 0) setShown((s) => s.slice(0, s.length - dropped));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const place = (e: React.PointerEvent): [number, number] | null => {
     const r = surface.current?.getBoundingClientRect();

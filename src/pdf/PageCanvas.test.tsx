@@ -12,6 +12,7 @@ const ipc = vi.hoisted(() => ({
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
 import { PageCanvas } from "./PageCanvas";
+import { whenPainted } from "./page-paint";
 import type { PageSize } from "./page-geometry";
 import { testDoc } from "./test-doc";
 import type { PdfDoc } from "./usePdfDoc";
@@ -235,4 +236,26 @@ test("a_page_waits_for_its_sizes_before_it_is_drawn_again", async () => {
   expect(document.querySelectorAll("canvas")).toHaveLength(1);
   rerender(canvas({ doc: doc({ revision: 1, pageRevisions: [0, 0, 1] }), current: true }));
   await waitFor(() => expect(ipc.pdfRender).toHaveBeenCalledTimes(2));
+});
+
+test("the_page_is_painted_at_its_revision_once_its_picture_is_drawn", async () => {
+  // Page 1 of document 5 is at revision 9: nothing is painted at it before the picture comes.
+  let draw: (bytes: Uint8Array) => void = () => undefined;
+  ipc.pdfRender.mockImplementation(() => new Promise<Uint8Array>((resolve) => (draw = resolve)));
+  const flag = vi.fn();
+  render(canvas({ page: 1, doc: doc({ pageRevisions: [0, 9, 0] }) }));
+  void whenPainted(5, 1, 9).then(flag);
+  await waitFor(() => expect(ipc.pdfRender).toHaveBeenCalled());
+  await act(async () => undefined);
+  expect(flag).not.toHaveBeenCalled();
+  await act(async () => draw(new Uint8Array(80 * 80 * 8)));
+  await waitFor(() => expect(flag).toHaveBeenCalledTimes(1));
+});
+
+test("a_page_whose_picture_failed_is_painted_too_so_nothing_waits_for_it", async () => {
+  ipc.pdfRender.mockRejectedValue(wireError("Io", "no pixels"));
+  const flag = vi.fn();
+  render(canvas({ page: 0, doc: doc({ pageRevisions: [4, 0, 0] }) }));
+  void whenPainted(5, 0, 4).then(flag);
+  await waitFor(() => expect(flag).toHaveBeenCalledTimes(1));
 });

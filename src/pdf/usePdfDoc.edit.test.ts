@@ -324,7 +324,7 @@ test("applyChecked_tells_the_caller_how_the_change_ended_and_keeps_the_notice_qu
   await act(async () => {
     applied = await result.current.applyChecked({ op: "rotate", pages: [1], degrees: 90 });
   });
-  expect(applied).toEqual({ status: "applied", notes: [] });
+  expect(applied).toEqual({ status: "applied", notes: [], revision: expect.any(Number) });
   expect(result.current.modified).toBe(true);
 
   const refusal = { kind: "StaleBlock", message: "read at 0", path: null, details: null };
@@ -359,7 +359,7 @@ test("a_change_that_replaced_a_font_says_so_and_hands_the_notes_to_the_caller", 
       text: "Hi",
     });
   });
-  expect(applied).toEqual({ status: "applied", notes });
+  expect(applied).toEqual({ status: "applied", notes, revision: expect.any(Number) });
   // Said even to a quiet caller: the change was made, and some of it looks other than the page.
   expect(useOps.getState().notice?.text).toMatch(
     /book\.pdf.*another font.*Helvetica \(DejaVu Sans\)/

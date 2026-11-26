@@ -52,16 +52,21 @@ export const colourName = (rgb: Rgb): string | null =>
 
 // ---- operations ----
 
-/** The operation that marks `rects` (the rectangles of a text selection), or null when there are none. */
+/**
+ * The operation that marks `rects` (the rectangles of a text selection), or null when there are
+ * none. `contents` is a note on the marked text, kept with the markup.
+ */
 export function markupOp(
   kind: MarkupKind,
   page: number,
   rects: readonly Rect[],
-  colour: Rgb
+  colour: Rgb,
+  contents?: string
 ): PdfOpInput | null {
   const quads = rects.filter((r) => r[2] > r[0] && r[3] > r[1]).map((r): Rect => [...r]);
   if (quads.length === 0) return null;
-  return { op: "addMarkup", kind, page, quads, colour };
+  const op: PdfOpInput = { op: "addMarkup", kind, page, quads, colour };
+  return contents === undefined ? op : { ...op, contents };
 }
 
 /** The operation that draws `strokes` (each at least one point) `width` points wide, or null when there are none. */
@@ -124,6 +129,13 @@ export interface Pickable extends PdfAnnotation {
 export const isPickable = (a: PdfAnnotation): a is Pickable => a.id !== null && a.drawn_by_library;
 
 export const isNote = (a: PdfAnnotation): boolean => a.kind === "Note";
+
+/** A highlight, underline or strikeout: marked text, which can carry a note. */
+export const isMarkup = (a: PdfAnnotation): boolean =>
+  a.kind === "Highlight" || a.kind === "Underline" || a.kind === "StrikeOut";
+
+/** An annotation that has a note to write or read: a note, or marked text. */
+export const takesNote = (a: PdfAnnotation): boolean => isNote(a) || isMarkup(a);
 
 /** The name of what the annotation is, for its label and its menu. */
 export function kindLabel(a: PdfAnnotation): string {

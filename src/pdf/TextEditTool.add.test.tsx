@@ -58,7 +58,7 @@ beforeEach(() => {
 });
 
 const applied = (): Mock<PdfDoc["applyChecked"]> =>
-  vi.fn<PdfDoc["applyChecked"]>().mockResolvedValue({ status: "applied", notes: [] });
+  vi.fn<PdfDoc["applyChecked"]>().mockResolvedValue({ status: "applied", notes: [], revision: 1 });
 
 async function tool(apply: Mock<PdfDoc["applyChecked"]> = applied()) {
   const doc = testDoc({ handle: HANDLE, pages: 1, pageRevisions: [0], applyChecked: apply });
@@ -148,7 +148,7 @@ test("a_page_with_no_text_to_follow_asks_for_a_size_and_keeps_the_text", async (
         status: "failed",
         error: { kind: "NoSizeForNewText", message: "no size", path: null, details: null },
       })
-      .mockResolvedValueOnce({ status: "applied", notes: [] })
+      .mockResolvedValueOnce({ status: "applied", notes: [], revision: 1 })
   );
   press([0.2, 0.2]);
   type("Hi");

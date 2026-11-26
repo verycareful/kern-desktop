@@ -182,7 +182,7 @@ test("the_tool_in_hand_is_pressed_and_choosing_another_runs_its_action", () => {
     "aria-pressed",
     "true"
   );
-  expect(screen.getByRole("button", { name: "Add a note" })).toHaveAttribute(
+  expect(screen.getByRole("button", { name: "Add or open a note" })).toHaveAttribute(
     "aria-pressed",
     "false"
   );
@@ -211,7 +211,7 @@ test("collapsed_edit_text_carries_its_limits_in_its_title", () => {
 test("the_pen_and_the_note_wait_for_a_document_that_can_be_changed", () => {
   render(<ToolsPanel tabId={tabId} doc={testDoc({ canEdit: false })} collapsed={false} />);
   expect(screen.getByRole("button", { name: "Draw with the pen" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Add a note" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Add or open a note" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Edit text" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Select text and annotations" })).toBeEnabled();
 });

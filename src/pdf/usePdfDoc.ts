@@ -40,6 +40,7 @@ import {
   type PdfOpInput,
 } from "./edit-state";
 import { pdfDate } from "./pdf-date";
+import { forgetPaint } from "./page-paint";
 import { refuseRemoval, reorderOrder } from "./page-ops";
 import { entryAtStamp } from "./pdf-save";
 import { ensureSystemFonts } from "./system-fonts";
@@ -172,6 +173,7 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
   const entryRef = useRef<WireEntry | null>(null);
 
   const closeHandle = useCallback((h: PdfHandle) => {
+    forgetPaint(h);
     pdfClose(h).catch((e: unknown) =>
       say(`${baseName(latestPath.current)} could not be closed: ${errorText(toWireError(e))}`)
     );
@@ -316,7 +318,7 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
           // than the page's.
           const notes = answer.notes ?? [];
           if (notes.length > 0) say(substitutionNotice(name, notes));
-          return { status: "applied", notes };
+          return { status: "applied", notes, revision: answer.revision };
         } catch (e) {
           if (mine !== generation.current) return { status: "declined" };
           const error = toWireError(e);

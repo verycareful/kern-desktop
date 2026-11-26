@@ -26,7 +26,12 @@ import { usePageSizes } from "./usePageSizes";
 export function PanelDock(props: { tabId: string; doc: PdfDoc; active: boolean }) {
   const { tabId, doc, active } = props;
   const panels = useViewSettings((s) => s.pdfPanels);
-  const { sizes, readAt, error } = usePageSizes(doc.handle, doc.pages, doc.revision);
+  const { sizes, readAt, error } = usePageSizes(
+    doc.handle,
+    doc.pages,
+    doc.revision,
+    doc.pageRevisions
+  );
   const arranged = arrangePanels(panels);
 
   // A closed document's thumbnails are of no use to a handle the engine may give out again.

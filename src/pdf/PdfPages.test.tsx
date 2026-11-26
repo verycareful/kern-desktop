@@ -134,8 +134,8 @@ afterEach(() => {
 
 // The pages are given their sizes by the viewer that holds them, as `usePageSizes` reads them.
 function Pages(props: { doc: PdfDoc }) {
-  const { handle, pages, revision } = props.doc;
-  const { sizes, readAt, error } = usePageSizes(handle, pages, revision);
+  const { handle, pages, revision, pageRevisions } = props.doc;
+  const { sizes, readAt, error } = usePageSizes(handle, pages, revision, pageRevisions);
   return (
     <PdfPages tabId="t1" doc={props.doc} active sizes={sizes} sizesAt={readAt} sizeError={error} />
   );

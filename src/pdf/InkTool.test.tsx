@@ -159,3 +159,43 @@ test("only_the_main_button_draws", () => {
   elapse(INK_GROUP_MS);
   expect(onGroup).not.toHaveBeenCalled();
 });
+
+test("escape_drops_the_line_being_drawn_and_the_lines_not_yet_sent", () => {
+  const { onGroup } = tool();
+  stroke([
+    [100, 100],
+    [200, 200],
+  ]);
+  fireEvent.pointerDown(surface(), { button: 0, pointerId: 1, clientX: 300, clientY: 300 });
+  fireEvent.pointerMove(surface(), { pointerId: 1, clientX: 400, clientY: 300 });
+  expect(surface().querySelectorAll("polyline")).toHaveLength(2);
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(surface().querySelectorAll("polyline")).toHaveLength(0);
+  // The pointer that is still down draws nothing more, and nothing is sent.
+  fireEvent.pointerMove(surface(), { pointerId: 1, clientX: 500, clientY: 300 });
+  fireEvent.pointerUp(surface(), { pointerId: 1 });
+  elapse(INK_GROUP_MS * 2);
+  expect(onGroup).not.toHaveBeenCalled();
+  expect(surface().querySelectorAll("polyline")).toHaveLength(0);
+});
+
+test("escape_leaves_a_line_already_sent_and_the_tool_draws_again", async () => {
+  let answer: () => void = () => undefined;
+  const onGroup = vi.fn<OnGroup>(() => new Promise<void>((resolve) => (answer = resolve)));
+  tool({ onGroup });
+  stroke([
+    [100, 100],
+    [200, 200],
+  ]);
+  elapse(INK_GROUP_MS);
+  expect(onGroup).toHaveBeenCalledTimes(1);
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(surface().querySelectorAll("polyline")).toHaveLength(1);
+  await act(async () => answer());
+  stroke([
+    [300, 300],
+    [400, 300],
+  ]);
+  elapse(INK_GROUP_MS);
+  expect(onGroup).toHaveBeenCalledTimes(2);
+});

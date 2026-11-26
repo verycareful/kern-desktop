@@ -203,7 +203,7 @@ describe("submitNewText", () => {
   });
 
   it("an_applied_change_is_done", async () => {
-    const d = doc({ status: "applied", notes: [] });
+    const d = doc({ status: "applied", notes: [], revision: 1 });
     expect(await submitNewText(d, place, "Hi")).toEqual({ status: "done" });
     expect(d.applyChecked).toHaveBeenCalledWith(addTextOp(place, "Hi"));
   });

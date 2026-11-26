@@ -192,6 +192,10 @@ export type PdfOp =
       family?: string | null;
       size?: number | null;
       colour?: Rgb | null;
+      /** Where the left edge of the block's box stands, a fraction of the displayed page's width. */
+      left?: number | null;
+      /** The width the text is broken to, a fraction of the displayed page's width. */
+      width?: number | null;
     }
   | {
       op: "addText";
