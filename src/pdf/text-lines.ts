@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import type { PdfPageText } from "../ipc/pdf";
-import type { Rect } from "../ipc/pdf";
+import type { PdfPageText, PdfTextBlock, Rect } from "../ipc/pdf";
 
 // A page's text as the text layer and the selection use it. The engine answers a line as its text
 // and one rectangle per glyph; a glyph that is a ligature carries more than one character and the
@@ -16,6 +15,8 @@ export interface TextUnit {
 }
 
 export interface TextLine {
+  /** The index of the block the line belongs to. */
+  block: number;
   /** The characters in logical order, as the engine gave them. */
   text: string;
   rect: Rect;
@@ -30,6 +31,8 @@ export interface PageText {
   revision: number;
   /** In reading order, with no blank line. */
   lines: TextLine[];
+  /** The page's text blocks, each with whether it can be edited and, when not, why. */
+  blocks: PdfTextBlock[];
 }
 
 /** The text layer's lines of a page: blank lines dropped, each line cut into units. */
@@ -42,7 +45,7 @@ export function pageText(wire: PdfPageText): PageText {
     const units: TextUnit[] = whole
       ? [{ text: line.text, rect: line.rect }]
       : characters.map((text, i) => ({ text, rect: line.glyphs[i] as Rect }));
-    lines.push({ text: line.text, rect: line.rect, units, whole });
+    lines.push({ block: line.block, text: line.text, rect: line.rect, units, whole });
   }
-  return { revision: wire.revision, lines };
+  return { revision: wire.revision, lines, blocks: wire.blocks };
 }

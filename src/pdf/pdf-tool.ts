@@ -9,8 +9,11 @@ import { DEFAULT_COLOURS, DEFAULT_INK_WIDTH, sameId } from "./annotations";
 // annotations of the pages in view. Pages write what they read here and the actions and the menus
 // read it, so none of them needs the page's React tree (as pdf-selection.ts does for text).
 
-/** Select picks text and annotations; Ink and Note act on the page where it is pressed. */
-export type PdfTool = "select" | "ink" | "note";
+/**
+ * Select picks text and annotations; Ink and Note act on the page where it is pressed; Edit text
+ * chooses a block of the page's text to change.
+ */
+export type PdfTool = "select" | "ink" | "note" | "editText";
 
 /** The kind of annotation a colour is for: it decides the colour when none has been chosen. */
 export type ColourFor = "highlight" | "underline" | "strikeOut" | "ink" | "note";

@@ -1720,6 +1720,7 @@ const pdfActions: Action[] = [
       ["pdf.tool.select", "Select text and annotations", "select", "Ctrl+Alt+V"],
       ["pdf.tool.ink", "Draw with the pen", "ink", "Ctrl+Alt+I"],
       ["pdf.note.add", "Add a note", "note", "Ctrl+Alt+N"],
+      ["pdf.tool.editText", "Edit text", "editText", "Ctrl+Alt+E"],
     ] as const
   ).map(([id, label, tool, key]): Action => ({
     id,

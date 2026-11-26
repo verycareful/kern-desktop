@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import type { PdfEditAnswer, PdfOp } from "../ipc";
+import type { PdfEditAnswer, PdfOp, WireError } from "../ipc";
 
 // What the app knows of a PDF's edits. The engine is the one that knows: every edit, undo and
 // redo answers with the document's state, and this keeps that answer and nothing the app
@@ -79,3 +79,16 @@ export function stampOp(op: PdfOpInput, modified: string): PdfOp {
   // The cast joins the two halves of `PdfOpInput`: a dated op gets its date, any other has none.
   return (DATED_OPS.has(op.op) ? { ...op, modified } : op) as PdfOp;
 }
+
+/**
+ * How one change ended, for a caller that has to say so where the user is working (the box a
+ * text is edited in) and not in a notice.
+ */
+export type ApplyOutcome =
+  | { status: "applied" }
+  /** Not made, and nothing went wrong: the copy question was cancelled, or the document was closed. */
+  | { status: "declined" }
+  /** Not made because the document cannot take a change now; `message` says why. */
+  | { status: "refused"; message: string }
+  /** The engine refused the change; the document is as it was. */
+  | { status: "failed"; error: WireError };

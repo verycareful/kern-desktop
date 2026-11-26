@@ -661,3 +661,77 @@
   height: 100%;
   overflow: visible;
 }
+
+/* The Edit text tool: a block of the page's text is a button, the one being edited a box. */
+.kern-pdf-blocks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.kern-pdf-block {
+  position: absolute;
+  padding: 0;
+  background: transparent;
+  border: 1px dashed rgb(51 144 255 / 55%);
+  pointer-events: auto;
+  cursor: text;
+}
+
+.kern-pdf-block:hover,
+.kern-pdf-block:focus-visible {
+  background: rgb(51 144 255 / 12%);
+  outline: 2px solid rgb(51 144 255 / 70%);
+}
+
+.kern-pdf-block:disabled {
+  pointer-events: none;
+}
+
+/* A block that cannot be edited is outlined in a different line, so it can be told apart. */
+.kern-pdf-block-refused-mark {
+  border-style: dotted;
+  border-color: rgb(128 128 128 / 70%);
+  cursor: not-allowed;
+}
+
+.kern-pdf-block-box {
+  position: absolute;
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.kern-pdf-block-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #111;
+  background: #fff;
+  border: 2px solid var(--kern-accent);
+  resize: none;
+  font-family: sans-serif;
+}
+
+.kern-pdf-block-error {
+  max-width: 100%;
+  padding: 4px 6px;
+  margin: 2px 0 0;
+  color: var(--kern-text);
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+  font-size: 12px;
+}
+
+.kern-pdf-block-refused {
+  max-width: 24em;
+}
+
+.kern-pdf-tool-help {
+  margin: 4px 4px 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--kern-text-dim);
+}

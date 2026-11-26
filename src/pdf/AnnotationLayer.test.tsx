@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, expect, test, vi, type Mock } from "vitest";
 import type { PdfAnnotation } from "../ipc/pdf";
 
-const ipc = vi.hoisted(() => ({ pdfAnnotations: vi.fn() }));
+const ipc = vi.hoisted(() => ({ pdfAnnotations: vi.fn(), pdfText: vi.fn() }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
 import { AnnotationLayer } from "./AnnotationLayer";
@@ -92,7 +92,8 @@ async function layer(
   return { apply, doc, view, element };
 }
 
-const tool = (t: "select" | "ink" | "note") => act(() => usePdfTool.getState().setTool(TAB, t));
+const tool = (t: "select" | "ink" | "note" | "editText") =>
+  act(() => usePdfTool.getState().setTool(TAB, t));
 
 test("clicking_an_annotation_selects_it_and_offers_colour_and_delete", async () => {
   const { apply } = await layer();
@@ -260,4 +261,21 @@ test("an_annotation_that_cannot_be_read_says_so", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "The annotations of page 1 could not be read: Other: unreadable"
   );
+});
+
+test("the_edit_text_tool_offers_the_blocks_of_the_page_and_only_while_the_document_can_be_changed", async () => {
+  ipc.pdfText.mockResolvedValue({
+    revision: 0,
+    tagged: false,
+    lines: [{ block: 0, text: "hello", rect: [0.1, 0.1, 0.3, 0.14], glyphs: [] }],
+    blocks: [{ id: 0, rect: [0.1, 0.1, 0.3, 0.14], editable: true }],
+  });
+  const { doc, view, element } = await layer();
+  expect(screen.queryByTestId("pdf-blocks-0")).toBeNull();
+  tool("editText");
+  expect(await screen.findByRole("button", { name: "Edit text: hello" })).toBeInTheDocument();
+  // The annotations' keyboard boxes are for the Select tool only.
+  expect(screen.queryByTestId("pdf-annotation")).toBeNull();
+  view.rerender(element({ ...doc, canEdit: false }));
+  expect(screen.queryByTestId("pdf-blocks-0")).toBeNull();
 });

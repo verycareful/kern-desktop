@@ -406,14 +406,18 @@ test("the_annotation_tools_run_on_the_viewer_and_the_pen_and_note_follow_the_edi
   runAction(getAction("pdf.tool.select"), ctx);
   runAction(getAction("pdf.tool.ink"), ctx);
   runAction(getAction("pdf.note.add"), ctx);
+  runAction(getAction("pdf.tool.editText"), ctx);
   expect(c.setTool).toHaveBeenNthCalledWith(1, "select");
   expect(c.setTool).toHaveBeenNthCalledWith(2, "ink");
   expect(c.setTool).toHaveBeenNthCalledWith(3, "note");
+  expect(c.setTool).toHaveBeenNthCalledWith(4, "editText");
+  expect(getAction("pdf.tool.editText").keys).toEqual(["Ctrl+Alt+E"]);
   off();
   const held = testController({ canAnnotate: () => false });
   const hold = registerPdf(id, held);
   expect(isEnabled(getAction("pdf.tool.ink"), ctx)).toBe(false);
   expect(isEnabled(getAction("pdf.note.add"), ctx)).toBe(false);
+  expect(isEnabled(getAction("pdf.tool.editText"), ctx)).toBe(false);
   // Select can always be chosen: it is how a tool is put down.
   expect(isEnabled(getAction("pdf.tool.select"), ctx)).toBe(true);
   hold();
@@ -462,6 +466,7 @@ test("the_annotation_actions_do_not_reach_a_text_document", () => {
     "pdf.tool.select",
     "pdf.tool.ink",
     "pdf.note.add",
+    "pdf.tool.editText",
     "pdf.markup.highlight",
     "pdf.annotation.delete",
   ]) {

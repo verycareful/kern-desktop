@@ -223,6 +223,74 @@ describe("pdf", function () {
     expect(saved.subarray(original.length).toString("latin1")).toContain("/Highlight");
   });
 
+  it("edit_the_text_of_a_block_and_save_it", async () => {
+    // The driver drops repeated letters it types, so the new text has none.
+    const NEW_TEXT = "Pencil";
+    const dir = testDir("pdf-edit-text");
+    const file = path.join(dir, "words.pdf");
+    const original = textPagePdf();
+    writeFileSync(file, original);
+    await openPdf(file);
+
+    const tool = await browser.$('button[aria-label="Edit text"]');
+    await tool.waitForClickable({ timeout: SHOWS_WITHIN_MS });
+    await tool.click();
+    // The block is offered once the page's text has been read.
+    const block = await browser.$(`button[aria-label="Edit text: ${PAGE_TEXT}"]`);
+    await block.waitForClickable({ timeout: SHOWS_WITHIN_MS });
+    await block.click();
+    const box = await browser.$('textarea[aria-label="Text of the block"]');
+    await box.waitForDisplayed({ timeout: SHOWS_WITHIN_MS });
+    expect(await box.getValue()).toBe(PAGE_TEXT);
+    await browser.keys(["Control", "a"]);
+    await browser.keys(NEW_TEXT);
+    await browser.keys("Enter");
+    // The first change asks about a copy; the text is changed once it is answered.
+    const without = await browser.$("button=Edit without a copy");
+    await without.waitForClickable({ timeout: SHOWS_WITHIN_MS });
+    await without.click();
+
+    // The page's text is read again from the changed document: the engine has set the new text.
+    // A change the engine refuses keeps the box open and says why in it, which is what to report.
+    const shown = () =>
+      browser.execute(() => ({
+        blocks: Array.from(document.querySelectorAll(".kern-pdf-block")).map((b) =>
+          b.getAttribute("aria-label")
+        ),
+        box: document.querySelector(".kern-pdf-block-box")?.textContent ?? null,
+        alerts: Array.from(document.querySelectorAll("[role=alert], [role=status]")).map(
+          (a) => a.textContent
+        ),
+      }));
+    try {
+      await browser.waitUntil(
+        async () => {
+          const said = await browser.$(".kern-pdf-block-box [role=alert]");
+          if (await said.isExisting()) {
+            throw new Error(`the box was refused: ${await said.getText()}`);
+          }
+          return browser.$(`button[aria-label="Edit text: ${NEW_TEXT}"]`).isExisting();
+        },
+        { timeout: SHOWS_WITHIN_MS, interval: 500 }
+      );
+    } catch (e) {
+      throw new Error(`${String(e)}; the page shows ${JSON.stringify(await shown())}`);
+    }
+
+    await browser.waitUntil(
+      async () => {
+        await browser.keys(["Control", "s"]);
+        return readFileSync(file).length > original.length;
+      },
+      {
+        timeout: SHOWS_WITHIN_MS,
+        interval: 500,
+        timeoutMsg: "the PDF with the edited text was not saved by the document window",
+      }
+    );
+    expect(readFileSync(file).equals(original)).toBe(false);
+  });
+
   it("find_counts_a_word_and_steps_and_closes", async () => {
     const dir = testDir("pdf-find");
     const file = path.join(dir, "words.pdf");

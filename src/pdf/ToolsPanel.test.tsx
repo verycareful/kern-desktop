@@ -64,7 +64,7 @@ test("collapsed_shows_icons_only_with_labels_as_titles", () => {
   render(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed />);
   // The colours and the pen widths are swatches, not tools: they have no name to show.
   const buttons = screen.getAllByRole("button").filter((b) => !b.closest(".kern-pdf-colours"));
-  expect(buttons).toHaveLength(23);
+  expect(buttons).toHaveLength(24);
   for (const b of buttons) {
     expect(b).toHaveTextContent("");
     expect(b.getAttribute("title")).toContain(b.getAttribute("aria-label"));
@@ -188,10 +188,31 @@ test("the_tool_in_hand_is_pressed_and_choosing_another_runs_its_action", () => {
   );
 });
 
+test("edit_text_takes_the_tool_and_its_limits_are_written_beside_it_while_it_is_in_hand", () => {
+  render(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed={false} />);
+  expect(screen.queryByTestId("pdf-edit-text-help")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
+  expect(controller.setTool).toHaveBeenCalledWith("editText");
+  act(() => usePdfTool.getState().setTool(tabId, "editText"));
+  expect(screen.getByRole("button", { name: "Edit text" })).toHaveAttribute("aria-pressed", "true");
+  const help = screen.getByTestId("pdf-edit-text-help");
+  expect(help).toHaveTextContent(/not shaped/);
+  expect(help).toHaveTextContent(/Vertical text/);
+  expect(help).toHaveTextContent(/one font|keeps its font/);
+});
+
+test("collapsed_edit_text_carries_its_limits_in_its_title", () => {
+  render(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed />);
+  expect(screen.getByRole("button", { name: "Edit text" }).getAttribute("title")).toMatch(
+    /Vertical text/
+  );
+});
+
 test("the_pen_and_the_note_wait_for_a_document_that_can_be_changed", () => {
   render(<ToolsPanel tabId={tabId} doc={testDoc({ canEdit: false })} collapsed={false} />);
   expect(screen.getByRole("button", { name: "Draw with the pen" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Add a note" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Edit text" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Select text and annotations" })).toBeEnabled();
 });
 

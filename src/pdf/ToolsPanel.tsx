@@ -20,6 +20,7 @@ import {
   Split,
   StickyNote,
   Strikethrough,
+  TextCursorInput,
   TextSelect,
   Trash2,
   Underline,
@@ -90,7 +91,12 @@ const HAND_TOOLS: readonly (Tool & { hand: PdfTool })[] = [
   },
   { id: "pdf.tool.ink", label: "Draw with the pen", Icon: Pen, hand: "ink" },
   { id: "pdf.note.add", label: "Add a note", Icon: StickyNote, hand: "note" },
+  { id: "pdf.tool.editText", label: "Edit text", Icon: TextCursorInput, hand: "editText" },
 ];
+
+// What the Edit text tool cannot do, said where it is picked up.
+const EDIT_TEXT_HELP =
+  "Click a block of text to change it. Enter keeps the change, Shift+Enter starts a new line, Escape lets go. The block keeps its font, size and colour; a letter that font lacks is set in another font. Letters are not shaped: ligatures, kerning and the joining of Arabic letters are not formed. Vertical text, and text Kern cannot take apart, cannot be edited, and Kern says why.";
 
 // Marking the selected text, and taking away the annotation that is picked.
 const MARK_TOOLS: readonly Tool[] = [
@@ -113,6 +119,7 @@ export function ToolsPanel(props: { tabId: string; doc: PdfDoc; collapsed: boole
   const chosen = usePageSelection((st) => (st.byTab[tabId]?.pages.length ?? 0) > 0);
   const textSelected = usePdfSelection((st) => st.byTab[tabId] !== undefined);
   const annotationPicked = usePdfTool((st) => (st.byTab[tabId]?.picked ?? null) !== null);
+  const editingText = usePdfTool((st) => st.byTab[tabId]?.tool === "editText");
   const available: Record<EditNeeds, boolean> = {
     edit: doc.canEdit,
     undo: doc.canEdit && doc.canUndo,
@@ -176,6 +183,11 @@ export function ToolsPanel(props: { tabId: string; doc: PdfDoc; collapsed: boole
           collapsed={collapsed}
           available={doc.canEdit && annotationPicked}
         />
+        {editingText && !collapsed && (
+          <p className="kern-pdf-tool-help" data-testid="pdf-edit-text-help">
+            {EDIT_TEXT_HELP}
+          </p>
+        )}
         <ColourRow tabId={tabId} />
       </ToolGroup>
       <ToolGroup title="Pages" collapsed={collapsed}>
@@ -300,7 +312,7 @@ function HandButton(props: {
       collapsed={collapsed}
       pressed={inHand}
       disabled={!available}
-      title={key ? `${tool.label} (${key})` : tool.label}
+      title={`${key ? `${tool.label} (${key})` : tool.label}${tool.hand === "editText" ? `. ${EDIT_TEXT_HELP}` : ""}`}
       onClick={() => runAction(action, currentContext(tabId))}
     />
   );

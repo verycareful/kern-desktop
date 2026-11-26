@@ -316,3 +316,77 @@ test("a_change_queued_behind_another_when_the_tab_closes_is_dropped_without_a_no
   expect(ipc.pdfApply).toHaveBeenCalledTimes(1);
   expect(useOps.getState().notice).toBeNull();
 });
+
+test("applyChecked_tells_the_caller_how_the_change_ended_and_keeps_the_notice_quiet", async () => {
+  const { result } = await ready();
+  ipc.pdfApply.mockResolvedValueOnce(answer());
+  let applied: unknown;
+  await act(async () => {
+    applied = await result.current.applyChecked({ op: "rotate", pages: [1], degrees: 90 });
+  });
+  expect(applied).toEqual({ status: "applied" });
+  expect(result.current.modified).toBe(true);
+
+  const refusal = { kind: "StaleBlock", message: "read at 0", path: null, details: null };
+  ipc.pdfApply.mockRejectedValueOnce(refusal);
+  let failed: unknown;
+  await act(async () => {
+    failed = await result.current.applyChecked({ op: "rotate", pages: [1], degrees: 90 });
+  });
+  // The error is the caller's to show where the user is working; no notice says it too.
+  expect(failed).toEqual({ status: "failed", error: refusal });
+  expect(useOps.getState().notice).toBeNull();
+  expect(result.current.revision).toBe(1);
+});
+
+test("applyChecked_refuses_with_the_reason_when_the_document_cannot_take_a_change", async () => {
+  ipc.docOpened.mockRejectedValue({
+    kind: "AlreadyOpen",
+    message: "open in editor-2",
+    path: null,
+    details: null,
+  });
+  const view = renderHook(() => usePdfDoc("t1", FILE));
+  await waitFor(() => expect(view.result.current.readOnly).not.toBeNull());
+  let outcome: unknown;
+  await act(async () => {
+    outcome = await view.result.current.applyChecked({ op: "rotate", pages: [0], degrees: 90 });
+  });
+  expect(ipc.pdfApply).not.toHaveBeenCalled();
+  expect(outcome).toEqual({
+    status: "refused",
+    message:
+      "The change was not made: book.pdf is open in another place and cannot be changed here.",
+  });
+  expect(useOps.getState().notice).toBeNull();
+});
+
+test("applyChecked_is_declined_when_the_copy_question_is_cancelled", async () => {
+  const view = renderHook(() => usePdfDoc("t1", FILE));
+  await waitFor(() => expect(view.result.current.phase).toBe("ready"));
+  let outcome!: Promise<unknown>;
+  act(() => {
+    outcome = view.result.current.applyChecked({ op: "rotate", pages: [0], degrees: 90 });
+  });
+  await waitFor(() => expect(view.result.current.prompt).toBe("copyFirst"));
+  await act(() => view.result.current.answerCopyFirst("cancel"));
+  await expect(outcome).resolves.toEqual({ status: "declined" });
+  expect(ipc.pdfApply).not.toHaveBeenCalled();
+});
+
+test("editing_a_text_block_marks_the_tab_dirty_and_undo_restores_it", async () => {
+  const { result } = await ready();
+  ipc.pdfApply.mockResolvedValue(answer({ changed_pages: [0] }));
+  const op = { op: "editText", page: 0, block: 2, revision: 0, text: "new words" } as const;
+  await act(() => result.current.apply(op));
+  // The op goes to the engine as written: it carries no date and the revision the block was read at.
+  expect(ipc.pdfApply).toHaveBeenCalledWith(HANDLE, op);
+  expect(result.current).toMatchObject({ modified: true, canUndo: true, changedPages: [0] });
+  expect(tabDirty()).toBe(true);
+  ipc.pdfUndo.mockResolvedValue(
+    answer({ revision: 2, changed_pages: [0], can_undo: false, can_redo: true, modified: false })
+  );
+  await act(() => result.current.undo());
+  expect(result.current).toMatchObject({ modified: false, canUndo: false, canRedo: true });
+  expect(tabDirty()).toBe(false);
+});

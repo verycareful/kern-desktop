@@ -9,6 +9,7 @@ import { DEFAULT_INK_WIDTH, fractionAt, inkOp, kindLabel, pickable, sameId } fro
 import { InkTool } from "./InkTool";
 import { NoteEditor } from "./NoteEditor";
 import { percent } from "./percent";
+import { TextEditTool } from "./TextEditTool";
 import { colourFor, usePdfTool } from "./pdf-tool";
 import type { PageSize } from "./page-geometry";
 import type { PdfDoc } from "./usePdfDoc";
@@ -173,6 +174,9 @@ export function AnnotationLayer(props: {
           data-testid="pdf-note-surface"
           onPointerDown={putNote}
         />
+      )}
+      {tool === "editText" && canEdit && reading && (
+        <TextEditTool doc={doc} page={page} size={size} cssWidth={cssWidth} />
       )}
       {editing?.kind === "new" && (
         <NoteEditor

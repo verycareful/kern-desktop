@@ -34,6 +34,7 @@ import {
   afterSave,
   openedEdit,
   stampOp,
+  type ApplyOutcome,
   type EditState,
   type PdfOpInput,
 } from "./edit-state";
@@ -95,6 +96,11 @@ export interface PdfDoc extends PdfSave {
    * leaves the document as it was and is told to the user; this never rejects.
    */
   apply(op: PdfOpInput): Promise<void>;
+  /**
+   * Makes one change as `apply` does and says how it ended, without a notice: the caller shows a
+   * refusal where the user is working. Never rejects.
+   */
+  applyChecked(op: PdfOpInput): Promise<ApplyOutcome>;
   /** Goes back one change; nothing happens when there is none. Never rejects. */
   undo(): Promise<void>;
   /** Goes forward one change that was undone. Never rejects. */
@@ -263,42 +269,54 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
     );
     return settled;
   }, []);
+  // `quiet`: a refusal is not said in a notice, because the caller shows it where the user is
+  // working (the outcome carries it).
   const step = useCallback(
-    (what: string, call: (h: PdfHandle) => Promise<PdfEditAnswer>): Promise<void> => {
+    (
+      what: string,
+      call: (h: PdfHandle) => Promise<PdfEditAnswer>,
+      quiet = false
+    ): Promise<ApplyOutcome> => {
       // The document this change was asked of; one closed or opened again before the change's
       // turn has nothing left for it to do.
       const asked = generation.current;
-      const run = async () => {
-        if (asked !== generation.current) return;
+      const run = async (): Promise<ApplyOutcome> => {
+        if (asked !== generation.current) return { status: "declined" };
         const name = baseName(latestPath.current);
         const h = handle.current;
         const now = latest.current;
+        const refuse = (message: string): ApplyOutcome => {
+          if (!quiet) say(message);
+          return { status: "refused", message };
+        };
         if (h === null || now.phase !== "ready") {
-          say(`${what} was not made: ${name} is not open.`);
-          return;
+          return refuse(`${what} was not made: ${name} is not open.`);
         }
         if (now.readOnly) {
-          say(`${what} was not made: ${name} is open in another place and cannot be changed here.`);
-          return;
+          return refuse(
+            `${what} was not made: ${name} is open in another place and cannot be changed here.`
+          );
         }
         if (now.moving) {
-          say(`${what} was not made: ${name} is moving to another window.`);
-          return;
+          return refuse(`${what} was not made: ${name} is moving to another window.`);
         }
         const mine = asked;
         try {
           const answer = await call(h);
           // The document was closed or opened again while the engine worked: this answer is of
           // one that is gone.
-          if (mine !== generation.current) return;
+          if (mine !== generation.current) return { status: "declined" };
           for (const page of answer.changed_pages) thumbCache.dropPage(h, page);
           setState((s) => {
             const edit = afterEdit(s.edit, answer);
             return edit === s.edit ? s : { ...s, edit, changedPages: answer.changed_pages };
           });
+          return { status: "applied" };
         } catch (e) {
-          if (mine !== generation.current) return;
-          say(`${what} did not apply to ${name}: ${errorText(toWireError(e))}`);
+          if (mine !== generation.current) return { status: "declined" };
+          const error = toWireError(e);
+          if (!quiet) say(`${what} did not apply to ${name}: ${errorText(error)}`);
+          return { status: "failed", error };
         }
       };
       // `run` never rejects, so the chain never breaks.
@@ -310,15 +328,22 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
   // Asks before the first change of an open session whether to keep a copy of the file (set below,
   // once the saving hook exists); a change the user cancels at that question is not made.
   const beforeFirstEdit = useRef<() => Promise<boolean>>(() => Promise.resolve(true));
-  const apply = useCallback(
-    async (op: PdfOpInput) => {
-      if (!(await beforeFirstEdit.current())) return;
-      await step("The change", (h) => pdfApply(h, stampOp(op, pdfDate(new Date()))));
+  const applyOp = useCallback(
+    async (op: PdfOpInput, quiet: boolean): Promise<ApplyOutcome> => {
+      if (!(await beforeFirstEdit.current())) return { status: "declined" };
+      return step("The change", (h) => pdfApply(h, stampOp(op, pdfDate(new Date()))), quiet);
     },
     [step]
   );
-  const undo = useCallback(() => step("Undo", (h) => pdfUndo(h)), [step]);
-  const redo = useCallback(() => step("Redo", (h) => pdfRedo(h)), [step]);
+  const apply = useCallback(
+    async (op: PdfOpInput) => {
+      await applyOp(op, false);
+    },
+    [applyOp]
+  );
+  const applyChecked = useCallback((op: PdfOpInput) => applyOp(op, true), [applyOp]);
+  const undo = useCallback(async () => void (await step("Undo", (h) => pdfUndo(h))), [step]);
+  const redo = useCallback(async () => void (await step("Redo", (h) => pdfRedo(h))), [step]);
 
   // Page operations: changes that move, turn or take out whole pages.
   const fileSource = useCallback(
@@ -533,6 +558,7 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
       open,
       cancelPassword,
       apply,
+      applyChecked,
       undo,
       redo,
       busy,
@@ -550,6 +576,7 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
       open,
       cancelPassword,
       apply,
+      applyChecked,
       undo,
       redo,
       busy,

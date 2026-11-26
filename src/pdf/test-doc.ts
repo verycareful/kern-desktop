@@ -24,6 +24,7 @@ export function testDoc(over: Partial<PdfDoc> = {}): PdfDoc {
     open: async () => undefined,
     cancelPassword: () => undefined,
     apply: async () => undefined,
+    applyChecked: async () => ({ status: "applied" }),
     undo: async () => undefined,
     redo: async () => undefined,
     busy: () => false,
