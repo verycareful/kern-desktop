@@ -635,15 +635,15 @@ fn every_window_that_holds_documents_may_report_a_rename_and_a_stranger_may_not(
 }
 
 /// What a document window's page has no use for, each refused to it by its capability: the layout,
-/// the settings' writes and window, the file manager's own commands (drags out, the clipboard of
-/// files, drops, the default file manager), moving a tab to a window or taking a document in, and
-/// the files of other places.
-const NOT_FOR_DOCUMENT_WINDOWS: [&str; 22] = [
+/// the settings window, the changes to binds, pins and recents, the file manager's own commands
+/// (drags out, the clipboard of files, drops, the default file manager), moving a tab to a window
+/// or taking a document in, and the files of other places. It does write the settings, for a PDF's
+/// panels and page layout.
+const NOT_FOR_DOCUMENT_WINDOWS: [&str; 21] = [
     "binds_set",
     "binds_clear",
     "layout_get",
     "layout_set",
-    "settings_set",
     "pins_clear",
     "recents_clear",
     "open_settings",
@@ -899,6 +899,32 @@ fn the_settings_window_may_not_open_an_address() {
     )
     .unwrap_err();
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+}
+
+#[test]
+fn a_document_window_may_write_the_settings_for_its_panels_and_the_value_is_kept() {
+    let e = env("doc-1");
+    let panels = json!({
+        "thumbnails": {"side": "left", "collapsed": false},
+        "tools": {"side": "bottom", "collapsed": true},
+    });
+    let out = invoke(&e, "settings_set", json!({"patch": {"pdf_panels": panels}})).unwrap();
+    assert_eq!(out["pdf_panels"], panels);
+    let read = invoke(&e, "settings_get", json!({})).unwrap();
+    assert_eq!(read["pdf_panels"], panels);
+    // The store's own rules hold for it as for any window: thumbnails never go on top.
+    let err = invoke(
+        &e,
+        "settings_set",
+        json!({"patch": {"pdf_panels": {
+            "thumbnails": {"side": "top", "collapsed": false},
+            "tools": {"side": "left", "collapsed": false},
+        }}}),
+    )
+    .unwrap_err();
+    assert!(!err.as_str().unwrap_or("").contains("not allowed"), "{err}");
+    let read = invoke(&e, "settings_get", json!({})).unwrap();
+    assert_eq!(read["pdf_panels"], panels);
 }
 
 #[test]
