@@ -29,7 +29,7 @@ export const SIDE_TITLES: Record<Side, string> = {
 
 export const DEFAULT_PANELS: PdfPanels = {
   thumbnails: { side: "left", collapsed: false },
-  tools: { side: "right", collapsed: false },
+  tools: { side: "top", collapsed: false },
 };
 
 /** The panels on each side, in the order they stack there. A collapsed panel keeps its side. */
@@ -37,6 +37,15 @@ export function arrangePanels(panels: PdfPanels): Record<Side, PanelId[]> {
   const arranged: Record<Side, PanelId[]> = { top: [], left: [], right: [], bottom: [] };
   for (const id of PANEL_ORDER) arranged[panels[id].side].push(id);
   return arranged;
+}
+
+/** How the tools are drawn: icons in a row on the top or the bottom, icons in a column on a side
+ * when folded, and every tool with its name on a side otherwise. */
+export type ToolsForm = "bar" | "rail" | "named";
+
+export function toolsForm(side: Side, collapsed: boolean): ToolsForm {
+  if (side === "top" || side === "bottom") return "bar";
+  return collapsed ? "rail" : "named";
 }
 
 /** `panels` with `id` moved to `side`; its collapsed state stays. A side the panel does not allow throws. */

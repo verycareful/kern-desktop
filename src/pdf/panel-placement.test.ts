@@ -3,17 +3,18 @@
 import { expect, test } from "vitest";
 import {
   ALLOWED_SIDES,
+  toolsForm,
   DEFAULT_PANELS,
   arrangePanels,
   movePanel,
   toggleCollapsed,
 } from "./panel-placement";
 
-test("defaults_put_thumbnails_left_and_tools_right", () => {
+test("defaults_put_thumbnails_left_and_tools_on_top", () => {
   expect(arrangePanels(DEFAULT_PANELS)).toEqual({
-    top: [],
+    top: ["tools"],
     left: ["thumbnails"],
-    right: ["tools"],
+    right: [],
     bottom: [],
   });
   expect(DEFAULT_PANELS.thumbnails.collapsed).toBe(false);
@@ -55,4 +56,14 @@ test("moving_a_panel_leaves_the_other_and_its_collapsed_state_alone", () => {
 
 test("moving_the_thumbnails_to_the_top_is_refused", () => {
   expect(() => movePanel(DEFAULT_PANELS, "thumbnails", "top")).toThrow(/thumbnails/i);
+});
+
+test("the_tools_are_a_bar_on_the_top_and_the_bottom_and_a_rail_or_names_on_a_side", () => {
+  expect(toolsForm("top", false)).toBe("bar");
+  expect(toolsForm("bottom", false)).toBe("bar");
+  expect(toolsForm("top", true)).toBe("bar");
+  expect(toolsForm("left", false)).toBe("named");
+  expect(toolsForm("right", false)).toBe("named");
+  expect(toolsForm("left", true)).toBe("rail");
+  expect(toolsForm("right", true)).toBe("rail");
 });

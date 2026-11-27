@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
+import { Fragment } from "react";
 import {
   Columns2,
   Eraser,
@@ -30,15 +31,20 @@ import {
 import { currentContext, getAction, isEnabled, runAction } from "../keys/actions";
 import { useBindLabel } from "../keys/binds";
 import { useViewSettings } from "../files/view-settings";
-import { PALETTE, INK_WIDTHS, cssColour, sameColour } from "./annotations";
+import { toolsForm, type Side } from "./panel-placement";
 import { usePageSelection } from "./page-selection";
 import { usePdfSelection } from "./pdf-selection";
+import { ToolOptions } from "./ToolOptions";
 import { usePdfTool, type PdfTool } from "./pdf-tool";
 import type { PdfDoc } from "./usePdfDoc";
 
-// The tools beside an open PDF: Find (its session switches it on), Select all text, the edits
-// (rotate, undo, redo) and the page layout. Expanded each is an icon and its name; collapsed only the icon is left, and the name
-// is its title. Later tools join this list.
+// The tools of an open PDF: Find (its session switches it on), Select all text, the edits (rotate,
+// undo, redo), the annotations, the page operations and the page layout. One table of tools is
+// drawn three ways, by where the panel sits and whether it is folded:
+//   bar    on the top or the bottom: icons in a row, a divider between groups;
+//   rail   on a side, folded: icons in a column, a short divider between groups;
+//   named  on a side: each group under its caption, every tool an icon and its name.
+// An icon carries its name and its key in its title.
 
 interface Tool {
   id: string;
@@ -114,8 +120,16 @@ const DELETE_ANNOTATION_TOOL: Tool = {
 const FIND_TOOL: Tool = { id: "pdf.find", label: "Find", Icon: Search };
 const SELECT_TOOL: Tool = { id: "pdf.selectAll", label: "Select all text", Icon: TextSelect };
 
-export function ToolsPanel(props: { tabId: string; doc: PdfDoc; collapsed: boolean }) {
-  const { tabId, doc, collapsed } = props;
+export function ToolsPanel(props: {
+  tabId: string;
+  doc: PdfDoc;
+  collapsed: boolean;
+  /** The side the panel sits on; the tools stand where they would on the right when not given. */
+  side?: Side;
+}) {
+  const { tabId, doc, collapsed, side = "right" } = props;
+  const form = toolsForm(side, collapsed);
+  const iconOnly = form !== "named";
   const chosen = usePageSelection((st) => (st.byTab[tabId]?.pages.length ?? 0) > 0);
   const textSelected = usePdfSelection((st) => st.byTab[tabId] !== undefined);
   const annotationPicked = usePdfTool((st) => (st.byTab[tabId]?.picked ?? null) !== null);
@@ -125,93 +139,128 @@ export function ToolsPanel(props: { tabId: string; doc: PdfDoc; collapsed: boole
     undo: doc.canEdit && doc.canUndo,
     redo: doc.canEdit && doc.canRedo,
   };
+  const searchable = doc.phase === "ready" && doc.pages > 0;
+  const groups: { title: string; tools: React.ReactNode }[] = [
+    {
+      title: "Search and select",
+      tools: (
+        <>
+          <ActionButton
+            tabId={tabId}
+            tool={FIND_TOOL}
+            collapsed={iconOnly}
+            available={searchable}
+          />
+          <ActionButton
+            tabId={tabId}
+            tool={SELECT_TOOL}
+            collapsed={iconOnly}
+            available={searchable}
+          />
+        </>
+      ),
+    },
+    {
+      title: "Edit",
+      tools: EDIT_TOOLS.map((tool) => (
+        <ActionButton
+          key={tool.id}
+          tabId={tabId}
+          tool={tool}
+          collapsed={iconOnly}
+          available={available[tool.needs]}
+        />
+      )),
+    },
+    {
+      title: "Annotate",
+      tools: (
+        <>
+          {HAND_TOOLS.map((tool) => (
+            <HandButton
+              key={tool.id}
+              tabId={tabId}
+              tool={tool}
+              collapsed={iconOnly}
+              available={tool.hand === "select" ? doc.phase === "ready" : doc.canEdit}
+            />
+          ))}
+          {MARK_TOOLS.map((tool) => (
+            <ActionButton
+              key={tool.id}
+              tabId={tabId}
+              tool={tool}
+              collapsed={iconOnly}
+              available={doc.canEdit && textSelected}
+            />
+          ))}
+          <ActionButton
+            tabId={tabId}
+            tool={DELETE_ANNOTATION_TOOL}
+            collapsed={iconOnly}
+            available={doc.canEdit && annotationPicked}
+          />
+          {editingText && form === "named" && (
+            <p className="kern-pdf-tool-help" data-testid="pdf-edit-text-help">
+              {EDIT_TEXT_HELP}
+            </p>
+          )}
+          {form === "named" && <ToolOptions tabId={tabId} layout="inline" />}
+        </>
+      ),
+    },
+    {
+      title: "Pages",
+      tools: (
+        <>
+          <ActionButton
+            tabId={tabId}
+            tool={REMOVE_TOOL}
+            collapsed={iconOnly}
+            available={doc.canEdit && chosen}
+          />
+          {FILE_TOOLS.map((tool) => (
+            <ActionButton
+              key={tool.id}
+              tabId={tabId}
+              tool={tool}
+              collapsed={iconOnly}
+              available={doc.phase === "ready" && doc.pages > 0 && !doc.moving}
+            />
+          ))}
+        </>
+      ),
+    },
+    {
+      title: "Layout",
+      tools: LAYOUT_TOOLS.map((tool) => (
+        <LayoutButton key={tool.id} tabId={tabId} tool={tool} collapsed={iconOnly} />
+      )),
+    },
+  ];
   return (
     <div
-      className="kern-pdf-tools"
+      className={`kern-pdf-tools kern-pdf-tools-${form}`}
       role="toolbar"
       aria-label="PDF tools"
-      aria-orientation="vertical"
+      aria-orientation={form === "bar" ? "horizontal" : "vertical"}
       data-testid="pdf-tools"
+      data-form={form}
     >
-      <ToolGroup title="Search and select" collapsed={collapsed}>
-        <ActionButton
-          tabId={tabId}
-          tool={FIND_TOOL}
-          collapsed={collapsed}
-          available={doc.phase === "ready" && doc.pages > 0}
-        />
-        <ActionButton
-          tabId={tabId}
-          tool={SELECT_TOOL}
-          collapsed={collapsed}
-          available={doc.phase === "ready" && doc.pages > 0}
-        />
-      </ToolGroup>
-      <ToolGroup title="Edit" collapsed={collapsed}>
-        {EDIT_TOOLS.map((tool) => (
-          <ActionButton
-            key={tool.id}
-            tabId={tabId}
-            tool={tool}
-            collapsed={collapsed}
-            available={available[tool.needs]}
-          />
-        ))}
-      </ToolGroup>
-      <ToolGroup title="Annotate" collapsed={collapsed}>
-        {HAND_TOOLS.map((tool) => (
-          <HandButton
-            key={tool.id}
-            tabId={tabId}
-            tool={tool}
-            collapsed={collapsed}
-            available={tool.hand === "select" ? doc.phase === "ready" : doc.canEdit}
-          />
-        ))}
-        {MARK_TOOLS.map((tool) => (
-          <ActionButton
-            key={tool.id}
-            tabId={tabId}
-            tool={tool}
-            collapsed={collapsed}
-            available={doc.canEdit && textSelected}
-          />
-        ))}
-        <ActionButton
-          tabId={tabId}
-          tool={DELETE_ANNOTATION_TOOL}
-          collapsed={collapsed}
-          available={doc.canEdit && annotationPicked}
-        />
-        {editingText && !collapsed && (
-          <p className="kern-pdf-tool-help" data-testid="pdf-edit-text-help">
-            {EDIT_TEXT_HELP}
-          </p>
-        )}
-        <ColourRow tabId={tabId} />
-      </ToolGroup>
-      <ToolGroup title="Pages" collapsed={collapsed}>
-        <ActionButton
-          tabId={tabId}
-          tool={REMOVE_TOOL}
-          collapsed={collapsed}
-          available={doc.canEdit && chosen}
-        />
-        {FILE_TOOLS.map((tool) => (
-          <ActionButton
-            key={tool.id}
-            tabId={tabId}
-            tool={tool}
-            collapsed={collapsed}
-            available={doc.phase === "ready" && doc.pages > 0 && !doc.moving}
-          />
-        ))}
-      </ToolGroup>
-      <ToolGroup title="Layout" collapsed={collapsed}>
-        {LAYOUT_TOOLS.map((tool) => (
-          <LayoutButton key={tool.id} tabId={tabId} tool={tool} collapsed={collapsed} />
-        ))}
-      </ToolGroup>
+      {groups.map((group, i) => (
+        <Fragment key={group.title}>
+          {i > 0 && iconOnly && (
+            <span
+              className="kern-pdf-tool-divider"
+              role="separator"
+              aria-orientation={form === "bar" ? "vertical" : "horizontal"}
+            />
+          )}
+          <ToolGroup title={group.title} collapsed={iconOnly}>
+            {group.tools}
+          </ToolGroup>
+        </Fragment>
+      ))}
     </div>
   );
 }
@@ -315,43 +364,5 @@ function HandButton(props: {
       title={`${key ? `${tool.label} (${key})` : tool.label}${tool.hand === "editText" ? `. ${EDIT_TEXT_HELP}` : ""}`}
       onClick={() => runAction(action, currentContext(tabId))}
     />
-  );
-}
-
-// The colour a new annotation is drawn in, and the width of the pen's line. The colours are
-// document content, so they are fixed and never follow the theme.
-function ColourRow(props: { tabId: string }) {
-  const { tabId } = props;
-  const colour = usePdfTool((s) => s.byTab[tabId]?.colour ?? null);
-  const width = usePdfTool((s) => s.byTab[tabId]?.inkWidth);
-  const { setColour, setInkWidth } = usePdfTool.getState();
-  return (
-    <div className="kern-pdf-colours" role="group" aria-label="Colour and pen width">
-      {PALETTE.map((swatch) => (
-        <button
-          key={swatch.name}
-          type="button"
-          className="kern-pdf-swatch"
-          aria-label={`Colour ${swatch.name}`}
-          title={swatch.name}
-          aria-pressed={colour ? sameColour(colour, swatch.rgb) : false}
-          style={{ background: cssColour(swatch.rgb) }}
-          onClick={() => setColour(tabId, swatch.rgb)}
-        />
-      ))}
-      {INK_WIDTHS.map((w) => (
-        <button
-          key={w}
-          type="button"
-          className="kern-pdf-width"
-          aria-label={`Pen width ${w} points`}
-          title={`Pen width ${w} pt`}
-          aria-pressed={width === w}
-          onClick={() => setInkWidth(tabId, w)}
-        >
-          {w}
-        </button>
-      ))}
-    </div>
   );
 }

@@ -215,7 +215,7 @@ impl Default for PdfPanels {
                 collapsed: false,
             },
             tools: PanelPlacement {
-                side: PanelSide::Right,
+                side: PanelSide::Top,
                 collapsed: false,
             },
         }

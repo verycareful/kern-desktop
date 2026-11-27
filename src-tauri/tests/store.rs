@@ -1725,7 +1725,7 @@ fn a_stored_pdf_grid_outside_1_to_12_is_reported_and_kept() {
 }
 
 #[test]
-fn pdf_panels_default_to_thumbnails_left_and_tools_right_and_round_trip() {
+fn pdf_panels_default_to_thumbnails_left_and_tools_top_and_round_trip() {
     let e = env();
     let s = store(&e);
     let got = s.settings_get().unwrap().value;
@@ -1737,7 +1737,7 @@ fn pdf_panels_default_to_thumbnails_left_and_tools_right_and_round_trip() {
                 collapsed: false
             },
             tools: PanelPlacement {
-                side: PanelSide::Right,
+                side: PanelSide::Top,
                 collapsed: false
             },
         }

@@ -39,7 +39,12 @@ import { showSettings } from "../settings/show-settings";
 import { documentsController } from "../files/documents-controller";
 import { useOps } from "../ops/useOps";
 import { docController } from "../editor/doc-controller";
-import { ALLOWED_SIDES, PANEL_ORDER as PANEL_IDS, PANEL_TITLES } from "../pdf/panel-placement";
+import {
+  ALLOWED_SIDES,
+  PANEL_ORDER as PANEL_IDS,
+  PANEL_TITLES,
+  toolsForm,
+} from "../pdf/panel-placement";
 import { pdfController } from "../pdf/pdf-controller";
 import { moveTabToWindow } from "../shell/move-doc";
 import { closeTab } from "../shell/useCloseGuard";
@@ -1694,8 +1699,15 @@ const pdfActions: Action[] = [
   ...PANEL_IDS.map((id): Action => ({
     id: `pdf.panel.${id}.toggle`,
     label: `Collapse or expand ${PANEL_TITLES[id]}`,
-    menuLabel: () =>
-      `${useViewSettings.getState().pdfPanels[id].collapsed ? "Expand" : "Collapse"} ${PANEL_TITLES[id]}`,
+    menuLabel: () => {
+      const { side, collapsed } = useViewSettings.getState().pdfPanels[id];
+      // The tools on a side keep their icons when folded, so what the key does there is hide
+      // and show the names; a bar and the thumbnails fold away.
+      if (id === "tools" && toolsForm(side, collapsed) !== "bar") {
+        return collapsed ? "Show tool names" : "Hide tool names";
+      }
+      return `${collapsed ? "Expand" : "Collapse"} ${PANEL_TITLES[id]}`;
+    },
     area: "Panels",
     keys: [id === "thumbnails" ? "Ctrl+Alt+5" : "Ctrl+Alt+6"],
     when: "doc",

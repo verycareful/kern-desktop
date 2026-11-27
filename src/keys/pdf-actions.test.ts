@@ -8,7 +8,7 @@ vi.mock("../ipc", async (orig) => ({
 }));
 import { settingsSet, type WirePath } from "../ipc";
 import { useViewSettings } from "../files/view-settings";
-import { DEFAULT_PANELS } from "../pdf/panel-placement";
+import { DEFAULT_PANELS, movePanel, toggleCollapsed } from "../pdf/panel-placement";
 import { registerPdf, type PdfController } from "../pdf/pdf-controller";
 import { testController } from "../pdf/test-doc";
 import { SETTINGS } from "../settings/test-settings";
@@ -141,7 +141,7 @@ test("the_panel_toggle_actions_fold_and_open_each_panel_through_the_setting", as
   expect(vi.mocked(settingsSet).mock.calls[0]?.[0]).toEqual({
     pdf_panels: {
       thumbnails: { side: "left", collapsed: true },
-      tools: { side: "right", collapsed: false },
+      tools: { side: "top", collapsed: false },
     },
   });
   expect(getAction("pdf.panel.thumbnails.toggle").menuLabel?.()).toBe("Expand Thumbnails");
@@ -156,11 +156,32 @@ test("the_panel_move_actions_are_off_on_the_side_the_panel_is_already_on", () =>
   expect(isEnabled(getAction("pdf.panel.thumbnails.move.left"), ctx)).toBe(false);
   expect(isEnabled(getAction("pdf.panel.thumbnails.move.right"), ctx)).toBe(true);
   expect(isEnabled(getAction("pdf.panel.thumbnails.move.bottom"), ctx)).toBe(true);
-  expect(isEnabled(getAction("pdf.panel.tools.move.right"), ctx)).toBe(false);
-  expect(isEnabled(getAction("pdf.panel.tools.move.top"), ctx)).toBe(true);
+  expect(isEnabled(getAction("pdf.panel.tools.move.top"), ctx)).toBe(false);
+  expect(isEnabled(getAction("pdf.panel.tools.move.right"), ctx)).toBe(true);
   expect(isEnabled(getAction("pdf.panel.tools.move.left"), ctx)).toBe(true);
   expect(isEnabled(getAction("pdf.panel.tools.move.bottom"), ctx)).toBe(true);
   off();
+});
+
+test("the_tools_toggle_is_worded_by_the_side_the_tools_are_on", () => {
+  const label = () => getAction("pdf.panel.tools.toggle").menuLabel?.();
+  for (const side of ["top", "bottom"] as const) {
+    useViewSettings.setState({ pdfPanels: movePanel(DEFAULT_PANELS, "tools", side) });
+    expect(label()).toBe("Collapse Tools");
+    useViewSettings.setState({
+      pdfPanels: toggleCollapsed(movePanel(DEFAULT_PANELS, "tools", side), "tools"),
+    });
+    expect(label()).toBe("Expand Tools");
+  }
+  for (const side of ["left", "right"] as const) {
+    useViewSettings.setState({ pdfPanels: movePanel(DEFAULT_PANELS, "tools", side) });
+    expect(label()).toBe("Hide tool names");
+    useViewSettings.setState({
+      pdfPanels: toggleCollapsed(movePanel(DEFAULT_PANELS, "tools", side), "tools"),
+    });
+    expect(label()).toBe("Show tool names");
+  }
+  expect(getAction("pdf.panel.thumbnails.toggle").menuLabel?.()).toBe("Collapse Thumbnails");
 });
 
 test("the_tools_can_be_moved_to_the_top_and_the_thumbnails_cannot", () => {
