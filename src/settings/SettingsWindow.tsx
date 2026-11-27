@@ -31,7 +31,7 @@ import "./settings.css";
 
 // The Settings window: a sidebar of categories with a search box, the category's rows beside it,
 // and a bar at the foot with Save. A change made here is only shown until Save stores it
-// (settings-draft.ts); Revert drops it, Ctrl+S saves. Closing with changes not saved asks Save,
+// (settings-draft.ts); Revert drops it, Ctrl+S saves (anywhere in the window). Closing with changes not saved asks Save,
 // Close without saving or Cancel. A saved change that applies only at start offers Restart Kern,
 // which closes every window through its own question and starts Kern again (restart.rs).
 //
@@ -245,6 +245,22 @@ export function SettingsWindow() {
     []
   );
 
+  // Ctrl+S saves and applies as the Save button does, wherever the focus is in the window, the page
+  // itself included (a window that has just opened has no focused element, so a key pressed then
+  // does not pass through any element of the window). The capture of a bind in Keys and mouse takes
+  // the key first and stops it, so it is a bind there and not a save.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (!e.ctrlKey || e.shiftKey || e.altKey || e.metaKey || e.key.toLowerCase() !== "s") return;
+      e.preventDefault();
+      const draft = useSettingsDraft.getState();
+      if (isDirty(draft) && !draft.saving) void draft.save();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
   const select = (c: Category) => {
     setCategory(c);
     setQuery("");
@@ -278,12 +294,6 @@ export function SettingsWindow() {
       className="kern-settings-window"
       data-testid="settings-window"
       {...{ [NO_FILE_KEYS_ATTR]: "" }}
-      onKeyDown={(e) => {
-        if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
-          e.preventDefault();
-          void useSettingsDraft.getState().save();
-        }
-      }}
     >
       <nav className="kern-settings-nav" aria-label="Settings categories">
         <input
