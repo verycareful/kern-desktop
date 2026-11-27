@@ -17,6 +17,7 @@ import {
   type WirePath,
 } from "../ipc";
 import { empty, type Sel } from "./selection";
+import { dropPageTextSelection } from "../keys/text-selection";
 import { sortEntries, type SortBy, type SortDir } from "./sort";
 import { SORT_IN_WORKER_ABOVE, createSorter, type Sorter } from "./sort-async";
 
@@ -419,22 +420,23 @@ export function useFolder(tabId: string, path: WirePath, opts: FolderOptions): F
       );
   }, [opts.sortBy, opts.sortDir]);
 
-  const dispatch = useCallback(
-    (op: (sel: Sel, count: number) => Sel) =>
-      setCore((c) => ({ ...c, sel: op(c.sel, c.entries.length) })),
-    []
-  );
-  const selectKeys = useCallback(
-    (keys: readonly string[], onlyIfListed = false) =>
-      setCore((c) => {
-        const sel = seedSel(
-          { pathKey: "", selected: keys, anchor: keys[0] ?? null, cursor: keys[0] ?? null },
-          c.entries
-        );
-        return onlyIfListed && sel.selected.size === 0 ? c : { ...c, sel };
-      }),
-    []
-  );
+  // A selection made here is newer than any words selected on the page, so those are dropped and
+  // Ctrl+C copies the items (text-selection.ts). A listing that changes keeps the selection as it
+  // is and drops nothing.
+  const dispatch = useCallback((op: (sel: Sel, count: number) => Sel) => {
+    dropPageTextSelection();
+    setCore((c) => ({ ...c, sel: op(c.sel, c.entries.length) }));
+  }, []);
+  const selectKeys = useCallback((keys: readonly string[], onlyIfListed = false) => {
+    dropPageTextSelection();
+    setCore((c) => {
+      const sel = seedSel(
+        { pathKey: "", selected: keys, anchor: keys[0] ?? null, cursor: keys[0] ?? null },
+        c.entries
+      );
+      return onlyIfListed && sel.selected.size === 0 ? c : { ...c, sel };
+    });
+  }, []);
   const refresh = useCallback(() => void reload.current(), []);
   const relist = useCallback(() => reload.current(), []);
 

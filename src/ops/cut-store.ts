@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 import { clipClearIf, clipGet, pathKey, toWireError, type WirePath } from "../ipc";
 import { inFileKeysArea } from "../keys/file-keys";
-import { isEditable } from "../keys/useShortcuts";
+import { isEditable } from "../keys/text-selection";
 import { logError } from "./error-log";
 import { errorText } from "./error-text";
 

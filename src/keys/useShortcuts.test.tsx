@@ -248,19 +248,19 @@ test("the_keys_of_the_file_operations_are_scoped_to_the_view_and_undo_is_not", (
   );
 });
 
-test("ctrl_c_with_words_selected_in_a_message_copies_the_words_and_not_the_files", () => {
+test("ctrl_c_with_words_of_the_page_selected_copies_the_words_and_not_the_files", () => {
   useTabs.getState().openFolder(p("/a"), false);
-  const { getByText } = render(
+  const { getByText, getByTestId } = render(
     <>
       <Host />
       <div data-file-keys="">
         <button>in the view</button>
         <p role="alert">The path could not be copied</p>
-        <p role="status">Moved a.txt to the Trash</p>
         <p>an ordinary line</p>
       </div>
     </>
   );
+  getByTestId("ce").textContent = "edited text";
   const press = () => {
     const event = new KeyboardEvent("keydown", {
       key: "c",
@@ -275,20 +275,20 @@ test("ctrl_c_with_words_selected_in_a_message_copies_the_words_and_not_the_files
   try {
     // Nothing selected: the key is the file copy's, claimed even when there is nothing to copy.
     expect(press()).toBe(true);
-    // Words selected in an alert or a status message: the webview copies them.
+    // Words selected anywhere on the page, a message or an ordinary line: the webview copies them.
     select(getByText("The path could not be copied"));
     expect(press()).toBe(false);
-    select(getByText("Moved a.txt to the Trash"));
-    expect(press()).toBe(false);
-    // Words selected anywhere else keep the key with the file copy.
     select(getByText("an ordinary line"));
-    expect(press()).toBe(true);
-    // A selection that starts in a message and ends outside it is not only the message's words.
+    expect(press()).toBe(false);
+    // A selection that runs from a message into the line is still the page's words.
     const range = document.createRange();
     range.setStart(getByText("The path could not be copied").firstChild!, 4);
     range.setEnd(getByText("an ordinary line").firstChild!, 3);
     window.getSelection()!.removeAllRanges();
     window.getSelection()!.addRange(range);
+    expect(press()).toBe(false);
+    // An editor's selection left behind when the focus went to the view is not the page's.
+    select(getByTestId("ce"));
     expect(press()).toBe(true);
   } finally {
     window.getSelection()!.removeAllRanges();

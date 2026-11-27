@@ -45,6 +45,7 @@ import {
   shiftClick,
   type Sel,
 } from "./selection";
+import { dropPageTextSelection } from "../keys/text-selection";
 import { useCurrentItem } from "./use-current-item";
 import { useKeepKeyboard } from "./use-keep-keyboard";
 import "./files.css";
@@ -295,7 +296,9 @@ export function TrashView(props: { tab: TrashTab }) {
     );
   };
 
+  // A selection made here drops the words selected on the page (text-selection.ts).
   const dispatch = useCallback((op: (s: Sel, n: number) => Sel) => {
+    dropPageTextSelection();
     setSel((s) => op(s, latest.current.items.length));
   }, []);
 

@@ -35,6 +35,30 @@ test("a_key_aimed_at_the_page_behind_is_held_back_and_escape_closes", () => {
   behind.remove();
 });
 
+test("ctrl_c_copies_words_selected_in_the_dialog_while_the_focus_is_on_the_body", () => {
+  render(
+    <Modal role="dialog" label="One">
+      <p>The folder could not be read</p>
+      <button>Inside</button>
+    </Modal>
+  );
+  const outside = document.body.appendChild(document.createElement("p"));
+  outside.textContent = "behind the dialog";
+  try {
+    // Clicking words that take no focus leaves it on the body: Ctrl+C is not held back and goes
+    // on to the window, whose shortcuts leave it to the webview.
+    window.getSelection()!.selectAllChildren(screen.getByText("The folder could not be read"));
+    expect(press(document.body, "c", { ctrlKey: true })).toEqual({ held: false, reached: true });
+    // Other keys are held back, and so is Ctrl+C for words behind the dialog.
+    expect(press(document.body, "v", { ctrlKey: true })).toEqual({ held: true, reached: false });
+    window.getSelection()!.selectAllChildren(outside);
+    expect(press(document.body, "c", { ctrlKey: true })).toEqual({ held: true, reached: false });
+  } finally {
+    window.getSelection()!.removeAllRanges();
+    outside.remove();
+  }
+});
+
 test("keys_typed_inside_do_not_reach_the_window_shortcuts", () => {
   render(
     <Modal role="dialog" label="One">

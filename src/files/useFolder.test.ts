@@ -3,7 +3,7 @@
 import { StrictMode } from "react";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { DirEvent, WireEntry, WireError, WirePath } from "../ipc";
+import { pathKey, type DirEvent, type WireEntry, type WireError, type WirePath } from "../ipc";
 import { click, ctrlClick } from "./selection";
 import { sortEntries, type SortBy, type SortDir } from "./sort";
 import { sortPermutation } from "./sort-core";
@@ -124,6 +124,30 @@ test("refresh_keeps_selection", async () => {
   const picked = [...result.current.sel.selected].map((i) => result.current.entries[i]!.name);
   expect(picked.sort()).toEqual(["b", "c"]);
   expect(result.current.entries[result.current.sel.cursor!]!.name).toBe("c");
+});
+
+test("selecting_drops_the_words_selected_on_the_page_and_a_relisting_does_not", async () => {
+  ipc.listDir.mockResolvedValue([entry("a"), entry("b")]);
+  const { result } = renderHook(() => useFolder("tab-1", p("/d"), OPTS));
+  await waitFor(() => expect(result.current.phase).toBe("ready"));
+  const words = document.body.appendChild(document.createElement("p"));
+  words.textContent = "The path could not be copied";
+  try {
+    window.getSelection()!.selectAllChildren(words);
+    act(() => {
+      void handlers["kernkraft://dir-changed"]!({ key: "tab-1" });
+    });
+    await waitFor(() => expect(ipc.listDir).toHaveBeenCalledTimes(2));
+    expect(window.getSelection()!.toString()).toBe("The path could not be copied");
+    act(() => result.current.dispatch((s) => click(s, 0)));
+    expect(window.getSelection()!.isCollapsed).toBe(true);
+    window.getSelection()!.selectAllChildren(words);
+    act(() => result.current.selectKeys([pathKey(result.current.entries[1]!.path)]));
+    expect(window.getSelection()!.isCollapsed).toBe(true);
+  } finally {
+    window.getSelection()!.removeAllRanges();
+    words.remove();
+  }
 });
 
 test("a_selected_entry_that_vanished_leaves_the_selection", async () => {

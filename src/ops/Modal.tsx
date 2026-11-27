@@ -7,6 +7,8 @@ import {
   useLayoutEffect,
   useRef,
 } from "react";
+import { candidateKeys } from "../keys/actions";
+import { pageTextSelectedIn } from "../keys/text-selection";
 import { openModal } from "./modal-stack";
 import "./ops.css";
 
@@ -47,6 +49,9 @@ export function Modal(props: {
       if (!me.isTop()) return;
       const target = e.target;
       if (!(target instanceof Node) || root.current?.contains(target)) return;
+      // Clicking words that take no focus leaves it on the page body: Ctrl+C still copies the
+      // words selected in the dialog, and the shortcuts behind it leave the key to the webview.
+      if (candidateKeys(e).includes("Ctrl+C") && pageTextSelectedIn(root.current)) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.key === "Escape") onEscape.current?.();

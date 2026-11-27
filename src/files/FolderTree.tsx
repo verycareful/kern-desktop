@@ -17,6 +17,7 @@ import { useCut } from "../ops/cut-store";
 import { baseName } from "../ops/labels";
 import { FlashSpan } from "../ops/repeat-flash";
 import { showOpenErrors } from "../ops/open-error-store";
+import { dropPageTextSelection } from "../keys/text-selection";
 import { cutRowKeys } from "./cut-rows";
 import { openFiles } from "./open-entries";
 import { useTreeHover } from "./tree-hover";
@@ -210,6 +211,7 @@ export function FolderTree(props: {
   const moveTo = (i: number) => {
     const r = rows[i];
     if (r?.kind !== "entry") return;
+    dropPageTextSelection();
     setActive(r.key);
     virtual.scrollToIndex(i);
   };
@@ -253,6 +255,7 @@ export function FolderTree(props: {
   // double-click does not open it again in that mode.
   const singleClick = useSingleClick("editor");
   const onRowClick = (row: EntryRow, e: React.MouseEvent) => {
+    dropPageTextSelection();
     setActive(row.key);
     scroller.current?.focus();
     if (row.folder || (singleClick && e.detail <= 1)) activate(row);
@@ -267,6 +270,7 @@ export function FolderTree(props: {
     const rowEl = (e.target as HTMLElement).closest<HTMLElement>("[data-row-index]");
     const row = rowEl ? rows[Number(rowEl.dataset.rowIndex)] : undefined;
     if (row?.kind === "entry") {
+      dropPageTextSelection();
       setActive(row.key);
       props.onContextMenu(row.entry, e.clientX, e.clientY);
     } else props.onContextMenu(null, e.clientX, e.clientY);

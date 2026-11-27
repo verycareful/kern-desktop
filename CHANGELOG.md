@@ -4,6 +4,23 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.2.0.2] - 2026-11-27 12:30 (IST)
+
+### Fixed
+
+- **Copying text**: Ctrl+C copies words selected anywhere in Kern: a banner, a dialog, Properties, a label or a line in a folder tab. It copied them only inside an error or status message, and in a dialog not even there when the click had left the focus outside the dialog. When files, a tree row or text in a PDF are selected as well, Ctrl+C copies whichever was selected last: selecting files, Trash items, search results, a tree row or PDF text drops the words selected on the page.
+
+### Tests
+
+- Ctrl+C with words selected in a message, an ordinary line, or across both is left to the webview; with nothing selected, or only an editor's leftover selection, it is the file copy's.
+- In a dialog, Ctrl+C copies the words selected in it while the focus is on the page body; other keys, and Ctrl+C for words behind the dialog, are still held back.
+- Selecting in a folder, the Trash, the Library's grid, the folder tree and a PDF page drops the words selected on the page; a folder that relists does not.
+- What counts as the page's words: a caret does not, a selection with an end in a field or an editor does not, and dropping them leaves an editor's selection alone.
+
+### Results
+
+- 2856 tests across 236 suites, all passed (456s, CachyOS x86-64, rustc 1.99.1, Python 3.14.10, Chromium through Playwright).
+
 ## [0.2.0.1] - 2026-11-27 12:02 (IST)
 
 ### Fixed
@@ -409,7 +426,8 @@ The first release of Kern Desktop: a file manager and a plain text editor in one
 
 - 1629 tests across 139 suites, all passed (76.3s, CachyOS x86-64, rustc 1.99.1).
 
-[Unreleased]: https://github.com/verycareful/kern-desktop/compare/0.2.0.1...HEAD
+[Unreleased]: https://github.com/verycareful/kern-desktop/compare/0.2.0.2...HEAD
+[0.2.0.2]: https://github.com/verycareful/kern-desktop/compare/0.2.0.1...0.2.0.2
 [0.2.0.1]: https://github.com/verycareful/kern-desktop/compare/0.2.0.0...0.2.0.1
 [0.2.0.0]: https://github.com/verycareful/kern-desktop/compare/0.1.2.2...0.2.0.0
 [0.1.2.2]: https://github.com/verycareful/kern-desktop/compare/0.1.2.1...0.1.2.2

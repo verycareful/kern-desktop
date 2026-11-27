@@ -291,6 +291,29 @@ test("a_card_opens_on_a_double_click_or_on_one_click_when_the_centre_is_set_to_i
   await waitFor(() => expect(ipc.openPaths).toHaveBeenCalledTimes(2));
 });
 
+test("selecting_a_card_drops_the_words_selected_on_the_page", async () => {
+  useViewSettings.setState({ viewMode: "grid" });
+  mount();
+  await waitFor(() => expect(ipc.documents).toHaveBeenCalled());
+  const key = ipc.documents.mock.lastCall![0] as string;
+  await waitFor(() => expect(handlers["kernkraft://op-done"]?.length).toBeGreaterThan(0));
+  emit("kernkraft://search-hit", { key, op: 1, entries: HITS });
+  await screen.findAllByTestId("file-card");
+  const words = document.body.appendChild(document.createElement("p"));
+  words.textContent = "The folder could not be read";
+  try {
+    window.getSelection()!.selectAllChildren(words);
+    fireEvent.keyDown(screen.getByTestId("scan-grid"), { key: "ArrowRight" });
+    expect(window.getSelection()!.isCollapsed).toBe(true);
+    window.getSelection()!.selectAllChildren(words);
+    fireEvent.click(screen.getAllByTestId("file-card")[0]!);
+    expect(window.getSelection()!.isCollapsed).toBe(true);
+  } finally {
+    window.getSelection()!.removeAllRanges();
+    words.remove();
+  }
+});
+
 test("the_cards_move_with_the_arrow_keys_and_enter_opens_the_one_under_the_cursor", async () => {
   useViewSettings.setState({ viewMode: "grid" });
   mount();

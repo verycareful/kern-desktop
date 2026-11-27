@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { isEditable } from "../keys/useShortcuts";
+import { isEditable } from "../keys/text-selection";
 
 /**
  * Keeps the web view's own context menu (Back, Forward, Stop, Reload) out of

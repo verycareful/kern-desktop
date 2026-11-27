@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { create } from "zustand";
+import { dropPageTextSelection } from "../keys/text-selection";
 import type { CharRef } from "./selection";
 
 // The selected text of a PDF tab and the request "search for it", keyed by tab id. The text layer
@@ -33,7 +34,12 @@ interface PdfSelectionState {
 export const usePdfSelection = create<PdfSelectionState>()((set) => ({
   byTab: {},
   searches: {},
-  select: (tabId, selection) => set((s) => ({ byTab: { ...s.byTab, [tabId]: selection } })),
+  // Text selected on a PDF page is newer than any words selected on the page around it, so those
+  // are dropped and Ctrl+C copies the PDF's (text-selection.ts).
+  select: (tabId, selection) => {
+    dropPageTextSelection();
+    set((s) => ({ byTab: { ...s.byTab, [tabId]: selection } }));
+  },
   clear: (tabId) =>
     set((s) => {
       if (!(tabId in s.byTab)) return s;

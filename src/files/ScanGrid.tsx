@@ -17,6 +17,7 @@ import {
   shiftClick,
   type Sel,
 } from "./selection";
+import { dropPageTextSelection } from "../keys/text-selection";
 import { useScanSort, useSortedHits } from "./scan-sort";
 import { useSingleClick, type ClickArea } from "./view-settings";
 
@@ -39,7 +40,12 @@ export function ScanGrid(props: {
   const sorted = useSortedHits(props.hits, count, sort, props.complete);
   const list = sorted.list;
   const entries = useMemo(() => list.slice(0, count), [list, count]);
-  const [sel, setSel] = useState<Sel>(empty);
+  const [sel, setSelState] = useState<Sel>(empty);
+  // Every change here is the user's, and drops the words selected on the page (text-selection.ts).
+  const setSel = (next: Sel | ((s: Sel) => Sel)) => {
+    dropPageTextSelection();
+    setSelState(next);
+  };
   const [columns, setColumns] = useState(1);
   const [reveal, setReveal] = useState(0);
   const root = useRef<HTMLDivElement>(null);

@@ -104,6 +104,27 @@ async function mount(over: Partial<React.ComponentProps<typeof FolderTree>> = {}
   return view;
 }
 
+test("a_row_made_current_drops_the_words_selected_on_the_page", async () => {
+  await mount({ onContextMenu: vi.fn() });
+  const words = document.body.appendChild(document.createElement("p"));
+  words.textContent = "The folder could not be read";
+  const select = () => window.getSelection()!.selectAllChildren(words);
+  try {
+    select();
+    fireEvent.click(row("readme.md"));
+    expect(window.getSelection()!.isCollapsed).toBe(true);
+    select();
+    fireEvent.keyDown(screen.getByRole("tree"), { key: "ArrowDown" });
+    expect(window.getSelection()!.isCollapsed).toBe(true);
+    select();
+    fireEvent.contextMenu(row("src"));
+    expect(window.getSelection()!.isCollapsed).toBe(true);
+  } finally {
+    window.getSelection()!.removeAllRanges();
+    words.remove();
+  }
+});
+
 test("tree_expands_lazily_and_unwatches_on_collapse", async () => {
   await mount();
   // Only the root is listed and watched; folders come in order (folders first, then files).

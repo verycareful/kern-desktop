@@ -95,6 +95,20 @@ test("the_trash_lists_name_original_path_and_deletion_time", async () => {
   }
 });
 
+test("selecting_an_item_drops_the_words_selected_on_the_page", async () => {
+  await shown([item("a.txt")]);
+  const words = document.body.appendChild(document.createElement("p"));
+  words.textContent = "The item could not be restored";
+  try {
+    window.getSelection()!.selectAllChildren(words);
+    fireEvent.click(rows()[0]!);
+    expect(window.getSelection()!.isCollapsed).toBe(true);
+  } finally {
+    window.getSelection()!.removeAllRanges();
+    words.remove();
+  }
+});
+
 test("an_empty_trash_says_so_and_emptying_checks_a_fresh_listing", async () => {
   await shown([]);
   expect(screen.getByText(/trash is empty/i)).toBeInTheDocument();
