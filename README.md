@@ -2,7 +2,7 @@
 [![Tauri](https://img.shields.io/badge/Tauri-2-FFC131?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app/)
 [![Rust](https://img.shields.io/badge/Rust-2021%20edition-000000?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![kernkraft](https://img.shields.io/badge/kernkraft-0.2.2.0-5A4FCF?style=flat-square)](https://github.com/verycareful/kernkraft)
+[![kernkraft](https://img.shields.io/badge/kernkraft-0.2.4.0-5A4FCF?style=flat-square)](https://github.com/verycareful/kernkraft)
 [![GTK](https://img.shields.io/badge/GTK-3-7FE719?style=flat-square&logo=gtk&logoColor=white)](https://www.gtk.org/)
 [![zbus](https://img.shields.io/badge/zbus-5-4A86CF?style=flat-square)](https://github.com/dbus2/zbus)
 [![React](https://img.shields.io/badge/React-19.1-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)

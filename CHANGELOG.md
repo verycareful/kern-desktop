@@ -4,6 +4,40 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.2.0.0] - 2026-11-27 10:49 (IST)
+
+### Added
+
+- **PDF viewer**: a PDF opens in a document tab like a text file, and one opened from outside Kern gets a window of its own; tabs and windows carry it through moves and restored sessions. An encrypted file asks for its password. Four layouts (continuous scroll, single page, two pages and a grid, Ctrl+Alt+1 to Ctrl+Alt+4), zoom from 25 % to 500 % (Ctrl+=, Ctrl+-, Ctrl+0 to fit the width, Ctrl+wheel), Go to page (Ctrl+G) and a page counter in the status bar. Pages are drawn in tiles at the screen's own pixels.
+- **Thumbnails and tools**: a thumbnail strip and a tools panel fold to icons (Ctrl+Alt+5, Ctrl+Alt+6) and sit on either side or along the bottom. Settings has a PDF category for the layout, the grid's columns and where each panel sits.
+- **Text in a PDF**: drag to select text along a line or across lines, also in right-to-left text and on a turned page; Ctrl+A selects the page and Ctrl+C copies. Ctrl+F finds in the whole document with Match case and Whole word, F3 and Shift+F3 step through the matches.
+- **Links in a PDF**: a link to a page goes there. A link to a web, mail or phone address shows the whole address and opens it only when you say so, from a document window, an editor window or the main window. No other kind of link is opened.
+- **Pages**: rotate pages (Ctrl+R, Ctrl+Shift+R), choose, drag to reorder or remove them in the strip and the grid. Merge PDFs, Extract pages and Split into files write new files and never replace one.
+- **Annotations**: highlight, underline or strike out the selected text (Ctrl+Shift+H, Ctrl+Shift+U, Ctrl+Shift+K), draw with the pen (Ctrl+Alt+I) and add or open notes (Ctrl+Alt+N), on the page or on marked text. Pick an annotation to recolour it, change its note or delete it. Escape puts down what is picked or drops the line being drawn, and keeps the tool.
+- **Text editing**: the Edit text tool (Ctrl+Alt+E) opens a block of the page's text in a box. Enter sets it, Shift+Enter starts a line, a click outside the box keeps the text, and both sides of the box can be dragged or moved with the arrow keys. A paragraph that wrapped is set again to its width. A click or a drag where there is no text puts new text there, snapping to the widths of the page's text. A block that cannot be edited says why, and a refused change keeps the box with the reason.
+- **Undo, save and copies**: Ctrl+Z and Ctrl+Y undo and redo every change. The first change of a file asks whether to keep a copy of it first. Ctrl+S saves in place and asks before writing over a file another program changed; Save As writes a new file, and a file that cannot be saved as it is offers a compacted copy. Closing a changed PDF asks first.
+- **Desktop entry**: Kern claims `application/pdf`, so it can be the default PDF viewer.
+
+### Changed
+
+- **kernkraft**: the pin moves to 0.2.4.0, which brings the PDF engine.
+
+### Security
+
+- `url` 2.5.9 (RUSTSEC-2026-0592), `cookie` 0.18.3 (RUSTSEC-2026-0594) and `rustix` 1.1.6 (RUSTSEC-2026-0486).
+
+### Tests
+
+- Routing: a PDF opens in a tab from inside Kern and in a window from outside or by gesture, a PDF already open is focused, a launch with a PDF starts Kern, and the format travels with every move and the restored session.
+- Permissions: the document, editor and main windows may use the PDF commands and copy a PDF beside itself, the Settings window may not; the windows that show a PDF may open only web, mail and phone addresses.
+- Saving: save in place, Save As, the compacted copy, the copy first and a file changed or deleted by another program.
+- The viewer: layouts, zoom and tiles, the page counter, the thumbnail strip and its keys, the panels, selection along and across lines and in right-to-left and turned text, find, links, page operations, annotations and their keys, the Edit text tool (wrapped paragraphs, both sides of a box, a click outside it, new text and its snap, every refusal), undo and redo, and a page shown only once it is painted.
+- The real app: a running Kern edits, saves and reopens a PDF, refuses to write over one changed on disk, copies a page's text, highlights, edits a block and adds text and saves each, finds and steps through a word, asks before a link leaves, removes a page and undoes it, and opens the merge dialog.
+
+### Results
+
+- 2837 tests across 236 suites, all passed (471s, CachyOS x86-64, rustc 1.99.1, Python 3.14.10, Chromium through Playwright).
+
 ## [0.1.2.2] - 2026-11-11 18:55 (IST)
 
 ### Changed
@@ -359,7 +393,8 @@ The first release of Kern Desktop: a file manager and a plain text editor in one
 
 - 1629 tests across 139 suites, all passed (76.3s, CachyOS x86-64, rustc 1.99.1).
 
-[Unreleased]: https://github.com/verycareful/kern-desktop/compare/0.1.2.2...HEAD
+[Unreleased]: https://github.com/verycareful/kern-desktop/compare/0.2.0.0...HEAD
+[0.2.0.0]: https://github.com/verycareful/kern-desktop/compare/0.1.2.2...0.2.0.0
 [0.1.2.2]: https://github.com/verycareful/kern-desktop/compare/0.1.2.1...0.1.2.2
 [0.1.2.1]: https://github.com/verycareful/kern-desktop/compare/0.1.2.0...0.1.2.1
 [0.1.2.0]: https://github.com/verycareful/kern-desktop/compare/0.1.1.4...0.1.2.0
