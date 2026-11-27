@@ -53,6 +53,23 @@ test("the_list_header_sits_flush_under_the_bar_with_no_space_above_it", () => {
   expect(rulesFor(css, ".kern-list-head").join()).toMatch(/top:\s*0\b/);
 });
 
+test("the_path_bar_paints_over_the_list_so_a_fractional_zoom_cannot_show_rows_in_its_border_row", () => {
+  // Above the sticky header (z-index 2), so the pixel row the list's clip is snapped outward into
+  // is the bar's own border.
+  const bar = rulesFor(css, ".kern-files-bar").join();
+  expect(bar).toMatch(/position:\s*relative/);
+  const z = Number(bar.match(/z-index:\s*(\d+)/)?.[1]);
+  const head = Number(
+    rulesFor(css, ".kern-list-head")
+      .join()
+      .match(/z-index:\s*(\d+)/)?.[1]
+  );
+  expect(z).toBeGreaterThan(head);
+  // A layer of its own, or it is drawn under the scroller's layer whatever its z-index.
+  expect(bar).toMatch(/will-change:\s*opacity/);
+  expect(bar).toMatch(/border-bottom:\s*1px solid var\(--kern-border\)/);
+});
+
 test("the_empty_notes_keep_the_theme_focus_frame_when_they_hold_the_keyboard", () => {
   // An empty folder or Trash note takes focus (tabIndex -1) so the keyboard is never lost
   // to the page; it keeps base.css's :focus-visible frame, drawn inside so the note's

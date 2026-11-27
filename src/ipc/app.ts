@@ -19,7 +19,7 @@ export type PdfLayout = "scroll" | "single" | "spread" | "grid";
 /** A panel beside an open PDF (store.rs PdfPanels). */
 export type PdfPanelId = "thumbnails" | "tools";
 /** The side of the document area a PDF panel sits on (store.rs PanelSide). */
-export type PanelSide = "left" | "right" | "bottom";
+export type PanelSide = "top" | "left" | "right" | "bottom";
 /** Where one PDF panel sits and whether it is folded to its icons (store.rs PanelPlacement). */
 export interface PanelPlacement {
   side: PanelSide;

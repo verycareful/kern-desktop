@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 
 vi.mock("../ipc", async (orig) => ({
@@ -63,7 +63,7 @@ test("expanded_shows_each_tool_with_its_name", () => {
 test("collapsed_shows_icons_only_with_labels_as_titles", () => {
   render(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed />);
   // The colours and the pen widths are swatches, not tools: they have no name to show.
-  const buttons = screen.getAllByRole("button").filter((b) => !b.closest(".kern-pdf-colours"));
+  const buttons = screen.getAllByRole("button");
   expect(buttons).toHaveLength(24);
   for (const b of buttons) {
     expect(b).toHaveTextContent("");
@@ -238,6 +238,7 @@ test("the_markup_tools_wait_for_selected_text_and_delete_waits_for_a_picked_anno
 
 test("a_colour_and_a_pen_width_are_chosen_for_the_tab", () => {
   render(<ToolsPanel tabId={tabId} doc={testDoc()} collapsed={false} />);
+  act(() => usePdfTool.getState().setTool(tabId, "ink"));
   fireEvent.click(screen.getByRole("button", { name: "Colour Green" }));
   expect(usePdfTool.getState().byTab[tabId]?.colour).toEqual(PALETTE[1]!.rgb);
   expect(screen.getByRole("button", { name: "Colour Green" })).toHaveAttribute(
@@ -246,4 +247,80 @@ test("a_colour_and_a_pen_width_are_chosen_for_the_tab", () => {
   );
   fireEvent.click(screen.getByRole("button", { name: "Pen width 4 points" }));
   expect(usePdfTool.getState().byTab[tabId]?.inkWidth).toBe(4);
+});
+
+const NAMES = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll("button"))
+    .filter((b) => !b.closest("[data-testid=pdf-tool-options]"))
+    .map((b) => `${b.getAttribute("aria-label")}:${(b as HTMLButtonElement).disabled}`);
+
+test("the_bar_the_rail_and_the_names_hold_the_same_tools_in_the_same_order_in_the_same_state", () => {
+  const doc = testDoc({ canUndo: true, canRedo: false });
+  const named = render(<ToolsPanel tabId={tabId} doc={doc} side="left" collapsed={false} />);
+  const namedTools = NAMES(named.container);
+  named.unmount();
+  const rail = render(<ToolsPanel tabId={tabId} doc={doc} side="left" collapsed />);
+  const railTools = NAMES(rail.container);
+  rail.unmount();
+  const bar = render(<ToolsPanel tabId={tabId} doc={doc} side="top" collapsed={false} />);
+  const barTools = NAMES(bar.container);
+  expect(namedTools).toHaveLength(24);
+  expect(railTools).toEqual(namedTools);
+  expect(barTools).toEqual(namedTools);
+});
+
+test("a_bar_and_a_rail_show_icons_with_dividers_between_the_groups_and_the_names_show_captions", () => {
+  const forms = {
+    bar: render(<ToolsPanel tabId={tabId} doc={testDoc()} side="bottom" collapsed={false} />),
+    rail: render(<ToolsPanel tabId={tabId} doc={testDoc()} side="right" collapsed />),
+    named: render(<ToolsPanel tabId={tabId} doc={testDoc()} side="right" collapsed={false} />),
+  };
+  for (const [form, view] of Object.entries(forms)) {
+    const tools = within(view.container).getByTestId("pdf-tools");
+    expect(tools).toHaveAttribute("data-form", form);
+    const dividers = view.container.querySelectorAll(".kern-pdf-tool-divider");
+    const captions = view.container.querySelectorAll(".kern-pdf-tool-group-title");
+    expect(dividers.length, form).toBe(form === "named" ? 0 : 4);
+    expect(captions.length, form).toBe(form === "named" ? 5 : 0);
+    for (const b of Array.from(tools.querySelectorAll("button"))) {
+      expect(b.getAttribute("title"), form).toContain(b.getAttribute("aria-label"));
+      expect(b.hasAttribute("data-collapsed"), form).toBe(form !== "named");
+    }
+  }
+  expect(within(forms.bar.container).getByTestId("pdf-tools")).toHaveAttribute(
+    "aria-orientation",
+    "horizontal"
+  );
+  expect(within(forms.rail.container).getByTestId("pdf-tools")).toHaveAttribute(
+    "aria-orientation",
+    "vertical"
+  );
+});
+
+test("the_options_show_for_the_pen_and_for_selected_text_and_hide_otherwise", () => {
+  render(<ToolsPanel tabId={tabId} doc={testDoc()} side="right" collapsed={false} />);
+  expect(screen.queryByTestId("pdf-tool-options")).toBeNull();
+  act(() => usePdfTool.getState().setTool(tabId, "ink"));
+  const options = screen.getByTestId("pdf-tool-options");
+  expect(screen.getAllByRole("button", { name: /^Colour / })).toHaveLength(PALETTE.length);
+  expect(screen.getAllByRole("button", { name: /^Pen width / }).length).toBeGreaterThan(0);
+  expect(options.closest("[aria-label=Annotate]")).not.toBeNull();
+  act(() => usePdfTool.getState().setTool(tabId, "select"));
+  expect(screen.queryByTestId("pdf-tool-options")).toBeNull();
+  act(() =>
+    usePdfSelection
+      .getState()
+      .select(tabId, { page: 0, from: { line: 0, unit: 0 }, to: { line: 0, unit: 2 } })
+  );
+  expect(screen.getAllByRole("button", { name: /^Colour / })).toHaveLength(PALETTE.length);
+  expect(screen.queryByRole("button", { name: /^Pen width / })).toBeNull();
+});
+
+test("a_folded_rail_never_contains_the_options_and_a_bar_leaves_them_to_the_dock", () => {
+  act(() => usePdfTool.getState().setTool(tabId, "ink"));
+  const rail = render(<ToolsPanel tabId={tabId} doc={testDoc()} side="left" collapsed />);
+  expect(rail.queryByTestId("pdf-tool-options")).toBeNull();
+  rail.unmount();
+  const bar = render(<ToolsPanel tabId={tabId} doc={testDoc()} side="top" collapsed={false} />);
+  expect(bar.queryByTestId("pdf-tool-options")).toBeNull();
 });

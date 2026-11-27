@@ -154,10 +154,12 @@
   flex-direction: column;
 }
 
+/* A side holds a column for each panel, side by side: the tools at the outer edge and the
+   thumbnails next to the pages. */
 .kern-pdf-dock-column {
   flex: none;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   min-height: 0;
 }
 
@@ -169,9 +171,26 @@
   border-left: 1px solid var(--kern-border);
 }
 
-.kern-pdf-dock-bottom {
+.kern-pdf-dock-column > * + * {
+  border-left: 1px solid var(--kern-border);
+}
+
+/* Above or below the pages the panels stack: the thumbnail strip over the tools bar. */
+.kern-pdf-dock-row {
   flex: none;
   display: flex;
+  flex-direction: column;
+}
+
+.kern-pdf-dock-top {
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-pdf-dock-bottom {
+  border-top: 1px solid var(--kern-border);
+}
+
+.kern-pdf-dock-row > * + * {
   border-top: 1px solid var(--kern-border);
 }
 
@@ -183,58 +202,85 @@
   background: var(--kern-surface);
 }
 
-/* A panel on a side is as wide as its thumbnails or its tools; one on the bottom is as tall. */
+/* A panel on a side is 176 px wide, or 48 px folded to its icons; a thumbnail strip along an edge
+   is 208 px high under its header, which holds a letter page's thumbnail and its number. */
 .kern-pdf-dock-column .kern-pdf-panel {
-  width: 168px;
+  width: 176px;
 }
 
 .kern-pdf-dock-column .kern-pdf-panel[data-collapsed="true"] {
-  width: auto;
+  width: 48px;
 }
 
-.kern-pdf-dock-column .kern-pdf-panel[data-collapsed="false"]:has(.kern-pdf-thumbs) {
-  flex: 1;
-}
-
-.kern-pdf-dock-bottom .kern-pdf-panel {
-  flex-direction: row;
-  align-items: stretch;
-}
-
-.kern-pdf-dock-bottom .kern-pdf-panel:has(.kern-pdf-thumbs) {
-  flex: 1;
-  height: 176px;
-}
-
-.kern-pdf-dock-bottom .kern-pdf-panel[data-collapsed="true"] {
-  height: auto;
+.kern-pdf-dock-row .kern-pdf-panel:has(.kern-pdf-thumbs) .kern-pdf-panel-body {
   flex: none;
+  height: 208px;
 }
 
+/* A tools bar is one row: the tools, then the header's buttons. Its options run in a row of their
+   own between the bar and the pages. */
+.kern-pdf-panel-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "bar head"
+    "opts opts";
+}
+
+.kern-pdf-panel-bar[data-side="bottom"] {
+  grid-template-areas:
+    "opts opts"
+    "bar head";
+}
+
+.kern-pdf-panel-bar > .kern-pdf-panel-body {
+  grid-area: bar;
+}
+
+.kern-pdf-panel-bar > .kern-pdf-panel-header {
+  grid-area: head;
+  align-self: start;
+}
+
+.kern-pdf-panel-bar > .kern-pdf-options {
+  grid-area: opts;
+}
+
+.kern-pdf-panel-bar[data-collapsed="true"] > .kern-pdf-panel-header {
+  grid-area: auto;
+  grid-column: 1 / -1;
+}
+
+/* Every panel header is one 36 px row with its text and buttons on one centre line, and what is
+   in it starts 12 px from the edge; the fold chevron is the last thing in it. */
 .kern-pdf-panel-header {
   flex: none;
+  box-sizing: border-box;
+  height: 36px;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 4px;
+  padding: 0 4px 0 12px;
 }
 
-.kern-pdf-dock-bottom .kern-pdf-panel-header {
-  flex-direction: column;
-  justify-content: flex-start;
+.kern-pdf-panel[data-collapsed="true"] > .kern-pdf-panel-header {
+  justify-content: center;
+  padding: 0;
 }
 
 .kern-pdf-panel-title {
   flex: 1;
-  margin: 0 0 0 6px;
-  font-size: 13px;
+  margin: 0;
+  font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--kern-text);
 }
 
 .kern-pdf-panel-button {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   flex: none;
 }
 
@@ -243,6 +289,14 @@
   min-width: 0;
   min-height: 0;
   display: flex;
+}
+
+/* A folded panel on a side keeps its move menu at the foot. */
+.kern-pdf-panel-foot {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
 }
 
 /* The thumbnails: a column of pages, or a row along the bottom. */
@@ -324,21 +378,36 @@
   font-size: 12px;
 }
 
-/* The tools. */
+/* The tools: a bar, a rail or rows with names (ToolsPanel). */
 .kern-pdf-tools {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
+  box-sizing: border-box;
+}
+
+.kern-pdf-tools-named {
   flex-direction: column;
   gap: 8px;
-  padding: 4px 6px 8px;
+  padding: 4px 0 8px;
   overflow: auto;
 }
 
-.kern-pdf-dock-bottom .kern-pdf-tools {
-  flex-direction: row;
+.kern-pdf-tools-rail {
+  flex-direction: column;
   align-items: center;
+  gap: 4px;
+  padding: 4px 0 8px;
+  overflow: auto;
+}
+
+.kern-pdf-tools-bar {
+  flex-direction: row;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px 1px 12px;
 }
 
 .kern-pdf-tool-group {
@@ -347,13 +416,34 @@
   gap: 2px;
 }
 
-.kern-pdf-dock-bottom .kern-pdf-tool-group {
+.kern-pdf-tools-bar .kern-pdf-tool-group {
   flex-direction: row;
   align-items: center;
 }
 
+.kern-pdf-tools-rail .kern-pdf-tool-group {
+  align-items: center;
+}
+
+.kern-pdf-tool-divider {
+  flex: none;
+  background: var(--kern-border);
+}
+
+.kern-pdf-tools-bar .kern-pdf-tool-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+}
+
+.kern-pdf-tools-rail .kern-pdf-tool-divider {
+  width: 20px;
+  height: 1px;
+  margin: 2px 0;
+}
+
 .kern-pdf-tool-group-title {
-  margin: 0 0 2px 4px;
+  margin: 0 0 2px 12px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -365,22 +455,30 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 30px;
-  padding: 4px 8px;
+  min-height: 32px;
+  padding: 4px 12px;
   color: var(--kern-text);
   font: inherit;
   font-size: 13px;
   text-align: left;
   background: none;
   border: 0;
-  border-radius: var(--kern-radius-small);
+  border-radius: 0;
   cursor: pointer;
+}
+
+/* An icon alone is a 34 px button, in a bar and in a rail. */
+.kern-pdf-tool svg {
+  flex: none;
 }
 
 .kern-pdf-tool[data-collapsed="true"] {
   justify-content: center;
-  padding: 4px;
-  width: 30px;
+  width: 34px;
+  height: 34px;
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--kern-radius-small);
 }
 
 .kern-pdf-tool:hover:not(:disabled) {
@@ -388,9 +486,15 @@
   color: var(--kern-accent);
 }
 
+/* Pressed: the accent tint with a 1 px ring on an icon, a 2 px edge on a row with a name. */
 .kern-pdf-tool[aria-pressed="true"] {
   background: var(--kern-accent-soft);
   color: var(--kern-accent);
+  box-shadow: inset 2px 0 0 var(--kern-accent);
+}
+
+.kern-pdf-tool[data-collapsed="true"][aria-pressed="true"] {
+  box-shadow: inset 0 0 0 1px var(--kern-accent);
 }
 
 .kern-pdf-tool:disabled {
@@ -599,8 +703,7 @@
 }
 
 .kern-pdf-annotation-buttons,
-.kern-pdf-note-buttons,
-.kern-pdf-colours {
+.kern-pdf-note-buttons {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -643,8 +746,73 @@
   cursor: pointer;
 }
 
-.kern-pdf-colours {
-  padding: 4px 6px;
+/* The options of the tool in hand: the colours and the pen's widths (ToolOptions). */
+.kern-pdf-options {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--kern-surface);
+}
+
+.kern-pdf-options-set {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.kern-pdf-options-caption {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--kern-text-dim);
+}
+
+.kern-pdf-options-divider {
+  flex: none;
+  align-self: stretch;
+  width: 1px;
+  margin: 8px 0;
+  background: var(--kern-border);
+}
+
+.kern-pdf-options-row {
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 12px;
+}
+
+.kern-pdf-panel-top .kern-pdf-options-row {
+  border-top: 1px solid var(--kern-border);
+}
+
+.kern-pdf-panel-bottom .kern-pdf-options-row {
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-pdf-options-column {
+  flex: none;
+  box-sizing: border-box;
+  width: 52px;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 8px 0;
+}
+
+.kern-pdf-options-column .kern-pdf-options-set {
+  flex-direction: column;
+}
+
+.kern-pdf-options-column .kern-pdf-options-divider {
+  align-self: center;
+  width: 20px;
+  height: 1px;
+  margin: 0;
+}
+
+.kern-pdf-options-inline {
+  flex-wrap: wrap;
+  padding: 4px 12px;
 }
 
 .kern-pdf-ink-surface,
@@ -765,7 +933,7 @@
 }
 
 .kern-pdf-tool-help {
-  margin: 4px 4px 0;
+  margin: 4px 12px 0;
   font-size: 11px;
   line-height: 1.4;
   color: var(--kern-text-dim);

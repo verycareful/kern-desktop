@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "doc",
-  "description": "Capability for the document windows: one document, with its text open, save and check, its folder watched, the theme, the places Save As offers, the name and kind lookups it needs, the copy of its own file beside it that Save a copy first makes (drop_start_op, which takes a copy or a move, with cancel_op and answer_conflict), its registration as open, the hand-over of the document to the main window or an editor window, a pin and a recent entry for it, its tab kept for the next launch (session_put), the binds of keys and mouse buttons (read only), the report of a rename or move that changes its path (doc_moved), the error log, text put on the clipboard (clip_text, the Copy of a selection in a PDF), a PDF's Merge, Extract and Split (pdf_merge, pdf_extract, pdf_split, which write only a new file) with the system's file chooser for them (pick_pdfs, pick_folder, pick_save_pdf; never the dialog plugin's own commands), and the close and restart calls every window has. Never another file operation, the clipboard of files, the Trash, a mount, a launcher, a default-application setting, the layout, or the main window's own commands",
+  "description": "Capability for the document windows: one document, with its text open, save and check, its folder watched, the theme, the places Save As offers, the name and kind lookups it needs, the copy of its own file beside it that Save a copy first makes (drop_start_op, which takes a copy or a move, with cancel_op and answer_conflict), its registration as open, the hand-over of the document to the main window or an editor window, a pin and a recent entry for it, its tab kept for the next launch (session_put), the binds of keys and mouse buttons (read only), the settings (read, and written for a PDF's panels and page layout, which this window changes and keeps there), the report of a rename or move that changes its path (doc_moved), the error log, text put on the clipboard (clip_text, the Copy of a selection in a PDF), a PDF's Merge, Extract and Split (pdf_merge, pdf_extract, pdf_split, which write only a new file) with the system's file chooser for them (pick_pdfs, pick_folder, pick_save_pdf; never the dialog plugin's own commands), and the close and restart calls every window has. Never another file operation, the clipboard of files, the Trash, a mount, a launcher, a default-application setting, the layout, or the main window's own commands",
   "windows": ["doc-*"],
   "permissions": [
     "core:default",
@@ -72,6 +72,7 @@
     "allow-restart-abandon",
     "allow-session-put",
     "allow-settings-get",
+    "allow-settings-set",
     "allow-binds-get",
     "allow-unpin"
   ]

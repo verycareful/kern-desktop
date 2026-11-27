@@ -224,3 +224,37 @@ test("a_hits_menu_opens_it_as_the_search_opens_one", async () => {
   fireEvent.click(within(menu).getByRole("menuitem", { name: /^Open$/ }));
   expect(onOpen).toHaveBeenCalledExactlyOnceWith(folder, false);
 });
+
+test("a_hit_shows_the_folder_it_is_in_below_the_folder_searched_with_the_full_path_in_the_tooltip", async () => {
+  render(<SearchView root={p("/d")} area="centre" onClose={onClose} onOpen={onOpen} />);
+  const key = await typed("n");
+  emit("kernkraft://search-hit", {
+    key,
+    op: 1,
+    entries: [
+      entry("deep.md", {}, "/d/src/pdf"),
+      entry("shallow.md", {}, "/d"),
+      entry("elsewhere.md", {}, "/e/other"),
+    ],
+  });
+  const rows = await screen.findAllByTestId("scan-hit");
+  const where = (row: HTMLElement) => row.querySelector(".kern-col-location") as HTMLElement;
+  const byName = (name: string) => rows.find((r) => r.textContent?.includes(name)) as HTMLElement;
+  expect(where(byName("deep.md"))).toHaveTextContent("src/pdf");
+  expect(where(byName("deep.md"))).toHaveAttribute("title", "/d/src/pdf");
+  expect(byName("deep.md")).toHaveAttribute("title", "/d/src/pdf/deep.md");
+  // A hit directly in the folder searched shows that folder's own name.
+  expect(where(byName("shallow.md"))).toHaveTextContent("d");
+  expect(where(byName("shallow.md")).textContent).toBe("d");
+  expect(where(byName("shallow.md"))).toHaveAttribute("title", "/d");
+  // A folder outside it is shown whole, as before.
+  expect(where(byName("elsewhere.md")).textContent).toBe("/e/other");
+});
+
+test("the_narrow_column_shows_the_same_relative_folder", async () => {
+  render(<SearchView root={p("/d")} area="editor" onClose={onClose} onOpen={onOpen} />);
+  const key = await typed("n");
+  emit("kernkraft://search-hit", { key, op: 1, entries: [entry("deep.md", {}, "/d/src/pdf")] });
+  const row = (await screen.findAllByTestId("scan-hit"))[0]!;
+  expect(row.querySelector(".kern-hit-where")?.textContent).toBe("src/pdf");
+});

@@ -14,7 +14,6 @@ import {
   clickClosingWindow,
   focusWindow,
   freshAppPerTest,
-  kern,
   only,
   sleep,
   waitForWindows,
@@ -27,36 +26,8 @@ import {
   pagesPdf,
   textPagePdf,
 } from "./support/pdf";
+import { openPdf, waitForPages } from "./support/pdf-window";
 import { testDir } from "./support/world";
-
-/**
- * How long a window gets to show a PDF's pages. The first PDF a window opens indexes the fonts of
- * the system before it opens, and the debug build the suite runs does that slowly: it took close to
- * half a minute on a development machine with many fonts installed.
- */
-const PDF_SHOWS_WITHIN_MS = 80_000;
-
-/** Waits until the window in front shows the pages of a PDF, or says what it showed instead. */
-async function waitForPages(): Promise<void> {
-  try {
-    await browser.waitUntil(
-      async () => (await browser.$('[data-testid="pdf-pages"]')).isExisting(),
-      { timeout: PDF_SHOWS_WITHIN_MS }
-    );
-  } catch {
-    // What the window said is the evidence of what went wrong.
-    const said = await browser.execute("return document.body.innerText");
-    throw new Error(`the PDF did not show its pages; the window said: ${String(said)}`);
-  }
-}
-
-/** Opens `file` from outside and waits for its document window to show a page. */
-async function openPdf(file: string): Promise<void> {
-  expect(kern([file]).status).toBe(0);
-  const ws = await waitForWindows((w) => w.some((x) => x.kind === "doc"), "a document window");
-  await focusWindow(only(ws, "doc").handle);
-  await waitForPages();
-}
 
 /** Asks to rotate the page in view, and says no to a copy, which the first edit asks about. */
 async function rotateWithoutACopy(): Promise<void> {
@@ -311,9 +282,10 @@ describe("pdf", function () {
     });
     const surface = await browser.$('[data-testid="pdf-new-text-surface-0"]');
     const { width, height } = await surface.getSize();
-    // Near the left edge and three tenths of the page below its middle, where the page has no
-    // text; the box runs from there to the right edge of the line above, wide enough for the word.
-    await surface.click({ x: -Math.round(width * 0.4), y: Math.round(height * 0.3) });
+    // Near the left edge and a fifth of the page above its middle, where the page has no text. With
+    // the tools along the top the page is wider and so taller than the window, and its upper half is
+    // what is in view; a point below the view is out of the driver's reach.
+    await surface.click({ x: -Math.round(width * 0.4), y: -Math.round(height * 0.2) });
     const box = await browser.$('textarea[aria-label="New text"]');
     await box.waitForDisplayed({ timeout: SHOWS_WITHIN_MS });
     await browser.keys(NEW_TEXT);
@@ -454,7 +426,7 @@ describe("pdf", function () {
     );
 
     // Merge opens its dialog with this PDF first; the system's chooser is not driven here.
-    await (await browser.$("button=Merge PDFs…")).click();
+    await (await browser.$('button[aria-label="Merge PDFs…"]')).click();
     const dialog = await browser.$('[data-testid="pdf-merge-dialog"]');
     await dialog.waitForExist({ timeout: SHOWS_WITHIN_MS });
     // The name is cut with an ellipsis when it is long, which the driver's visible text leaves

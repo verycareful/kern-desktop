@@ -139,8 +139,9 @@ afterEach(async () => {
 });
 
 async function mount() {
-  render(<App />);
+  const view = render(<App />);
   await screen.findByRole("heading", { name: "Appearance", level: 1 });
+  return view;
 }
 
 const nav = (name: string) =>
@@ -337,13 +338,102 @@ test("a_save_that_fails_keeps_the_changes_and_says_why", async () => {
   expect(screen.queryByTestId("settings-problem")).not.toBeInTheDocument();
 });
 
+const ctrlS = (target: Element | Document = document.body) =>
+  act(async () => {
+    fireEvent.keyDown(target, { key: "s", ctrlKey: true });
+  });
+
 test("ctrl_s_saves", async () => {
   await mount();
   fireEvent.click(pressed("Theme", "Dark"));
-  await act(async () =>
-    fireEvent.keyDown(screen.getByTestId("settings-window"), { key: "s", ctrlKey: true })
-  );
+  await ctrlS(screen.getByTestId("settings-window"));
   expect(sent("settings_set")).toHaveLength(1);
+});
+
+test("ctrl_s_saves_with_the_focus_on_the_page_in_a_field_and_on_a_button", async () => {
+  await mount();
+  // A window that has just opened has no focused element: the key goes to the page.
+  expect(document.activeElement).toBe(document.body);
+  fireEvent.click(pressed("Theme", "Dark"));
+  await ctrlS(document.body);
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([{ theme_mode: "dark" }]);
+  expect(screen.getByRole("status")).not.toHaveTextContent("Changes not saved yet");
+
+  fireEvent.click(pressed("Theme", "Light"));
+  const search = screen.getByRole("searchbox");
+  search.focus();
+  await ctrlS(search);
+  expect(sent("settings_set")).toHaveLength(2);
+
+  fireEvent.click(pressed("Theme", "Dark"));
+  const button = pressed("Theme", "Dark");
+  button.focus();
+  await ctrlS(button);
+  expect(sent("settings_set")).toHaveLength(3);
+});
+
+test("ctrl_s_does_what_the_save_button_does_and_nothing_when_that_is_off", async () => {
+  await mount();
+  // Nothing changed: Save is off, and so is the key.
+  expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  await ctrlS();
+  expect(sent("settings_set")).toHaveLength(0);
+  // Other chords with an S are not it.
+  fireEvent.click(pressed("Theme", "Dark"));
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: "s", ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(document.body, { key: "s", ctrlKey: true, altKey: true });
+    fireEvent.keyDown(document.body, { key: "s" });
+  });
+  expect(sent("settings_set")).toHaveLength(0);
+});
+
+test("ctrl_s_is_a_bind_and_not_a_save_while_a_bind_is_being_captured", async () => {
+  await mount();
+  fireEvent.click(pressed("Theme", "Dark"));
+  nav("Keys and mouse");
+  fireEvent.click(screen.getAllByRole("button", { name: /^Add a bind to / })[0]!);
+  await ctrlS(document.body);
+  expect(sent("settings_set")).toHaveLength(0);
+});
+
+test("the_key_stops_saving_when_the_window_is_gone", async () => {
+  const view = await mount();
+  fireEvent.click(pressed("Theme", "Dark"));
+  view.unmount();
+  await ctrlS(document.body);
+  expect(sent("settings_set")).toHaveLength(0);
+});
+
+test("the_bar_says_the_binds_are_saved_as_they_change_in_keys_and_mouse_and_press_save_elsewhere", async () => {
+  await mount();
+  const bar = () => screen.getByTestId("settings-status");
+  expect(bar()).toHaveTextContent("Changes apply when you press Save.");
+  nav("Keys and mouse");
+  expect(bar()).toHaveTextContent("Binds are saved as you change them.");
+  expect(bar()).toHaveTextContent("Other changes apply when you press Save.");
+  expect(bar()).not.toHaveTextContent(/^Changes apply when you press Save\.$/);
+  // What is waiting to be saved is said as ever, whichever category is on show.
+  nav("Appearance");
+  fireEvent.click(pressed("Theme", "Dark"));
+  nav("Keys and mouse");
+  expect(bar()).toHaveTextContent("Changes not saved yet.");
+  await save();
+  expect(bar()).toHaveTextContent("Binds are saved as you change them.");
+  nav("Files");
+  expect(bar()).toHaveTextContent("Changes apply when you press Save.");
+});
+
+test("the_bar_keeps_its_usual_text_while_a_search_shows_rows_from_several_categories", async () => {
+  await mount();
+  nav("Keys and mouse");
+  fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
+    target: { value: "theme" },
+  });
+  await screen.findByRole("group", { name: "Theme" });
+  expect(screen.getByTestId("settings-status")).toHaveTextContent(
+    "Changes apply when you press Save."
+  );
 });
 
 test("closing_with_changes_not_saved_asks_and_cancel_keeps_the_window", async () => {
@@ -564,6 +654,27 @@ test("the_pdf_section_saves_the_side_of_each_panel_and_keeps_its_folded_state", 
       pdf_panels: {
         thumbnails: { side: "bottom", collapsed: true },
         tools: { side: "left", collapsed: false },
+      },
+    },
+  ]);
+});
+
+test("the_tools_picker_offers_the_top_and_the_thumbnails_picker_does_not", async () => {
+  await mount();
+  nav("PDF");
+  const names = (group: string) =>
+    within(screen.getByRole("group", { name: group }))
+      .getAllByRole("button")
+      .map((b) => b.textContent);
+  expect(names("Thumbnails panel")).toEqual(["Left", "Right", "Bottom"]);
+  expect(names("Tools panel")).toEqual(["Top", "Left", "Right", "Bottom"]);
+  fireEvent.click(pressed("Tools panel", "Top"));
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([
+    {
+      pdf_panels: {
+        thumbnails: { side: "left", collapsed: false },
+        tools: { side: "top", collapsed: false },
       },
     },
   ]);

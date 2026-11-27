@@ -4,6 +4,41 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.2.1.0] - 2026-11-27 18:56 (IST)
+
+### Added
+
+- **PDF tools on the top**: the tools of a PDF can sit on the top, the left, the right or the bottom, and the thumbnails on the left, the right or the bottom (never the top). On the top or the bottom the tools are one bar of icons with a divider between the groups; on a side they are rows with names under group captions, or, folded, a rail of icons. The name and the key of every tool are in its tooltip. A new settings file puts the tools on the top; a settings file that already has a side keeps it. Settings, PDF, offers each panel only the sides it can have, and the Move menu of a panel and the move actions do the same. A settings file that puts the thumbnails on the top is reported and the default is used.
+- **Pen colour and width**: the colours and the pen widths are a fixed part of the layout while they apply, never a popup: a row between a bar and the pages, a column beside a folded rail, or under the Annotate rows of a panel with names. They show while the pen is in hand, and the colours alone while text is selected for highlight, underline and strike out.
+
+### Changed
+
+- **PDF panels**: two panels on one side are two columns, the tools at the outer edge and the thumbnails next to the pages, where they were one column that shared a width. At the bottom the thumbnail strip stands over the tools bar. Every panel header is one 36 px row with its text and buttons on one centre line and the fold chevron last; the rows and captions start 12 px from the edge. A folded panel on a side keeps its move menu at the foot, and a folded bar is the chevron alone. The tools toggle in the menu reads Hide tool names and Show tool names on a side, and Collapse Tools and Expand Tools on a bar.
+- **Search results**: a result's location is the folder it is in as it lies below the folder searched (`src/pdf`, or the folder's own name for a result directly in it); a folder outside it is shown whole, with `~` for home. The tooltip of the location is the full folder path, and sorting by location still sorts by it. The Library keeps showing `~`.
+- **Settings**: with Keys and mouse on show, the bar at the foot says the binds are saved as they change and that other changes apply when Save is pressed, instead of telling the person to press Save for binds that are stored at once.
+
+### Fixed
+
+- **Folder list header**: at the interface sizes 110 % and 125 % one row of pixels between the path bar and the NAME, TYPE, SIZE and MODIFIED header showed the rows scrolling under it. The header now sits flush at every interface size, in a folder and in the Trash.
+- **Ctrl+S in Settings**: it saves the changes wherever the focus is. It did nothing while the page itself had the focus, which is where it is when the window has just opened. It does what the Save button does, and in Keys and mouse, while a bind is being captured, it is the bind.
+- **PDF panels in a document window**: Move, Collapse and Expand on a panel, and the page layout buttons, did nothing in a PDF's own window and said nothing. The window may now write the settings for them. Its capability writes any setting the store accepts, and the store refuses what it refuses in every window.
+
+### Tests
+
+- The tools panel as a bar, a rail and rows with names: the same tools in the same order in the same state in each; dividers or captions; the options for the pen and for selected text and none otherwise; a folded rail and a bar leave the options to the dock.
+- The dock: tools on each of the four sides and thumbnails on three, two panels as two columns with the tools at the outer edge, the thumbnail strip over the tools bar, the options column on the page side of a rail, a folded bar as the chevron alone, a folded rail with its move menu at the foot, and the fold chevron last in every header. The Move menu of the tools offers four sides and of the thumbnails three.
+- The panel header is 36 px with a 12 px start edge, a side panel 176 px or 48 px folded, an icon 34 px and a rail's options column 52 px; the swatches take no colour from the theme.
+- The store: the tools default to the top; the tools on the top round trip; thumbnails on the top are refused with the file unchanged and reported and kept when stored; every earlier left, right and bottom file loads unchanged. A document window writes `pdf_panels` and reads it back, and the store still refuses thumbnails on the top for it.
+- The toggle's wording by side; the move actions per panel; the Settings pickers' sides.
+- A result's folder below the folder searched, a result in it, a result outside it, the tooltips and the narrow column; the path below a root.
+- The bar's text in each category, with a change waiting, after Save and in a search.
+- Ctrl+S with the focus on the page, in a field and on a button; off when Save is off; other chords with an S; during a bind capture; gone with the window.
+- In the real app: the tools as a bar on the top and the bottom, as rows on the left and as a rail on the right, and folded on the top, each keeping the pages their room and the options in view while the pen is in hand; a panel moved and folded in a document window and kept in the settings file; the folder list header read from a screenshot at every interface size and eleven scroll positions; Ctrl+S in the real Settings window.
+
+### Results
+
+- 2921 tests across 241 suites, all passed (594s, CachyOS x86-64, rustc 1.99.1, Python 3.14.10, Chromium through Playwright, and the real-app driver suite).
+
 ## [0.2.0.3] - 2026-11-27 12:55 (IST)
 
 ### Added
@@ -443,7 +478,8 @@ The first release of Kern Desktop: a file manager and a plain text editor in one
 
 - 1629 tests across 139 suites, all passed (76.3s, CachyOS x86-64, rustc 1.99.1).
 
-[Unreleased]: https://github.com/verycareful/kern-desktop/compare/0.2.0.3...HEAD
+[Unreleased]: https://github.com/verycareful/kern-desktop/compare/0.2.1.0...HEAD
+[0.2.1.0]: https://github.com/verycareful/kern-desktop/compare/0.2.0.3...0.2.1.0
 [0.2.0.3]: https://github.com/verycareful/kern-desktop/compare/0.2.0.2...0.2.0.3
 [0.2.0.2]: https://github.com/verycareful/kern-desktop/compare/0.2.0.1...0.2.0.2
 [0.2.0.1]: https://github.com/verycareful/kern-desktop/compare/0.2.0.0...0.2.0.1
