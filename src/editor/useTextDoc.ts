@@ -40,6 +40,7 @@ import { repeatsAfter } from "../ops/raised-text";
 import { useOps } from "../ops/useOps";
 import { useTabs } from "../store/tabs";
 import { registerDoc } from "./doc-controller";
+import { sameEntry } from "./same-entry";
 import { useDocStatus } from "./doc-status";
 import type { HandedDoc } from "./handed-doc";
 
@@ -193,14 +194,6 @@ interface FileFacts {
 /** Lines as CodeMirror splits them by default: \r\n, \r and \n each end one. */
 const toDoc = (text: string): Text => Text.of(text.split(/\r\n?|\n/));
 
-/**
- * Whether what is at a path is still what the user was shown: the same kind, size and
- * modification time. A file rewritten in the same millisecond to the same size is not told
- * apart; the modification time is the finest the backend reports.
- */
-const sameEntry = (a: WireEntry, b: WireEntry): boolean =>
-  a.kind === b.kind && a.len === b.len && a.modified_ms === b.modified_ms;
-
 const say = (text: string) => useOps.getState().notify(text);
 
 /**
@@ -221,9 +214,13 @@ async function isDanglingLink(path: WirePath, stamp: WireStamp): Promise<boolean
 const READ_ONLY_SAVE = "This file is read-only. Use Save As to keep your changes in another file.";
 
 /** The place a tab of this window is registered under. */
-const tabPlace = (tabId: string): Location => ({ kind: "tab", window: tabWindow(), tab_id: tabId });
+export const tabPlace = (tabId: string): Location => ({
+  kind: "tab",
+  window: tabWindow(),
+  tab_id: tabId,
+});
 
-const placeKey = (l: Location): string =>
+export const placeKey = (l: Location): string =>
   l.kind === "tab"
     ? `tab:${l.window}:${l.tab_id}`
     : l.kind === "window"

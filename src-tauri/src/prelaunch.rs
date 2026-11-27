@@ -21,12 +21,13 @@ use kernkraft_xdg_apps::{default_groups, launch_groups, AppRegistry, MimeDb, Ter
 
 use crate::cli::{self, Plan};
 use crate::instance::Invocation;
+use crate::open::PDF_MIME;
 use crate::store::Store;
 
 /// What one argument asks for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Class {
-    /// A folder or a text file: a Kern window.
+    /// A folder, a text file or a PDF: a Kern window.
     Window,
     /// Any other file: its default application.
     DefaultApp(PathBuf),
@@ -54,8 +55,14 @@ fn classify(path: &Path, db: &Result<MimeDb, String>) -> Class {
         Ok(m) if m.is_dir() => Class::Window,
         Ok(_) => match db {
             Err(e) => Class::Failed(format!("{}: {e}", path.display())),
-            Ok(db) if db.is_text(&db.guess(path)) => Class::Window,
-            Ok(_) => Class::DefaultApp(path.to_path_buf()),
+            Ok(db) => {
+                let mime = db.guess(path);
+                if db.is_text(&mime) || mime == PDF_MIME {
+                    Class::Window
+                } else {
+                    Class::DefaultApp(path.to_path_buf())
+                }
+            }
         },
     }
 }

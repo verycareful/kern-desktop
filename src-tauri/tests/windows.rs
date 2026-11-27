@@ -46,6 +46,39 @@ fn outside_text_opens_a_doc_window_once() {
 }
 
 #[test]
+fn outside_pdf_opens_a_doc_window_that_is_told_it_is_a_pdf() {
+    let e = env(Duration::from_secs(5));
+    let f = e.pdf("a.pdf");
+    let out = e.open(&[&f], "outside", "default");
+    assert_eq!(out[0]["action"], json!("doc_window"), "{out:?}");
+    let q = e.take("doc-1");
+    assert_eq!(
+        q[0]["payload"],
+        json!({"kind": "load_doc", "path": wp(&f), "format": "pdf"})
+    );
+    // Opened again: focus, no second window.
+    assert_eq!(
+        e.open(&[&f], "outside", "default")[0]["action"],
+        json!("focus")
+    );
+}
+
+#[test]
+fn inside_pdf_is_a_tab_that_is_told_it_is_a_pdf() {
+    let e = env(Duration::from_secs(5));
+    let f = e.pdf("a.pdf");
+    assert_eq!(
+        e.open(&[&f], "inside", "default")[0]["action"],
+        json!("doc_tab")
+    );
+    let q = e.take("main");
+    assert_eq!(
+        q[0]["payload"],
+        json!({"kind": "doc_tab", "path": wp(&f), "format": "pdf"})
+    );
+}
+
+#[test]
 fn folder_from_outside_creates_main_with_a_folder_tab() {
     let e = env(Duration::from_secs(5));
     let out = e.open(&[&e.files], "outside", "default");
@@ -332,6 +365,68 @@ fn detach_hands_the_tab_state_to_the_window_untouched() {
         json!([{"event": "kern://open", "payload":
             {"kind": "load_doc", "path": wp(&f), "text_state": state, "ack": true}}])
     );
+}
+
+#[test]
+fn detach_tells_the_window_the_format_of_the_tab() {
+    let e = env(Duration::from_secs(5));
+    let f = e.pdf("a.pdf");
+    let tab = tab("probe", "t1");
+    e.call("doc_opened", json!({"path": wp(&f), "location": tab}))
+        .unwrap();
+    let label = e
+        .detach_as(
+            "probe",
+            "t1",
+            &f,
+            Value::Null,
+            json!("pdf"),
+            "doc-1",
+            Answer::Holds,
+        )
+        .unwrap();
+    let queued = e
+        .call_from(label.as_str().unwrap(), "open_pending_take", json!({}))
+        .unwrap();
+    assert_eq!(
+        queued,
+        json!([{"event": "kern://open", "payload":
+            {"kind": "load_doc", "path": wp(&f), "format": "pdf", "ack": true}}])
+    );
+}
+
+#[test]
+fn a_pdf_moved_to_main_is_adopted_with_its_format() {
+    env(Duration::from_secs(30)).run(|e| {
+        let f = e.pdf("a.pdf");
+        e.open(&[&f], "outside", "default");
+        std::thread::scope(|s| {
+            let handle = e.handle.clone();
+            let mover = s.spawn(move || {
+                invoke(
+                    &handle,
+                    "probe",
+                    "move_doc_to_main",
+                    json!({"label": "doc-1", "textState": null, "format": "pdf"}),
+                )
+            });
+            wait_for("main to be created", || e.exists("main"));
+            let q = e.take("main");
+            assert_eq!(
+                q[1]["payload"],
+                json!({"path": wp(&f), "text_state": null, "format": "pdf", "from": "doc-1"})
+            );
+            e.call_from(
+                "main",
+                "doc_opened",
+                json!({"path": wp(&f), "location": tab("main", "n1"), "adoptingFrom": "doc-1"}),
+            )
+            .unwrap();
+            e.call_from("main", "adopted", json!({"label": "doc-1"}))
+                .unwrap();
+            mover.join().unwrap().unwrap();
+        });
+    });
 }
 
 #[test]

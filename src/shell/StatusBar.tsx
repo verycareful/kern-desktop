@@ -4,6 +4,8 @@ import { displayPath } from "../ipc";
 import { encodingText, endingText, useDocStatus } from "../editor/doc-status";
 import { useFolderStatus } from "../files/folder-status";
 import { formatSize } from "../files/format";
+import { usePdfView } from "../pdf/pdf-view";
+import { pdfController } from "../pdf/pdf-controller";
 import { noticesShown, useOps } from "../ops/useOps";
 import { activeTab, useTabs, isPlaceTab, tabTitle } from "../store/tabs";
 
@@ -21,6 +23,9 @@ export function StatusBar() {
     tab?.kind === "folder" || tab?.kind === "trash" ? s.byTab[tab.id] : undefined
   );
   const docStatus = useDocStatus((s) => (tab?.kind === "doc" ? s.byTab[tab.id] : undefined));
+  const pdfView = usePdfView((s) =>
+    tab?.kind === "doc" && tab.format === "pdf" ? s.byTab[tab.id] : undefined
+  );
   const notice = useOps((s) => s.notice);
   const earlier = useOps((s) => s.earlier);
   const place = !tab ? "" : isPlaceTab(tab) ? tabTitle(tab) : displayPath(tab.path);
@@ -48,6 +53,22 @@ export function StatusBar() {
           <span data-testid="status-position">{`Ln ${docStatus.line}, Col ${docStatus.col}`}</span>
           <span data-testid="status-encoding">{encodingText(docStatus.bom)}</span>
           <span data-testid="status-ending">{endingText(docStatus.ending)}</span>
+        </span>
+      )}
+      {tab?.kind === "doc" && pdfView && pdfView.pages > 0 && (
+        <span className="kern-status-doc" data-testid="status-pdf">
+          <button
+            type="button"
+            className="kern-status-button"
+            title="Go to page"
+            data-testid="status-page"
+            onClick={() => pdfController(tab.id)?.askGoToPage()}
+          >
+            {`${(pdfView.page + 1).toLocaleString("en-US")} / ${pdfView.pages.toLocaleString("en-US")}`}
+          </button>
+          {pdfView.zoom > 0 && (
+            <span data-testid="status-zoom">{`${Math.round(pdfView.zoom * 100)}%`}</span>
+          )}
         </span>
       )}
       {tab?.kind === "doc" && tab.dirty && (

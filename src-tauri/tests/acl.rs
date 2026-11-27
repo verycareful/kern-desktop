@@ -34,6 +34,8 @@ fn env(label: &str) -> Env {
     fs::create_dir_all(&config).unwrap();
     fs::create_dir_all(&state).unwrap();
     let app = mock_builder()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(kernkraft_tauri::init())
         .plugin(zoom::plugin())
         .manage(StoreState::new(Store::new(config, state)))
@@ -76,6 +78,9 @@ fn env(label: &str) -> Env {
             kern_lib::dnd::dnd_target,
             kern_lib::dnd::drop_start_op,
             kern_lib::remove::remove_start_op,
+            kern_lib::pick::pick_pdfs,
+            kern_lib::pick::pick_folder,
+            kern_lib::pick::pick_save_pdf,
         ])
         .build(tauri::generate_context!())
         .unwrap();
@@ -263,8 +268,12 @@ fn granted(name: &str, windows: &str) -> (Vec<String>, Vec<String>) {
     assert_eq!(json["windows"], json!([windows]));
     let (mut kernkraft_cmds, mut kern_cmds) = (Vec::new(), Vec::new());
     for permission in json["permissions"].as_array().unwrap() {
-        let permission = permission.as_str().unwrap();
-        if permission.starts_with("core:") {
+        // A grant with a scope is an object; its identifier names the permission.
+        let permission = permission
+            .as_str()
+            .or_else(|| permission["identifier"].as_str())
+            .unwrap();
+        if permission.starts_with("core:") || permission.starts_with("opener:") {
             continue;
         }
         let prefix = format!("{}:allow-", kernkraft_tauri::PLUGIN_NAME);
@@ -629,7 +638,7 @@ fn every_window_that_holds_documents_may_report_a_rename_and_a_stranger_may_not(
 /// the settings' writes and window, the file manager's own commands (drags out, the clipboard of
 /// files, drops, the default file manager), moving a tab to a window or taking a document in, and
 /// the files of other places.
-const NOT_FOR_DOCUMENT_WINDOWS: [&str; 24] = [
+const NOT_FOR_DOCUMENT_WINDOWS: [&str; 22] = [
     "binds_set",
     "binds_clear",
     "layout_get",
@@ -646,11 +655,9 @@ const NOT_FOR_DOCUMENT_WINDOWS: [&str; 24] = [
     "file_identity",
     "drag_out",
     "dnd_target",
-    "drop_start_op",
     "remove_start_op",
     "clip_get",
     "clip_set",
-    "clip_text",
     "fm1_status",
     "default_fm_status",
     "make_default_fm",
@@ -723,6 +730,175 @@ fn a_document_window_is_granted_every_command_its_capability_names() {
     for cmd in NOT_FOR_DOCUMENT_WINDOWS {
         assert!(!kern_cmds.iter().any(|c| c == cmd), "{cmd}");
     }
+}
+
+/// A PDF in a tab of the main window asks before its first change whether to keep a copy, and the
+/// copy is made with the same operation a document window uses (`drop_start_op`), so the main
+/// window holds it, and the answer to the name question and the cancel that go with it.
+#[test]
+fn the_main_window_may_copy_a_pdf_beside_itself() {
+    let main = env("main");
+    let source = json!([{"k": "Utf8", "v": "/does-not-exist/a.pdf"}]);
+    let dest = json!({"k": "Utf8", "v": "/does-not-exist"});
+    let err = invoke(
+        &main,
+        "drop_start_op",
+        json!({"kind": "copy", "sources": source, "dest": dest}),
+    )
+    .unwrap_err();
+    let text = err.to_string();
+    assert!(!text.contains("not allowed"), "{text}");
+    assert!(!text.contains("invalid args"), "{text}");
+    for cmd in ["cancel_op", "answer_conflict"] {
+        if let Err(err) = invoke(&main, &kernkraft(cmd), json!({})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "main {cmd}: {err}"
+            );
+        }
+    }
+}
+
+/// Save a copy first, in a document window, copies the file into its own folder with the copy
+/// operation the editor windows use for a drop, and answers the name question of that copy. It is
+/// not granted the general start_op, nor the removal commands.
+#[test]
+fn a_document_window_may_copy_its_file_and_start_nothing_else() {
+    let e = env("doc-1");
+    let (kernkraft_cmds, kern_cmds) = granted("doc.json", "doc-*");
+    for cmd in ["cancel_op", "answer_conflict"] {
+        assert!(kernkraft_cmds.iter().any(|c| c == cmd), "{cmd}");
+    }
+    assert!(kern_cmds.iter().any(|c| c == "drop_start_op"));
+    let source = json!([{"k": "Utf8", "v": "/does-not-exist/a.pdf"}]);
+    let dest = json!({"k": "Utf8", "v": "/does-not-exist"});
+    let err = invoke(
+        &e,
+        "drop_start_op",
+        json!({"kind": "copy", "sources": source, "dest": dest}),
+    )
+    .unwrap_err();
+    let text = err.to_string();
+    assert!(!text.contains("not allowed"), "{text}");
+    assert!(!text.contains("invalid args"), "{text}");
+    let err = invoke(
+        &e,
+        "remove_start_op",
+        json!({"kind": "trash", "sources": source}),
+    )
+    .unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+    let err = invoke(
+        &e,
+        &kernkraft("start_op"),
+        json!({"kind": "copy", "sources": source, "dest": null}),
+    )
+    .unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+}
+
+/// Copy of a selection in a PDF puts text on the clipboard from a document window. The clipboard
+/// of files stays the file manager's.
+#[test]
+fn a_document_window_may_put_text_on_the_clipboard_and_not_touch_the_clipboard_of_files() {
+    let e = env("doc-1");
+    let (_, kern_cmds) = granted("doc.json", "doc-*");
+    assert!(kern_cmds.iter().any(|c| c == "clip_text"));
+    // Reached, so refused or answered by the command (it wants a focused window), never by the
+    // access control.
+    if let Err(err) = invoke(&e, "clip_text", json!({"text": "a"})) {
+        assert!(
+            !err.as_str().is_some_and(|s| s.contains("not allowed")),
+            "{err}"
+        );
+    }
+    for cmd in ["clip_get", "clip_set", "clip_clear_if"] {
+        assert!(!kern_cmds.iter().any(|c| c == cmd), "{cmd}");
+        let err = invoke(&e, cmd, json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "{cmd}: {err}"
+        );
+    }
+}
+
+/// The grants of the opener plugin in a capability file: each identifier with its allowed URL
+/// patterns (empty when the grant has no scope).
+fn opener_grants(name: &str) -> Vec<(String, Vec<String>)> {
+    let file = format!("{}/capabilities/{name}", env!("CARGO_MANIFEST_DIR"));
+    let json: Value = serde_json::from_str(&fs::read_to_string(file).unwrap()).unwrap();
+    json["permissions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|p| {
+            let id = p.as_str().or_else(|| p["identifier"].as_str()).unwrap();
+            id.starts_with("opener:").then(|| {
+                let allowed = p["allow"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .map(|e| e["url"].as_str().unwrap().to_owned())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                (id.to_owned(), allowed)
+            })
+        })
+        .collect()
+}
+
+/// A link in a PDF is handed to the system for the four schemes Kern Android also opens, and for
+/// nothing else: no file path, no reveal in the file manager, no other scheme.
+#[test]
+fn the_windows_that_show_a_pdf_may_open_only_web_mail_and_phone_addresses() {
+    let schemes = ["https://*", "http://*", "mailto:*", "tel:*"];
+    for (file, window) in [
+        ("doc.json", "doc-1"),
+        ("editor.json", "editor-1"),
+        ("main.json", "main"),
+    ] {
+        let grants = opener_grants(file);
+        assert_eq!(
+            grants,
+            vec![(
+                "opener:allow-open-url".to_owned(),
+                schemes.iter().map(|s| (*s).to_owned()).collect()
+            )],
+            "{file}"
+        );
+        let e = env(window);
+        for (cmd, args) in [
+            ("open_path", json!({"path": "/etc/hostname"})),
+            ("reveal_item_in_dir", json!({"path": "/etc/hostname"})),
+            ("open_url", json!({"url": "file:///etc/hostname"})),
+            ("open_url", json!({"url": "ftp://example.org/a"})),
+            ("open_url", json!({"url": "javascript:alert(1)"})),
+        ] {
+            let err = invoke(&e, &format!("plugin:opener|{cmd}"), args.clone()).unwrap_err();
+            // A command no capability grants is "not allowed"; an address outside the scope of
+            // the grant is "Not allowed to open url".
+            assert!(
+                err.as_str().unwrap().to_lowercase().contains("not allowed"),
+                "{window} {cmd} {args}: {err}"
+            );
+        }
+    }
+}
+
+/// Only the windows that show a PDF hold the grant (a PDF opened inside the app is a tab of the
+/// main window): the settings window has none.
+#[test]
+fn the_settings_window_may_not_open_an_address() {
+    assert!(opener_grants("settings.json").is_empty());
+    let e = env("settings");
+    let err = invoke(
+        &e,
+        "plugin:opener|open_url",
+        json!({"url": "https://example.org"}),
+    )
+    .unwrap_err();
+    assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
 }
 
 #[test]
@@ -919,4 +1095,158 @@ fn every_window_reads_the_binds_and_only_the_settings_window_changes_them() {
     let e = env("stranger");
     let err = invoke(&e, "binds_get", json!({})).unwrap_err();
     assert!(err.as_str().unwrap().contains("not allowed"), "{err}");
+}
+
+/// The kernkraft PDF commands a window that shows a PDF sends: opening and closing it, a page's
+/// size, picture, text, search hits, links and annotations, an edit with its undo and redo, the
+/// save and the compacted copy, the jobs, and the font list read once at start. Merge, extract and
+/// split are in PDF_FILE_COMMANDS.
+const PDF_VIEW_COMMANDS: [&str; 18] = [
+    "pdf_open",
+    "pdf_close",
+    "pdf_page_info",
+    "pdf_render_size",
+    "pdf_render",
+    "pdf_text",
+    "pdf_search",
+    "pdf_links",
+    "pdf_annotations",
+    "pdf_apply",
+    "pdf_undo",
+    "pdf_redo",
+    "pdf_save",
+    "pdf_compact",
+    "pdf_compact_file",
+    "pdf_cancel_job",
+    "pdf_job_progress",
+    "pdf_set_system_fonts",
+];
+
+/// What a PDF's Merge, Extract and Split send: each writes a new file and never replaces one.
+const PDF_FILE_COMMANDS: [&str; 3] = ["pdf_merge", "pdf_extract", "pdf_split"];
+
+/// Kern's own file chooser commands (pick.rs), which the page operations use to name files.
+const PICK_COMMANDS: [&str; 3] = ["pick_pdfs", "pick_folder", "pick_save_pdf"];
+
+#[test]
+fn doc_and_editor_windows_may_open_and_save_a_pdf() {
+    for (file, windows, label) in [
+        ("doc.json", "doc-*", "doc-1"),
+        ("editor.json", "editor-*", "editor-1"),
+    ] {
+        let (kernkraft_cmds, _) = granted(file, windows);
+        for cmd in PDF_VIEW_COMMANDS {
+            assert!(kernkraft_cmds.iter().any(|c| c == cmd), "{file}: {cmd}");
+        }
+        // The access control lets the command through; what the command then says about a handle
+        // nobody opened is its own answer.
+        let e = env(label);
+        for cmd in PDF_VIEW_COMMANDS {
+            if let Err(err) = invoke(&e, &kernkraft(cmd), json!({})) {
+                assert!(
+                    !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                    "{label} {cmd}: {err}"
+                );
+            }
+        }
+    }
+    // The Settings window shows no PDF.
+    let (kernkraft_cmds, _) = granted("settings.json", "settings");
+    let e = env("settings");
+    for cmd in PDF_VIEW_COMMANDS {
+        assert!(!kernkraft_cmds.iter().any(|c| c == cmd), "settings: {cmd}");
+        let err = invoke(&e, &kernkraft(cmd), json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "settings {cmd}: {err}"
+        );
+    }
+}
+
+#[test]
+fn merge_extract_and_split_are_allowed_in_doc_and_editor_windows() {
+    for (file, windows, label) in [
+        ("doc.json", "doc-*", "doc-1"),
+        ("editor.json", "editor-*", "editor-1"),
+    ] {
+        let (kernkraft_cmds, kern_cmds) = granted(file, windows);
+        let e = env(label);
+        for cmd in PDF_FILE_COMMANDS {
+            assert!(kernkraft_cmds.iter().any(|c| c == cmd), "{file}: {cmd}");
+            if let Err(err) = invoke(&e, &kernkraft(cmd), json!({})) {
+                assert!(
+                    !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                    "{label} {cmd}: {err}"
+                );
+            }
+        }
+        for cmd in PICK_COMMANDS {
+            assert!(kern_cmds.iter().any(|c| c == cmd), "{file}: {cmd}");
+        }
+    }
+}
+
+/// The window that holds a PDF in a tab (main) holds the same page operations and choosers; the
+/// Settings window shows no PDF and holds none.
+#[test]
+fn the_main_window_may_pick_files_and_the_settings_window_may_not() {
+    let main = env("main");
+    for cmd in PDF_FILE_COMMANDS {
+        if let Err(err) = invoke(&main, &kernkraft(cmd), json!({})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "main {cmd}: {err}"
+            );
+        }
+    }
+    for cmd in PICK_COMMANDS {
+        if let Err(err) = invoke(&main, cmd, json!({})) {
+            assert!(
+                !err.as_str().is_some_and(|s| s.contains("not allowed")),
+                "main {cmd}: {err}"
+            );
+        }
+    }
+    let settings = env("settings");
+    for cmd in PICK_COMMANDS {
+        let err = invoke(&settings, cmd, json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "settings {cmd}: {err}"
+        );
+    }
+    for cmd in PDF_FILE_COMMANDS {
+        let err = invoke(&settings, &kernkraft(cmd), json!({})).unwrap_err();
+        assert!(
+            err.as_str().unwrap().contains("not allowed"),
+            "settings {cmd}: {err}"
+        );
+    }
+}
+
+/// The dialog plugin's own `open` and `save` add what they return to the asset protocol's scope,
+/// so no window may call them; Kern's choosers do not.
+#[test]
+fn no_window_may_call_the_dialog_plugins_own_commands() {
+    for label in ["main", "doc-1", "editor-1", "settings"] {
+        let e = env(label);
+        for cmd in ["open", "save", "message", "ask", "confirm"] {
+            let err = invoke(&e, &format!("plugin:dialog|{cmd}"), json!({})).unwrap_err();
+            assert!(
+                err.as_str().unwrap().to_lowercase().contains("not allowed"),
+                "{label} {cmd}: {err}"
+            );
+        }
+    }
+    for file in ["main.json", "doc.json", "editor.json", "settings.json"] {
+        let text = fs::read_to_string(format!(
+            "{}/capabilities/{file}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        assert!(
+            !text.contains("dialog:"),
+            "{file} names a dialog permission"
+        );
+    }
 }

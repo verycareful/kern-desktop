@@ -30,3 +30,16 @@ if (typeof document.elementFromPoint !== "function") {
 // jsdom does no layout, so it has no scrollIntoView; Settings scrolls a section into view when
 // asked for it. Scrolling there has nothing to move, so a stand-in that does nothing is exact.
 Element.prototype.scrollIntoView ??= () => undefined;
+
+// jsdom does no layout, so it has no observers of size or of what is in view. These stand-ins
+// report nothing; a test that depends on one installs its own (src/pdf/PdfPages.test.tsx).
+class QuietObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+  takeRecords(): [] {
+    return [];
+  }
+}
+globalThis.ResizeObserver ??= QuietObserver as unknown as typeof ResizeObserver;
+globalThis.IntersectionObserver ??= QuietObserver as unknown as typeof IntersectionObserver;

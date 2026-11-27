@@ -15,6 +15,17 @@ export type ViewMode = "list" | "grid";
 
 /** Which of the two new tabs Ctrl+T opens; the other is on Ctrl+Shift+T. */
 export type NewTabDefault = "folder" | "current";
+export type PdfLayout = "scroll" | "single" | "spread" | "grid";
+/** A panel beside an open PDF (store.rs PdfPanels). */
+export type PdfPanelId = "thumbnails" | "tools";
+/** The side of the document area a PDF panel sits on (store.rs PanelSide). */
+export type PanelSide = "left" | "right" | "bottom";
+/** Where one PDF panel sits and whether it is folded to its icons (store.rs PanelPlacement). */
+export interface PanelPlacement {
+  side: PanelSide;
+  collapsed: boolean;
+}
+export type PdfPanels = Record<PdfPanelId, PanelPlacement>;
 
 /** How the time of day is written in dates (store.rs TimeFormat): the system's way, 12-hour or 24-hour. */
 export type TimeFormat = "system" | "12" | "24";
@@ -73,6 +84,12 @@ export interface Settings {
   time_format: TimeFormat;
   /** The shape of the folder view's right-click menu (store.rs Settings::folder_menu). */
   folder_menu: FolderMenu;
+  /** How every PDF is laid out (store.rs Settings::pdf_layout). */
+  pdf_layout: PdfLayout;
+  /** The pages in a row of the PDF grid layout, 1 to 12 (store.rs Settings::pdf_grid_across). */
+  pdf_grid_across: number;
+  /** Where the page thumbnails and the tools sit beside every PDF (store.rs Settings::pdf_panels). */
+  pdf_panels: PdfPanels;
   /** Whether Kern writes the error log (store.rs Settings::error_log). */
   error_log: boolean;
 }
@@ -243,11 +260,17 @@ export interface OpenOutcome {
   error: WireError | null;
 }
 
+/**
+ * How a document tab shows its file. Absent means text; the backend names the format when it
+ * routes the file (windows.rs DocFormat) and the session keeps it.
+ */
+export type DocFormat = "pdf";
+
 /** What a window is told to do, on kern://open. */
 export type Directive =
   | { kind: "folder_tab"; path: WirePath }
-  | { kind: "doc_tab"; path: WirePath }
-  | { kind: "load_doc"; path: WirePath; text_state?: unknown; ack?: boolean }
+  | { kind: "doc_tab"; path: WirePath; format?: DocFormat }
+  | { kind: "load_doc"; path: WirePath; format?: DocFormat; text_state?: unknown; ack?: boolean }
   | { kind: "editor_root"; path: WirePath }
   | { kind: "home_tab" }
   | { kind: "focus_tab"; tab_id: string }
@@ -263,7 +286,7 @@ export type Directive =
 /** A tab as session.json keeps it (store.rs SessionTab). */
 export type SessionTab =
   | { kind: "folder"; path: WirePath }
-  | { kind: "doc"; path: WirePath }
+  | { kind: "doc"; path: WirePath; format?: DocFormat }
   | { kind: "trash" }
   | { kind: "documents" };
 
@@ -335,18 +358,23 @@ export const openPendingTake = () => invoke<Queued[]>("open_pending_take");
  * holds the document and has registered it. Rejects (DetachRefused, DetachTimeout) when it does
  * not, and the tab keeps the document.
  */
-export const detachDoc = (tabId: string, path: WirePath, textState?: unknown) =>
-  invoke<string>("detach_doc", { tabId, path, textState: textState ?? null });
+export const detachDoc = (tabId: string, path: WirePath, textState?: unknown, format?: DocFormat) =>
+  invoke<string>("detach_doc", { tabId, path, textState: textState ?? null, format });
 
-export const moveDocToMain = (label: string, textState?: unknown) =>
-  invoke<void>("move_doc_to_main", { label, textState: textState ?? null });
+export const moveDocToMain = (label: string, textState?: unknown, format?: DocFormat) =>
+  invoke<void>("move_doc_to_main", { label, textState: textState ?? null, format });
 
 /**
  * Gives the document this window holds at `path` (tab `tabId`, or a document window's own with
  * null) to editor window `to`; resolves once `to` holds it. A document window is then closed.
  */
-export const handDoc = (tabId: string | null, path: WirePath, textState: unknown, to: string) =>
-  invoke<void>("hand_doc", { tabId, path, textState: textState ?? null, to });
+export const handDoc = (
+  tabId: string | null,
+  path: WirePath,
+  textState: unknown,
+  to: string,
+  format?: DocFormat
+) => invoke<void>("hand_doc", { tabId, path, textState: textState ?? null, to, format });
 
 /** This window could not give `path` to editor window `to`: `to` is told why and this window comes forward. */
 export const handRefused = (path: WirePath, to: string, reason: string) =>
@@ -477,6 +505,25 @@ export const clipGet = () => invoke<ClipContents | null>("clip_get");
 /** Clears the clipboard only if it still holds exactly this operation on exactly these paths; resolves to whether it did. */
 export const clipClearIf = (op: ClipOp, paths: WirePath[]) =>
   invoke<boolean>("clip_clear_if", { op, paths });
+
+// The system's file chooser (pick.rs).
+// For the PDF operations that name files. Each answers null when the chooser is closed. The chooser
+// may offer to replace a file; the operation that writes still refuses one that exists.
+
+/** Asks for one or more PDF files, starting in `folder`. */
+export const pickPdfs = (title: string, folder?: WirePath) =>
+  invoke<WirePath[] | null>("pick_pdfs", { title, folder: folder ?? null });
+/** Asks for a folder, starting in `folder`. */
+export const pickFolder = (title: string, folder?: WirePath) =>
+  invoke<WirePath | null>("pick_folder", { title, folder: folder ?? null });
+/** Asks where to write a PDF, starting in `folder` with the name `fileName`. */
+export const pickSavePdf = (title: string, folder?: WirePath, fileName?: string) =>
+  invoke<WirePath | null>("pick_save_pdf", {
+    title,
+    folder: folder ?? null,
+    fileName: fileName ?? null,
+  });
+
 export const dragOut = (paths: WirePath[]) => invoke<void>("drag_out", { paths });
 /** Answers kern://drag-over: the backend then shows the pointer what Kern will do at that place. */
 export const dndTarget = (drag: number, target: DragTarget) =>

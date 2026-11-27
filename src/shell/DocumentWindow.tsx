@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useCallback, useState } from "react";
 import { House } from "lucide-react";
-import { TextEditor } from "../editor/TextEditor";
+import { DocView } from "../pdf/DocView";
 import { detached, refuseDetach, toWireError } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { useRaisedText } from "../ops/raised-text";
@@ -83,8 +83,9 @@ export function DocumentWindow(props: { label: string; starting: boolean }) {
       )}
       <main className="kern-doc-area" data-testid="doc-area">
         {doc ? (
-          <TextEditor
+          <DocView
             tabId={label}
+            format={doc.format}
             path={doc.path}
             active
             location={{ kind: "window", label }}

@@ -152,7 +152,12 @@ export function closeTab(id: string): void {
   }
   const items = atRisk([id]);
   if (items.length === 0) closeAndSay(id);
-  else void ask(items, "tab").then((o) => o !== "stop" && closeAndSay(id));
+  else {
+    void ask(items, "tab").then((o) => {
+      if (o === "stop") return;
+      closeAndSay(id);
+    });
+  }
 }
 
 /**

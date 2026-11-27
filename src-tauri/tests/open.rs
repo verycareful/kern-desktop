@@ -138,7 +138,7 @@ fn ctrl_double_click_gets_window() {
 #[test]
 fn non_text_goes_default_app() {
     let t = tempfile::tempdir().unwrap();
-    let f = file(t.path(), "a.pdf");
+    let f = file(t.path(), "a.png");
     let reg = OpenRegistry::new();
     for (origin, gesture) in [
         (Origin::Inside, Gesture::Default),
@@ -150,6 +150,51 @@ fn non_text_goes_default_app() {
             Target::DefaultApp(f.clone())
         );
     }
+}
+
+#[test]
+fn route_sends_a_pdf_to_a_tab() {
+    let t = tempfile::tempdir().unwrap();
+    let f = file(t.path(), "a.pdf");
+    let reg = OpenRegistry::new();
+    assert_eq!(
+        go(&f, Origin::Inside, Gesture::Default, Kind::Pdf, &reg),
+        Target::DocTab(f)
+    );
+}
+
+#[test]
+fn route_sends_a_pdf_from_outside_or_by_gesture_to_a_window() {
+    let t = tempfile::tempdir().unwrap();
+    let f = file(t.path(), "a.pdf");
+    let reg = OpenRegistry::new();
+    for (origin, gesture) in [
+        (Origin::Outside, Gesture::Default),
+        (Origin::Inside, Gesture::NewWindow),
+    ] {
+        assert_eq!(
+            go(&f, origin, gesture, Kind::Pdf, &reg),
+            Target::DocWindow(f.clone())
+        );
+    }
+}
+
+#[test]
+fn route_focuses_a_pdf_already_open() {
+    let t = tempfile::tempdir().unwrap();
+    let f = file(t.path(), "a.pdf");
+    let reg = OpenRegistry::new();
+    let loc = tab("main", "t1");
+    register(&reg, &f, loc.clone());
+    assert_eq!(
+        go(&f, Origin::Outside, Gesture::Default, Kind::Pdf, &reg),
+        Target::Focus(loc)
+    );
+    reg.remove(&f);
+    assert_eq!(
+        go(&f, Origin::Outside, Gesture::Default, Kind::Pdf, &reg),
+        Target::DocWindow(f)
+    );
 }
 
 #[test]
@@ -422,6 +467,20 @@ fn prelaunch_runs_only_what_needs_no_window() {
         kern_lib::prelaunch::run(&inv(vec![os("missing.png")])),
         Some(1)
     );
+}
+
+#[test]
+fn prelaunch_gives_a_pdf_a_window_instead_of_its_default_app() {
+    use kern_lib::instance::Invocation;
+    let t = tempfile::tempdir().unwrap();
+    let f = t.path().join("a.pdf");
+    fs::write(&f, b"%PDF-1.4\n%%EOF\n").unwrap();
+    let inv = Invocation {
+        argv: vec![f.as_os_str().to_owned()],
+        cwd: t.path().to_path_buf(),
+        activation_token: String::new(),
+    };
+    assert_eq!(kern_lib::prelaunch::run(&inv), None);
 }
 
 #[test]

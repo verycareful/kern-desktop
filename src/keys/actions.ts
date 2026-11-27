@@ -23,7 +23,14 @@ import { folderController, type MoveTo } from "../files/folder-controller";
 import { useFolderUi } from "../files/folder-ui";
 import type { SortBy, SortDir } from "../files/sort";
 import { orderWords, useTreeSort, type TreeSortBy } from "../files/tree-sort";
-import { setViewMode, toggleHidden, useViewSettings } from "../files/view-settings";
+import {
+  movePdfPanel,
+  setPdfLayout,
+  setViewMode,
+  toggleHidden,
+  togglePdfPanel,
+  useViewSettings,
+} from "../files/view-settings";
 import { trashController, type TrashMove } from "../files/trash-controller";
 import { useVolumes } from "../shell/volumes-store";
 import { isEditorPin, usePinnedRecent } from "../shell/pinned-recent-store";
@@ -32,6 +39,8 @@ import { showSettings } from "../settings/show-settings";
 import { documentsController } from "../files/documents-controller";
 import { useOps } from "../ops/useOps";
 import { docController } from "../editor/doc-controller";
+import { PANEL_ORDER as PANEL_IDS, PANEL_TITLES, SIDES } from "../pdf/panel-placement";
+import { pdfController } from "../pdf/pdf-controller";
 import { moveTabToWindow } from "../shell/move-doc";
 import { closeTab } from "../shell/useCloseGuard";
 import { openAsEditor } from "../shell/layout-switch";
@@ -1467,7 +1476,307 @@ const docActions: Action[] = [
   },
 ];
 
-actions.push(...docActions, ...trashActions, ...placeActions, ...pinnedActions);
+function pdfOf(c: ActionContext) {
+  return c.target?.kind === "doc" && c.target.format === "pdf"
+    ? pdfController(c.target.id)
+    : undefined;
+}
+
+// The zoom keys: Ctrl+plus is Ctrl+= on a layout whose plus shares a key with =, and Ctrl+Shift
+// plus on one that types it with Shift. The view takes them while a PDF is in front.
+const pdfActions: Action[] = [
+  {
+    id: "pdf.zoomIn",
+    label: "Zoom in",
+    area: "View",
+    keys: ["Ctrl+=", "Ctrl+Plus", "Ctrl+Shift+Plus"],
+    when: "doc",
+    inEditable: true,
+    enabled: (c) => pdfOf(c) !== undefined,
+    run: (c) => pdfOf(c)?.zoomIn(),
+  },
+  {
+    id: "pdf.zoomOut",
+    label: "Zoom out",
+    area: "View",
+    keys: ["Ctrl+-"],
+    when: "doc",
+    inEditable: true,
+    enabled: (c) => pdfOf(c) !== undefined,
+    run: (c) => pdfOf(c)?.zoomOut(),
+  },
+  {
+    id: "pdf.zoomFit",
+    label: "Fit width",
+    area: "View",
+    keys: ["Ctrl+0"],
+    when: "doc",
+    inEditable: true,
+    enabled: (c) => pdfOf(c) !== undefined,
+    run: (c) => pdfOf(c)?.zoomFit(),
+  },
+  ...(
+    [
+      ["scroll", "Continuous scroll", "Ctrl+Alt+1"],
+      ["single", "Single page", "Ctrl+Alt+2"],
+      ["spread", "Two pages", "Ctrl+Alt+3"],
+      ["grid", "Grid of pages", "Ctrl+Alt+4"],
+    ] as const
+  ).map(([layout, label, key]): Action => ({
+    id: `pdf.layout.${layout}`,
+    label,
+    area: "View",
+    keys: [key],
+    when: "doc",
+    inEditable: true,
+    checked: () => useViewSettings.getState().pdfLayout === layout,
+    enabled: (c) => pdfOf(c) !== undefined,
+    run: () => void setPdfLayout(layout),
+  })),
+  ...PANEL_IDS.map((id): Action => ({
+    id: `pdf.panel.${id}.toggle`,
+    label: `Collapse or expand ${PANEL_TITLES[id]}`,
+    menuLabel: () =>
+      `${useViewSettings.getState().pdfPanels[id].collapsed ? "Expand" : "Collapse"} ${PANEL_TITLES[id]}`,
+    area: "Panels",
+    keys: [id === "thumbnails" ? "Ctrl+Alt+5" : "Ctrl+Alt+6"],
+    when: "doc",
+    inEditable: true,
+    enabled: (c) => pdfOf(c) !== undefined,
+    run: () => void togglePdfPanel(id),
+  })),
+  ...PANEL_IDS.flatMap((id) =>
+    SIDES.map((side): Action => ({
+      id: `pdf.panel.${id}.move.${side}`,
+      label: `Move ${PANEL_TITLES[id]} to the ${side}`,
+      area: "Panels",
+      keys: [],
+      when: "doc",
+      enabled: (c) =>
+        pdfOf(c) !== undefined && useViewSettings.getState().pdfPanels[id].side !== side,
+      run: () => void movePdfPanel(id, side),
+    }))
+  ),
+  {
+    id: "pdf.goToPage",
+    label: "Go to page…",
+    area: "Navigation",
+    keys: ["Ctrl+G"],
+    when: "doc",
+    enabled: (c) => pdfOf(c) !== undefined,
+    run: (c) => pdfOf(c)?.askGoToPage(),
+  },
+  // Rotate turns the page in view; Rotate all turns every page and has no key. The edit keys
+  // leave a field that has the focus (no `inEditable`) its own Ctrl+Z, Ctrl+Y and Ctrl+R.
+  ...(
+    [
+      ["pdf.rotate.cw", "Rotate page clockwise", ["Ctrl+R"], 90, "page"],
+      ["pdf.rotate.ccw", "Rotate page counterclockwise", ["Ctrl+Shift+R"], 270, "page"],
+      ["pdf.rotateAll.cw", "Rotate all pages clockwise", [], 90, "all"],
+      ["pdf.rotateAll.ccw", "Rotate all pages counterclockwise", [], 270, "all"],
+    ] as const
+  ).map(([id, label, keys, degrees, scope]): Action => ({
+    id,
+    label,
+    area: "Edit",
+    keys: [...keys],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canEdit() ?? false,
+    run: (c) => pdfOf(c)?.rotate(degrees, scope),
+  })),
+  // The pages chosen in the thumbnail strip or the grid. None has a key: Delete in the strip and
+  // the grid removes the chosen pages, and each has its menu entry.
+  ...(
+    [
+      ["pdf.rotateSelection.cw", "Rotate chosen pages clockwise", 90],
+      ["pdf.rotateSelection.ccw", "Rotate chosen pages counterclockwise", 270],
+    ] as const
+  ).map(([id, label, degrees]): Action => ({
+    id,
+    label,
+    area: "Edit",
+    keys: [],
+    when: "doc",
+    enabled: (c) => (pdfOf(c)?.canEdit() && pdfOf(c)?.hasPageSelection()) ?? false,
+    run: (c) => pdfOf(c)?.rotate(degrees, "selection"),
+  })),
+  {
+    id: "pdf.page.remove",
+    label: "Remove chosen pages",
+    area: "Edit",
+    keys: [],
+    when: "doc",
+    enabled: (c) => (pdfOf(c)?.canEdit() && pdfOf(c)?.hasPageSelection()) ?? false,
+    run: (c) => pdfOf(c)?.removeSelection(),
+  },
+  {
+    id: "pdf.merge",
+    label: "Merge PDFs…",
+    area: "File",
+    keys: [],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canPageFiles() ?? false,
+    run: (c) => pdfOf(c)?.askMerge(),
+  },
+  {
+    id: "pdf.extract",
+    label: "Extract pages…",
+    area: "File",
+    keys: [],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canPageFiles() ?? false,
+    run: (c) => pdfOf(c)?.askExtract(),
+  },
+  {
+    id: "pdf.split",
+    label: "Split into files…",
+    area: "File",
+    keys: [],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canPageFiles() ?? false,
+    run: (c) => pdfOf(c)?.askSplit(),
+  },
+  {
+    id: "pdf.saveCompacted",
+    label: "Save a compacted copy…",
+    area: "File",
+    keys: [],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canCompactedCopy() ?? false,
+    run: (c) => pdfOf(c)?.askCompactedCopy(),
+  },
+  {
+    id: "pdf.reload",
+    label: "Reload from disk",
+    area: "File",
+    keys: [],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canReload() ?? false,
+    run: (c) => pdfOf(c)?.askReload(),
+  },
+  // Copy and Select all leave a field that has the focus (no `inEditable`) its own.
+  {
+    id: "pdf.copy",
+    label: "Copy",
+    area: "Edit",
+    keys: ["Ctrl+C"],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.hasSelection() ?? false,
+    run: (c) => pdfOf(c)?.copySelection(),
+  },
+  {
+    id: "pdf.selectAll",
+    label: "Select all text on the page",
+    area: "Edit",
+    keys: ["Ctrl+A"],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canSelectAll() ?? false,
+    run: (c) => pdfOf(c)?.selectAll(),
+  },
+  // The keys of Find are not claimed from a field that has the focus (CodeMirror's own Ctrl+F
+  // and F3); the find bar's field answers them itself.
+  {
+    id: "pdf.find",
+    label: "Find in the document",
+    area: "Edit",
+    keys: ["Ctrl+F"],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canFind() ?? false,
+    run: (c) => pdfOf(c)?.openFind(),
+  },
+  {
+    id: "pdf.findNext",
+    label: "Find next",
+    area: "Edit",
+    keys: ["F3"],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canFind() ?? false,
+    run: (c) => pdfOf(c)?.findStep(1),
+  },
+  {
+    id: "pdf.findPrevious",
+    label: "Find previous",
+    area: "Edit",
+    keys: ["Shift+F3"],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canFind() ?? false,
+    run: (c) => pdfOf(c)?.findStep(-1),
+  },
+  {
+    id: "pdf.searchSelection",
+    label: "Search for the selected text",
+    area: "Edit",
+    keys: [],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.hasSelection() ?? false,
+    run: (c) => pdfOf(c)?.searchSelection(),
+  },
+  // Annotations. The tools are in hand until Select is chosen again (Escape ends only what is in progress). The
+  // markup keys act on the selected text. Delete takes the picked annotation away; the strip and
+  // the grid keep their own Delete for the pages chosen there, and the keys skip a press they
+  // took.
+  ...(
+    [
+      ["pdf.tool.select", "Select text and annotations", "select", "Ctrl+Alt+V"],
+      ["pdf.tool.ink", "Draw with the pen", "ink", "Ctrl+Alt+I"],
+      ["pdf.note.add", "Add or open a note", "note", "Ctrl+Alt+N"],
+      ["pdf.tool.editText", "Edit text", "editText", "Ctrl+Alt+E"],
+    ] as const
+  ).map(([id, label, tool, key]): Action => ({
+    id,
+    label,
+    area: "Edit",
+    keys: [key],
+    when: "doc",
+    enabled: (c) =>
+      tool === "select" ? pdfOf(c) !== undefined : (pdfOf(c)?.canAnnotate() ?? false),
+    run: (c) => pdfOf(c)?.setTool(tool),
+  })),
+  ...(
+    [
+      ["pdf.markup.highlight", "Highlight the selected text", "highlight", "Ctrl+Shift+H"],
+      ["pdf.markup.underline", "Underline the selected text", "underline", "Ctrl+Shift+U"],
+      ["pdf.markup.strikeout", "Strike out the selected text", "strikeOut", "Ctrl+Shift+K"],
+    ] as const
+  ).map(([id, label, kind, key]): Action => ({
+    id,
+    label,
+    area: "Edit",
+    keys: [key],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canMark() ?? false,
+    run: (c) => pdfOf(c)?.mark(kind),
+  })),
+  {
+    id: "pdf.annotation.delete",
+    label: "Delete the picked annotation",
+    area: "Edit",
+    keys: ["Delete"],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.hasPickedAnnotation() ?? false,
+    run: (c) => pdfOf(c)?.deletePicked(),
+  },
+  {
+    id: "pdf.undo",
+    label: "Undo",
+    area: "Edit",
+    keys: ["Ctrl+Z"],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canUndo() ?? false,
+    run: (c) => pdfOf(c)?.undo(),
+  },
+  {
+    id: "pdf.redo",
+    label: "Redo",
+    area: "Edit",
+    keys: ["Ctrl+Y", "Ctrl+Shift+Z"],
+    when: "doc",
+    enabled: (c) => pdfOf(c)?.canRedo() ?? false,
+    run: (c) => pdfOf(c)?.redo(),
+  },
+];
+
+actions.push(...docActions, ...pdfActions, ...trashActions, ...placeActions, ...pinnedActions);
 
 export function getAction(id: string): Action {
   const a = actions.find((x) => x.id === id);

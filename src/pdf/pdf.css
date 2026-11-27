@@ -1,0 +1,807 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (c) 2026 Sricharan Suresh (github.com/verycareful) */
+
+.kern-pdf-viewer {
+  display: flex;
+  flex-direction: column;
+}
+
+.kern-pdf-viewer[hidden] {
+  display: none;
+}
+
+.kern-pdf-status {
+  padding: 12px 16px;
+  color: var(--kern-text-dim);
+}
+
+.kern-pdf-status p {
+  margin: 0;
+}
+
+.kern-pdf-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.kern-pdf-pages {
+  position: relative;
+}
+
+/* A page is paper: it is white and its pixels are the document's, whatever the theme. */
+.kern-pdf-page {
+  position: absolute;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
+}
+
+.kern-pdf-page-pixels {
+  position: absolute;
+  inset: 0;
+}
+
+/* The grid is the page organizer: one button over each page, and the pages chosen are outlined. */
+.kern-pdf-page-overlay {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.kern-pdf-page-overlay:hover {
+  background: rgb(0 0 0 / 6%);
+}
+
+.kern-pdf-page-overlay:focus-visible {
+  outline: 2px solid var(--kern-accent);
+  outline-offset: 2px;
+}
+
+.kern-pdf-page-chosen {
+  outline: 3px solid var(--kern-accent);
+  outline-offset: 2px;
+}
+
+/* Where a dragged page would land: a bar on the side of the page it would go before or after. */
+.kern-pdf-gap-before,
+.kern-pdf-gap-after {
+  position: relative;
+}
+
+.kern-pdf-page.kern-pdf-gap-before,
+.kern-pdf-page.kern-pdf-gap-after {
+  position: absolute;
+}
+
+.kern-pdf-gap-before::before,
+.kern-pdf-gap-after::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  background: var(--kern-accent);
+  pointer-events: none;
+}
+
+.kern-pdf-gap-before::before {
+  top: 0;
+  bottom: 0;
+  left: -6px;
+  width: 4px;
+}
+
+.kern-pdf-gap-after::after {
+  top: 0;
+  bottom: 0;
+  right: -6px;
+  width: 4px;
+}
+
+.kern-pdf-thumbs-column .kern-pdf-gap-before::before,
+.kern-pdf-thumbs-column .kern-pdf-gap-after::after {
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 4px;
+}
+
+.kern-pdf-thumbs-column .kern-pdf-gap-before::before {
+  top: -4px;
+  bottom: auto;
+}
+
+.kern-pdf-thumbs-column .kern-pdf-gap-after::after {
+  top: auto;
+  bottom: -4px;
+}
+
+.kern-pdf-tile {
+  position: absolute;
+  display: block;
+}
+
+.kern-pdf-page-error {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 16px;
+  color: #555;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* The pages with the two panels around them. */
+.kern-pdf-dock {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.kern-pdf-dock-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.kern-pdf-dock-centre {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.kern-pdf-dock-column {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.kern-pdf-dock-left {
+  border-right: 1px solid var(--kern-border);
+}
+
+.kern-pdf-dock-right {
+  border-left: 1px solid var(--kern-border);
+}
+
+.kern-pdf-dock-bottom {
+  flex: none;
+  display: flex;
+  border-top: 1px solid var(--kern-border);
+}
+
+.kern-pdf-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--kern-surface);
+}
+
+/* A panel on a side is as wide as its thumbnails or its tools; one on the bottom is as tall. */
+.kern-pdf-dock-column .kern-pdf-panel {
+  width: 168px;
+}
+
+.kern-pdf-dock-column .kern-pdf-panel[data-collapsed="true"] {
+  width: auto;
+}
+
+.kern-pdf-dock-column .kern-pdf-panel[data-collapsed="false"]:has(.kern-pdf-thumbs) {
+  flex: 1;
+}
+
+.kern-pdf-dock-bottom .kern-pdf-panel {
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.kern-pdf-dock-bottom .kern-pdf-panel:has(.kern-pdf-thumbs) {
+  flex: 1;
+  height: 176px;
+}
+
+.kern-pdf-dock-bottom .kern-pdf-panel[data-collapsed="true"] {
+  height: auto;
+  flex: none;
+}
+
+.kern-pdf-panel-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+}
+
+.kern-pdf-dock-bottom .kern-pdf-panel-header {
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.kern-pdf-panel-title {
+  flex: 1;
+  margin: 0 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--kern-text);
+}
+
+.kern-pdf-panel-button {
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+
+.kern-pdf-panel-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+/* The thumbnails: a column of pages, or a row along the bottom. */
+.kern-pdf-thumbs {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+  padding: 8px;
+  overflow: auto;
+}
+
+.kern-pdf-thumbs-column {
+  flex-direction: column;
+  align-items: center;
+}
+
+.kern-pdf-thumbs-row {
+  flex-direction: row;
+  align-items: center;
+}
+
+.kern-pdf-thumb-item {
+  flex: none;
+}
+
+.kern-pdf-thumb-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  color: var(--kern-text-dim);
+  background: none;
+  border: 2px solid transparent;
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-pdf-thumb-button:hover {
+  background: var(--kern-accent-soft);
+}
+
+.kern-pdf-thumb-button[aria-current="page"] {
+  color: var(--kern-text);
+  border-color: var(--kern-accent);
+}
+
+.kern-pdf-thumb-button[aria-pressed="true"] {
+  background: var(--kern-accent-soft);
+}
+
+/* A thumbnail is paper like a page: white, never themed. */
+.kern-pdf-thumb {
+  position: relative;
+  display: block;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 35%);
+}
+
+.kern-pdf-thumb-pixels {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.kern-pdf-thumb-error {
+  position: absolute;
+  inset: 0;
+  padding: 8px;
+  color: #555;
+  font-size: 11px;
+  text-align: center;
+}
+
+.kern-pdf-thumb-number {
+  font-size: 12px;
+}
+
+/* The tools. */
+.kern-pdf-tools {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 6px 8px;
+  overflow: auto;
+}
+
+.kern-pdf-dock-bottom .kern-pdf-tools {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.kern-pdf-tool-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kern-pdf-dock-bottom .kern-pdf-tool-group {
+  flex-direction: row;
+  align-items: center;
+}
+
+.kern-pdf-tool-group-title {
+  margin: 0 0 2px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--kern-text-dim);
+}
+
+.kern-pdf-tool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 8px;
+  color: var(--kern-text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-pdf-tool[data-collapsed="true"] {
+  justify-content: center;
+  padding: 4px;
+  width: 30px;
+}
+
+.kern-pdf-tool:hover:not(:disabled) {
+  background: var(--kern-accent-soft);
+  color: var(--kern-accent);
+}
+
+.kern-pdf-tool[aria-pressed="true"] {
+  background: var(--kern-accent-soft);
+  color: var(--kern-accent);
+}
+
+.kern-pdf-tool:disabled {
+  color: var(--kern-text-dim);
+  cursor: default;
+}
+
+/* The text of a page: over the picture, invisible, selected by the viewer's own pointer code. */
+.kern-pdf-text {
+  position: absolute;
+  inset: 0;
+  user-select: none;
+  touch-action: none;
+}
+
+.kern-pdf-text-line {
+  position: absolute;
+  overflow: hidden;
+  white-space: pre;
+  color: transparent;
+  font-size: 1px;
+  cursor: text;
+}
+
+/* The selection is a colour laid over the page, like the highlight of any viewer. */
+.kern-pdf-selection {
+  position: absolute;
+  background: rgb(51 144 255 / 35%);
+  pointer-events: none;
+}
+
+.kern-pdf-selection-menu {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin-top: 6px;
+  color: var(--kern-text);
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+}
+
+.kern-pdf-text-error {
+  position: absolute;
+  inset: auto 0 0;
+  margin: 0;
+  padding: 4px 8px;
+  color: #555;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* A match of Find, and the match the bar stands on. */
+.kern-pdf-hit {
+  position: absolute;
+  background: rgb(255 214 0 / 45%);
+  pointer-events: none;
+}
+
+.kern-pdf-hit-current {
+  background: rgb(255 140 0 / 60%);
+  outline: 2px solid rgb(255 140 0);
+}
+
+/* A link is a box over the page; it shows only when the pointer is on it or the key is. */
+.kern-pdf-link {
+  position: absolute;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.kern-pdf-link:hover,
+.kern-pdf-link:focus-visible {
+  outline: 2px solid rgb(51 144 255 / 70%);
+}
+
+.kern-pdf-find {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  color: var(--kern-text);
+  background: var(--kern-surface);
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-pdf-find-input {
+  flex: 1 1 12em;
+  min-width: 8em;
+  margin: 0;
+}
+
+.kern-pdf-find-count {
+  min-width: 5em;
+  color: var(--kern-text-dim);
+  font-size: 12px;
+}
+
+.kern-link-address {
+  margin: 0 0 12px;
+  padding: 8px;
+  overflow-wrap: anywhere;
+  user-select: text;
+  font-family: var(--kern-mono, monospace);
+  background: var(--kern-surface-sunken, var(--kern-surface));
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+}
+
+/* The Merge, Extract and Split dialogs. */
+.kern-pdf-job-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.kern-pdf-job-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kern-pdf-job-note {
+  min-height: 1.2em;
+  color: var(--kern-text-dim);
+  font-size: 12px;
+}
+
+.kern-pdf-job-files {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+
+.kern-pdf-merge-list {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.kern-pdf-merge-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+/* The annotations of a page: boxes a key can reach, the one picked, and the surfaces of the tools.
+   The layer takes no pointer, so a press on the page goes to its text; only a tool's surface does. */
+.kern-pdf-annotations {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.kern-pdf-annotation {
+  position: absolute;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  pointer-events: none;
+}
+
+.kern-pdf-annotation:focus-visible {
+  outline: 2px solid rgb(51 144 255 / 70%);
+}
+
+.kern-pdf-annotation-picked {
+  position: absolute;
+  outline: 2px solid var(--kern-accent);
+  outline-offset: 2px;
+}
+
+.kern-pdf-annotation-menu,
+.kern-pdf-note-editor {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  margin-top: 6px;
+  color: var(--kern-text);
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+  pointer-events: auto;
+}
+
+.kern-pdf-annotation-text {
+  max-width: 24em;
+  margin: 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.kern-pdf-annotation-buttons,
+.kern-pdf-note-buttons,
+.kern-pdf-colours {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.kern-pdf-note-buttons {
+  justify-content: flex-end;
+}
+
+.kern-pdf-note-input {
+  width: 18em;
+  margin: 0;
+  resize: vertical;
+}
+
+.kern-pdf-swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--kern-border);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.kern-pdf-swatch[aria-pressed="true"],
+.kern-pdf-width[aria-pressed="true"] {
+  outline: 2px solid var(--kern-accent);
+  outline-offset: 1px;
+}
+
+.kern-pdf-width {
+  min-width: 22px;
+  padding: 0 4px;
+  color: var(--kern-text);
+  font-size: 11px;
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+  cursor: pointer;
+}
+
+.kern-pdf-colours {
+  padding: 4px 6px;
+}
+
+.kern-pdf-ink-surface,
+.kern-pdf-note-surface {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.kern-pdf-ink-surface svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* The Edit text tool: a block of the page's text is a button, the one being edited a box. */
+.kern-pdf-blocks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.kern-pdf-block {
+  position: absolute;
+  padding: 0;
+  background: transparent;
+  border: 1px dashed rgb(51 144 255 / 55%);
+  pointer-events: auto;
+  cursor: text;
+}
+
+.kern-pdf-block:hover,
+.kern-pdf-block:focus-visible {
+  background: rgb(51 144 255 / 12%);
+  outline: 2px solid rgb(51 144 255 / 70%);
+}
+
+.kern-pdf-block:disabled {
+  pointer-events: none;
+}
+
+/* A block that cannot be edited is outlined in a different line, so it can be told apart. */
+.kern-pdf-block-refused-mark {
+  border-style: dotted;
+  border-color: rgb(128 128 128 / 70%);
+  cursor: not-allowed;
+}
+
+.kern-pdf-block-box {
+  position: absolute;
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.kern-pdf-block-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #111;
+  background: #fff;
+  border: 2px solid var(--kern-accent);
+  resize: none;
+  font-family: sans-serif;
+}
+
+/* The two sides of a text box, wide enough to take with a pointer and drawn as one line each. */
+.kern-pdf-box-side {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 10px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.kern-pdf-box-side::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  background: var(--kern-accent);
+  opacity: 0.6;
+}
+
+.kern-pdf-box-side:hover::after,
+.kern-pdf-box-side:focus-visible::after {
+  opacity: 1;
+}
+
+.kern-pdf-box-side-left {
+  left: -5px;
+}
+
+.kern-pdf-box-side-right {
+  right: -5px;
+}
+
+.kern-pdf-block-error {
+  max-width: 100%;
+  padding: 4px 6px;
+  margin: 2px 0 0;
+  color: var(--kern-text);
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+  font-size: 12px;
+}
+
+.kern-pdf-block-refused {
+  max-width: 24em;
+}
+
+.kern-pdf-tool-help {
+  margin: 4px 4px 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--kern-text-dim);
+}
+
+/* The page under the blocks while Edit text is in hand: a click where there is no text adds new
+   text there, a drag sets how wide it runs. */
+.kern-pdf-new-text-surface {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+/* The width a drag is setting, drawn at the height the new text's box will stand. */
+.kern-pdf-new-text-drag {
+  position: absolute;
+  height: 0;
+  border-top: 2px solid var(--kern-accent);
+  pointer-events: none;
+}
+
+.kern-pdf-new-text-size {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 6px;
+  margin: 2px 0 0;
+  color: var(--kern-text);
+  background: var(--kern-surface);
+  border: 1px solid var(--kern-border);
+  border-radius: var(--kern-radius-small);
+  font-size: 12px;
+}
+
+.kern-pdf-new-text-size input {
+  width: 6em;
+}

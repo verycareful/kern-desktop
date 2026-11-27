@@ -5,7 +5,7 @@
 // when each word typed is part of its label, its group, its category or its other words (case
 // does not matter), so "dark" finds the theme and "hidden" the hidden items.
 
-export type Category = "appearance" | "files" | "library" | "editor" | "keys" | "about";
+export type Category = "appearance" | "files" | "library" | "editor" | "pdf" | "keys" | "about";
 
 export const CATEGORIES: readonly { id: Category; label: string; blurb: string }[] = [
   { id: "appearance", label: "Appearance", blurb: "How Kern looks in every window." },
@@ -16,6 +16,11 @@ export const CATEGORIES: readonly { id: Category; label: string; blurb: string }
   },
   { id: "library", label: "Library", blurb: "The folders the Library walks for documents." },
   { id: "editor", label: "Editor", blurb: "The text editor." },
+  {
+    id: "pdf",
+    label: "PDF",
+    blurb: "How the pages of a PDF are laid out and where its panels sit.",
+  },
   {
     id: "keys",
     label: "Keys and mouse",
@@ -204,6 +209,31 @@ export const ROWS = {
     group: "Text",
     label: "Text size",
     words: "zoom font bigger smaller",
+  },
+  pdf_layout: {
+    category: "pdf",
+    group: "Pages",
+    label: "Page layout",
+    words:
+      "layout scroll continuous single page one at a time spread two pages side by side grid thumbnails view book",
+  },
+  pdf_grid_across: {
+    category: "pdf",
+    group: "Pages",
+    label: "Grid columns",
+    words: "grid columns across pages row rows wide many layout",
+  },
+  pdf_thumbnails_panel: {
+    category: "pdf",
+    group: "Panels",
+    label: "Thumbnails panel",
+    words: "thumbnails pages pictures strip side left right bottom panel sidebar navigation",
+  },
+  pdf_tools_panel: {
+    category: "pdf",
+    group: "Panels",
+    label: "Tools panel",
+    words: "tools find select layout side left right bottom panel sidebar toolbar",
   },
   keys_list: {
     category: "keys",

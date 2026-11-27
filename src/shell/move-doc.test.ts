@@ -76,11 +76,23 @@ test("move_to_new_window_hands_over_the_text_and_closes_the_tab_without_asking",
   off = registerDoc("d", controller());
   ipc.detachDoc.mockResolvedValue("doc-1");
   await moveTabToWindow("d");
-  expect(ipc.detachDoc).toHaveBeenCalledWith("d", DOC, STATE);
+  expect(ipc.detachDoc).toHaveBeenCalledWith("d", DOC, STATE, undefined);
   expect(moving).toEqual([true]);
   // The window holds the text now: no question, and the tab goes.
   expect(useCloseGuard.getState().question).toBeNull();
   expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["f"]);
+});
+
+test("a_pdf_tab_moves_with_its_format_and_no_text", async () => {
+  const pdf = p("/home/a/b.pdf");
+  useTabs.setState({
+    tabs: [{ id: "q", kind: "doc", path: pdf, dirty: false, format: "pdf" }],
+    activeId: "q",
+  });
+  ipc.detachDoc.mockResolvedValue("doc-1");
+  await moveTabToWindow("q");
+  expect(ipc.detachDoc).toHaveBeenCalledWith("q", pdf, null, "pdf");
+  expect(useTabs.getState().tabs).toEqual([]);
 });
 
 test("a_failed_move_keeps_the_tab_editable_and_says_why", async () => {
@@ -125,7 +137,7 @@ test("a_document_that_holds_no_text_moves_without_a_state_and_the_window_reads_i
   off = registerDoc("d", controller({ snapshot: () => null }));
   ipc.detachDoc.mockResolvedValue("doc-1");
   await moveTabToWindow("d");
-  expect(ipc.detachDoc).toHaveBeenCalledWith("d", DOC, null);
+  expect(ipc.detachDoc).toHaveBeenCalledWith("d", DOC, null, undefined);
 });
 
 test("home_sends_the_window_state_and_on_failure_gives_editing_back", async () => {
@@ -136,13 +148,24 @@ test("home_sends_the_window_state_and_on_failure_gives_editing_back", async () =
     path: null,
   });
   expect(await moveDocHome()).toMatch(/stays here: .*already open/);
-  expect(ipc.moveDocToMain).toHaveBeenCalledWith("doc-1", STATE);
+  expect(ipc.moveDocToMain).toHaveBeenCalledWith("doc-1", STATE, undefined);
   expect(moving).toEqual([true, false]);
 
   ipc.moveDocToMain.mockResolvedValue(undefined);
   expect(await moveDocHome()).toBeNull();
   // On success the backend closes the window; editing is not given back.
   expect(moving).toEqual([true, false, true]);
+});
+
+test("home_gives_a_pdf_to_main_with_its_format", async () => {
+  const pdf = p("/home/a/b.pdf");
+  useTabs.setState({
+    tabs: [{ id: "doc-1", kind: "doc", path: pdf, dirty: false, format: "pdf" }],
+    activeId: "doc-1",
+  });
+  ipc.moveDocToMain.mockResolvedValue(undefined);
+  expect(await moveDocHome()).toBeNull();
+  expect(ipc.moveDocToMain).toHaveBeenCalledWith("doc-1", null, "pdf");
 });
 
 test("a_second_move_while_one_is_under_way_is_refused_and_leaves_the_first_alone", async () => {
@@ -202,11 +225,80 @@ test("a_tab_asked_for_by_an_editor_hands_over_its_text_and_closes_once_taken", a
   off = registerDoc("d", controller());
   ipc.handDoc.mockResolvedValue(undefined);
   await handTo(DOC, "editor-2");
-  expect(ipc.handDoc).toHaveBeenCalledExactlyOnceWith("d", DOC, STATE, "editor-2");
+  expect(ipc.handDoc).toHaveBeenCalledExactlyOnceWith("d", DOC, STATE, "editor-2", undefined);
   expect(moving).toEqual([true]);
   expect(useCloseGuard.getState().question).toBeNull();
   expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["f"]);
   expect(ipc.handRefused).not.toHaveBeenCalled();
+});
+
+// A PDF holds no state to hand over: its snapshot is always null, and it is settled once open.
+const pdfController = (over: Partial<DocController> = {}): DocController =>
+  controller({
+    closeRisk: () => null,
+    snapshot: () => null,
+    settled: () => true,
+    busy: () => false,
+    ...over,
+  });
+
+test("an_open_pdf_that_is_unchanged_is_handed_over_at_once_with_no_state", async () => {
+  vi.useFakeTimers();
+  const pdf = p("/home/a/b.pdf");
+  useTabs.setState({
+    tabs: [{ id: "q", kind: "doc", path: pdf, dirty: false, format: "pdf" }],
+    activeId: "q",
+  });
+  off = registerDoc("q", pdfController());
+  ipc.handDoc.mockResolvedValue(undefined);
+  await handTo(pdf, "editor-2");
+  // Not the fifteen seconds a document with no state yet is waited for.
+  expect(ipc.handDoc).toHaveBeenCalledExactlyOnceWith("q", pdf, null, "editor-2", "pdf");
+  expect(ipc.handRefused).not.toHaveBeenCalled();
+  expect(useTabs.getState().tabs).toEqual([]);
+});
+
+test("a_changed_pdf_is_refused_at_once_and_stays_where_it_is", async () => {
+  vi.useFakeTimers();
+  const pdf = p("/home/a/b.pdf");
+  useTabs.setState({
+    tabs: [{ id: "q", kind: "doc", path: pdf, dirty: true, format: "pdf" }],
+    activeId: "q",
+  });
+  off = registerDoc(
+    "q",
+    pdfController({
+      whyNotMovable: () =>
+        "it has changes that are not saved (save this PDF before moving it to another window)",
+    })
+  );
+  await handTo(pdf, "editor-2");
+  expect(ipc.handDoc).not.toHaveBeenCalled();
+  expect(ipc.handRefused).toHaveBeenCalledExactlyOnceWith(
+    pdf,
+    "editor-2",
+    expect.stringMatching(/save this PDF before moving it to another window/)
+  );
+  expect(useTabs.getState().tabs.map((t) => t.id)).toEqual(["q"]);
+});
+
+test("a_pdf_that_has_not_opened_is_waited_for_then_refused_as_a_text_document_is", async () => {
+  vi.useFakeTimers();
+  const pdf = p("/home/a/b.pdf");
+  useTabs.setState({
+    tabs: [{ id: "q", kind: "doc", path: pdf, dirty: false, format: "pdf" }],
+    activeId: "q",
+  });
+  off = registerDoc("q", pdfController({ settled: () => false }));
+  const done = handTo(pdf, "editor-2");
+  await vi.advanceTimersByTimeAsync(HAND_WAIT_MS + 200);
+  await done;
+  expect(ipc.handDoc).not.toHaveBeenCalled();
+  expect(ipc.handRefused).toHaveBeenCalledExactlyOnceWith(
+    pdf,
+    "editor-2",
+    "it had not finished opening, or could not be opened"
+  );
 });
 
 test("a_document_window_hands_its_own_document_and_is_closed_by_the_backend", async () => {
@@ -214,7 +306,7 @@ test("a_document_window_hands_its_own_document_and_is_closed_by_the_backend", as
   off = registerDoc("doc-1", controller());
   ipc.handDoc.mockResolvedValue(undefined);
   await handTo(DOC, "editor-2");
-  expect(ipc.handDoc).toHaveBeenCalledExactlyOnceWith(null, DOC, STATE, "editor-2");
+  expect(ipc.handDoc).toHaveBeenCalledExactlyOnceWith(null, DOC, STATE, "editor-2", undefined);
 });
 
 test("a_document_being_saved_is_waited_for_then_handed", async () => {
@@ -228,7 +320,7 @@ test("a_document_being_saved_is_waited_for_then_handed", async () => {
   saving = false;
   await vi.advanceTimersByTimeAsync(200);
   await done;
-  expect(ipc.handDoc).toHaveBeenCalledExactlyOnceWith("d", DOC, STATE, "editor-2");
+  expect(ipc.handDoc).toHaveBeenCalledExactlyOnceWith("d", DOC, STATE, "editor-2", undefined);
 });
 
 test("a_document_still_busy_after_the_wait_stays_and_the_editor_is_told", async () => {

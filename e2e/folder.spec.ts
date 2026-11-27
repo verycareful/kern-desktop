@@ -20,6 +20,12 @@ const SETTINGS = {
   default_layout: "file_manager",
   new_tab_folder: null,
   new_tab_default: "folder",
+  pdf_layout: "scroll",
+  pdf_grid_across: 4,
+  pdf_panels: {
+    thumbnails: { side: "left", collapsed: false },
+    tools: { side: "right", collapsed: false },
+  },
   interface_size: 90,
 };
 const COMMON = {
@@ -35,6 +41,12 @@ const COMMON = {
     default_layout: "file_manager",
     new_tab_folder: null,
     new_tab_default: "folder",
+    pdf_layout: "scroll",
+    pdf_grid_across: 4,
+    pdf_panels: {
+      thumbnails: { side: "left", collapsed: false },
+      tools: { side: "right", collapsed: false },
+    },
     interface_size: 90,
     panel_order: ["places", "folder", "pinned"],
     editor_panel_order: ["places", "pinned"],

@@ -23,7 +23,8 @@ export function ClosePrompt() {
   if (!question) return null;
   const { items, what, saving } = question;
   const readOnly = items.filter((i) => i.readOnly);
-  const canSave = readOnly.length < items.length;
+  const blocked = readOnly.length;
+  const canSave = blocked < items.length;
   const only = items.length === 1 ? items[0]! : null;
   const title = only
     ? only.deleted && !only.dirty
@@ -81,7 +82,7 @@ export function ClosePrompt() {
             disabled={saving}
             onClick={() => answer("save")}
           >
-            {only ? "Save" : readOnly.length > 0 ? "Save the others" : "Save all"}
+            {only ? "Save" : blocked > 0 ? "Save the others" : "Save all"}
           </button>
         )}
         <button

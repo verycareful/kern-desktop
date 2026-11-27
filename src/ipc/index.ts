@@ -5,5 +5,6 @@ export * from "./asset";
 export * from "./events";
 export * from "./invoke";
 export * from "./kernkraft";
+export * from "./pdf";
 export * from "./wire-path";
 export * from "./window-label";

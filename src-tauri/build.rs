@@ -62,6 +62,9 @@ const COMMANDS: &[&str] = &[
     "dnd_target",
     "drop_start_op",
     "remove_start_op",
+    "pick_pdfs",
+    "pick_folder",
+    "pick_save_pdf",
 ];
 
 fn main() {

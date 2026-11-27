@@ -333,8 +333,13 @@ test("no_button_is_nested_inside_a_tab", () => {
 
 test("every_action_appears_in_a_menu", () => {
   const seen = new Set<string>();
+  // An action that is one choice among several is a radio item; the others are plain items.
+  const entries = (root: HTMLElement) => [
+    ...within(root).queryAllByRole("menuitem"),
+    ...within(root).queryAllByRole("menuitemradio"),
+  ];
   const collect = () => {
-    for (const el of screen.getAllByRole("menuitem")) {
+    for (const el of entries(screen.getByTestId("action-menu"))) {
       seen.add(el.getAttribute("data-action-id") ?? "");
     }
   };
@@ -358,7 +363,7 @@ test("every_action_appears_in_a_menu", () => {
         a.when !== "tree" &&
         appliesTo(a, active)
     );
-    expect(within(menu).getAllByRole("menuitem")).toHaveLength(applicable.length);
+    expect(entries(menu)).toHaveLength(applicable.length);
     for (const a of applicable) {
       const item = menu.querySelector(`[data-action-id="${a.id}"]`);
       expect(item, a.id).not.toBeNull();

@@ -11,7 +11,7 @@ import { closeFolderTabs } from "./layout-switch";
 import { useSettingsReportNotice } from "../settings/settings-reports";
 import { OpsHost } from "../ops/OpsHost";
 import { usePanels } from "../store/panels";
-import { TextEditor } from "../editor/TextEditor";
+import { DocView } from "../pdf/DocView";
 import { RestoreBar } from "./RestoreBar";
 import { activeTab, isPlaceTab, useTabs, type DocTab } from "../store/tabs";
 import { ClosePrompt } from "./ClosePrompt";
@@ -102,9 +102,10 @@ export default function MainWindow(props: { openingHome?: boolean; starting?: bo
     <div className="kern-body-doc" hidden={layout !== "doc"} data-testid="doc-body">
       <main className="kern-doc-area" data-testid="doc-area">
         {docs.map((d) => (
-          <TextEditor
+          <DocView
             key={d.id}
             tabId={d.id}
+            format={d.format}
             path={d.path}
             active={d.id === tab?.id}
             handed={d.handed}

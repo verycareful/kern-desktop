@@ -5,8 +5,21 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://*" },
+        { "url": "http://*" },
+        { "url": "mailto:*" },
+        { "url": "tel:*" }
+      ]
+    },
     "kernkraft-tauri:default",
     "allow-settings-get",
+    "allow-pick-folder",
+    "allow-pick-pdfs",
+    "allow-pick-save-pdf",
+    "allow-drop-start-op",
     "allow-binds-get",
     "allow-settings-set",
     "allow-layout-get",

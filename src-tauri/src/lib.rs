@@ -12,6 +12,7 @@ pub mod guard;
 pub mod identity;
 pub mod instance;
 pub mod open;
+pub mod pick;
 pub mod prelaunch;
 pub mod remove;
 pub mod restart;
@@ -68,6 +69,12 @@ pub fn run() {
                 .with_state_flags(StateFlags::all() - StateFlags::MAXIMIZED)
                 .build(),
         )
+        // Hands an address in a PDF's link to the application the system picks. A window may use
+        // only its `open_url`, and only for the schemes its capability names.
+        .plugin(tauri_plugin_opener::init())
+        // The system's file chooser, reached only through pick.rs: no window is granted the
+        // plugin's own commands.
+        .plugin(tauri_plugin_dialog::init())
         .plugin(kernkraft_tauri::init())
         .plugin(zoom::plugin())
         .plugin(guard::plugin())
@@ -174,6 +181,9 @@ pub fn run() {
             dnd::dnd_target,
             dnd::drop_start_op,
             remove::remove_start_op,
+            pick::pick_pdfs,
+            pick::pick_folder,
+            pick::pick_save_pdf,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Kern")

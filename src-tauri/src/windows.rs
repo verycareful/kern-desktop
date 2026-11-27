@@ -37,7 +37,8 @@ use tauri::{
 use crate::cli::{self, ArgError, Plan};
 use crate::instance::{exit_when_drained, Launches};
 use crate::open::{
-    route, FileId, Gesture, Held, Kind, Location, OpenRegistry, Origin, Stat, Survey, Target,
+    route, DocFormat, FileId, Gesture, Held, Kind, Location, OpenRegistry, Origin, Stat, Survey,
+    Target, PDF_MIME,
 };
 use crate::store::SessionTab;
 use crate::store_cmds::StoreState;
@@ -140,6 +141,9 @@ pub enum Directive {
     },
     DocTab {
         path: WirePath,
+        /// How the tab shows the file; absent for text.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        format: Option<DocFormat>,
     },
     /// For a `doc-<n>` window: load this document. `text_state` is the
     /// editor state of the tab it left (unsaved text included), passed
@@ -149,6 +153,9 @@ pub enum Directive {
     /// `refuse_detach`, and the tab closes only on the first.
     LoadDoc {
         path: WirePath,
+        /// How the window shows the file; absent for text.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        format: Option<DocFormat>,
         #[serde(skip_serializing_if = "Option::is_none")]
         text_state: Option<Value>,
         #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -734,11 +741,20 @@ where
         .map_err(|e| wire_error("Internal", format!("internal error: {e}"), None))?
 }
 
-/// Whether the editor can open `path` as text, decided by kernkraft.
-async fn is_text<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Result<bool, WireError> {
+/// Which document the editor opens `path` as, decided by kernkraft's MIME
+/// database: a PDF, text, or none (`Kind::Other`). A PDF is told apart
+/// before text, so a type that is both is a PDF.
+async fn file_kind<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Result<Kind, WireError> {
     let kk = app.kernkraft();
     let wp = WirePath::from(path);
-    Ok(blocking(move || kk.mime_of(wp)).await?.is_text)
+    let mime = blocking(move || kk.mime_of(wp)).await?;
+    Ok(if mime.mime == PDF_MIME {
+        Kind::Pdf
+    } else if mime.is_text {
+        Kind::Text
+    } else {
+        Kind::Other
+    })
 }
 
 /// Opens `files` with their default applications in one kernkraft
@@ -821,11 +837,7 @@ async fn resolve<R: Runtime>(app: &AppHandle<R>, path: &Path) -> Resolved {
     let kind = match std::fs::metadata(path) {
         Err(e) => Err(io_error(path, &e)),
         Ok(m) if m.is_dir() => Ok(Kind::Folder),
-        Ok(_) => match is_text(app, path).await {
-            Ok(true) => Ok(Kind::Text),
-            Ok(false) => Ok(Kind::Other),
-            Err(e) => Err(e),
-        },
+        Ok(_) => file_kind(app, path).await,
     };
     Resolved { kind }
 }
@@ -886,15 +898,17 @@ pub async fn open_paths_in<R: Runtime>(
 /// What a path is to be given, decided under the gate.
 enum Placement {
     FolderTab(PathBuf),
-    /// A text file for a tab of window `window`, held for it in the registry.
+    /// A text file or PDF for a tab of window `window`, held for it in the registry.
     DocTab {
         path: PathBuf,
         window: String,
+        format: Option<DocFormat>,
     },
     /// A reserved label, already in the registry.
     NewDoc {
         path: PathBuf,
         label: String,
+        format: Option<DocFormat>,
     },
     Focus(Location),
     /// Open elsewhere and asked for from inside editor window `to`: the
@@ -1001,7 +1015,11 @@ async fn place<R: Runtime>(
             focus(app, MAIN, token)?;
             Ok(done("folder_tab", None))
         }
-        Placement::DocTab { path: p, window } => {
+        Placement::DocTab {
+            path: p,
+            window,
+            format,
+        } => {
             // The path is held for `window` already; if the tab cannot be asked for, it is let go.
             let held = Location::Opening {
                 window: window.clone(),
@@ -1015,6 +1033,7 @@ async fn place<R: Runtime>(
                     &window,
                     &Directive::DocTab {
                         path: WirePath::from(&p),
+                        format,
                     },
                 )?;
                 focus(app, &window, token)
@@ -1025,7 +1044,11 @@ async fn place<R: Runtime>(
             }
             Ok(done("doc_tab", None))
         }
-        Placement::NewDoc { path: p, label } => {
+        Placement::NewDoc {
+            path: p,
+            label,
+            format,
+        } => {
             let loc = Location::Window {
                 label: label.clone(),
             };
@@ -1043,6 +1066,7 @@ async fn place<R: Runtime>(
                 &label,
                 &Directive::LoadDoc {
                     path: WirePath::from(&p),
+                    format,
                     text_state: None,
                     ack: false,
                 },
@@ -1157,7 +1181,11 @@ fn decide<R: Runtime>(
                     window: window.clone(),
                 },
             );
-            Placement::DocTab { path: p, window }
+            Placement::DocTab {
+                path: p,
+                window,
+                format: kind.doc_format(),
+            }
         }
         Target::DefaultApp(p) => Placement::DefaultApp(p),
         Target::DocWindow(p) => {
@@ -1168,7 +1196,11 @@ fn decide<R: Runtime>(
                     label: label.clone(),
                 },
             );
-            Placement::NewDoc { path: p, label }
+            Placement::NewDoc {
+                path: p,
+                label,
+                format: kind.doc_format(),
+            }
         }
         Target::Focus(loc) => {
             let gone = match &loc {
@@ -1577,7 +1609,8 @@ pub fn open_pending_take<R: Runtime>(
 
 /// Detaches a document tab of the calling window into a window of its own.
 /// `text_state` is the tab's editor state, handed to the window
-/// untouched, so unsaved text moves with the document.
+/// untouched, so unsaved text moves with the document. `format` is how the
+/// tab shows the file, told to the window (none for text).
 ///
 /// The tab is not given up until the new window says it holds the document
 /// and has registered it (`detached`); the call returns then, and the
@@ -1592,6 +1625,7 @@ pub async fn detach_doc<R: Runtime>(
     tab_id: String,
     path: WirePath,
     text_state: Option<Value>,
+    format: Option<DocFormat>,
 ) -> Result<String, WireError> {
     let p = path.to_path_buf()?;
     let st = state(&app)?;
@@ -1664,6 +1698,7 @@ pub async fn detach_doc<R: Runtime>(
         &label,
         &Directive::LoadDoc {
             path,
+            format,
             text_state,
             ack: true,
         },
@@ -1875,7 +1910,8 @@ pub async fn open_settings<R: Runtime>(
 
 /// Home button of a standalone window: the document moves into a tab
 /// of `main`, creating `main` with a Home folder tab if absent. `text_state`
-/// is the window's editor state, passed through untouched. The window closes
+/// is the window's editor state, passed through untouched; `format` is how it
+/// shows the file (none for text). The window closes
 /// only after `main` answers with `adopted(label)`; if that does not come
 /// within the timeout the window stays open, `main` is told to drop the tab
 /// ([`EVENT_ADOPT_CANCELLED`]) and the error is returned.
@@ -1884,6 +1920,7 @@ pub async fn move_doc_to_main<R: Runtime>(
     app: AppHandle<R>,
     label: String,
     text_state: Option<Value>,
+    format: Option<DocFormat>,
 ) -> Result<(), WireError> {
     let st = state(&app)?;
     let Some(path) = st.open.path_of_window(&label) else {
@@ -1902,7 +1939,7 @@ pub async fn move_doc_to_main<R: Runtime>(
     let source = Location::Window {
         label: label.clone(),
     };
-    hand_over(&app, &st, &source, &path, text_state, MAIN).await?;
+    hand_over(&app, &st, &source, &path, (text_state, format), MAIN).await?;
     close_handed_window(&app, &st, &doc, &source, &path, MAIN)
 }
 
@@ -1924,8 +1961,23 @@ fn close_handed_window<R: Runtime>(
     Ok(())
 }
 
+/// The payload of [`EVENT_ADOPT_DOC`]: `format` is left out for text.
+fn adopt_payload(
+    path: &Path,
+    text_state: Option<Value>,
+    format: Option<DocFormat>,
+    from: &str,
+) -> Value {
+    let mut payload =
+        json!({ "path": WirePath::from(path), "text_state": text_state, "from": from });
+    if let (Some(format), Some(fields)) = (format, payload.as_object_mut()) {
+        fields.insert("format".to_owned(), json!(format));
+    }
+    payload
+}
+
 /// Hands the document at `source` (registered there for `path`) to window
-/// `target`: it is sent with its editor state on [`EVENT_ADOPT_DOC`], and
+/// `target`: it is sent with its editor state and format (`state`) on [`EVENT_ADOPT_DOC`], and
 /// `target` registers its tab (`doc_opened` with the move's key) and answers
 /// with `adopted` or `refuse_adoption`. Without an answer within the
 /// timeout, or with a refusal, the move is taken back ([`cancel_adoption`])
@@ -1936,7 +1988,7 @@ async fn hand_over<R: Runtime>(
     st: &WindowState,
     source: &Location,
     path: &Path,
-    text_state: Option<Value>,
+    (text_state, format): (Option<Value>, Option<DocFormat>),
     target: &str,
 ) -> Result<(), WireError> {
     let key = move_key(source);
@@ -1952,7 +2004,7 @@ async fn hand_over<R: Runtime>(
         app,
         target,
         EVENT_ADOPT_DOC,
-        json!({ "path": WirePath::from(path), "text_state": text_state, "from": key }),
+        adopt_payload(path, text_state, format, &key),
     );
     if let Err(e) = sent {
         // Nothing reached the target, so there is nothing to cancel there.
@@ -2023,6 +2075,7 @@ pub async fn hand_doc<R: Runtime>(
     path: WirePath,
     text_state: Option<Value>,
     to: String,
+    format: Option<DocFormat>,
 ) -> Result<(), WireError> {
     let p = path.to_path_buf()?;
     let caller = window.label().to_owned();
@@ -2073,7 +2126,7 @@ pub async fn hand_doc<R: Runtime>(
     })
     .await?;
     checked.ok_or_else(registry_busy)??;
-    hand_over(&app, &st, &source, &p, text_state, &to).await?;
+    hand_over(&app, &st, &source, &p, (text_state, format), &to).await?;
     if matches!(source, Location::Window { .. }) {
         close_handed_window(&app, &st, &window, &source, &p, &to)?;
     }

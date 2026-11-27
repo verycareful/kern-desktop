@@ -519,6 +519,70 @@ test("the_editor_text_size_steps_by_a_quarter_and_stops_at_the_ends", async () =
   expect(screen.getByRole("button", { name: "Larger text" })).toBeDisabled();
 });
 
+test("the_pdf_section_saves_the_layout_and_steps_the_grid_columns_inside_1_to_12", async () => {
+  stored = { ...stored, pdf_grid_across: 11 };
+  await mount();
+  nav("PDF");
+  expect(pressed("Page layout", "Continuous scroll")).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(pressed("Page layout", "Grid"));
+  fireEvent.click(screen.getByRole("button", { name: "More columns" }));
+  expect(screen.getByLabelText("Grid columns")).toHaveTextContent("12");
+  expect(screen.getByRole("button", { name: "More columns" })).toBeDisabled();
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([
+    { pdf_layout: "grid", pdf_grid_across: 12 },
+  ]);
+  expect(stored.pdf_layout).toBe("grid");
+});
+
+test("the_pdf_grid_columns_stop_at_one", async () => {
+  stored = { ...stored, pdf_grid_across: 2 };
+  await mount();
+  nav("PDF");
+  fireEvent.click(screen.getByRole("button", { name: "Fewer columns" }));
+  expect(screen.getByLabelText("Grid columns")).toHaveTextContent("1");
+  expect(screen.getByRole("button", { name: "Fewer columns" })).toBeDisabled();
+});
+
+test("the_pdf_section_saves_the_side_of_each_panel_and_keeps_its_folded_state", async () => {
+  stored = {
+    ...stored,
+    pdf_panels: {
+      thumbnails: { side: "left", collapsed: true },
+      tools: { side: "right", collapsed: false },
+    },
+  };
+  await mount();
+  nav("PDF");
+  expect(pressed("Thumbnails panel", "Left")).toHaveAttribute("aria-pressed", "true");
+  expect(pressed("Tools panel", "Right")).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(pressed("Thumbnails panel", "Bottom"));
+  fireEvent.click(pressed("Tools panel", "Left"));
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([
+    {
+      pdf_panels: {
+        thumbnails: { side: "bottom", collapsed: true },
+        tools: { side: "left", collapsed: false },
+      },
+    },
+  ]);
+});
+
+test("searching_for_sidebar_finds_both_panel_rows", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "sidebar" } });
+  expect(await screen.findByRole("group", { name: "Thumbnails panel" })).toBeInTheDocument();
+  expect(screen.getByRole("group", { name: "Tools panel" })).toBeInTheDocument();
+});
+
+test("searching_for_grid_finds_the_pdf_rows", async () => {
+  await mount();
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "grid" } });
+  expect(await screen.findByRole("group", { name: "Page layout" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Grid columns")).toBeInTheDocument();
+});
+
 test("about_shows_the_licence_in_a_dialog_and_each_link_opens_its_address", async () => {
   await mount();
   nav("About");

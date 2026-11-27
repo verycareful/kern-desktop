@@ -359,7 +359,9 @@ The first release of Kern Desktop: a file manager and a plain text editor in one
 
 - 1629 tests across 139 suites, all passed (76.3s, CachyOS x86-64, rustc 1.99.1).
 
-[Unreleased]: https://github.com/verycareful/kern-desktop/compare/0.1.2.0...HEAD
+[Unreleased]: https://github.com/verycareful/kern-desktop/compare/0.1.2.2...HEAD
+[0.1.2.2]: https://github.com/verycareful/kern-desktop/compare/0.1.2.1...0.1.2.2
+[0.1.2.1]: https://github.com/verycareful/kern-desktop/compare/0.1.2.0...0.1.2.1
 [0.1.2.0]: https://github.com/verycareful/kern-desktop/compare/0.1.1.4...0.1.2.0
 [0.1.1.4]: https://github.com/verycareful/kern-desktop/compare/0.1.1.3...0.1.1.4
 [0.1.1.3]: https://github.com/verycareful/kern-desktop/compare/0.1.1.2...0.1.1.3

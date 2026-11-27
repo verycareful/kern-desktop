@@ -17,6 +17,8 @@ import type { SaveAsResult } from "./useTextDoc";
 /** The file changed on disk since it was opened: Reload, Overwrite, Save As or Cancel. */
 export function ExternalModificationPrompt(props: {
   path: WirePath;
+  /** What the document holds: its text, or the changes made to a PDF. */
+  holds?: "text" | "pdf";
   dirty: boolean;
   onReload(): void;
   onOverwrite(): void;
@@ -25,6 +27,7 @@ export function ExternalModificationPrompt(props: {
 }) {
   const cancel = useRef<HTMLButtonElement>(null);
   const name = baseName(props.path);
+  const pdf = props.holds === "pdf";
   return (
     <Modal
       role="alertdialog"
@@ -35,15 +38,22 @@ export function ExternalModificationPrompt(props: {
     >
       <h2 className="kern-modal-title">{name} changed on the disk</h2>
       <p className="kern-modal-text">
-        Another program changed this file after you opened it. Your text was not saved.
+        Another program changed this file after you opened it.{" "}
+        {pdf ? "Your changes were not saved." : "Your text was not saved."}
       </p>
       <ul className="kern-modal-text">
         <li>
           Reload reads the file from the disk
           {props.dirty ? " and discards your unsaved changes" : ""}.
         </li>
-        <li>Overwrite replaces what is on the disk with your text; the other changes are lost.</li>
-        <li>Save As keeps your text in another file and leaves this one alone.</li>
+        <li>
+          Overwrite replaces what is on the disk with{" "}
+          {pdf ? "this PDF as you changed it" : "your text"}; the other changes are lost.
+        </li>
+        <li>
+          Save As keeps {pdf ? "your changes" : "your text"} in another file and leaves this one
+          alone.
+        </li>
       </ul>
       <div className="kern-modal-actions">
         <button type="button" className="kern-button" onClick={props.onReload}>
@@ -151,12 +161,17 @@ const KIND_WORD: Record<string, string> = { file: "file", symlink: "link", other
 export function SaveAsDialog(props: {
   /** The file the document shows now; the field starts with its path. */
   path: WirePath;
+  /** The title and the button of the question; Save As by default. */
+  title?: string;
+  /** The field starts with this instead of the path of the file. */
+  suggestion?: string;
   /** Set when the text shown is a lossy copy of the file, which Save As would keep as it is shown. */
   lossyNote: string | null;
   save(target: WirePath, replace: WireEntry | null): Promise<SaveAsResult>;
   onCancel(): void;
 }) {
-  const [text, setText] = useState(displayPath(props.path));
+  const title = props.title ?? "Save As";
+  const [text, setText] = useState(props.suggestion ?? displayPath(props.path));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [existing, setExisting] = useState<{ target: WirePath; entry: WireEntry } | null>(null);
@@ -288,12 +303,12 @@ export function SaveAsDialog(props: {
   return (
     <Modal
       role="dialog"
-      label="Save As"
+      label={title}
       initialFocus={input}
       onEscape={props.onCancel}
       testId="save-as-dialog"
     >
-      <h2 className="kern-modal-title">Save As</h2>
+      <h2 className="kern-modal-title">{title}</h2>
       {props.lossyNote && <p className="kern-modal-text">{props.lossyNote}</p>}
       <label className="kern-modal-text" htmlFor={`${id}-path`}>
         Path of the new file

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { create } from "zustand";
-import { displayPath, parent, pathKey, type WirePath } from "../ipc";
+import { displayPath, parent, pathKey, type DocFormat, type WirePath } from "../ipc";
 import type { HandedDoc } from "../editor/handed-doc";
 
 // Tabs sit above the panels, a file opens as a document tab, and a file already open is
@@ -19,6 +19,8 @@ export type DocTab = {
   kind: "doc";
   path: WirePath;
   dirty: boolean;
+  /** How the tab shows its file; absent means text. */
+  format?: DocFormat;
   /** The document as another window handed it over, which the editor starts from. */
   handed?: HandedDoc;
   /** Registered with the backend as open in this tab before the tab opened (an adopted document). */
@@ -87,20 +89,25 @@ export interface TabsState {
   /** Focus the Library tab, or open it. */
   openDocuments(): void;
   /** Focus the Settings tab, or open it. */
-  /** Open a document tab, or focus the one already open on this path. False when one was. */
-  openDoc(path: WirePath): boolean;
+  /**
+   * Open a document tab, or focus the one already open on this path, whatever format it was
+   * opened as. False when one was.
+   */
+  openDoc(path: WirePath, format?: DocFormat): boolean;
   /**
    * Opens document tab `id` on `path`, starting from `handed` when given (a document moved from
    * another window), and shows it. False, and nothing opened, when a tab already shows `path`
    * (never opened twice) or the id is taken. `registered`: the caller registered it already.
    * `awaitingAck`: the window owes the backend an answer once the tab holds the document.
+   * `format`: how the tab shows the file (text when not given).
    */
   openDocAs(
     id: string,
     path: WirePath,
     handed?: HandedDoc,
     registered?: boolean,
-    awaitingAck?: boolean
+    awaitingAck?: boolean,
+    format?: DocFormat
   ): boolean;
   /** Whether the editor of document tab `id` holds text that differs from the file's last saved text. */
   setDirty(id: string, dirty: boolean): void;
@@ -265,18 +272,24 @@ export const useTabs = create<TabsState>()((set, get) => ({
       return { tabs: [...s.tabs, tab], activeId: tab.id };
     });
   },
-  openDoc(path) {
+  openDoc(path, format) {
     const key = pathKey(path);
     const open = get().tabs.find((t) => t.kind === "doc" && pathKey(t.path) === key);
     if (open) {
       set({ activeId: open.id });
       return false;
     }
-    const tab: DocTab = { id: crypto.randomUUID(), kind: "doc", path, dirty: false };
+    const tab: DocTab = {
+      id: crypto.randomUUID(),
+      kind: "doc",
+      path,
+      dirty: false,
+      ...(format ? { format } : {}),
+    };
     set((s) => ({ tabs: [...s.tabs, tab], activeId: tab.id }));
     return true;
   },
-  openDocAs(id, path, handed, registered, awaitingAck) {
+  openDocAs(id, path, handed, registered, awaitingAck, format) {
     const s = get();
     const key = pathKey(path);
     if (s.tabs.some((t) => t.id === id || (t.kind === "doc" && pathKey(t.path) === key))) {
@@ -287,6 +300,7 @@ export const useTabs = create<TabsState>()((set, get) => ({
       kind: "doc",
       path,
       dirty: false,
+      ...(format ? { format } : {}),
       ...(handed ? { handed } : {}),
       ...(registered ? { registered } : {}),
       ...(awaitingAck ? { awaitingAck } : {}),

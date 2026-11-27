@@ -10,10 +10,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use kern_lib::store::{
-    move_aside, volume_online, FolderMenu, LayoutKind, NewTabDefault, Panel, SessionTab,
-    SessionWindow, Settings, Store, TimeFormat, ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES,
-    LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX, LEFT_WIDTH_MIN, MAIN_LAYOUTS, RECENTS_CAP, RIGHT_WIDTH_MAX,
-    RIGHT_WIDTH_MIN,
+    move_aside, volume_online, FolderMenu, LayoutKind, NewTabDefault, Panel, PanelPlacement,
+    PanelSide, PdfLayout, PdfPanels, SessionTab, SessionWindow, Settings, Store, TimeFormat,
+    ViewMode, DEFAULT_INTERFACE_SIZE, INTERFACE_SIZES, LEFT_WIDTH_DEFAULT, LEFT_WIDTH_MAX,
+    LEFT_WIDTH_MIN, MAIN_LAYOUTS, PDF_GRID_ACROSS_DEFAULT, PDF_GRID_ACROSS_MAX,
+    PDF_GRID_ACROSS_MIN, RECENTS_CAP, RIGHT_WIDTH_MAX, RIGHT_WIDTH_MIN,
 };
 use kernkraft_tauri::WirePath;
 use serde_json::{json, Map, Value};
@@ -1306,7 +1307,10 @@ fn a_window_put_is_read_back_in_place_of_its_entry() {
         "main",
         vec![
             SessionTab::Folder { path: a.clone() },
-            SessionTab::Doc { path: doc.clone() },
+            SessionTab::Doc {
+                path: doc.clone(),
+                format: None,
+            },
             SessionTab::Trash,
             SessionTab::Documents,
         ],
@@ -1633,6 +1637,191 @@ fn an_unknown_folder_menu_is_refused_and_changes_nothing() {
     assert_eq!(
         s.settings_get().unwrap().value.folder_menu,
         FolderMenu::Collapsed
+    );
+}
+
+#[test]
+fn pdf_layout_defaults_to_scroll_and_round_trips() {
+    let e = env();
+    let s = store(&e);
+    let got = s.settings_get().unwrap().value;
+    assert_eq!(got.pdf_layout, PdfLayout::Scroll);
+    assert_eq!(got.pdf_grid_across, PDF_GRID_ACROSS_DEFAULT);
+    assert_eq!(PDF_GRID_ACROSS_DEFAULT, 4);
+    for (text, want) in [
+        ("single", PdfLayout::Single),
+        ("spread", PdfLayout::Spread),
+        ("grid", PdfLayout::Grid),
+        ("scroll", PdfLayout::Scroll),
+    ] {
+        let out = s
+            .settings_set(patch(json!({ "pdf_layout": text })))
+            .unwrap();
+        assert_eq!(out.value.pdf_layout, want);
+        assert_eq!(
+            read_json(&e.config.join("settings.json"))["pdf_layout"],
+            json!(text)
+        );
+        assert_eq!(store(&e).settings_get().unwrap().value.pdf_layout, want);
+    }
+    let out = s
+        .settings_set(patch(json!({"pdf_grid_across": 7})))
+        .unwrap();
+    assert_eq!(out.value.pdf_grid_across, 7);
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["pdf_grid_across"],
+        json!(7)
+    );
+    assert_eq!(store(&e).settings_get().unwrap().value.pdf_grid_across, 7);
+}
+
+#[test]
+fn an_unknown_pdf_layout_or_a_grid_outside_1_to_12_is_refused_and_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    s.settings_set(patch(json!({"pdf_layout": "grid", "pdf_grid_across": 6})))
+        .unwrap();
+    for bad in [json!("book"), json!("Grid"), json!(1), json!(null)] {
+        let err = s
+            .settings_set(patch(json!({ "pdf_layout": bad })))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument");
+    }
+    for bad in [
+        json!(0),
+        json!(PDF_GRID_ACROSS_MIN - 1),
+        json!(PDF_GRID_ACROSS_MAX + 1),
+        json!(-1),
+        json!(2.5),
+        json!("4"),
+        json!(null),
+    ] {
+        let err = s
+            .settings_set(patch(json!({ "pdf_grid_across": bad })))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument");
+    }
+    let got = s.settings_get().unwrap().value;
+    assert_eq!(got.pdf_layout, PdfLayout::Grid);
+    assert_eq!(got.pdf_grid_across, 6);
+    assert_eq!((PDF_GRID_ACROSS_MIN, PDF_GRID_ACROSS_MAX), (1, 12));
+}
+
+#[test]
+fn a_stored_pdf_grid_outside_1_to_12_is_reported_and_kept() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    fs::write(e.config.join("settings.json"), r#"{"pdf_grid_across": 40}"#).unwrap();
+    let s = store(&e);
+    let got = s.settings_get().unwrap();
+    assert_eq!(got.value.pdf_grid_across, PDF_GRID_ACROSS_DEFAULT);
+    assert_eq!(got.corrupt.len(), 1);
+    assert_eq!(got.corrupt[0].field.as_deref(), Some("pdf_grid_across"));
+    s.settings_set(patch(json!({"word_wrap": true}))).unwrap();
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["pdf_grid_across"],
+        json!(40)
+    );
+}
+
+#[test]
+fn pdf_panels_default_to_thumbnails_left_and_tools_right_and_round_trip() {
+    let e = env();
+    let s = store(&e);
+    let got = s.settings_get().unwrap().value;
+    assert_eq!(
+        got.pdf_panels,
+        PdfPanels {
+            thumbnails: PanelPlacement {
+                side: PanelSide::Left,
+                collapsed: false
+            },
+            tools: PanelPlacement {
+                side: PanelSide::Right,
+                collapsed: false
+            },
+        }
+    );
+    let want = json!({
+        "thumbnails": {"side": "bottom", "collapsed": true},
+        "tools": {"side": "left", "collapsed": false},
+    });
+    let out = s
+        .settings_set(patch(json!({ "pdf_panels": want })))
+        .unwrap();
+    assert_eq!(out.value.pdf_panels.thumbnails.side, PanelSide::Bottom);
+    assert!(out.value.pdf_panels.thumbnails.collapsed);
+    assert_eq!(out.value.pdf_panels.tools.side, PanelSide::Left);
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["pdf_panels"],
+        want
+    );
+    assert_eq!(
+        store(&e).settings_get().unwrap().value.pdf_panels,
+        out.value.pdf_panels
+    );
+}
+
+#[test]
+fn a_pdf_panels_patch_that_is_not_a_placement_of_both_panels_is_refused_and_changes_nothing() {
+    let e = env();
+    let s = store(&e);
+    let kept = json!({
+        "thumbnails": {"side": "right", "collapsed": false},
+        "tools": {"side": "right", "collapsed": true},
+    });
+    s.settings_set(patch(json!({ "pdf_panels": kept })))
+        .unwrap();
+    let place = |side: Value, collapsed: Value| json!({"side": side, "collapsed": collapsed});
+    for bad in [
+        json!(null),
+        json!("left"),
+        json!({}),
+        json!({"thumbnails": place(json!("left"), json!(false))}),
+        json!({"tools": place(json!("left"), json!(false))}),
+        json!({
+            "thumbnails": place(json!("top"), json!(false)),
+            "tools": place(json!("left"), json!(false)),
+        }),
+        json!({
+            "thumbnails": place(json!("Left"), json!(false)),
+            "tools": place(json!("left"), json!(false)),
+        }),
+        json!({
+            "thumbnails": place(json!("left"), json!("yes")),
+            "tools": place(json!("left"), json!(false)),
+        }),
+        json!({
+            "thumbnails": place(json!("left"), json!(false)),
+            "tools": {"side": "left"},
+        }),
+    ] {
+        let err = s
+            .settings_set(patch(json!({ "pdf_panels": bad })))
+            .unwrap_err();
+        assert_eq!(err.kind, "InvalidArgument");
+    }
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["pdf_panels"],
+        kept
+    );
+}
+
+#[test]
+fn a_stored_pdf_panels_that_does_not_parse_is_reported_and_kept() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    let bad = r#"{"pdf_panels": {"thumbnails": {"side": "top", "collapsed": false}}}"#;
+    fs::write(e.config.join("settings.json"), bad).unwrap();
+    let s = store(&e);
+    let got = s.settings_get().unwrap();
+    assert_eq!(got.value.pdf_panels, PdfPanels::default());
+    assert_eq!(got.corrupt.len(), 1);
+    assert_eq!(got.corrupt[0].field.as_deref(), Some("pdf_panels"));
+    s.settings_set(patch(json!({"word_wrap": true}))).unwrap();
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["pdf_panels"],
+        json!({"thumbnails": {"side": "top", "collapsed": false}})
     );
 }
 

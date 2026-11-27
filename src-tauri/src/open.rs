@@ -157,14 +157,38 @@ pub enum Target {
     DefaultApp(PathBuf),
 }
 
+/// The MIME type kernkraft's database gives a PDF.
+pub const PDF_MIME: &str = "application/pdf";
+
 /// What a path is, resolved through links by the caller.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Folder,
     /// A file the editor opens (kernkraft's MIME database says it is text).
     Text,
+    /// A PDF ([`PDF_MIME`]): a document tab or window, as a text file is.
+    Pdf,
     /// Any other file.
     Other,
+}
+
+/// How a document tab or window shows its file. A text file has none: the
+/// absence is what the wire and `session.json` say for text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DocFormat {
+    Pdf,
+}
+
+impl Kind {
+    /// The format a document opened for this kind of file shows; `None` for
+    /// text and for kinds that open no document.
+    pub fn doc_format(self) -> Option<DocFormat> {
+        match self {
+            Kind::Pdf => Some(DocFormat::Pdf),
+            Kind::Folder | Kind::Text | Kind::Other => None,
+        }
+    }
 }
 
 struct Entry {
@@ -771,9 +795,9 @@ pub fn route(
     match kind {
         Kind::Folder => Target::FolderTab(p),
         Kind::Other => Target::DefaultApp(p),
-        Kind::Text if origin == Origin::Outside || gesture == Gesture::NewWindow => {
+        Kind::Text | Kind::Pdf if origin == Origin::Outside || gesture == Gesture::NewWindow => {
             Target::DocWindow(p)
         }
-        Kind::Text => Target::DocTab(p),
+        Kind::Text | Kind::Pdf => Target::DocTab(p),
     }
 }

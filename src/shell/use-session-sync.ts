@@ -25,7 +25,7 @@ function sessionTab(tab: Tab): SessionTab {
     case "folder":
       return { kind: "folder", path: tab.path };
     case "doc":
-      return { kind: "doc", path: tab.path };
+      return { kind: "doc", path: tab.path, ...(tab.format ? { format: tab.format } : {}) };
     case "trash":
       return { kind: "trash" };
     case "documents":
