@@ -39,7 +39,7 @@ import { showSettings } from "../settings/show-settings";
 import { documentsController } from "../files/documents-controller";
 import { useOps } from "../ops/useOps";
 import { docController } from "../editor/doc-controller";
-import { PANEL_ORDER as PANEL_IDS, PANEL_TITLES, SIDES } from "../pdf/panel-placement";
+import { ALLOWED_SIDES, PANEL_ORDER as PANEL_IDS, PANEL_TITLES } from "../pdf/panel-placement";
 import { pdfController } from "../pdf/pdf-controller";
 import { moveTabToWindow } from "../shell/move-doc";
 import { closeTab } from "../shell/useCloseGuard";
@@ -1704,7 +1704,7 @@ const pdfActions: Action[] = [
     run: () => void togglePdfPanel(id),
   })),
   ...PANEL_IDS.flatMap((id) =>
-    SIDES.map((side): Action => ({
+    ALLOWED_SIDES[id].map((side): Action => ({
       id: `pdf.panel.${id}.move.${side}`,
       label: `Move ${PANEL_TITLES[id]} to the ${side}`,
       area: "Panels",

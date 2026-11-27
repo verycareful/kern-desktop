@@ -185,6 +185,7 @@ pub const PDF_GRID_ACROSS_DEFAULT: u32 = 4;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PanelSide {
+    Top,
     Left,
     Right,
     Bottom,
@@ -197,8 +198,9 @@ pub struct PanelPlacement {
     pub collapsed: bool,
 }
 
-/// The two panels beside an open PDF: the page thumbnails and the tools. Both are always named,
-/// so a stored value that names one only does not parse.
+/// The two panels around an open PDF: the page thumbnails and the tools. Both are always named,
+/// so a stored value that names one only does not parse. The tools may sit on any side; the
+/// thumbnails sit left, right or bottom, never on top ([`check_pdf_panels`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PdfPanels {
     pub thumbnails: PanelPlacement,
@@ -774,6 +776,16 @@ fn any_value<T>(_: &T) -> Result<(), String> {
     Ok(())
 }
 
+/// The thumbnails never sit on top: a strip of pages has no height to spare there, and the
+/// tools bar is what the top is for.
+fn check_pdf_panels(panels: &PdfPanels) -> Result<(), String> {
+    if panels.thumbnails.side == PanelSide::Top {
+        Err("the thumbnails sit left, right or bottom, not on top".to_owned())
+    } else {
+        Ok(())
+    }
+}
+
 fn check_zoom(z: &f32) -> Result<(), String> {
     if z.is_finite() && (ZOOM_MIN..=ZOOM_MAX).contains(z) {
         Ok(())
@@ -1019,7 +1031,7 @@ impl Stored for Settings {
             &mut s.pdf_panels,
             &mut keep,
             &mut problems,
-            any_value,
+            check_pdf_panels,
         );
         take(
             &mut obj,
@@ -1442,7 +1454,7 @@ impl Store {
 
     /// Merges `patch` (field name to new value) into the settings. A field
     /// this version does not define, a value of the wrong type, an
-    /// `editor_zoom` outside [`ZOOM_MIN`] to [`ZOOM_MAX`], a `pdf_panels` that does not place both panels, a `pdf_grid_across` outside
+    /// `editor_zoom` outside [`ZOOM_MIN`] to [`ZOOM_MAX`], a `pdf_panels` that does not place both panels or puts the thumbnails on top, a `pdf_grid_across` outside
     /// [`PDF_GRID_ACROSS_MIN`] to [`PDF_GRID_ACROSS_MAX`], an `interface_size`
     /// that is not one of [`INTERFACE_SIZES`], a `panel_order` or
     /// `editor_panel_order` that is not a permutation of its panels or a scan root

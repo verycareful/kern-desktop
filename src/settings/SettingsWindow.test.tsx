@@ -569,6 +569,27 @@ test("the_pdf_section_saves_the_side_of_each_panel_and_keeps_its_folded_state", 
   ]);
 });
 
+test("the_tools_picker_offers_the_top_and_the_thumbnails_picker_does_not", async () => {
+  await mount();
+  nav("PDF");
+  const names = (group: string) =>
+    within(screen.getByRole("group", { name: group }))
+      .getAllByRole("button")
+      .map((b) => b.textContent);
+  expect(names("Thumbnails panel")).toEqual(["Left", "Right", "Bottom"]);
+  expect(names("Tools panel")).toEqual(["Top", "Left", "Right", "Bottom"]);
+  fireEvent.click(pressed("Tools panel", "Top"));
+  await save();
+  expect(sent("settings_set").map((s) => s.args.patch)).toEqual([
+    {
+      pdf_panels: {
+        thumbnails: { side: "left", collapsed: false },
+        tools: { side: "top", collapsed: false },
+      },
+    },
+  ]);
+});
+
 test("searching_for_sidebar_finds_both_panel_rows", async () => {
   await mount();
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "sidebar" } });

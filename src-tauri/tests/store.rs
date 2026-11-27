@@ -1763,6 +1763,66 @@ fn pdf_panels_default_to_thumbnails_left_and_tools_right_and_round_trip() {
 }
 
 #[test]
+fn the_tools_may_sit_on_top_and_the_thumbnails_never() {
+    let e = env();
+    let s = store(&e);
+    let on_top = json!({
+        "thumbnails": {"side": "bottom", "collapsed": false},
+        "tools": {"side": "top", "collapsed": true},
+    });
+    let out = s
+        .settings_set(patch(json!({ "pdf_panels": on_top })))
+        .unwrap();
+    assert_eq!(out.value.pdf_panels.tools.side, PanelSide::Top);
+    assert_eq!(
+        read_json(&e.config.join("settings.json"))["pdf_panels"],
+        on_top
+    );
+    assert_eq!(
+        store(&e).settings_get().unwrap().value.pdf_panels,
+        out.value.pdf_panels
+    );
+    let before = fs::read(e.config.join("settings.json")).unwrap();
+    let err = s
+        .settings_set(patch(json!({
+            "pdf_panels": {
+                "thumbnails": {"side": "top", "collapsed": false},
+                "tools": {"side": "left", "collapsed": false},
+            }
+        })))
+        .unwrap_err();
+    assert_eq!(err.kind, "InvalidArgument");
+    assert!(err.message.contains("thumbnails"), "{}", err.message);
+    assert_eq!(fs::read(e.config.join("settings.json")).unwrap(), before);
+}
+
+#[test]
+fn a_pdf_panels_file_with_every_side_but_top_for_the_tools_loads_unchanged() {
+    let e = env();
+    fs::create_dir_all(&e.config).unwrap();
+    for thumbnails in ["left", "right", "bottom"] {
+        for tools in ["left", "right", "bottom"] {
+            let stored = format!(
+                r#"{{"pdf_panels": {{"thumbnails": {{"side": "{thumbnails}", "collapsed": false}}, "tools": {{"side": "{tools}", "collapsed": true}}}}}}"#
+            );
+            fs::write(e.config.join("settings.json"), &stored).unwrap();
+            let got = store(&e).settings_get().unwrap();
+            assert!(got.corrupt.is_empty(), "{thumbnails} {tools}");
+            let panels = got.value.pdf_panels;
+            assert_eq!(
+                serde_json::to_value(panels.thumbnails.side).unwrap(),
+                json!(thumbnails)
+            );
+            assert_eq!(
+                serde_json::to_value(panels.tools.side).unwrap(),
+                json!(tools)
+            );
+            assert!(panels.tools.collapsed);
+        }
+    }
+}
+
+#[test]
 fn a_pdf_panels_patch_that_is_not_a_placement_of_both_panels_is_refused_and_changes_nothing() {
     let e = env();
     let s = store(&e);
@@ -1811,7 +1871,7 @@ fn a_pdf_panels_patch_that_is_not_a_placement_of_both_panels_is_refused_and_chan
 fn a_stored_pdf_panels_that_does_not_parse_is_reported_and_kept() {
     let e = env();
     fs::create_dir_all(&e.config).unwrap();
-    let bad = r#"{"pdf_panels": {"thumbnails": {"side": "top", "collapsed": false}}}"#;
+    let bad = r#"{"pdf_panels": {"thumbnails": {"side": "top", "collapsed": false}, "tools": {"side": "left", "collapsed": false}}}"#;
     fs::write(e.config.join("settings.json"), bad).unwrap();
     let s = store(&e);
     let got = s.settings_get().unwrap();
@@ -1821,7 +1881,10 @@ fn a_stored_pdf_panels_that_does_not_parse_is_reported_and_kept() {
     s.settings_set(patch(json!({"word_wrap": true}))).unwrap();
     assert_eq!(
         read_json(&e.config.join("settings.json"))["pdf_panels"],
-        json!({"thumbnails": {"side": "top", "collapsed": false}})
+        json!({
+            "thumbnails": {"side": "top", "collapsed": false},
+            "tools": {"side": "left", "collapsed": false}
+        })
     );
 }
 

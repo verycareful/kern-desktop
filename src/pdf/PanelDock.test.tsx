@@ -83,12 +83,26 @@ test("by_default_thumbnails_stand_left_of_the_pages_and_tools_right", async () =
   const right = screen.getByTestId("pdf-dock-right");
   expect(within(left).getByTestId("pdf-panel-thumbnails")).toBeInTheDocument();
   expect(within(right).getByTestId("pdf-panel-tools")).toBeInTheDocument();
+  expect(screen.queryByTestId("pdf-dock-top")).toBeNull();
   expect(screen.queryByTestId("pdf-dock-bottom")).toBeNull();
   const follows = (a: Element, b: Element) =>
     Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
   const pages = screen.getByTestId("pdf-scroll");
   expect(follows(left, pages)).toBe(true);
   expect(follows(pages, right)).toBe(true);
+});
+
+test("tools_on_the_top_stand_above_the_pages_in_a_row_of_their_own", async () => {
+  await dock();
+  setPanels(movePanel(DEFAULT_PANELS, "tools", "top"));
+  const top = screen.getByTestId("pdf-dock-top");
+  expect(within(top).getByTestId("pdf-panel-tools")).toHaveAttribute("data-side", "top");
+  expect(screen.queryByTestId("pdf-dock-right")).toBeNull();
+  const pages = screen.getByTestId("pdf-scroll");
+  expect(Boolean(top.compareDocumentPosition(pages) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+  expect(
+    within(screen.getByTestId("pdf-dock-left")).getByTestId("pdf-panel-thumbnails")
+  ).toBeVisible();
 });
 
 test("a_panel_sits_on_the_side_the_settings_name_and_the_strip_runs_along_the_bottom", async () => {

@@ -157,8 +157,24 @@ test("the_panel_move_actions_are_off_on_the_side_the_panel_is_already_on", () =>
   expect(isEnabled(getAction("pdf.panel.thumbnails.move.right"), ctx)).toBe(true);
   expect(isEnabled(getAction("pdf.panel.thumbnails.move.bottom"), ctx)).toBe(true);
   expect(isEnabled(getAction("pdf.panel.tools.move.right"), ctx)).toBe(false);
+  expect(isEnabled(getAction("pdf.panel.tools.move.top"), ctx)).toBe(true);
   expect(isEnabled(getAction("pdf.panel.tools.move.left"), ctx)).toBe(true);
+  expect(isEnabled(getAction("pdf.panel.tools.move.bottom"), ctx)).toBe(true);
   off();
+});
+
+test("the_tools_can_be_moved_to_the_top_and_the_thumbnails_cannot", () => {
+  const moves = (id: string) =>
+    ["top", "left", "right", "bottom"].filter((side) => {
+      try {
+        getAction(`pdf.panel.${id}.move.${side}`);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  expect(moves("tools")).toEqual(["top", "left", "right", "bottom"]);
+  expect(moves("thumbnails")).toEqual(["left", "right", "bottom"]);
 });
 
 test("the_panel_actions_are_off_without_a_mounted_pdf_and_each_toggle_has_a_key", () => {

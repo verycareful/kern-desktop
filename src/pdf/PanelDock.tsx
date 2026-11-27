@@ -7,8 +7,8 @@ import { ActionMenu, type MenuSection } from "../keys/ActionMenu";
 import { currentContext, getAction, runAction } from "../keys/actions";
 import { useBindLabel } from "../keys/binds";
 import {
+  ALLOWED_SIDES,
   PANEL_TITLES,
-  SIDES,
   arrangePanels,
   type PanelId,
   type PanelPlacement,
@@ -67,8 +67,24 @@ export function PanelDock(props: { tabId: string; doc: PdfDoc; active: boolean }
       </div>
     );
 
+  const row = (side: "top" | "bottom") =>
+    arranged[side].length > 0 && (
+      <div className={`kern-pdf-dock-row kern-pdf-dock-${side}`} data-testid={`pdf-dock-${side}`}>
+        {arranged[side].map((id) => (
+          <Panel key={id} id={id} tabId={tabId} placement={panels[id]}>
+            {id === "thumbnails" ? (
+              <ThumbnailStrip tabId={tabId} doc={doc} sizes={sizes} sizesAt={readAt} horizontal />
+            ) : (
+              <ToolsPanel tabId={tabId} doc={doc} collapsed={panels[id].collapsed} />
+            )}
+          </Panel>
+        ))}
+      </div>
+    );
+
   return (
     <div className="kern-pdf-dock" data-testid="pdf-dock">
+      {row("top")}
       <div className="kern-pdf-dock-main">
         {column("left")}
         <div className="kern-pdf-dock-centre">
@@ -83,25 +99,14 @@ export function PanelDock(props: { tabId: string; doc: PdfDoc; active: boolean }
         </div>
         {column("right")}
       </div>
-      {arranged.bottom.length > 0 && (
-        <div className="kern-pdf-dock-row kern-pdf-dock-bottom" data-testid="pdf-dock-bottom">
-          {arranged.bottom.map((id) => (
-            <Panel key={id} id={id} tabId={tabId} placement={panels[id]}>
-              {id === "thumbnails" ? (
-                <ThumbnailStrip tabId={tabId} doc={doc} sizes={sizes} sizesAt={readAt} horizontal />
-              ) : (
-                <ToolsPanel tabId={tabId} doc={doc} collapsed={panels[id].collapsed} />
-              )}
-            </Panel>
-          ))}
-        </div>
-      )}
+      {row("bottom")}
     </div>
   );
 }
 
 // The chevron that folds a panel points where the panel goes: toward its own side's edge.
 const FOLD_ICON: Record<Side, { fold: typeof ChevronLeft; unfold: typeof ChevronLeft }> = {
+  top: { fold: ChevronUp, unfold: ChevronDown },
   left: { fold: ChevronLeft, unfold: ChevronRight },
   right: { fold: ChevronRight, unfold: ChevronLeft },
   bottom: { fold: ChevronDown, unfold: ChevronUp },
@@ -128,7 +133,7 @@ function Panel(props: {
   const sections: MenuSection[] = [
     {
       title: `Move ${title}`,
-      actions: SIDES.map((to) => getAction(`pdf.panel.${id}.move.${to}`)),
+      actions: ALLOWED_SIDES[id].map((to) => getAction(`pdf.panel.${id}.move.${to}`)),
     },
   ];
   return (

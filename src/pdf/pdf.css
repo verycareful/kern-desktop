@@ -169,9 +169,17 @@
   border-left: 1px solid var(--kern-border);
 }
 
+.kern-pdf-dock-top,
 .kern-pdf-dock-bottom {
   flex: none;
   display: flex;
+}
+
+.kern-pdf-dock-top {
+  border-bottom: 1px solid var(--kern-border);
+}
+
+.kern-pdf-dock-bottom {
   border-top: 1px solid var(--kern-border);
 }
 
@@ -196,16 +204,19 @@
   flex: 1;
 }
 
+.kern-pdf-dock-top .kern-pdf-panel,
 .kern-pdf-dock-bottom .kern-pdf-panel {
   flex-direction: row;
   align-items: stretch;
 }
 
+.kern-pdf-dock-top .kern-pdf-panel:has(.kern-pdf-thumbs),
 .kern-pdf-dock-bottom .kern-pdf-panel:has(.kern-pdf-thumbs) {
   flex: 1;
   height: 176px;
 }
 
+.kern-pdf-dock-top .kern-pdf-panel[data-collapsed="true"],
 .kern-pdf-dock-bottom .kern-pdf-panel[data-collapsed="true"] {
   height: auto;
   flex: none;
@@ -219,6 +230,7 @@
   padding: 4px;
 }
 
+.kern-pdf-dock-top .kern-pdf-panel-header,
 .kern-pdf-dock-bottom .kern-pdf-panel-header {
   flex-direction: column;
   justify-content: flex-start;
@@ -335,6 +347,7 @@
   overflow: auto;
 }
 
+.kern-pdf-dock-top .kern-pdf-tools,
 .kern-pdf-dock-bottom .kern-pdf-tools {
   flex-direction: row;
   align-items: center;
@@ -347,6 +360,7 @@
   gap: 2px;
 }
 
+.kern-pdf-dock-top .kern-pdf-tool-group,
 .kern-pdf-dock-bottom .kern-pdf-tool-group {
   flex-direction: row;
   align-items: center;

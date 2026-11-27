@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import type { PanelSide, PdfLayout, Settings } from "../ipc";
-import { SIDE_TITLES, SIDES, type PanelId } from "../pdf/panel-placement";
+import { ALLOWED_SIDES, SIDE_TITLES, type PanelId } from "../pdf/panel-placement";
 import { GRID_ACROSS_MAX, GRID_ACROSS_MIN } from "../pdf/view-layout";
 import { useSettingsDraft } from "./settings-draft";
 import { Choices, Group, Row } from "./settings-ui";
 
 // PDF: how the pages of every PDF are laid out, how many a row of the grid holds, and the side
-// each of the two panels sits on. The View menu and its keys change the layout at once, and the
+// each of the two panels sits on (the thumbnails never on top). The View menu and its keys change the layout at once, and the
 // panels' own buttons move and fold them; these are what a PDF opens with next time.
 
 const LAYOUTS: readonly { value: PdfLayout; label: string }[] = [
@@ -17,10 +17,8 @@ const LAYOUTS: readonly { value: PdfLayout; label: string }[] = [
   { value: "grid", label: "Grid" },
 ];
 
-const SIDE_OPTIONS: readonly { value: PanelSide; label: string }[] = SIDES.map((value) => ({
-  value,
-  label: SIDE_TITLES[value],
-}));
+const sideOptions = (id: PanelId): readonly { value: PanelSide; label: string }[] =>
+  ALLOWED_SIDES[id].map((value) => ({ value, label: SIDE_TITLES[value] }));
 
 export function PdfSection(props: { settings: Settings }) {
   const { settings } = props;
@@ -82,7 +80,7 @@ export function PdfSection(props: { settings: Settings }) {
           <Choices
             label="Thumbnails panel"
             value={settings.pdf_panels.thumbnails.side}
-            options={SIDE_OPTIONS}
+            options={sideOptions("thumbnails")}
             onChange={(side) => place("thumbnails", side)}
           />
         </Row>
@@ -90,7 +88,7 @@ export function PdfSection(props: { settings: Settings }) {
           <Choices
             label="Tools panel"
             value={settings.pdf_panels.tools.side}
-            options={SIDE_OPTIONS}
+            options={sideOptions("tools")}
             onChange={(side) => place("tools", side)}
           />
         </Row>
