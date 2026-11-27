@@ -11,6 +11,7 @@ import { useOps } from "../ops/useOps";
 import { VOLUME_MENU } from "../shell/volume-menu";
 import { entryMenu, everyEntryAction } from "../shell/entry-menu";
 import { everyTreeAction, treeSortMenu } from "../files/tree-menu";
+import { everyHitAction } from "../files/hit-menu";
 import { DEFAULT_TREE_SORT, useTreeSort } from "../files/tree-sort";
 import { usePinnedRecent } from "../shell/pinned-recent-store";
 import { useProperties } from "../files/properties-store";
@@ -171,9 +172,11 @@ test("every_action_is_in_a_menu_or_on_a_button_with_a_key", () => {
           ? everyEntryAction().includes(a)
           : a.when === "tree"
             ? everyTreeAction().includes(a)
-            : menuSections(a.when === "any" ? null : tabOf(a.when)).some((s) =>
-                s.actions.includes(a)
-              );
+            : a.when === "hit"
+              ? everyHitAction().includes(a)
+              : menuSections(a.when === "any" ? null : tabOf(a.when)).some((s) =>
+                  s.actions.includes(a)
+                );
     const button = a.menu === false && (a.keys.length > 0 || a.id === "place.about");
     if (!inMenu && !button) missing.push(a.id);
   }

@@ -46,6 +46,7 @@ import { closeTab } from "../shell/useCloseGuard";
 import { openAsEditor } from "../shell/layout-switch";
 import { isEditorLayout, useLayout } from "../store/layout";
 import { treeMenuFolder, useTreeMenu } from "../files/tree-menu-store";
+import { useHitMenu } from "../files/hit-menu-store";
 import { terminalFolder } from "../files/tree-hover";
 import { openFiles, openFolderTab, showFileInFolder } from "../files/open-entries";
 import { isFolder } from "../files/file-type";
@@ -69,9 +70,10 @@ import { withModifiers } from "./binds";
 
 // "volume" actions are aimed at a volume of the places strip, "entry" actions at an entry of
 // Pinned or Recent and "tree" actions at an entry of the folder tree, not at a tab: they run from
-// that item's own menu and are not part of the main menu.
+// that item's own menu and are not part of the main menu. "hit" actions are aimed at a hit of a
+// search or of the Library, from that hit's menu.
 export type ActionContextKind =
-  "folder" | "doc" | "trash" | "documents" | "volume" | "entry" | "tree";
+  "folder" | "doc" | "trash" | "documents" | "volume" | "entry" | "tree" | "hit";
 
 export type ActionContext = {
   tabs: TabsState;
@@ -1390,6 +1392,162 @@ const pinnedActions: Action[] = [
   },
 ];
 
+// ---- a hit of a search or of the Library ----
+
+function hitTarget() {
+  return useHitMenu.getState().current;
+}
+
+/** Where a hit's actions say what went wrong or what they did: the window's notices. */
+function hitNote(text: string): void {
+  useOps.getState().notify(text);
+}
+
+/** Whether the hit a menu was opened on is among the pins. */
+function hitPinned(): boolean {
+  const t = hitTarget();
+  const pins = usePinnedRecent.getState().pins ?? [];
+  return t !== null && pins.some((p) => pathKey(p) === pathKey(t.entry.path));
+}
+
+const hitActions: Action[] = [
+  {
+    id: "hit.open",
+    label: "Open",
+    area: "Open",
+    keys: [],
+    when: "hit",
+    enabled: () => hitTarget() !== null,
+    run: () => {
+      const t = hitTarget();
+      if (t) t.open(t.entry, false);
+    },
+  },
+  {
+    id: "hit.openNewWindow",
+    label: "Open in new window",
+    area: "Open",
+    keys: [],
+    when: "hit",
+    enabled: () => {
+      const t = hitTarget();
+      return t !== null && !isFolder(t.entry);
+    },
+    run: () => {
+      const t = hitTarget();
+      if (t && !isFolder(t.entry)) t.open(t.entry, true);
+    },
+  },
+  // A folder goes to a folder tab of the main window, which is where a new-window open sends one.
+  {
+    id: "hit.openInFileManager",
+    label: "Open in file manager",
+    area: "Open",
+    keys: [],
+    when: "hit",
+    enabled: () => {
+      const t = hitTarget();
+      return t !== null && isFolder(t.entry);
+    },
+    run: () => {
+      const t = hitTarget();
+      if (t && isFolder(t.entry)) void openFolderTab(t.entry.path, hitNote);
+    },
+  },
+  {
+    id: "hit.openWith",
+    label: "Open with…",
+    area: "Open",
+    keys: [],
+    when: "hit",
+    enabled: () => {
+      const t = hitTarget();
+      return t !== null && !isFolder(t.entry);
+    },
+    run: () => {
+      const t = hitTarget();
+      if (t && !isFolder(t.entry)) t.openWith(t.entry);
+    },
+  },
+  // The folder the hit is in, as a folder tab of the main window with the hit selected.
+  {
+    id: "hit.location",
+    label: "Open file location",
+    area: "Open",
+    keys: [],
+    when: "hit",
+    enabled: () => hitTarget() !== null,
+    run: () => {
+      const t = hitTarget();
+      if (t) void showFileInFolder(t.entry.path, hitNote);
+    },
+  },
+  {
+    id: "hit.openAsEditor",
+    label: "Open as editor",
+    area: "Open",
+    keys: [],
+    when: "hit",
+    enabled: () => {
+      const t = hitTarget();
+      return t !== null && isFolder(t.entry);
+    },
+    run: () => {
+      const t = hitTarget();
+      if (t && isFolder(t.entry)) void openAsEditor(t.entry.path);
+    },
+  },
+  {
+    id: "hit.pin",
+    label: "Pin",
+    area: "Pinned",
+    keys: [],
+    when: "hit",
+    enabled: () => hitTarget() !== null && !hitPinned(),
+    run: () => {
+      const t = hitTarget();
+      if (t) void usePinnedRecent.getState().pinPaths([t.entry.path], hitNote);
+    },
+  },
+  {
+    id: "hit.unpin",
+    label: "Unpin",
+    area: "Pinned",
+    keys: [],
+    when: "hit",
+    enabled: () => hitPinned(),
+    run: () => {
+      const t = hitTarget();
+      if (t) void usePinnedRecent.getState().unpin(t.entry.path, hitNote);
+    },
+  },
+  {
+    id: "hit.copyPath",
+    label: "Copy path",
+    area: "Edit",
+    keys: [],
+    when: "hit",
+    enabled: () => hitTarget() !== null,
+    run: () => {
+      const t = hitTarget();
+      if (t) copyPaths([t.entry.path], hitNote);
+    },
+  },
+  // The Properties dialog is shown by the main window only.
+  {
+    id: "hit.properties",
+    label: "Properties",
+    area: "Open",
+    keys: [],
+    when: "hit",
+    enabled: () => hitTarget() !== null && isMainWindow(),
+    run: () => {
+      const t = hitTarget();
+      if (t) useProperties.getState().show([t.entry.path]);
+    },
+  },
+];
+
 // ---- the document ----
 
 function docOf(c: ActionContext) {
@@ -1776,7 +1934,14 @@ const pdfActions: Action[] = [
   },
 ];
 
-actions.push(...docActions, ...pdfActions, ...trashActions, ...placeActions, ...pinnedActions);
+actions.push(
+  ...docActions,
+  ...pdfActions,
+  ...trashActions,
+  ...placeActions,
+  ...pinnedActions,
+  ...hitActions
+);
 
 export function getAction(id: string): Action {
   const a = actions.find((x) => x.id === id);
@@ -1790,6 +1955,7 @@ export function appliesTo(a: Action, tab: Tab | null): boolean {
     a.when === "volume" ||
     a.when === "entry" ||
     a.when === "tree" ||
+    a.when === "hit" ||
     a.when === tab?.kind ||
     (tab !== null && (a.alsoWhen?.includes(tab.kind) ?? false))
   );
@@ -1815,6 +1981,7 @@ export function menuSections(tab: Tab | null): { title: string; actions: Action[
       x.when !== "volume" &&
       x.when !== "entry" &&
       x.when !== "tree" &&
+      x.when !== "hit" &&
       appliesTo(x, tab)
   )) {
     const s = sections.find((x) => x.title === a.area);

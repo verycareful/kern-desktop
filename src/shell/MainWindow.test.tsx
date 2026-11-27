@@ -54,6 +54,7 @@ import MainWindow from "./MainWindow";
 import { VOLUME_MENU } from "./volume-menu";
 import { everyEntryAction } from "./entry-menu";
 import { everyTreeAction } from "../files/tree-menu";
+import { everyHitAction } from "../files/hit-menu";
 import { usePinnedRecent } from "./pinned-recent-store";
 import { useCloseGuard } from "./useCloseGuard";
 import { useOps } from "../ops/useOps";
@@ -361,6 +362,7 @@ test("every_action_appears_in_a_menu", () => {
         a.when !== "volume" &&
         a.when !== "entry" &&
         a.when !== "tree" &&
+        a.when !== "hit" &&
         appliesTo(a, active)
     );
     expect(entries(menu)).toHaveLength(applicable.length);
@@ -378,6 +380,8 @@ test("every_action_appears_in_a_menu", () => {
   for (const a of everyEntryAction()) seen.add(a.id);
   // The tree actions are in the folder tree's own menu.
   for (const a of everyTreeAction()) seen.add(a.id);
+  // The hit actions are in the menu of a hit of a search or of the Library.
+  for (const a of everyHitAction()) seen.add(a.id);
   // The rest are buttons of the top bar (actions.test.ts checks each has a key or is About).
   for (const a of actions) if (a.menu === false) seen.add(a.id);
   expect([...seen].sort()).toEqual(actions.map((a) => a.id).sort());

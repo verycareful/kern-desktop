@@ -4,6 +4,23 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.2.0.3] - 2026-11-27 12:55 (IST)
+
+### Added
+
+- **Search and Library results**: a right-click on a result gives its menu, and the Menu key and Shift+F10 give the menu of the highlighted result. A file offers Open, Open in new window, Open with, Open file location, Copy path, Properties and Pin or Unpin; a folder offers Open in file manager and Open as editor in place of Open in new window and Open with. The menu is on the results of a search in a folder tab and in the editor's folder column, and on the Library as a list and as cards, where a right-click selects the card it is on. Entries that need a folder tab are left out of the main window's editor layout, and Properties out of an editor window.
+
+### Tests
+
+- The menu of a file, of a folder and of a pinned result; what the editor layout and an editor window leave out; every result action is in some form of the menu.
+- A right-click on a Library row makes it the highlighted row and its menu opens it in a new window; the Menu key and Shift+F10 give the highlighted row's menu; Open with asks which application.
+- A right-click on a card selects that card alone, and the Menu key gives the menu of the card under the cursor.
+- Open from a search result's menu opens it as the search does, and a folder result offers no new window.
+
+### Results
+
+- 2867 tests across 237 suites, all passed (465s, CachyOS x86-64, rustc 1.99.1, Python 3.14.10, Chromium through Playwright).
+
 ## [0.2.0.2] - 2026-11-27 12:30 (IST)
 
 ### Fixed
@@ -426,7 +443,8 @@ The first release of Kern Desktop: a file manager and a plain text editor in one
 
 - 1629 tests across 139 suites, all passed (76.3s, CachyOS x86-64, rustc 1.99.1).
 
-[Unreleased]: https://github.com/verycareful/kern-desktop/compare/0.2.0.2...HEAD
+[Unreleased]: https://github.com/verycareful/kern-desktop/compare/0.2.0.3...HEAD
+[0.2.0.3]: https://github.com/verycareful/kern-desktop/compare/0.2.0.2...0.2.0.3
 [0.2.0.2]: https://github.com/verycareful/kern-desktop/compare/0.2.0.1...0.2.0.2
 [0.2.0.1]: https://github.com/verycareful/kern-desktop/compare/0.2.0.0...0.2.0.1
 [0.2.0.0]: https://github.com/verycareful/kern-desktop/compare/0.1.2.2...0.2.0.0

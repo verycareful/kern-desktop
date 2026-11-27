@@ -16,6 +16,7 @@ export const WHERE: Record<Action["when"], string> = {
   volume: "Places and volumes",
   entry: "Pinned and recent",
   tree: "Folder tree",
+  hit: "Search and Library results",
 };
 
 /** A mouse bind of an action that answers over a tab is not one of the window's. */

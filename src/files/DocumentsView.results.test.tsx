@@ -336,3 +336,70 @@ test("the_cards_move_with_the_arrow_keys_and_enter_opens_the_one_under_the_curso
     screen.getAllByTestId("file-card").every((c) => c.getAttribute("aria-selected") === "true")
   ).toBe(true);
 });
+
+test("a_right_click_on_a_hit_makes_it_the_active_row_and_gives_its_menu", async () => {
+  await streaming();
+  ipc.openPaths.mockResolvedValue([]);
+  const rows = screen.getAllByTestId("scan-hit");
+  fireEvent.contextMenu(rows[1]!, { clientX: 40, clientY: 50 });
+  expect(screen.getAllByTestId("scan-hit")[1]).toHaveAttribute("aria-selected", "true");
+  const menu = screen.getByRole("menu");
+  expect(
+    within(menu)
+      .getAllByRole("menuitem")
+      .map((b) => b.textContent?.replace(/\s+/g, " ").trim())
+  ).toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(/^Open$/),
+      expect.stringMatching(/^Open in new window/),
+      expect.stringMatching(/^Open with…/),
+      expect.stringMatching(/^Copy path/),
+    ])
+  );
+  fireEvent.click(within(menu).getByRole("menuitem", { name: /^Open in new window/ }));
+  await waitFor(() => expect(ipc.openPaths).toHaveBeenCalledTimes(1));
+  expect(ipc.openPaths.mock.lastCall).toEqual([[HITS[1]!.path], "inside", "new_window"]);
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
+test("the_menu_key_and_shift_f10_give_the_menu_of_the_active_hit", async () => {
+  await streaming();
+  ipc.openPaths.mockResolvedValue([]);
+  const list = screen.getByTestId("scan-results");
+  fireEvent.keyDown(list, { key: "ArrowDown" });
+  fireEvent.keyDown(list, { key: "ContextMenu" });
+  fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /^Open$/ }));
+  await waitFor(() => expect(ipc.openPaths).toHaveBeenCalledTimes(1));
+  expect(ipc.openPaths.mock.lastCall).toEqual([[HITS[1]!.path], "inside", "default"]);
+  fireEvent.keyDown(list, { key: "F10", shiftKey: true });
+  expect(screen.getByRole("menu")).toBeTruthy();
+});
+
+test("open_with_from_a_hits_menu_asks_which_application", async () => {
+  await streaming();
+  fireEvent.contextMenu(screen.getAllByTestId("scan-hit")[0]!);
+  fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /^Open with/ }));
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(await screen.findByRole("dialog")).toBeTruthy();
+});
+
+test("a_right_click_on_a_card_selects_it_alone_and_gives_its_menu", async () => {
+  useViewSettings.setState({ viewMode: "grid" });
+  mount();
+  await waitFor(() => expect(ipc.documents).toHaveBeenCalled());
+  const key = ipc.documents.mock.lastCall![0] as string;
+  await waitFor(() => expect(handlers["kernkraft://op-done"]?.length).toBeGreaterThan(0));
+  emit("kernkraft://search-hit", { key, op: 1, entries: HITS });
+  const cards = await screen.findAllByTestId("file-card");
+  ipc.openPaths.mockResolvedValue([]);
+  fireEvent.click(cards[0]!);
+  fireEvent.contextMenu(cards[2]!, { clientX: 10, clientY: 10 });
+  expect(cards[2]).toHaveAttribute("aria-selected", "true");
+  expect(cards[0]).toHaveAttribute("aria-selected", "false");
+  fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /^Open$/ }));
+  await waitFor(() => expect(ipc.openPaths).toHaveBeenCalledTimes(1));
+  expect(ipc.openPaths.mock.lastCall![0]).toEqual([HITS[2]!.path]);
+  // The Menu key gives the menu of the card the cursor is on.
+  fireEvent.keyDown(screen.getByTestId("scan-grid"), { key: "ContextMenu" });
+  expect(screen.getByRole("menu")).toBeTruthy();
+});

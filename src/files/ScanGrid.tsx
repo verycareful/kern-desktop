@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
 import { useCallback, useId, useMemo, useRef, useState } from "react";
-import type { WireEntry } from "../ipc";
+import { pathKey, type WireEntry } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { RepeatFlash } from "../ops/repeat-flash";
 import { FileGrid } from "./FileGrid";
@@ -20,10 +20,13 @@ import {
 import { dropPageTextSelection } from "../keys/text-selection";
 import { useScanSort, useSortedHits } from "./scan-sort";
 import { useSingleClick, type ClickArea } from "./view-settings";
+import { isMenuKey, useHitMenuState } from "./useHitMenuState";
 
 // The Library as cards, the grid view of the file manager over the hits of a walk. It keeps its
 // own selection (the hits are not a folder, so none of the folder's file operations apply) and
-// the order the list was sorted in, once the walk has ended.
+// the order the list was sorted in, once the walk has ended. A right-click on a card selects it and
+// gives its menu (useHitMenuState.tsx); the Menu key and Shift+F10 give the menu of the card the
+// cursor is on.
 
 export function ScanGrid(props: {
   hits: readonly WireEntry[];
@@ -50,6 +53,7 @@ export function ScanGrid(props: {
   const [reveal, setReveal] = useState(0);
   const root = useRef<HTMLDivElement>(null);
   const thumbKey = useId();
+  const hitMenu = useHitMenuState(props.onOpen);
 
   const open = (i: number, newWindow: boolean) => {
     const hit = entries[i];
@@ -66,7 +70,17 @@ export function ScanGrid(props: {
       Home: -Infinity,
       End: Infinity,
     };
-    if (e.key in steps) {
+    if (isMenuKey(e)) {
+      const hit = sel.cursor === null ? undefined : entries[sel.cursor];
+      if (!hit) return;
+      e.preventDefault();
+      const key = pathKey(hit.path);
+      const card = [...(root.current?.querySelectorAll<HTMLElement>("[data-key]") ?? [])].find(
+        (c) => c.dataset.key === key
+      );
+      const r = (card ?? e.currentTarget).getBoundingClientRect();
+      hitMenu.show(hit, r.left, r.bottom);
+    } else if (e.key in steps) {
       e.preventDefault();
       setSel((s) => move(s, steps[e.key]!, e.shiftKey, count));
       setReveal((t) => t + 1);
@@ -119,13 +133,19 @@ export function ScanGrid(props: {
           onItemDoubleClick={(i, ev) => {
             if (!single) open(i, ev.ctrlKey || ev.metaKey);
           }}
-          // The hits are not a folder: no menu of file operations is offered over them.
-          onContextMenu={(_i, ev) => ev.preventDefault()}
+          onContextMenu={(i, ev) => {
+            ev.preventDefault();
+            const hit = i === null ? undefined : entries[i];
+            if (i === null || !hit) return;
+            setSel((s) => click(s, i));
+            hitMenu.show(hit, ev.clientX, ev.clientY);
+          }}
           onBand={(indices, additive, base) => setSel(rubberBand(base, indices, additive))}
           onBackgroundClick={() => setSel(empty)}
           onSeedCursor={() => setSel((s) => seedCursor(s, count))}
         />
       </div>
+      {hitMenu.element}
     </>
   );
 }

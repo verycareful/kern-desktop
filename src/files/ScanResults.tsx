@@ -14,10 +14,13 @@ import { LIST_HEADER_HEIGHT, ROW_HEIGHT } from "./grid-layout";
 import { useScanSort, useSortedHits } from "./scan-sort";
 import type { SortBy } from "./sort";
 import { useSingleClick, useViewSettings, type ClickArea } from "./view-settings";
+import { isMenuKey, useHitMenuState } from "./useHitMenuState";
 
 // The hits of a search or of the Library, as they stream in, virtualized, since a walk may find
 // many thousands. One row is active: the arrow keys, Home and End move it, Enter opens it
 // (Ctrl+Enter in a window of its own), and a double-click opens the row under the pointer.
+// A right-click gives the menu of the row under the pointer and makes it the active row; the Menu
+// key and Shift+F10 give the active row's menu.
 //
 // In the centre of the window a row is a file manager row (name, type, size, modified) plus the
 // folder it is in, under a header whose columns sort the hits once the walk has ended. In the
@@ -65,6 +68,7 @@ export function ScanResults(props: {
     initialRect: { width: 600, height: 400 },
   });
   const at = Math.min(active, Math.max(count - 1, 0));
+  const hitMenu = useHitMenuState(props.onOpen);
 
   const go = (i: number) => {
     const next = Math.max(0, Math.min(count - 1, i));
@@ -83,7 +87,14 @@ export function ScanResults(props: {
       Home: 0,
       End: count - 1,
     };
-    if (e.key in moves) {
+    if (isMenuKey(e)) {
+      const hit = hits[at];
+      if (!hit) return;
+      e.preventDefault();
+      const row = scroller.current?.querySelector(`#kern-hit-${at}`);
+      const r = (row ?? e.currentTarget).getBoundingClientRect();
+      hitMenu.show(hit, r.left, r.bottom);
+    } else if (e.key in moves) {
       e.preventDefault();
       go(moves[e.key]!);
     } else if (e.key === "Enter") {
@@ -162,6 +173,11 @@ export function ScanResults(props: {
                   onDoubleClick={(ev) => {
                     if (!single) props.onOpen(e, ev.ctrlKey || ev.metaKey);
                   }}
+                  onContextMenu={(ev) => {
+                    ev.preventDefault();
+                    setActive(v.index);
+                    hitMenu.show(e, ev.clientX, ev.clientY);
+                  }}
                 >
                   {wide ? (
                     <>
@@ -196,6 +212,7 @@ export function ScanResults(props: {
           </div>
         </div>
       </div>
+      {hitMenu.element}
     </>
   );
 }

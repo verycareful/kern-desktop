@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Sricharan Suresh (github.com/verycareful)
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { OpDoneEvent, WireScanDone, WirePath } from "../ipc";
 import { dir, entry } from "./test-entries";
@@ -209,4 +209,18 @@ test("a_search_in_the_editors_narrow_column_has_no_header", async () => {
   emit("kernkraft://search-hit", { key, op: 1, entries: [entry("a.txt")] });
   await screen.findAllByTestId("scan-hit");
   expect(screen.queryByRole("button", { name: "Name" })).toBeNull();
+});
+
+test("a_hits_menu_opens_it_as_the_search_opens_one", async () => {
+  render(<SearchView root={p("/d")} area="centre" onClose={onClose} onOpen={onOpen} />);
+  const key = await typed("not");
+  const folder = dir("notebooks");
+  emit("kernkraft://search-hit", { key, op: 1, entries: [entry("notes.md"), folder] });
+  const rows = await screen.findAllByTestId("scan-hit");
+  fireEvent.contextMenu(rows[1]!);
+  const menu = screen.getByRole("menu");
+  // A folder has no new window to go to: a folder tab is offered instead.
+  expect(within(menu).queryByRole("menuitem", { name: /^Open in new window/ })).toBeNull();
+  fireEvent.click(within(menu).getByRole("menuitem", { name: /^Open$/ }));
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith(folder, false);
 });
