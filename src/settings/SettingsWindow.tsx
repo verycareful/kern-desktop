@@ -95,7 +95,14 @@ function UnsavedPrompt(props: { saving: boolean; answer(choice: CloseChoice): vo
   );
 }
 
-function SaveBar() {
+/** What the bar says while nothing waits to be saved, by where the window is. */
+const IDLE_TEXT = "Changes apply when you press Save.";
+const KEYS_IDLE_TEXT =
+  "Binds are saved as you change them. Other changes apply when you press Save.";
+
+// `keys` is true while Keys and mouse is on show alone: its binds are stored the moment they are
+// changed, not by Save, so the bar does not tell the person to press Save for them.
+function SaveBar(props: { keys: boolean }) {
   const dirty = useSettingsDraft(isDirty);
   const saving = useSettingsDraft((s) => s.saving);
   const problem = useSettingsDraft((s) => s.problem);
@@ -113,7 +120,7 @@ function SaveBar() {
   if (saving) status = "Saving…";
   else if (dirty) status = "Changes not saved yet.";
   else if (restartNeeded) status = "Saved. Kern applies some of it when it starts again.";
-  else status = "Changes apply when you press Save.";
+  else status = props.keys ? KEYS_IDLE_TEXT : IDLE_TEXT;
   return (
     <footer className="kern-settings-bar" aria-label="Save the settings">
       <p role="status" className="kern-settings-bar-status" data-testid="settings-status">
@@ -384,7 +391,7 @@ export function SettingsWindow() {
               ))}
           </SettingsQuery.Provider>
         </main>
-        <SaveBar />
+        <SaveBar keys={found === null && category === "keys"} />
       </div>
       {noticesShown({ notice, earlier }).length > 0 && (
         <ul className="kern-settings-notices" aria-label="Messages">

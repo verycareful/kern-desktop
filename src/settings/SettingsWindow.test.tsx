@@ -405,6 +405,37 @@ test("the_key_stops_saving_when_the_window_is_gone", async () => {
   expect(sent("settings_set")).toHaveLength(0);
 });
 
+test("the_bar_says_the_binds_are_saved_as_they_change_in_keys_and_mouse_and_press_save_elsewhere", async () => {
+  await mount();
+  const bar = () => screen.getByTestId("settings-status");
+  expect(bar()).toHaveTextContent("Changes apply when you press Save.");
+  nav("Keys and mouse");
+  expect(bar()).toHaveTextContent("Binds are saved as you change them.");
+  expect(bar()).toHaveTextContent("Other changes apply when you press Save.");
+  expect(bar()).not.toHaveTextContent(/^Changes apply when you press Save\.$/);
+  // What is waiting to be saved is said as ever, whichever category is on show.
+  nav("Appearance");
+  fireEvent.click(pressed("Theme", "Dark"));
+  nav("Keys and mouse");
+  expect(bar()).toHaveTextContent("Changes not saved yet.");
+  await save();
+  expect(bar()).toHaveTextContent("Binds are saved as you change them.");
+  nav("Files");
+  expect(bar()).toHaveTextContent("Changes apply when you press Save.");
+});
+
+test("the_bar_keeps_its_usual_text_while_a_search_shows_rows_from_several_categories", async () => {
+  await mount();
+  nav("Keys and mouse");
+  fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
+    target: { value: "theme" },
+  });
+  await screen.findByRole("group", { name: "Theme" });
+  expect(screen.getByTestId("settings-status")).toHaveTextContent(
+    "Changes apply when you press Save."
+  );
+});
+
 test("closing_with_changes_not_saved_asks_and_cancel_keeps_the_window", async () => {
   await mount();
   fireEvent.click(pressed("Theme", "Dark"));
