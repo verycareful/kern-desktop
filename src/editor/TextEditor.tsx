@@ -11,6 +11,7 @@ import { useViewSettings } from "../files/view-settings";
 import { useOps } from "../ops/useOps";
 import { useTabs } from "../store/tabs";
 import { errorText } from "../ops/error-text";
+import { recordRecent } from "../ops/record-recent";
 import { FlashSpan, RepeatFlash } from "../ops/repeat-flash";
 import { baseName } from "../ops/labels";
 import { KEYS } from "./editor-keys";
@@ -212,7 +213,9 @@ export function TextEditor(props: {
       await openDefault([path], terminal ?? undefined);
     } catch (e) {
       setOpenError(`${name} could not be opened: ${errorText(toWireError(e))}`);
+      return;
     }
+    void recordRecent(path);
   };
 
   let body;

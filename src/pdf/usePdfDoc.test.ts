@@ -21,6 +21,7 @@ const ipc = vi.hoisted(() => ({
   entryOf: vi.fn(),
   watchDir: vi.fn(),
   unwatchDir: vi.fn(),
+  recentTouch: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 vi.mock("./system-fonts", () => ({ ensureSystemFonts: () => Promise.resolve() }));
@@ -67,6 +68,7 @@ beforeEach(() => {
   ipc.entryOf.mockResolvedValue({ kind: "file", len: 10, modified_ms: 1000 });
   ipc.watchDir.mockResolvedValue(undefined);
   ipc.unwatchDir.mockResolvedValue(undefined);
+  ipc.recentTouch.mockResolvedValue({ entries: [] });
   ipc.on.mockImplementation(async (name: string, handler: (payload: unknown) => void) => {
     handlers[name] = handler;
     return () => {
@@ -94,6 +96,50 @@ test("opens_and_closes_the_handle_on_unmount", async () => {
   unmount();
   expect(ipc.pdfClose).toHaveBeenCalledTimes(1);
   expect(ipc.pdfClose).toHaveBeenCalledWith(11);
+});
+
+test("an_opened_PDF_goes_into_Recent_once_and_a_Reload_does_not_add_it_again", async () => {
+  const { result, unmount } = mount();
+  await waitFor(() => expect(result.current.phase).toBe("ready"));
+  await waitFor(() => expect(ipc.recentTouch).toHaveBeenCalledWith(FILE));
+  await act(() => result.current.open());
+  expect(result.current.phase).toBe("ready");
+  expect(ipc.recentTouch).toHaveBeenCalledTimes(1);
+  unmount();
+});
+
+test("a_PDF_that_does_not_open_is_not_put_in_Recent", async () => {
+  ipc.pdfOpen.mockRejectedValue(wireError("Invalid", "the cross-reference table is damaged"));
+  const { result, unmount } = mount();
+  await waitFor(() => expect(result.current.phase).toBe("failed"));
+  expect(ipc.recentTouch).not.toHaveBeenCalled();
+  unmount();
+});
+
+test("a_PDF_opened_after_its_password_goes_into_Recent", async () => {
+  ipc.pdfOpen.mockImplementation(async (_path: WirePath, password?: string) => {
+    if (password === "right") return opened({ handle: 21 });
+    throw wireError("WrongPassword");
+  });
+  const { result, unmount } = mount();
+  await waitFor(() => expect(result.current.phase).toBe("needs-password"));
+  expect(ipc.recentTouch).not.toHaveBeenCalled();
+  await act(() => result.current.open("right"));
+  await waitFor(() => expect(ipc.recentTouch).toHaveBeenCalledWith(FILE));
+  unmount();
+});
+
+test("a_Recent_entry_that_cannot_be_written_is_said_and_the_PDF_stays_open", async () => {
+  ipc.recentTouch.mockRejectedValue(wireError("Io", "disk full"));
+  const { result, unmount } = mount();
+  await waitFor(() => expect(result.current.phase).toBe("ready"));
+  await waitFor(() =>
+    expect(useOps.getState().notice?.text).toBe(
+      "book.pdf could not be added to Recent: Io: disk full"
+    )
+  );
+  expect(result.current.phase).toBe("ready");
+  unmount();
 });
 
 test("a_WrongPassword_error_asks_again_and_leaks_no_handle", async () => {

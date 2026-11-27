@@ -289,6 +289,8 @@ test("a_file_too_large_to_open_offers_the_default_app", async () => {
   expect(ipc.docOpened).not.toHaveBeenCalled();
   fireEvent.click(within(failed).getByRole("button", { name: "Open in default app" }));
   await waitFor(() => expect(ipc.openDefault).toHaveBeenCalledWith([FILE], "kitty"));
+  // A file too large to read was never put in Recent; opened in its application, it is.
+  await waitFor(() => expect(ipc.recentTouch).toHaveBeenCalledExactlyOnceWith(FILE));
 });
 
 test("opening_in_the_default_app_says_when_it_fails", async () => {
@@ -298,6 +300,7 @@ test("opening_in_the_default_app_says_when_it_fails", async () => {
   const failed = await screen.findByTestId("doc-failed");
   fireEvent.click(within(failed).getByRole("button", { name: "Open in default app" }));
   await waitFor(() => expect(failed).toHaveTextContent(/no application/));
+  expect(ipc.recentTouch).not.toHaveBeenCalled();
 });
 
 test("another_open_failure_names_the_error_and_offers_no_default_app", async () => {

@@ -4,12 +4,14 @@ import {
   openPaths,
   showInFolder,
   toWireError,
+  type OpenAction,
   type WireEntry,
   type WireError,
   type WirePath,
 } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
+import { recordRecent } from "../ops/record-recent";
 import { useTabs } from "../store/tabs";
 import { isFolder } from "./file-type";
 
@@ -54,10 +56,18 @@ export async function openEntries(
 }
 
 /**
+ * The outcomes whose file is open once the open command answers: it went to its default
+ * application, or it was open already and was brought forward or handed over. A new document tab
+ * or window is put in Recent by its editor once the file has been read, so a file that cannot be
+ * read is not.
+ */
+const OPENED_NOW: ReadonlySet<OpenAction> = new Set(["default_app", "focus", "moving"]);
+
+/**
  * Sends files to the open command with origin "inside": text
  * becomes a document tab or, with the new-window gesture, a window; anything
- * else goes to its default application. Resolves to the errors to show, one
- * per failure.
+ * else goes to its default application. Each file in `OPENED_NOW` goes to the
+ * top of Recent. Resolves to the errors to show, one per failure.
  */
 export async function openFiles(
   paths: readonly WirePath[],
@@ -67,6 +77,7 @@ export async function openFiles(
   try {
     const outcomes = await openPaths([...paths], "inside", newWindow ? "new_window" : "default");
     for (const o of outcomes) {
+      if (!o.error && OPENED_NOW.has(o.action)) await recordRecent(o.path);
       if (o.error) errors.push(o.error);
       else if (o.action === "failed") {
         errors.push({

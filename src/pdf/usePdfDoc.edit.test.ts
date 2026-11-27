@@ -17,6 +17,7 @@ const ipc = vi.hoisted(() => ({
   entryOf: vi.fn(),
   watchDir: vi.fn(),
   unwatchDir: vi.fn(),
+  recentTouch: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 vi.mock("./system-fonts", () => ({ ensureSystemFonts: () => Promise.resolve() }));
@@ -64,6 +65,7 @@ beforeEach(() => {
     activeId: "t1",
   });
   thumbCache.dropDocument(HANDLE);
+  ipc.recentTouch.mockResolvedValue({ entries: [] });
   ipc.pdfOpen.mockResolvedValue(opened());
   ipc.pdfClose.mockResolvedValue(undefined);
   ipc.docOpened.mockResolvedValue(undefined);

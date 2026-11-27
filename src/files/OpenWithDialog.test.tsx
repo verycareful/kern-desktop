@@ -11,6 +11,7 @@ const ipc = vi.hoisted(() => ({
   launchApp: vi.fn(),
   setDefaultApp: vi.fn(),
   settingsGet: vi.fn(),
+  recentTouch: vi.fn(),
 }));
 vi.mock("../ipc", async (orig) => ({ ...(await orig<typeof import("../ipc")>()), ...ipc }));
 
@@ -36,6 +37,7 @@ beforeEach(() => {
   ipc.launchApp.mockResolvedValue(undefined);
   ipc.setDefaultApp.mockResolvedValue(undefined);
   ipc.settingsGet.mockResolvedValue({ terminal: null } as Settings);
+  ipc.recentTouch.mockResolvedValue({ entries: [] });
 });
 afterEach(() => {
   cleanup();
@@ -61,6 +63,16 @@ test("without_always_the_default_is_left_alone", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Open" }));
   await waitFor(() => expect(ipc.launchApp).toHaveBeenCalled());
   expect(ipc.setDefaultApp).not.toHaveBeenCalled();
+});
+
+test("a_file_opened_with_an_application_goes_into_Recent", async () => {
+  render(<OpenWithDialog entry={file} onClose={onClose} />);
+  fireEvent.click(await screen.findByLabelText("Text Editor"));
+  fireEvent.click(screen.getByRole("button", { name: "Open" }));
+  await waitFor(() => expect(ipc.recentTouch).toHaveBeenCalledExactlyOnceWith(file.path));
+  expect(ipc.launchApp.mock.invocationCallOrder[0]!).toBeLessThan(
+    ipc.recentTouch.mock.invocationCallOrder[0]!
+  );
 });
 
 test("other_application_lists_every_one_filtered_by_name", async () => {
@@ -143,6 +155,20 @@ test("a_failed_open_after_the_default_changed_says_so", async () => {
       "Text Editor could not open notes.md: Launch: exec failed. Text Editor is now the default for text/markdown."
     )
   ).toBeTruthy();
+});
+
+test("a_file_whose_application_did_not_start_is_not_put_in_Recent", async () => {
+  ipc.launchApp.mockRejectedValue({
+    kind: "Launch",
+    message: "exec failed",
+    path: null,
+    details: null,
+  });
+  render(<OpenWithDialog entry={file} onClose={onClose} />);
+  fireEvent.click(await screen.findByLabelText("Text Editor"));
+  fireEvent.click(screen.getByRole("button", { name: "Open" }));
+  await screen.findByText("Text Editor could not open notes.md: Launch: exec failed.");
+  expect(ipc.recentTouch).not.toHaveBeenCalled();
 });
 
 test("an_unreadable_terminal_setting_leaves_the_default_alone", async () => {

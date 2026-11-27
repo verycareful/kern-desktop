@@ -27,6 +27,7 @@ import { sameEntry } from "../editor/same-entry";
 import { tabPlace } from "../editor/useTextDoc";
 import { errorText } from "../ops/error-text";
 import { baseName } from "../ops/labels";
+import { recordRecent } from "../ops/record-recent";
 import { useOps } from "../ops/useOps";
 import { useTabs } from "../store/tabs";
 import {
@@ -204,6 +205,8 @@ export function usePdfDoc(tabId: string, path: WirePath, opts: PdfDocOptions = {
         const previous = handle.current;
         handle.current = opened.handle;
         if (previous !== null) closeHandle(previous);
+        // The first open of this file in the tab is an open; a Reload is not.
+        else void recordRecent(latestPath.current);
         stampRef.current = opened.stamp;
         void entryAtStamp(latestPath.current, opened.stamp).then((entry) => {
           if (mine === generation.current) entryRef.current = entry;

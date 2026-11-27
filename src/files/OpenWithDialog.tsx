@@ -15,6 +15,7 @@ import {
 } from "../ipc";
 import { Modal } from "../ops/Modal";
 import { errorText } from "../ops/error-text";
+import { recordRecent } from "../ops/record-recent";
 import { useOps } from "../ops/useOps";
 
 // Open with: the applications that say they take the file's type,
@@ -119,6 +120,7 @@ export function OpenWithDialog(props: { entry: WireEntry; onClose(): void }) {
         );
       }
       useOps.getState().notify(`Opened ${entry.name} with ${picked.name}`);
+      void recordRecent(entry.path);
       onClose();
     } catch (e) {
       if (alive.current) setError(e instanceof Error ? e.message : String(e));

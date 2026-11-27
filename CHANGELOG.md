@@ -4,6 +4,22 @@ All notable changes documented here. Format: [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.2.0.1] - 2026-11-27 12:02 (IST)
+
+### Fixed
+
+- **Recent**: every file opened from Kern goes to the top of Recent. A PDF, a file opened in its default application or with Open with, and a file that was already open and is brought forward were left out. A file that fails to open is not added, and a Recent entry that cannot be written is said in a notice without stopping the open.
+
+### Tests
+
+- A PDF goes into Recent when it opens, including after its password, and not again on Reload; one that fails to open does not.
+- A file sent to its default application, brought forward or handed to another window goes into Recent; a failed open does not, and a failed Recent write is a notice, not an open error.
+- Open with and Open in default app add the file once the application has started, and not when it fails to start.
+
+### Results
+
+- 2846 tests across 234 suites, all passed (390s, CachyOS x86-64, rustc 1.99.1, Python 3.14.10, Chromium through Playwright).
+
 ## [0.2.0.0] - 2026-11-27 10:49 (IST)
 
 ### Added
@@ -393,7 +409,8 @@ The first release of Kern Desktop: a file manager and a plain text editor in one
 
 - 1629 tests across 139 suites, all passed (76.3s, CachyOS x86-64, rustc 1.99.1).
 
-[Unreleased]: https://github.com/verycareful/kern-desktop/compare/0.2.0.0...HEAD
+[Unreleased]: https://github.com/verycareful/kern-desktop/compare/0.2.0.1...HEAD
+[0.2.0.1]: https://github.com/verycareful/kern-desktop/compare/0.2.0.0...0.2.0.1
 [0.2.0.0]: https://github.com/verycareful/kern-desktop/compare/0.1.2.2...0.2.0.0
 [0.1.2.2]: https://github.com/verycareful/kern-desktop/compare/0.1.2.1...0.1.2.2
 [0.1.2.1]: https://github.com/verycareful/kern-desktop/compare/0.1.2.0...0.1.2.1
