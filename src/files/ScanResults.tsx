@@ -6,7 +6,7 @@ import { ArrowDown, ArrowUp } from "lucide-react";
 import { displayPath, parent, pathKey, type WireEntry, type WirePath } from "../ipc";
 import { errorText } from "../ops/error-text";
 import { RepeatFlash } from "../ops/repeat-flash";
-import { homeRelative } from "../shell/home-relative";
+import { homeRelative, rootRelative } from "../shell/home-relative";
 import { fileType, isFolder } from "./file-type";
 import { FileBadge } from "./FileList";
 import { formatDate, formatSize } from "./format";
@@ -42,6 +42,11 @@ export function ScanResults(props: {
   count: number;
   /** Folders are shown from here down as `~` would show home; null shows them whole. */
   home: WirePath | null;
+  /**
+   * The folder that was searched: a hit's folder is shown as it lies below it (`src/pdf`, or the
+   * folder's own name for a hit directly in it), and under `home` only where it lies elsewhere.
+   */
+  root?: WirePath;
   label: string;
   /** The part of the window the hits are shown in; its click setting decides how a hit opens. */
   area: ClickArea;
@@ -155,7 +160,11 @@ export function ScanResults(props: {
               const e = hits[v.index];
               if (!e) return null;
               const where = parent(e.path);
-              const whereText = where ? homeRelative(where, props.home) : "";
+              const whereText = where
+                ? ((props.root && rootRelative(where, props.root)) ??
+                  homeRelative(where, props.home))
+                : "";
+              const wherePath = where ? displayPath(where) : "";
               return (
                 <div
                   key={pathKey(e.path)}
@@ -192,7 +201,7 @@ export function ScanResults(props: {
                       <div className="kern-col kern-col-modified">
                         {formatDate(e.modified_ms, undefined, timeFormat)}
                       </div>
-                      <div className="kern-col kern-col-location" title={whereText}>
+                      <div className="kern-col kern-col-location" title={wherePath}>
                         {whereText}
                       </div>
                     </>

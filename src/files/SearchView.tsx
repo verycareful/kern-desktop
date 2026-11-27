@@ -154,6 +154,7 @@ export function SearchView(props: {
           hits={scan.hits}
           count={scan.count}
           home={home}
+          root={root}
           label={`Found in ${where}`}
           area={props.area}
           complete={scan.phase === "done"}
