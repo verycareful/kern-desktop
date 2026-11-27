@@ -42,7 +42,15 @@
   flex: 1;
 }
 
+/* The bar paints over the list under it. Where the interface is zoomed by a fraction (110 and 125 %)
+   the list's scroller is a layer of its own whose edge is snapped outward into the pixel row of the
+   bar's bottom border; a bar that is not a layer of its own was drawn under it, and the rows
+   scrolling under the header showed in that row. will-change makes the bar a layer, z-index puts it
+   above the scroller's. */
 .kern-files-bar {
+  position: relative;
+  z-index: 3;
+  will-change: opacity;
   display: flex;
   align-items: flex-start;
   gap: 4px;
